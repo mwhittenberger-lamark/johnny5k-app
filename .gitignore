@@ -1,9 +1,14 @@
 *
 !/.gitignore
-!/*.md
+!/README.md
+!/.gitkeep
+!/.keep
+**/.DS_Store
 !/app
 /app/*
 !/app/public
 /app/public/*
 !/app/public/wp-content
 !/app/public/wp-content/**
+/app/public/wp-content/.DS_Store
+/app/public/wp-content/**/.DS_Store
