@@ -1,0 +1,9 @@
+*
+!/.gitignore
+!/*.md
+!/app
+/app/*
+!/app/public
+/app/public/*
+!/app/public/wp-content
+!/app/public/wp-content/**
