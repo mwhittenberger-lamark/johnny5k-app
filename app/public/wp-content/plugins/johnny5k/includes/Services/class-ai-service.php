@@ -18,6 +18,18 @@ class AiService {
 	private const DEFAULT_MODEL    = 'gpt-4o-mini';
 	private const RESPONSES_ENDPOINT = 'https://api.openai.com/v1/responses';
 
+	/** Minimum assistant turns before the first thread summary is generated. */
+	private const SUMMARY_MIN_TURNS = 4;
+
+	/** Regenerate the thread summary after every N assistant turns. */
+	private const SUMMARY_REFRESH_INTERVAL = 5;
+
+	/** Minimum messages required to generate a thread summary. */
+	private const SUMMARY_MIN_MESSAGES = 6;
+
+	/** Calorie tolerance (kcal) above/below target before flagging as off-track. */
+	private const CALORIE_TOLERANCE_KCAL = 200;
+
 	// ── Chat with Johnny 5000 ─────────────────────────────────────────────────
 
 	/**
@@ -706,9 +718,9 @@ RULES;
 
 		if ( $target_cal > 0 && $avg_cal > 0 ) {
 			$cal_delta = $avg_cal - $target_cal;
-			if ( in_array( $goal_type, [ 'cut', 'recomp' ], true ) && $cal_delta > 200 ) {
+			if ( in_array( $goal_type, [ 'cut', 'recomp' ], true ) && $cal_delta > self::CALORIE_TOLERANCE_KCAL ) {
 				$issues[] = "calories over target ({$avg_cal} kcal vs {$target_cal} kcal)";
-			} elseif ( in_array( $goal_type, [ 'gain' ], true ) && $cal_delta < -200 ) {
+			} elseif ( in_array( $goal_type, [ 'gain' ], true ) && $cal_delta < -self::CALORIE_TOLERANCE_KCAL ) {
 				$issues[] = "calories under target ({$avg_cal} kcal vs {$target_cal} kcal)";
 			}
 		}
@@ -735,8 +747,8 @@ RULES;
 			$thread_id
 		) );
 
-		// Require at least 4 turns before first summary; refresh every 5 turns.
-		if ( $assistant_count < 4 || $assistant_count % 5 !== 0 ) {
+		// Require at least SUMMARY_MIN_TURNS turns before first summary; refresh every SUMMARY_REFRESH_INTERVAL turns.
+		if ( $assistant_count < self::SUMMARY_MIN_TURNS || $assistant_count % self::SUMMARY_REFRESH_INTERVAL !== 0 ) {
 			return;
 		}
 
@@ -765,7 +777,7 @@ RULES;
 			$thread_id
 		) );
 
-		if ( count( $rows ) < 6 ) {
+		if ( count( $rows ) < self::SUMMARY_MIN_MESSAGES ) {
 			return null;
 		}
 
