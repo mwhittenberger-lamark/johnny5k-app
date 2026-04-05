@@ -115,6 +115,8 @@ export const onboardingApi = {
   saveProfile: (data)   => api.post('/onboarding/profile', data),
   savePrefs:   (data)   => api.post('/onboarding/prefs', data),
   complete:    ()       => api.post('/onboarding/complete', {}),
+  restart:     ()       => api.post('/onboarding/restart', {}),
+  updateTrainingSchedule: (data) => api.post('/onboarding/training-schedule', data),
   recalculate: ()       => api.post('/onboarding/recalculate', {}),
 }
 

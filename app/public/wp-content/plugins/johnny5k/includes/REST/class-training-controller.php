@@ -4,6 +4,7 @@ namespace Johnny5k\REST;
 defined( 'ABSPATH' ) || exit;
 
 use Johnny5k\Services\TrainingEngine;
+use Johnny5k\Services\UserTime;
 
 /**
  * REST Controller: Training (plan management)
@@ -76,6 +77,7 @@ class TrainingController {
 		) );
 
 		foreach ( $days as $day ) {
+			$day->weekday_label = self::weekday_label( (int) $day->day_order );
 			$day->exercises = $wpdb->get_results( $wpdb->prepare(
 				"SELECT ude.*, e.name AS exercise_name, e.primary_muscle, e.equipment, e.difficulty
 				 FROM {$p}fit_user_training_day_exercises ude
@@ -103,7 +105,7 @@ class TrainingController {
 			'user_id'             => $user_id,
 			'program_template_id' => $template_id ?: null,
 			'name'                => $name,
-			'start_date'          => current_time( 'Y-m-d' ),
+			'start_date'          => UserTime::today( $user_id ),
 			'active'              => 1,
 		] );
 
@@ -235,5 +237,10 @@ class TrainingController {
 			$day_id
 		) );
 		return (int) $owner === $user_id;
+	}
+
+	private static function weekday_label( int $day_order ): string {
+		$labels = [ 1 => 'Mon', 2 => 'Tue', 3 => 'Wed', 4 => 'Thu', 5 => 'Fri', 6 => 'Sat', 7 => 'Sun' ];
+		return $labels[ $day_order ] ?? 'Day';
 	}
 }

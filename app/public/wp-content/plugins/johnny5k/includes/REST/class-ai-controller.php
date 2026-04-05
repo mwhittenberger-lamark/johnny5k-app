@@ -4,6 +4,7 @@ namespace Johnny5k\REST;
 defined( 'ABSPATH' ) || exit;
 
 use Johnny5k\Services\AiService;
+use Johnny5k\Services\UserTime;
 
 /**
  * REST Controller: AI / Johnny 5000
@@ -256,7 +257,7 @@ class AiController {
 		$p       = $wpdb->prefix;
 		$user_id = get_current_user_id();
 
-		$meal_dt = sanitize_text_field( $req->get_param( 'meal_datetime' ) ?: current_time( 'mysql' ) );
+		$meal_dt = sanitize_text_field( $req->get_param( 'meal_datetime' ) ?: UserTime::mysql( $user_id ) );
 		$type    = sanitize_text_field( $req->get_param( 'meal_type' )    ?: 'lunch' );
 		$source  = sanitize_text_field( $req->get_param( 'source' )       ?: 'manual' );
 		$items   = $req->get_param( 'items' ); // array of item objects
@@ -300,7 +301,7 @@ class AiController {
 		global $wpdb;
 		$p       = $wpdb->prefix;
 		$user_id = get_current_user_id();
-		$date    = sanitize_text_field( $req->get_param( 'date' ) ?: current_time( 'Y-m-d' ) );
+		$date    = sanitize_text_field( $req->get_param( 'date' ) ?: UserTime::today( $user_id ) );
 
 		$meals = $wpdb->get_results( $wpdb->prepare(
 			"SELECT m.id, m.meal_type, m.meal_datetime, m.source, m.confirmed
@@ -350,7 +351,7 @@ class AiController {
 		global $wpdb;
 		$p       = $wpdb->prefix;
 		$user_id = get_current_user_id();
-		$date    = sanitize_text_field( $req->get_param( 'date' ) ?: current_time( 'Y-m-d' ) );
+		$date    = sanitize_text_field( $req->get_param( 'date' ) ?: UserTime::today( $user_id ) );
 
 		$totals = $wpdb->get_row( $wpdb->prepare(
 			"SELECT SUM(mi.calories)  AS calories,

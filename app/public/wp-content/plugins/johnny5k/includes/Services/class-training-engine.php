@@ -47,7 +47,7 @@ class TrainingEngine {
 		// ── Create session row ────────────────────────────────────────────────
 		$wpdb->insert( $p . 'fit_workout_sessions', [
 			'user_id'          => $user_id,
-			'session_date'     => current_time( 'Y-m-d' ),
+			'session_date'     => UserTime::today( $user_id ),
 			'planned_day_type' => $next_day_type,
 			'time_tier'        => $time_tier,
 			'completed'        => 0,
@@ -148,13 +148,15 @@ class TrainingEngine {
 	 */
 	public static function rolling_skip_count( int $user_id ): int {
 		global $wpdb;
+		$since = UserTime::days_ago( $user_id, 29 );
 		return (int) $wpdb->get_var( $wpdb->prepare(
 			"SELECT COUNT(*) FROM {$wpdb->prefix}fit_workout_sessions
 			 WHERE user_id = %d
 			   AND skip_requested     = 1
 			   AND is_optional_session = 0
-			   AND session_date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)",
-			$user_id
+			   AND session_date >= %s",
+			$user_id,
+			$since
 		) );
 	}
 
@@ -179,7 +181,7 @@ class TrainingEngine {
 
 		$results    = [];
 		$user_id    = (int) $session->user_id;
-		$today      = current_time( 'Y-m-d' );
+		$today      = UserTime::today( $user_id );
 
 		$session_exs = $wpdb->get_results( $wpdb->prepare(
 			"SELECT wse.id AS ses_ex_id, wse.exercise_id
@@ -298,31 +300,27 @@ class TrainingEngine {
 		global $wpdb;
 		$p = $wpdb->prefix;
 
-		$last_day_type = $wpdb->get_var( $wpdb->prepare(
-			"SELECT planned_day_type FROM {$p}fit_workout_sessions
-			 WHERE user_id = %d AND completed = 1
-			 ORDER BY session_date DESC LIMIT 1",
-			$user_id
+		$weekday_order = UserTime::weekday_order_for_date( $user_id, UserTime::today( $user_id ) );
+		$day_type = $wpdb->get_var( $wpdb->prepare(
+			"SELECT day_type FROM {$p}fit_user_training_days
+			 WHERE training_plan_id = %d AND day_order = %d
+			 LIMIT 1",
+			$plan_id,
+			$weekday_order
 		) );
 
-		$days = $wpdb->get_results( $wpdb->prepare(
-			"SELECT day_type, day_order FROM {$p}fit_user_training_days
+		if ( $day_type ) {
+			return (string) $day_type;
+		}
+
+		$first_active_day = $wpdb->get_var( $wpdb->prepare(
+			"SELECT day_type FROM {$p}fit_user_training_days
 			 WHERE training_plan_id = %d AND day_type != 'rest'
-			 ORDER BY day_order",
+			 ORDER BY day_order LIMIT 1",
 			$plan_id
 		) );
 
-		if ( ! $days ) return 'push';
-
-		if ( ! $last_day_type ) {
-			return $days[0]->day_type;
-		}
-
-		$types = array_map( fn( $d ) => $d->day_type, $days );
-		$idx   = array_search( $last_day_type, $types, true );
-
-		if ( $idx === false ) return $types[0];
-		return $types[ ( $idx + 1 ) % count( $types ) ];
+		return $first_active_day ? (string) $first_active_day : 'rest';
 	}
 
 	/**

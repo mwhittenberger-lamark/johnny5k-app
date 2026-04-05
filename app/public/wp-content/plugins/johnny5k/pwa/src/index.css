@@ -1022,6 +1022,31 @@ a { color: var(--accent); text-decoration: none; }
 .nutrition-gap-list {
   min-height: 54px;
 }
+.onboarding-split-card {
+  margin: 12px 0;
+}
+.onboarding-schedule-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+}
+.onboarding-schedule-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: var(--bg2);
+  border: 1px solid rgba(168, 212, 240, 0.8);
+}
+.onboarding-schedule-row span {
+  font-weight: 700;
+}
+.onboarding-schedule-row select {
+  max-width: 220px;
+}
 .label-review-card {
   display: flex;
   flex-direction: column;
@@ -1136,6 +1161,16 @@ a { color: var(--accent); text-decoration: none; }
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 12px;
 }
+.settings-grid-compact {
+  margin-top: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+.reminder-setting-card {
+  border: 1px solid rgba(168, 212, 240, 0.55);
+  border-radius: 14px;
+  padding: 12px;
+  background: rgba(247, 250, 252, 0.7);
+}
 .settings-grid label {
   display: flex;
   flex-direction: column;
@@ -1150,6 +1185,14 @@ a { color: var(--accent); text-decoration: none; }
 .toggle-label input {
   width: 24px;
   height: 24px;
+}
+.timezone-picker {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.8fr) minmax(0, 1.4fr);
+  gap: 8px;
+}
+.reminder-grid {
+  align-items: end;
 }
 .target-preview-row {
   display: flex;
@@ -1194,6 +1237,13 @@ a { color: var(--accent); text-decoration: none; }
   }
   .nutrition-item-editor {
     grid-template-columns: 1fr 1fr;
+  }
+  .onboarding-schedule-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .onboarding-schedule-row select {
+    max-width: none;
   }
   .dashboard-hero-grid,
   .dashboard-two-col,

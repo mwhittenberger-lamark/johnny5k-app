@@ -86,61 +86,61 @@ class CostTracker {
 	/**
 	 * Total cost per user for the current calendar month.
 	 *
-	 * @return array<int, float>  Map of user_id => total_usd
+	 * @return array<int, object>
 	 */
 	public static function monthly_by_user(): array {
 		global $wpdb;
 		$table = $wpdb->prefix . 'fit_api_cost_logs';
+		$users = $wpdb->users;
 
-		$rows = $wpdb->get_results(
-			"SELECT user_id, SUM(cost_usd) AS total
-			 FROM `$table`
+		return $wpdb->get_results(
+			"SELECT l.user_id,
+			        u.user_email,
+			        l.service,
+			        COUNT(*) AS call_count,
+			        SUM(l.cost_usd) AS total_cost_usd
+			 FROM `$table` l
+			 LEFT JOIN `$users` u ON u.ID = l.user_id
 			 WHERE created_at >= DATE_FORMAT(NOW(),'%Y-%m-01')
-			 GROUP BY user_id
-			 ORDER BY total DESC"
-		);
-
-		$map = [];
-		foreach ( $rows as $row ) {
-			$map[ (int) $row->user_id ] = (float) $row->total;
-		}
-		return $map;
+			 GROUP BY l.user_id, u.user_email, l.service
+			 ORDER BY total_cost_usd DESC"
+		) ?: [];
 	}
 
 	/**
 	 * Grand total cost for the current month.
 	 *
-	 * @return float
+	 * @return object
 	 */
-	public static function monthly_total(): float {
+	public static function monthly_total(): object {
 		global $wpdb;
 		$table = $wpdb->prefix . 'fit_api_cost_logs';
 
-		return (float) $wpdb->get_var(
-			"SELECT SUM(cost_usd) FROM `$table`
+		return $wpdb->get_row(
+			"SELECT SUM(cost_usd) AS total_cost_usd
+			 FROM `$table`
 			 WHERE created_at >= DATE_FORMAT(NOW(),'%Y-%m-01')"
-		);
+		) ?: (object) [ 'total_cost_usd' => 0 ];
 	}
 
 	/**
-	 * Daily totals for the last 30 days (for the admin chart).
+	 * Daily totals for the last 30 days.
 	 *
-	 * @return array<array{date:string, total_usd:float, openai_usd:float, clicksend_usd:float}>
+	 * @return array<int, object>
 	 */
 	public static function daily_totals_last_30(): array {
 		global $wpdb;
 		$table = $wpdb->prefix . 'fit_api_cost_logs';
 
 		return $wpdb->get_results(
-			"SELECT DATE(created_at) AS `date`,
-			        SUM(cost_usd) AS total_usd,
-			        SUM(IF(service='openai',   cost_usd, 0)) AS openai_usd,
-			        SUM(IF(service='clicksend',cost_usd, 0)) AS clicksend_usd
+			"SELECT DATE(created_at) AS log_date,
+			        service,
+			        COUNT(*) AS call_count,
+			        SUM(cost_usd) AS total_cost_usd
 			 FROM `$table`
 			 WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
-			 GROUP BY DATE(created_at)
-			 ORDER BY `date` ASC",
-			ARRAY_A
+			 GROUP BY DATE(created_at), service
+			 ORDER BY log_date ASC, service ASC"
 		) ?: [];
 	}
 

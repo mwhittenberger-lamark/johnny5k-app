@@ -49,6 +49,10 @@ register_activation_hook( __FILE__, function (): void {
 
     // Disable WP's default registration so only invite-coded signup works.
     update_option( 'users_can_register', 0 );
+
+    if ( ! wp_next_scheduled( 'jf_daily_sms_reminders' ) ) {
+        wp_schedule_event( time() + 300, 'hourly', 'jf_daily_sms_reminders' );
+    }
 } );
 
 // ── Deactivation ─────────────────────────────────────────────────────────────
@@ -75,8 +79,12 @@ add_action( 'plugins_loaded', function (): void {
     }
 
     // Schedule cron jobs if not already scheduled.
-    if ( ! wp_next_scheduled( 'jf_daily_sms_reminders' ) ) {
-        wp_schedule_event( strtotime( 'tomorrow 08:00:00' ), 'daily', 'jf_daily_sms_reminders' );
+    $daily_sms_event = wp_get_scheduled_event( 'jf_daily_sms_reminders' );
+    if ( ! $daily_sms_event ) {
+        wp_schedule_event( time() + 300, 'hourly', 'jf_daily_sms_reminders' );
+    } elseif ( 'hourly' !== ( $daily_sms_event->schedule ?? '' ) ) {
+        wp_unschedule_event( $daily_sms_event->timestamp, 'jf_daily_sms_reminders' );
+        wp_schedule_event( time() + 300, 'hourly', 'jf_daily_sms_reminders' );
     }
     if ( ! wp_next_scheduled( 'jf_weekly_calorie_adjust' ) ) {
         wp_schedule_event( strtotime( 'next monday 06:00:00' ), 'weekly', 'jf_weekly_calorie_adjust' );
@@ -88,7 +96,7 @@ add_action( 'plugins_loaded', function (): void {
 
 // ── Cron handlers ─────────────────────────────────────────────────────────────
 add_action( 'jf_daily_sms_reminders', function (): void {
-    Johnny5k\Services\SmsService::send_daily_reminders();
+    Johnny5k\Services\SmsService::run_daily_reminders();
 } );
 
 add_action( 'jf_weekly_calorie_adjust', function (): void {

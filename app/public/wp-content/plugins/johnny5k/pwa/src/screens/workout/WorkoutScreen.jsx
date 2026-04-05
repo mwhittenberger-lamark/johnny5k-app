@@ -37,7 +37,10 @@ export default function WorkoutScreen() {
   const exercises = session?.exercises ?? []
   const activeEx = exercises[activeExIdx]
   const todaysDayType = session?.session?.planned_day_type
-  const todaysPlan = plan?.days?.find(day => day.day_type === todaysDayType) ?? plan?.days?.[0]
+  const todaysOrder = weekdayOrderForDate()
+  const todaysPlan = plan?.days?.find(day => Number(day.day_order) === todaysOrder) ?? plan?.days?.find(day => day.day_type === todaysDayType) ?? plan?.days?.[0]
+  const todayLabel = todaysPlan?.weekday_label ?? weekdayLabelForDate()
+  const displayDayType = session?.session?.planned_day_type || todaysPlan?.day_type
 
   useEffect(() => {
     let active = true
@@ -164,8 +167,8 @@ export default function WorkoutScreen() {
           {!planLoading && planError ? <p className="error">{planError}</p> : null}
           {!planLoading && !planError && todaysPlan ? (
             <>
-              <h3>{formatDayType(todaysPlan.day_type)} day</h3>
-              <p>{(todaysPlan.exercises ?? []).length} planned movements with a {todaysPlan.time_tier} time bias.</p>
+              <h3>{todayLabel} • {formatDayType(todaysPlan.day_type)} day</h3>
+              <p>{(todaysPlan.exercises ?? []).length} planned movements from your saved weekly split with a {todaysPlan.time_tier} time bias.</p>
               <div className="workout-plan-list">
                 {(todaysPlan.exercises ?? []).slice(0, 6).map(exercise => (
                   <div key={exercise.id} className="workout-plan-row">
@@ -188,7 +191,7 @@ export default function WorkoutScreen() {
       <header className="screen-header workout-session-header">
         <div>
           <p className="dashboard-eyebrow">Today</p>
-          <h1>{formatDayType(session?.session?.planned_day_type)} day</h1>
+          <h1>{todayLabel} • {formatDayType(displayDayType)} day</h1>
           <p className="settings-subtitle">Readiness {session?.session?.readiness_score ?? readinessScore}/10 · {session?.session?.time_tier} session</p>
         </div>
         <button className="btn-outline small" onClick={handleComplete} disabled={completing}>
@@ -391,4 +394,14 @@ function formatHistoryEntry(entry) {
     parts.push(`e1RM ${Math.round(entry.estimated_1rm)}`)
   }
   return parts.join(' · ') || 'Logged session'
+}
+
+function weekdayOrderForDate() {
+  const now = new Date()
+  const jsDay = now.getDay()
+  return jsDay === 0 ? 7 : jsDay
+}
+
+function weekdayLabelForDate() {
+  return new Date().toLocaleDateString(undefined, { weekday: 'short' })
 }

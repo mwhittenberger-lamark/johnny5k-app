@@ -4,6 +4,7 @@ namespace Johnny5k\REST;
 defined( 'ABSPATH' ) || exit;
 
 use Johnny5k\Services\TrainingEngine;
+use Johnny5k\Services\UserTime;
 use Johnny5k\Services\AiService;
 use Johnny5k\Services\AwardEngine;
 
@@ -88,7 +89,7 @@ class WorkoutController {
 
 		// Prevent duplicate session for today
 		global $wpdb;
-		$today   = current_time( 'Y-m-d' );
+		$today   = UserTime::today( $user_id );
 		$existing = $wpdb->get_var( $wpdb->prepare(
 			"SELECT id FROM {$wpdb->prefix}fit_workout_sessions
 			 WHERE user_id = %d AND session_date = %s AND skip_requested = 0",

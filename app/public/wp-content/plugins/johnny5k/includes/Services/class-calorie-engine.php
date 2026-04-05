@@ -118,19 +118,23 @@ class CalorieEngine {
 	 */
 	public static function calculate_weekly_adjustment( int $user_id ): ?array {
 		global $wpdb;
+		$since_14 = UserTime::days_ago( $user_id, 13 );
+		$since_7 = UserTime::days_ago( $user_id, 6 );
 
 		// ── Data sufficiency check ────────────────────────────────────────────
 		$weight_count = (int) $wpdb->get_var( $wpdb->prepare(
 			"SELECT COUNT(*) FROM {$wpdb->prefix}fit_body_metrics
-			 WHERE user_id = %d AND metric_date >= DATE_SUB(CURDATE(), INTERVAL 14 DAY)",
-			$user_id
+			 WHERE user_id = %d AND metric_date >= %s",
+			$user_id,
+			$since_14
 		) );
 
 		$meal_days = (int) $wpdb->get_var( $wpdb->prepare(
 			"SELECT COUNT(DISTINCT DATE(meal_datetime)) FROM {$wpdb->prefix}fit_meals
 			 WHERE user_id = %d AND confirmed = 1
-			   AND meal_datetime >= DATE_SUB(NOW(), INTERVAL 14 DAY)",
-			$user_id
+			   AND DATE(meal_datetime) >= %s",
+			$user_id,
+			$since_14
 		) );
 
 		if ( $weight_count < 7 || $meal_days < 5 ) {
@@ -140,16 +144,19 @@ class CalorieEngine {
 		// ── Recent vs prior weight averages ───────────────────────────────────
 		$recent_avg = (float) $wpdb->get_var( $wpdb->prepare(
 			"SELECT AVG(weight_lb) FROM {$wpdb->prefix}fit_body_metrics
-			 WHERE user_id = %d AND metric_date >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)",
-			$user_id
+			 WHERE user_id = %d AND metric_date >= %s",
+			$user_id,
+			$since_7
 		) );
 
 		$prior_avg = (float) $wpdb->get_var( $wpdb->prepare(
 			"SELECT AVG(weight_lb) FROM {$wpdb->prefix}fit_body_metrics
 			 WHERE user_id = %d
-			   AND metric_date >= DATE_SUB(CURDATE(), INTERVAL 14 DAY)
-			   AND metric_date <  DATE_SUB(CURDATE(), INTERVAL 7 DAY)",
-			$user_id
+			   AND metric_date >= %s
+			   AND metric_date < %s",
+			$user_id,
+			$since_14,
+			$since_7
 		) );
 
 		// ── Current goal & target ─────────────────────────────────────────────

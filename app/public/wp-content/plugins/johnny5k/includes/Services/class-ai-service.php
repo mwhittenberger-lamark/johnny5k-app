@@ -307,6 +307,72 @@ class AiService {
 		return $result['reply'];
 	}
 
+	/**
+	 * Generate short SMS copy for a reminder trigger.
+	 *
+	 * @param int   $user_id
+	 * @param string $trigger_type
+	 * @param array<string,mixed> $context
+	 * @return string|WP_Error
+	 */
+	public static function generate_sms_copy( int $user_id, string $trigger_type, array $context = [] ) {
+		$context_lines = [];
+		foreach ( $context as $key => $value ) {
+			if ( 'recent_messages' === $key || null === $value || '' === $value ) {
+				continue;
+			}
+
+			$label = ucwords( str_replace( '_', ' ', (string) $key ) );
+			if ( is_bool( $value ) ) {
+				$value = $value ? 'yes' : 'no';
+			}
+
+			$context_lines[] = "{$label}: {$value}";
+		}
+
+		$recent_messages = array_values( array_filter( array_map( 'trim', (array) ( $context['recent_messages'] ?? [] ) ) ) );
+		$recent_block = '';
+		if ( $recent_messages ) {
+			$recent_block = "Avoid repeating phrasing from these recent SMS messages:\n- " . implode( "\n- ", array_slice( $recent_messages, 0, 5 ) );
+		}
+
+		$messages = [
+			[
+				'role' => 'system',
+				'content' => self::build_system_prompt( $user_id ) . "\n\nYou are writing a single SMS for Johnny 5000. Rules: max 220 characters. Plain text only. No markdown. No quotation marks around the final answer. Make it feel like Johnny 5000 texting personally: confident, warm, lightly funny when it helps, like a strong big brother who actually knows the user's data. Vary sentence rhythm, openings, and verbs so the texts do not feel formulaic. Do not sound corporate, generic, or like an app notification. Make it clear the text is from Johnny 5000 by naturally referring to yourself as Johnny 5000 or signing off as Johnny 5000. Use at most one emoji and only if it feels natural. Return only the SMS body.",
+			],
+			[
+				'role' => 'user',
+				'content' => sprintf(
+					"Write one %s SMS. Keep it specific to the user's current context and avoid sounding repetitive. Push for fresh phrasing, not stock reminder language. Make it sound unmistakably like Johnny 5000.\n\nContext:\n%s%s",
+					str_replace( '_', ' ', $trigger_type ),
+					$context_lines ? implode( "\n", $context_lines ) : 'No extra context provided.',
+					$recent_block ? "\n\n{$recent_block}" : ''
+				),
+			],
+		];
+
+		$result = self::call_openai( $messages, self::DEFAULT_MODEL );
+		if ( is_wp_error( $result ) ) {
+			return $result;
+		}
+
+		CostTracker::log_openai( $user_id, self::DEFAULT_MODEL, '/v1/responses', $result['tokens_in'], $result['tokens_out'], [ 'context' => 'sms_copy', 'trigger' => $trigger_type ] );
+
+		$reply = trim( preg_replace( '/\s+/', ' ', (string) $result['reply'] ) );
+		$reply = trim( $reply, " \t\n\r\0\x0B\"'" );
+
+		if ( '' === $reply ) {
+			return new \WP_Error( 'empty_sms_copy', 'AI returned an empty SMS message.' );
+		}
+
+		if ( mb_strlen( $reply ) > 220 ) {
+			$reply = rtrim( mb_substr( $reply, 0, 217 ) ) . '...';
+		}
+
+		return $reply;
+	}
+
 	// ── System prompt builder ─────────────────────────────────────────────────
 
 	/**
@@ -374,11 +440,13 @@ PERSONA;
 	private static function compile_weekly_stats( int $user_id ): array {
 		global $wpdb;
 		$p = $wpdb->prefix;
+		$since = UserTime::days_ago( $user_id, 6 );
 
 		$workouts = (int) $wpdb->get_var( $wpdb->prepare(
 			"SELECT COUNT(*) FROM {$p}fit_workout_sessions
-			 WHERE user_id = %d AND completed = 1 AND session_date >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)",
-			$user_id
+			 WHERE user_id = %d AND completed = 1 AND session_date >= %s",
+			$user_id,
+			$since
 		) );
 
 		$avg_calories = (float) $wpdb->get_var( $wpdb->prepare(
@@ -387,10 +455,11 @@ PERSONA;
 			   FROM {$p}fit_meal_items mi
 			   JOIN {$p}fit_meals m ON m.id = mi.meal_id
 			   WHERE m.user_id = %d AND m.confirmed = 1
-			     AND m.meal_datetime >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+			     AND DATE(m.meal_datetime) >= %s
 			   GROUP BY DATE(m.meal_datetime)
 			 ) t",
-			$user_id
+			$user_id,
+			$since
 		) );
 
 		$avg_protein = (float) $wpdb->get_var( $wpdb->prepare(
@@ -399,10 +468,11 @@ PERSONA;
 			   FROM {$p}fit_meal_items mi
 			   JOIN {$p}fit_meals m ON m.id = mi.meal_id
 			   WHERE m.user_id = %d AND m.confirmed = 1
-			     AND m.meal_datetime >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+			     AND DATE(m.meal_datetime) >= %s
 			   GROUP BY DATE(m.meal_datetime)
 			 ) t",
-			$user_id
+			$user_id,
+			$since
 		) );
 
 		$weights = $wpdb->get_col( $wpdb->prepare(

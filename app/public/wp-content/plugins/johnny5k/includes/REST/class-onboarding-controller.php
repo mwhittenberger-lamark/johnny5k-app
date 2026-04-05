@@ -6,6 +6,7 @@ defined( 'ABSPATH' ) || exit;
 use Johnny5k\Services\CalorieEngine;
 use Johnny5k\Services\AwardEngine;
 use Johnny5k\Services\TrainingEngine;
+use Johnny5k\Services\UserTime;
 
 /**
  * REST Controller: Onboarding
@@ -14,6 +15,7 @@ use Johnny5k\Services\TrainingEngine;
  * POST /fit/v1/onboarding/profile  — save profile + goals
  * POST /fit/v1/onboarding/prefs    — save preferences
  * POST /fit/v1/onboarding/complete — mark onboarding done, compute initial targets
+ * POST /fit/v1/onboarding/restart  — mark onboarding incomplete so user can walk it again
  */
 class OnboardingController {
 
@@ -48,6 +50,18 @@ class OnboardingController {
 		register_rest_route( $ns, '/onboarding/recalculate', [
 			'methods'             => 'POST',
 			'callback'            => [ __CLASS__, 'recalculate_targets' ],
+			'permission_callback' => $auth,
+		] );
+
+		register_rest_route( $ns, '/onboarding/restart', [
+			'methods'             => 'POST',
+			'callback'            => [ __CLASS__, 'restart' ],
+			'permission_callback' => $auth,
+		] );
+
+		register_rest_route( $ns, '/onboarding/training-schedule', [
+			'methods'             => 'POST',
+			'callback'            => [ __CLASS__, 'update_training_schedule' ],
 			'permission_callback' => $auth,
 		] );
 	}
@@ -141,6 +155,10 @@ class OnboardingController {
 
 		if ( isset( $profile_data['activity_level'] ) ) {
 			$profile_data['activity_level'] = self::normalize_activity_level( $profile_data['activity_level'] );
+		}
+
+		if ( isset( $profile_data['timezone'] ) ) {
+			$profile_data['timezone'] = UserTime::sanitize_timezone( $profile_data['timezone'] );
 		}
 
 		if ( ! $profile_data ) {
@@ -309,6 +327,86 @@ class OnboardingController {
 		), 200 );
 	}
 
+	public static function restart( \WP_REST_Request $req ): \WP_REST_Response {
+		$user_id = get_current_user_id();
+		global $wpdb;
+		$p = $wpdb->prefix;
+
+		$profile_exists = (bool) $wpdb->get_var( $wpdb->prepare(
+			"SELECT id FROM {$p}fit_user_profiles WHERE user_id = %d",
+			$user_id
+		) );
+
+		if ( ! $profile_exists ) {
+			return new \WP_REST_Response( [ 'message' => 'Profile not found.' ], 404 );
+		}
+
+		$wpdb->update(
+			$p . 'fit_user_profiles',
+			[ 'onboarding_complete' => 0 ],
+			[ 'user_id' => $user_id ]
+		);
+
+		return new \WP_REST_Response( [
+			'restarted'           => true,
+			'onboarding_complete' => false,
+		], 200 );
+	}
+
+	public static function update_training_schedule( \WP_REST_Request $req ): \WP_REST_Response {
+		$user_id = get_current_user_id();
+		global $wpdb;
+		$p = $wpdb->prefix;
+
+		$schedule = self::normalize_preferred_schedule( $req->get_param( 'preferred_workout_days_json' ) );
+		if ( empty( $schedule ) ) {
+			return new \WP_REST_Response( [ 'message' => 'A weekly schedule is required.' ], 400 );
+		}
+
+		$active_days = array_filter( $schedule, fn( $entry ) => ( $entry['day_type'] ?? 'rest' ) !== 'rest' );
+		if ( empty( $active_days ) ) {
+			return new \WP_REST_Response( [ 'message' => 'Choose at least one non-rest day.' ], 400 );
+		}
+
+		$preferences = $wpdb->get_var( $wpdb->prepare(
+			"SELECT id FROM {$p}fit_user_preferences WHERE user_id = %d",
+			$user_id
+		) );
+
+		$preference_data = [ 'preferred_workout_days_json' => wp_json_encode( $schedule ) ];
+		if ( $preferences ) {
+			$wpdb->update( $p . 'fit_user_preferences', $preference_data, [ 'user_id' => $user_id ] );
+		} else {
+			$preference_data['user_id'] = $user_id;
+			$wpdb->insert( $p . 'fit_user_preferences', $preference_data );
+		}
+
+		$profile = $wpdb->get_row( $wpdb->prepare(
+			"SELECT * FROM {$p}fit_user_profiles WHERE user_id = %d",
+			$user_id
+		) );
+
+		if ( ! $profile ) {
+			return new \WP_REST_Response( [ 'message' => 'Profile not found.' ], 404 );
+		}
+
+		$plan = $wpdb->get_row( $wpdb->prepare(
+			"SELECT * FROM {$p}fit_user_training_plans WHERE user_id = %d AND active = 1 ORDER BY created_at DESC LIMIT 1",
+			$user_id
+		) );
+
+		if ( ! $plan ) {
+			self::seed_training_plan( $user_id, $profile );
+		} else {
+			self::rebuild_training_plan_days( (int) $plan->id, (int) ( $plan->program_template_id ?? 0 ), $profile, $schedule );
+		}
+
+		return new \WP_REST_Response( [
+			'saved' => true,
+			'week_split' => self::get_plan_preview( $user_id ),
+		], 200 );
+	}
+
 	// ── Seed default training plan ────────────────────────────────────────────
 
 	private static function seed_training_plan( int $user_id, object $profile ): void {
@@ -336,16 +434,46 @@ class OnboardingController {
 			'user_id'             => $user_id,
 			'program_template_id' => $template->id,
 			'name'                => $template->name,
-			'start_date'          => current_time( 'Y-m-d' ),
+			'start_date'          => UserTime::today( $user_id ),
 			'active'              => 1,
 		] );
 		$plan_id = (int) $wpdb->insert_id;
+
+		$preferences = $wpdb->get_row( $wpdb->prepare(
+			"SELECT preferred_workout_days_json FROM {$p}fit_user_preferences WHERE user_id = %d",
+			$user_id
+		) );
+		$preferred_schedule = self::normalize_preferred_schedule( json_decode( (string) ( $preferences->preferred_workout_days_json ?? '' ), true ) );
 
 		// Copy template days → user training days
 		$template_days = $wpdb->get_results( $wpdb->prepare(
 			"SELECT * FROM {$p}fit_program_template_days WHERE program_template_id = %d ORDER BY default_order",
 			$template->id
 		) );
+		$template_day_map = self::build_template_day_map( $template_days );
+
+		if ( ! empty( $preferred_schedule ) ) {
+			$order = 1;
+			foreach ( $preferred_schedule as $scheduled_day ) {
+				$day_type = sanitize_text_field( (string) ( $scheduled_day['day_type'] ?? 'rest' ) );
+				$wpdb->insert( $p . 'fit_user_training_days', [
+					'training_plan_id' => $plan_id,
+					'day_type'         => $day_type,
+					'day_order'        => $order,
+					'time_tier'        => $profile->available_time_default ?? 'medium',
+				] );
+				$user_day_id = (int) $wpdb->insert_id;
+				$order += 1;
+
+				if ( 'rest' === $day_type || empty( $template_day_map[ $day_type ] ) ) {
+					continue;
+				}
+
+				self::copy_template_day_exercises( $template_day_map[ $day_type ]->id, $user_day_id );
+			}
+
+			return;
+		}
 
 		foreach ( $template_days as $td ) {
 			$wpdb->insert( $p . 'fit_user_training_days', [
@@ -356,25 +484,118 @@ class OnboardingController {
 			] );
 			$user_day_id = (int) $wpdb->insert_id;
 
-			// Copy exercises for this day
-			$template_exercises = $wpdb->get_results( $wpdb->prepare(
-				"SELECT * FROM {$p}fit_program_template_exercises WHERE template_day_id = %d ORDER BY priority",
-				$td->id
+			self::copy_template_day_exercises( $td->id, $user_day_id );
+		}
+	}
+
+	private static function rebuild_training_plan_days( int $plan_id, int $template_id, object $profile, array $schedule ): void {
+		global $wpdb;
+		$p = $wpdb->prefix;
+
+		$current_days = $wpdb->get_results( $wpdb->prepare(
+			"SELECT id, day_type, day_order, time_tier FROM {$p}fit_user_training_days WHERE training_plan_id = %d ORDER BY day_order",
+			$plan_id
+		) );
+
+		$template_days = [];
+		if ( $template_id > 0 ) {
+			$template_days = $wpdb->get_results( $wpdb->prepare(
+				"SELECT * FROM {$p}fit_program_template_days WHERE program_template_id = %d ORDER BY default_order",
+				$template_id
 			) );
-			foreach ( $template_exercises as $te ) {
-				$wpdb->insert( $p . 'fit_user_training_day_exercises', [
-					'training_day_id' => $user_day_id,
-					'exercise_id'     => $te->exercise_id,
-					'slot_type'       => $te->slot_type,
-					'rep_min'         => $te->rep_min,
-					'rep_max'         => $te->rep_max,
-					'sets_target'     => $te->sets_target,
-					'rir_target'      => $te->rir_target,
-					'sort_order'      => $te->priority,
-					'active'          => 1,
-				] );
+		}
+		$template_day_map = self::build_template_day_map( $template_days );
+		$existing_by_type = [];
+		foreach ( $current_days as $current_day ) {
+			$existing_by_type[ $current_day->day_type ][] = $current_day;
+		}
+		$used_day_ids = [];
+
+		$order = 1;
+		foreach ( $schedule as $scheduled_day ) {
+			$day_type = sanitize_text_field( (string) ( $scheduled_day['day_type'] ?? 'rest' ) );
+			$matched_day = null;
+			if ( ! empty( $existing_by_type[ $day_type ] ) ) {
+				$matched_day = array_shift( $existing_by_type[ $day_type ] );
+			}
+
+			if ( $matched_day ) {
+				$wpdb->update( $p . 'fit_user_training_days', [
+					'day_type'  => $day_type,
+					'day_order' => $order,
+					'time_tier' => $matched_day->time_tier ?: ( $profile->available_time_default ?? 'medium' ),
+				], [ 'id' => $matched_day->id ] );
+				$used_day_ids[] = (int) $matched_day->id;
+				$order += 1;
+				continue;
+			}
+
+			$wpdb->insert( $p . 'fit_user_training_days', [
+				'training_plan_id' => $plan_id,
+				'day_type'         => $day_type,
+				'day_order'        => $order,
+				'time_tier'        => $profile->available_time_default ?? 'medium',
+			] );
+			$user_day_id = (int) $wpdb->insert_id;
+			$used_day_ids[] = $user_day_id;
+			$order += 1;
+
+			if ( 'rest' === $day_type || empty( $template_day_map[ $day_type ] ) ) {
+				continue;
+			}
+
+			self::copy_template_day_exercises( (int) $template_day_map[ $day_type ]->id, $user_day_id );
+		}
+
+		$unused_day_ids = array_values( array_diff( array_map( fn( $day ) => (int) $day->id, $current_days ), $used_day_ids ) );
+		if ( empty( $unused_day_ids ) ) {
+			return;
+		}
+
+		$placeholders = implode( ',', array_fill( 0, count( $unused_day_ids ), '%d' ) );
+		$wpdb->query( $wpdb->prepare(
+			"DELETE FROM {$p}fit_user_training_day_exercises WHERE training_day_id IN ($placeholders)",
+			...$unused_day_ids
+		) );
+		$wpdb->query( $wpdb->prepare(
+			"DELETE FROM {$p}fit_user_training_days WHERE id IN ($placeholders)",
+			...$unused_day_ids
+		) );
+	}
+
+	private static function copy_template_day_exercises( int $template_day_id, int $user_day_id ): void {
+		global $wpdb;
+		$p = $wpdb->prefix;
+
+		$template_exercises = $wpdb->get_results( $wpdb->prepare(
+			"SELECT * FROM {$p}fit_program_template_exercises WHERE template_day_id = %d ORDER BY priority",
+			$template_day_id
+		) );
+
+		foreach ( $template_exercises as $te ) {
+			$wpdb->insert( $p . 'fit_user_training_day_exercises', [
+				'training_day_id' => $user_day_id,
+				'exercise_id'     => $te->exercise_id,
+				'slot_type'       => $te->slot_type,
+				'rep_min'         => $te->rep_min,
+				'rep_max'         => $te->rep_max,
+				'sets_target'     => $te->sets_target,
+				'rir_target'      => $te->rir_target,
+				'sort_order'      => $te->priority,
+				'active'          => 1,
+			] );
+		}
+	}
+
+	private static function build_template_day_map( array $template_days ): array {
+		$template_day_map = [];
+		foreach ( $template_days as $td ) {
+			if ( ! isset( $template_day_map[ $td->day_type ] ) ) {
+				$template_day_map[ $td->day_type ] = $td;
 			}
 		}
+
+		return $template_day_map;
 	}
 
 	private static function upsert_active_goal( int $user_id, array $goal_data ): void {
@@ -400,7 +621,7 @@ class OnboardingController {
 			'user_id'    => $user_id,
 			'goal_type'  => self::normalize_goal_type( (string) ( $profile->current_goal ?? 'maintain' ) ),
 			'goal_rate'  => sanitize_text_field( (string) ( $profile->goal_rate ?? 'moderate' ) ),
-			'start_date' => current_time( 'Y-m-d' ),
+			'start_date' => UserTime::today( $user_id ),
 			'active'     => 1,
 		], $goal_data ) );
 	}
@@ -487,6 +708,69 @@ class OnboardingController {
 		return $prefs;
 	}
 
+	private static function normalize_preferred_schedule( $raw_schedule ): array {
+		$valid_day_types = [ 'push', 'pull', 'legs', 'arms_shoulders', 'cardio', 'rest' ];
+		$valid_days = [ 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun' ];
+
+		if ( ! is_array( $raw_schedule ) ) {
+			return [];
+		}
+
+		if ( ! empty( $raw_schedule ) && is_string( $raw_schedule[0] ?? null ) ) {
+			$default_cycle = [ 'push', 'pull', 'legs', 'arms_shoulders', 'cardio' ];
+			$index = 0;
+			$result = [];
+			foreach ( $valid_days as $day ) {
+				if ( in_array( $day, $raw_schedule, true ) ) {
+					$result[] = [
+						'day' => $day,
+						'day_type' => $default_cycle[ min( $index, count( $default_cycle ) - 1 ) ],
+					];
+					$index += 1;
+				} else {
+					$result[] = [ 'day' => $day, 'day_type' => 'rest' ];
+				}
+			}
+
+			return $result;
+		}
+
+		$normalized = [];
+		foreach ( $raw_schedule as $entry ) {
+			$day = sanitize_text_field( (string) ( $entry['day'] ?? '' ) );
+			$day_type = sanitize_text_field( (string) ( $entry['day_type'] ?? 'rest' ) );
+			if ( ! in_array( $day, $valid_days, true ) ) {
+				continue;
+			}
+			if ( ! in_array( $day_type, $valid_day_types, true ) ) {
+				$day_type = 'rest';
+			}
+			$normalized[] = [
+				'day' => $day,
+				'day_type' => $day_type,
+			];
+		}
+
+		if ( empty( $normalized ) ) {
+			return [];
+		}
+
+		$lookup = [];
+		foreach ( $normalized as $entry ) {
+			$lookup[ $entry['day'] ] = $entry['day_type'];
+		}
+
+		$result = [];
+		foreach ( $valid_days as $day ) {
+			$result[] = [
+				'day' => $day,
+				'day_type' => $lookup[ $day ] ?? 'rest',
+			];
+		}
+
+		return $result;
+	}
+
 	private static function get_plan_preview( int $user_id ): array {
 		global $wpdb;
 		$p = $wpdb->prefix;
@@ -500,10 +784,21 @@ class OnboardingController {
 			return [];
 		}
 
-		return $wpdb->get_results( $wpdb->prepare(
+		$days = $wpdb->get_results( $wpdb->prepare(
 			"SELECT day_type, day_order, time_tier FROM {$p}fit_user_training_days WHERE training_plan_id = %d ORDER BY day_order",
 			$plan->id
 		) ) ?: [];
+
+		foreach ( $days as $day ) {
+			$day->weekday_label = self::weekday_label( (int) $day->day_order );
+		}
+
+		return $days;
+	}
+
+	private static function weekday_label( int $day_order ): string {
+		$labels = [ 1 => 'Mon', 2 => 'Tue', 3 => 'Wed', 4 => 'Thu', 5 => 'Fri', 6 => 'Sat', 7 => 'Sun' ];
+		return $labels[ $day_order ] ?? 'Day';
 	}
 
 	private static function build_initial_meal_suggestions( object $profile, array $targets ): array {
