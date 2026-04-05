@@ -19,14 +19,17 @@ export default function DashboardScreen() {
     setNoticeDismissed(false)
   }, [location.state?.targetsUpdated])
 
+  const s = snapshot
+  const quickPrompts = useMemo(() => buildQuickPrompts(s), [s])
+
   if (loading && !snapshot) return <div className="screen-loading">Loading…</div>
 
-  const s = snapshot
   const goal = s?.goal
   const nt   = s?.nutrition_totals
   const micros = s?.micronutrient_totals
   const sess = s?.session
   const tomorrow = s?.tomorrow_preview
+  const todaySchedule = s?.today_schedule
   const streaks = s?.streaks
   const targetsUpdated = location.state?.targetsUpdated
   const earnedAwards = awards?.earned ?? []
@@ -43,18 +46,19 @@ export default function DashboardScreen() {
   const coachLine = buildCoachLine(s)
   const storyCard = buildStoryCard(s)
   const tipCard = buildTipCard(s)
-  const quickPrompts = useMemo(() => buildQuickPrompts(s), [s])
   const tomorrowRecommendation = buildTomorrowRecommendation(s)
   const weeklyScoreLabel = (s?.score_7d ?? 0) >= 80 ? 'Strong week' : (s?.score_7d ?? 0) >= 40 ? 'Solid momentum' : 'Plenty of runway'
   const mealCount = s?.meals_today?.length ?? 0
   const fiber = Number(micros?.fiber_g ?? 0)
   const sugar = Number(micros?.sugar_g ?? 0)
   const sodium = Number(micros?.sodium_mg ?? 0)
+  const todayFocus = sess?.planned_day_type || todaySchedule?.day_type
+  const todayWeekday = todaySchedule?.weekday_label || formatWeekdayLabel(s?.date)
   const sessionLabel = sess?.completed
-    ? 'Workout complete'
-    : sess?.planned_day_type
-      ? `${formatDayType(sess.planned_day_type)} day ready`
-      : 'Recovery or reschedule day'
+    ? `${todayWeekday} complete`
+    : todayFocus
+      ? `${todayWeekday} • ${formatDayType(todayFocus)} day`
+      : `${todayWeekday} • Recovery day`
 
   return (
     <div className="screen dashboard-screen">
@@ -157,8 +161,8 @@ export default function DashboardScreen() {
             <span className="dashboard-chip workout">Tomorrow</span>
             {tomorrow?.inferred ? <span className="dashboard-chip subtle">Preview</span> : <span className="dashboard-chip subtle">Queued</span>}
           </div>
-          <h3>{tomorrow?.planned_day_type ? formatDayType(tomorrow.planned_day_type) : 'Recovery day'}</h3>
-          <p>{tomorrow?.planned_day_type ? `Next up: ${formatDayType(tomorrow.planned_day_type).toLowerCase()} focus${tomorrow?.inferred ? ' based on your current training cycle.' : '.'}` : 'No training preview is queued yet, so tomorrow is currently open.'}</p>
+          <h3>{`${tomorrow?.weekday_label || 'Tomorrow'}${tomorrow?.planned_day_type ? ` • ${formatDayType(tomorrow.planned_day_type)}` : ' • Recovery'}`}</h3>
+          <p>{tomorrow?.planned_day_type ? `Next up: ${formatDayType(tomorrow.planned_day_type).toLowerCase()} focus${tomorrow?.inferred ? ' based on your saved weekly split.' : '.'}` : 'No training preview is queued yet, so tomorrow is currently open.'}</p>
           <div className="dashboard-session-meta">
             <span>{tomorrow?.time_tier ? `${tomorrow.time_tier} session` : 'medium session'}</span>
             <span>{tomorrow?.date ? formatFriendlyDate(tomorrow.date) : 'Tomorrow'}</span>
@@ -176,9 +180,9 @@ export default function DashboardScreen() {
             {sess?.time_tier ? <span className="dashboard-chip subtle">{sess.time_tier}</span> : null}
           </div>
           <h3>{sessionLabel}</h3>
-          <p>{sess?.completed ? 'Nice work. Review your result or queue up tomorrow.' : sess?.planned_day_type ? 'Tap in and start the session with one thumb.' : 'No session is queued right now. You can still start one or regenerate later.'}</p>
+          <p>{sess?.completed ? 'Nice work. Review your result or queue up tomorrow.' : todayFocus ? 'Today follows your saved weekly split. Tap in and start the session with one thumb.' : 'No session is queued right now. You can still start one or regenerate later.'}</p>
           <div className="dashboard-session-meta">
-            <span>{sess?.planned_day_type ? formatDayType(sess.planned_day_type) : 'Open day'}</span>
+            <span>{todayFocus ? `${todayWeekday} • ${formatDayType(todayFocus)}` : 'Open day'}</span>
             <span>{tomorrowRecommendation}</span>
           </div>
           {s?.skip_warning && <p className="skip-warn">{s.skip_count_30d} skips in the last 30 days</p>}
@@ -313,6 +317,13 @@ function formatFriendlyDate(value) {
   return date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
 }
 
+function formatWeekdayLabel(value) {
+  if (!value) return 'Today'
+  const date = new Date(`${value}T12:00:00`)
+  if (Number.isNaN(date.getTime())) return 'Today'
+  return date.toLocaleDateString(undefined, { weekday: 'short' })
+}
+
 function formatDayType(value) {
   if (!value) return 'Workout'
   return value.replace(/_/g, ' ').replace(/\b\w/g, ch => ch.toUpperCase())
@@ -345,8 +356,9 @@ function buildCoachLine(snapshot) {
 
 function buildTomorrowRecommendation(snapshot) {
   const session = snapshot?.session
+  const tomorrow = snapshot?.tomorrow_preview
   if (session?.completed) return 'Tomorrow: stay on plan and keep the streak warm'
-  if (session?.planned_day_type) return 'Tomorrow: keep the next session protected'
+  if (tomorrow?.planned_day_type) return `Tomorrow: keep ${formatDayType(tomorrow.planned_day_type).toLowerCase()} protected`
   return 'Tomorrow: recover, then re-enter with intent'
 }
 
@@ -361,8 +373,9 @@ function buildQuickPrompts(snapshot) {
     prompts[0] = 'I am behind on steps. What is the simplest way to recover the day?'
   }
 
-  if (snapshot?.session?.planned_day_type) {
-    prompts[2] = `What should I focus on for my ${formatDayType(snapshot.session.planned_day_type).toLowerCase()} session today?`
+  const plannedType = snapshot?.session?.planned_day_type || snapshot?.today_schedule?.day_type
+  if (plannedType) {
+    prompts[2] = `What should I focus on for my ${formatDayType(plannedType).toLowerCase()} session today?`
   }
 
   return prompts

@@ -7,18 +7,33 @@ import {
   buildHeightCm,
   equipmentFormFromState,
   foodFormFromState,
+  formatReminderHour,
   formatMissingFields,
+  getTimezoneRegion,
+  getTimezoneRegions,
+  getTimezonesForRegion,
   habitsFormFromState,
   injuriesFormFromState,
   normalizeTargets,
   parseCommaList,
   profileFormFromState,
+  reminderHourOptions,
   trainingFormFromState,
 } from '../../lib/onboarding'
 
 const WORKOUT_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const BODY_AREAS = ['Shoulders', 'Knees', 'Back', 'Elbows', 'Hips', 'Neck']
 const EQUIPMENT_OPTIONS = ['Full gym', 'Dumbbells', 'Machines', 'Home gym', 'Bodyweight only']
+const DAY_TYPE_OPTIONS = [
+  ['push', 'Push'],
+  ['pull', 'Pull'],
+  ['legs', 'Legs'],
+  ['arms_shoulders', 'Bonus arms + shoulders'],
+  ['cardio', 'Cardio'],
+  ['rest', 'Rest'],
+]
+const TIMEZONE_REGIONS = getTimezoneRegions()
+const REMINDER_HOUR_OPTIONS = reminderHourOptions()
 
 function useLoadedOnboardingState() {
   const [loading, setLoading] = useState(true)
@@ -70,10 +85,17 @@ function ProfileStep() {
   const { loading, state, error: loadError } = useLoadedOnboardingState()
   const [form, setForm] = useState(profileFormFromState())
   const [error, setError] = useState('')
+  const [timezoneRegion, setTimezoneRegion] = useState(getTimezoneRegion(form.timezone))
 
   useEffect(() => {
-    if (state) setForm(profileFormFromState(state.profile))
+    if (state) {
+      const nextForm = profileFormFromState(state.profile)
+      setForm(nextForm)
+      setTimezoneRegion(getTimezoneRegion(nextForm.timezone))
+    }
   }, [state])
+
+  const regionTimezones = useMemo(() => getTimezonesForRegion(timezoneRegion), [timezoneRegion])
 
   function update(field, value) {
     setForm(current => ({ ...current, [field]: value }))
@@ -120,6 +142,21 @@ function ProfileStep() {
               <input type="number" min="0" max="11" value={form.height_in_part} onChange={e => update('height_in_part', e.target.value)} />
               <span className="height-unit">in</span>
             </div>
+          </div>
+        </label>
+        <label>Timezone
+          <div className="timezone-picker">
+            <select value={timezoneRegion} onChange={e => {
+              const nextRegion = e.target.value
+              const nextZones = getTimezonesForRegion(nextRegion)
+              setTimezoneRegion(nextRegion)
+              update('timezone', nextZones.includes(form.timezone) ? form.timezone : nextZones[0] || form.timezone)
+            }}>
+              {TIMEZONE_REGIONS.map(region => <option key={region} value={region}>{region}</option>)}
+            </select>
+            <select value={form.timezone} onChange={e => update('timezone', e.target.value)}>
+              {regionTimezones.map(zone => <option key={zone} value={zone}>{zone}</option>)}
+            </select>
           </div>
         </label>
         {(error || loadError) && <p className="error">{error || loadError}</p>}
@@ -201,12 +238,14 @@ function TrainingStep() {
     if (state) setForm(trainingFormFromState(state.profile, state.prefs))
   }, [state])
 
-  function toggleDay(day) {
+  function updateSchedule(day, dayType) {
     setForm(current => ({
       ...current,
-      preferred_workout_days: current.preferred_workout_days.includes(day)
-        ? current.preferred_workout_days.filter(item => item !== day)
-        : [...current.preferred_workout_days, day],
+      weekly_schedule: current.weekly_schedule.map(entry => entry.day === day ? { ...entry, day_type: dayType } : entry),
+      preferred_workout_days: current.weekly_schedule
+        .map(entry => entry.day === day ? { ...entry, day_type: dayType } : entry)
+        .filter(entry => entry.day_type !== 'rest')
+        .map(entry => entry.day),
     }))
   }
 
@@ -216,12 +255,19 @@ function TrainingStep() {
 
     try {
       const existingMeta = state?.prefs?.exercise_preferences_json ?? {}
+      const scheduledDays = form.weekly_schedule.filter(entry => entry.day_type !== 'rest')
+
+      if (!scheduledDays.length) {
+        setError('Assign at least one training or cardio day before continuing.')
+        return
+      }
+
       await onboardingApi.saveProfile({
         training_experience: form.training_experience,
         available_time_default: form.available_time_default,
       })
       await onboardingApi.savePrefs({
-        preferred_workout_days_json: form.preferred_workout_days,
+        preferred_workout_days_json: form.weekly_schedule,
         exercise_preferences_json: {
           ...existingMeta,
           workout_confidence: form.workout_confidence,
@@ -259,10 +305,22 @@ function TrainingStep() {
           <option value="strong">Very comfortable</option>
         </select>
       </label>
-      <div className="onboarding-chip-grid">
-        {WORKOUT_DAYS.map(day => (
-          <button key={day} type="button" className={`onboarding-chip ${form.preferred_workout_days.includes(day) ? 'active' : ''}`} onClick={() => toggleDay(day)}>{day}</button>
-        ))}
+      <div className="dash-card settings-section onboarding-split-card">
+        <strong>Set your week</strong>
+        <p className="settings-subtitle">Choose what each day should do. Use rest on days you want protected off-days.</p>
+        <div className="onboarding-schedule-list">
+          {WORKOUT_DAYS.map(day => {
+            const scheduled = form.weekly_schedule.find(entry => entry.day === day) || { day, day_type: 'rest' }
+            return (
+              <div key={day} className="onboarding-schedule-row">
+                <span>{day}</span>
+                <select value={scheduled.day_type} onChange={e => updateSchedule(day, e.target.value)}>
+                  {DAY_TYPE_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                </select>
+              </div>
+            )
+          })}
+        </div>
       </div>
       {error && <p className="error">{error}</p>}
       <button className="btn-primary" type="submit">Next</button>
@@ -498,6 +556,14 @@ function HabitsStep() {
         exercise_preferences_json: {
           ...existingMeta,
           cardio_frequency: form.cardio_frequency,
+          workout_reminder_enabled: form.workout_reminder_enabled,
+          workout_reminder_hour: Number(form.workout_reminder_hour),
+          meal_reminder_enabled: form.meal_reminder_enabled,
+          meal_reminder_hour: Number(form.meal_reminder_hour),
+          sleep_reminder_enabled: form.sleep_reminder_enabled,
+          sleep_reminder_hour: Number(form.sleep_reminder_hour),
+          weekly_summary_enabled: form.weekly_summary_enabled,
+          weekly_summary_hour: Number(form.weekly_summary_hour),
         },
       })
       navigate('/onboarding/photos')
@@ -526,6 +592,63 @@ function HabitsStep() {
         <input type="checkbox" checked={form.notifications_enabled} onChange={e => update('notifications_enabled', e.target.checked)} />
       </label>
       {form.notifications_enabled ? <label>Phone<input type="tel" value={form.phone} onChange={e => update('phone', e.target.value)} placeholder="+15551234567" /></label> : null}
+      {form.notifications_enabled ? (
+        <div className="settings-grid settings-grid-compact">
+          <div className="reminder-setting-card">
+            <label className="toggle-row">
+              <span>Workout reminder</span>
+              <input type="checkbox" checked={form.workout_reminder_enabled} onChange={e => update('workout_reminder_enabled', e.target.checked)} />
+            </label>
+            {form.workout_reminder_enabled ? (
+              <label>Time
+                <select value={form.workout_reminder_hour} onChange={e => update('workout_reminder_hour', Number(e.target.value))}>
+                  {REMINDER_HOUR_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </select>
+              </label>
+            ) : null}
+          </div>
+          <div className="reminder-setting-card">
+            <label className="toggle-row">
+              <span>Meal reminder</span>
+              <input type="checkbox" checked={form.meal_reminder_enabled} onChange={e => update('meal_reminder_enabled', e.target.checked)} />
+            </label>
+            {form.meal_reminder_enabled ? (
+              <label>Time
+                <select value={form.meal_reminder_hour} onChange={e => update('meal_reminder_hour', Number(e.target.value))}>
+                  {REMINDER_HOUR_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </select>
+              </label>
+            ) : null}
+          </div>
+          <div className="reminder-setting-card">
+            <label className="toggle-row">
+              <span>Sleep reminder</span>
+              <input type="checkbox" checked={form.sleep_reminder_enabled} onChange={e => update('sleep_reminder_enabled', e.target.checked)} />
+            </label>
+            {form.sleep_reminder_enabled ? (
+              <label>Time
+                <select value={form.sleep_reminder_hour} onChange={e => update('sleep_reminder_hour', Number(e.target.value))}>
+                  {REMINDER_HOUR_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </select>
+              </label>
+            ) : null}
+          </div>
+          <div className="reminder-setting-card">
+            <label className="toggle-row">
+              <span>Weekly summary</span>
+              <input type="checkbox" checked={form.weekly_summary_enabled} onChange={e => update('weekly_summary_enabled', e.target.checked)} />
+            </label>
+            {form.weekly_summary_enabled ? (
+              <label>Time
+                <select value={form.weekly_summary_hour} onChange={e => update('weekly_summary_hour', Number(e.target.value))}>
+                  {REMINDER_HOUR_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </select>
+              </label>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+      {form.notifications_enabled ? <p className="settings-subtitle">Times are sent in your local timezone. Current summary time: {formatReminderHour(form.weekly_summary_hour)} on Mondays.</p> : null}
       {error && <p className="error">{error}</p>}
       <button className="btn-primary" type="submit">Next</button>
     </form>

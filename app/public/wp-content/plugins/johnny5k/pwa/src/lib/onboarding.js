@@ -5,6 +5,7 @@ const DEFAULT_PROFILE_FORM = {
   sex: 'male',
   height_ft: '',
   height_in_part: '',
+  timezone: detectBrowserTimezone(),
 }
 
 const DEFAULT_BODY_FORM = {
@@ -19,10 +20,14 @@ const DEFAULT_GOALS_FORM = {
   target_sleep_hours: 7.5,
 }
 
+const WEEKDAY_ORDER = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+const DEFAULT_DAY_TYPES = ['push', 'pull', 'legs', 'arms_shoulders', 'cardio']
+
 const DEFAULT_TRAINING_FORM = {
   training_experience: 'beginner',
   available_time_default: 'medium',
   preferred_workout_days: [],
+  weekly_schedule: defaultWeeklySchedule(),
   workout_confidence: 'building',
 }
 
@@ -49,11 +54,115 @@ const DEFAULT_HABITS_FORM = {
   cardio_frequency: '1-2x',
   notifications_enabled: false,
   phone: '',
+  workout_reminder_enabled: true,
+  workout_reminder_hour: 8,
+  meal_reminder_enabled: true,
+  meal_reminder_hour: 12,
+  sleep_reminder_enabled: true,
+  sleep_reminder_hour: 20,
+  weekly_summary_enabled: true,
+  weekly_summary_hour: 9,
 }
 
 const DEFAULT_NOTIFICATIONS_FORM = {
   notifications_enabled: false,
   phone: '',
+}
+
+export function detectBrowserTimezone() {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/New_York'
+  } catch {
+    return 'America/New_York'
+  }
+}
+
+export function getTimezoneOptions() {
+  const detected = detectBrowserTimezone()
+  const fallback = [
+    'America/New_York',
+    'America/Chicago',
+    'America/Denver',
+    'America/Los_Angeles',
+    'America/Phoenix',
+    'America/Anchorage',
+    'Pacific/Honolulu',
+    'Europe/London',
+    'Europe/Paris',
+    'Europe/Berlin',
+    'UTC',
+    'Asia/Tokyo',
+    'Australia/Sydney',
+  ]
+
+  const supported = typeof Intl.supportedValuesOf === 'function'
+    ? Intl.supportedValuesOf('timeZone')
+    : fallback
+
+  return Array.from(new Set([detected, ...supported])).sort((left, right) => left.localeCompare(right))
+}
+
+export function getTimezoneRegion(timezone) {
+  if (!timezone || typeof timezone !== 'string') return 'America'
+  return timezone.split('/')[0] || 'America'
+}
+
+export function getTimezoneRegions() {
+  const regions = getTimezoneOptions().reduce((all, zone) => {
+    all.add(getTimezoneRegion(zone))
+    return all
+  }, new Set())
+
+  return ['All', ...Array.from(regions).sort((left, right) => left.localeCompare(right))]
+}
+
+export function getTimezonesForRegion(region) {
+  const zones = getTimezoneOptions()
+  if (!region || region === 'All') return zones
+  return zones.filter(zone => getTimezoneRegion(zone) === region)
+}
+
+export function formatReminderHour(hour) {
+  const normalized = normalizeReminderHour(hour)
+  const suffix = normalized >= 12 ? 'PM' : 'AM'
+  const displayHour = normalized % 12 || 12
+  return `${displayHour}:00 ${suffix}`
+}
+
+export function reminderHourOptions() {
+  return Array.from({ length: 24 }, (_, hour) => ({
+    value: hour,
+    label: formatReminderHour(hour),
+  }))
+}
+
+export function normalizeReminderHour(value, fallback = 8) {
+  const parsed = Number.parseInt(value, 10)
+  if (Number.isNaN(parsed)) return fallback
+  return Math.min(23, Math.max(0, parsed))
+}
+
+export function normalizeReminderEnabled(value, fallback = true) {
+  if (value === undefined || value === null) return fallback
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase()
+    if (normalized === '0' || normalized === 'false' || normalized === 'off' || normalized === 'no') return false
+    if (normalized === '1' || normalized === 'true' || normalized === 'on' || normalized === 'yes') return true
+  }
+  return Boolean(value)
+}
+
+export function reminderSettingsFromPreferences(preferenceMeta = {}) {
+  return {
+    workout_reminder_enabled: normalizeReminderEnabled(preferenceMeta?.workout_reminder_enabled, DEFAULT_HABITS_FORM.workout_reminder_enabled),
+    workout_reminder_hour: normalizeReminderHour(preferenceMeta?.workout_reminder_hour, DEFAULT_HABITS_FORM.workout_reminder_hour),
+    meal_reminder_enabled: normalizeReminderEnabled(preferenceMeta?.meal_reminder_enabled, DEFAULT_HABITS_FORM.meal_reminder_enabled),
+    meal_reminder_hour: normalizeReminderHour(preferenceMeta?.meal_reminder_hour, DEFAULT_HABITS_FORM.meal_reminder_hour),
+    sleep_reminder_enabled: normalizeReminderEnabled(preferenceMeta?.sleep_reminder_enabled, DEFAULT_HABITS_FORM.sleep_reminder_enabled),
+    sleep_reminder_hour: normalizeReminderHour(preferenceMeta?.sleep_reminder_hour, DEFAULT_HABITS_FORM.sleep_reminder_hour),
+    weekly_summary_enabled: normalizeReminderEnabled(preferenceMeta?.weekly_summary_enabled, DEFAULT_HABITS_FORM.weekly_summary_enabled),
+    weekly_summary_hour: normalizeReminderHour(preferenceMeta?.weekly_summary_hour, DEFAULT_HABITS_FORM.weekly_summary_hour),
+  }
 }
 
 export function cmToImperialParts(heightCm) {
@@ -85,6 +194,7 @@ export function profileFormFromState(profile) {
     last_name: profile.last_name ?? '',
     date_of_birth: profile.date_of_birth ?? '',
     sex: profile.sex ?? 'male',
+    timezone: profile.timezone ?? detectBrowserTimezone(),
     ...cmToImperialParts(profile.height_cm),
   }
 }
@@ -110,12 +220,14 @@ export function goalsFormFromState(goal) {
 
 export function trainingFormFromState(profile, prefs) {
   const preferenceMeta = prefs?.exercise_preferences_json ?? {}
+  const preferredDays = Array.isArray(prefs?.preferred_workout_days_json) ? prefs.preferred_workout_days_json : []
 
   return {
     ...DEFAULT_TRAINING_FORM,
     training_experience: profile?.training_experience ?? DEFAULT_TRAINING_FORM.training_experience,
     available_time_default: profile?.available_time_default ?? DEFAULT_TRAINING_FORM.available_time_default,
-    preferred_workout_days: Array.isArray(prefs?.preferred_workout_days_json) ? prefs.preferred_workout_days_json : [],
+    preferred_workout_days: preferredDays.filter(value => typeof value === 'string'),
+    weekly_schedule: buildWeeklySchedule(preferredDays),
     workout_confidence: preferenceMeta?.workout_confidence ?? DEFAULT_TRAINING_FORM.workout_confidence,
   }
 }
@@ -157,6 +269,7 @@ export function foodFormFromState(prefs) {
 
 export function habitsFormFromState(profile, prefs, goal) {
   const preferenceMeta = prefs?.exercise_preferences_json ?? {}
+  const reminderSettings = reminderSettingsFromPreferences(preferenceMeta)
 
   return {
     ...DEFAULT_HABITS_FORM,
@@ -165,22 +278,33 @@ export function habitsFormFromState(profile, prefs, goal) {
     cardio_frequency: preferenceMeta?.cardio_frequency ?? DEFAULT_HABITS_FORM.cardio_frequency,
     notifications_enabled: Boolean(prefs?.notifications_enabled),
     phone: profile?.phone ?? '',
+    timezone: profile?.timezone ?? detectBrowserTimezone(),
+    ...reminderSettings,
   }
 }
 
 export function notificationsFormFromState(profile, prefs) {
+  const reminderSettings = reminderSettingsFromPreferences(prefs?.exercise_preferences_json ?? {})
+
   return {
     notifications_enabled: Boolean(prefs?.notifications_enabled),
     phone: profile?.phone ?? '',
+    timezone: profile?.timezone ?? detectBrowserTimezone(),
+    ...reminderSettings,
   }
 }
 
 export function settingsFormFromState(profile, prefs, goal) {
+  const training = trainingFormFromState(profile, prefs)
+  const preferenceMeta = prefs?.exercise_preferences_json ?? {}
+
   return {
     ...profileFormFromState(profile),
     ...bodyFormFromState(profile),
     ...goalsFormFromState(goal),
     ...notificationsFormFromState(profile, prefs),
+    weekly_schedule: training.weekly_schedule,
+    preference_meta: preferenceMeta,
   }
 }
 
@@ -212,4 +336,33 @@ export function parseCommaList(value) {
     .split(',')
     .map(item => item.trim())
     .filter(Boolean)
+}
+
+function defaultWeeklySchedule() {
+  return WEEKDAY_ORDER.map(day => ({ day, day_type: 'rest' }))
+}
+
+function buildWeeklySchedule(preferredDays) {
+  if (preferredDays.some(entry => entry && typeof entry === 'object' && entry.day)) {
+    const lookup = new Map(
+      preferredDays
+        .filter(entry => entry && typeof entry === 'object' && entry.day)
+        .map(entry => [entry.day, entry.day_type || 'rest'])
+    )
+
+    return WEEKDAY_ORDER.map(day => ({ day, day_type: lookup.get(day) || 'rest' }))
+  }
+
+  const selectedDays = preferredDays.filter(value => typeof value === 'string')
+  let nextIndex = 0
+
+  return WEEKDAY_ORDER.map(day => {
+    if (!selectedDays.includes(day)) {
+      return { day, day_type: 'rest' }
+    }
+
+    const dayType = DEFAULT_DAY_TYPES[Math.min(nextIndex, DEFAULT_DAY_TYPES.length - 1)]
+    nextIndex += 1
+    return { day, day_type: dayType }
+  })
 }

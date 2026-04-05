@@ -124,7 +124,7 @@ class AwardEngine {
 
 		// Build date spine and check each day for any log entry
 		$streak = 0;
-		$current = new \DateTime( 'today' );
+		$current = UserTime::now( $uid )->setTime( 12, 0 );
 
 		for ( $i = 0; $i < $days * 2; $i++ ) {
 			$d = $current->format( 'Y-m-d' );
@@ -152,13 +152,15 @@ class AwardEngine {
 
 	private static function check_workouts_week_complete( int $uid ): void {
 		global $wpdb;
+		$since = UserTime::days_ago( $uid, 6 );
 
 		// Count unique training days in the last 7 calendar days
 		$count = (int) $wpdb->get_var( $wpdb->prepare(
 			"SELECT COUNT(DISTINCT session_date) FROM {$wpdb->prefix}fit_workout_sessions
 			 WHERE user_id = %d AND completed = 1
-			   AND session_date >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)",
-			$uid
+			   AND session_date >= %s",
+			$uid,
+			$since
 		) );
 
 		// Fetch how many training days the user has per week in their plan
@@ -188,7 +190,7 @@ class AwardEngine {
 		if ( ! $goal_protein ) return;
 
 		$streak = 0;
-		$current = new \DateTime( 'today' );
+		$current = UserTime::now( $uid )->setTime( 12, 0 );
 
 		for ( $i = 0; $i < 30; $i++ ) {
 			$d = $current->format( 'Y-m-d' );
@@ -219,7 +221,7 @@ class AwardEngine {
 		global $wpdb;
 
 		$streak = 0;
-		$current = new \DateTime( 'today' );
+		$current = UserTime::now( $uid )->setTime( 12, 0 );
 
 		for ( $i = 0; $i < 14; $i++ ) {
 			$d = $current->format( 'Y-m-d' );
@@ -272,10 +274,11 @@ class AwardEngine {
 		$dates = $wpdb->get_col( $wpdb->prepare(
 			"SELECT DISTINCT DATE(meal_datetime) AS d
 			 FROM {$wpdb->prefix}fit_meals
-			 WHERE user_id = %d AND meal_datetime >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+			 WHERE user_id = %d AND DATE(meal_datetime) >= %s
 			   AND confirmed = 1
 			 ORDER BY d ASC",
-			$uid
+			$uid,
+			UserTime::days_ago( $uid, 29 )
 		) );
 
 		if ( count( $dates ) < 4 ) return;
@@ -310,7 +313,7 @@ class AwardEngine {
 		global $wpdb;
 
 		$streak = 0;
-		$current = new \DateTime( 'today' );
+		$current = UserTime::now( $uid )->setTime( 12, 0 );
 
 		for ( $i = 0; $i < 20; $i++ ) {
 			$d = $current->format( 'Y-m-d' );
@@ -338,7 +341,7 @@ class AwardEngine {
 		global $wpdb;
 
 		$streak = 0;
-		$current = new \DateTime( 'today' );
+		$current = UserTime::now( $uid )->setTime( 12, 0 );
 
 		for ( $i = 0; $i < 20; $i++ ) {
 			$d = $current->format( 'Y-m-d' );
@@ -368,8 +371,9 @@ class AwardEngine {
 			"SELECT COUNT(DISTINCT DATE(meal_datetime))
 			 FROM {$wpdb->prefix}fit_meals
 			 WHERE user_id = %d AND confirmed = 1
-			   AND meal_datetime >= DATE_SUB(NOW(), INTERVAL 7 DAY)",
-			$uid
+			   AND DATE(meal_datetime) >= %s",
+			$uid,
+			UserTime::days_ago( $uid, 6 )
 		) );
 		if ( $meal_days >= 7 ) {
 			self::grant( $uid, 'meals_logged_week' );
@@ -387,7 +391,7 @@ class AwardEngine {
 		if ( ! $target ) return;
 
 		$days_in_range = 0;
-		$current = new \DateTime( 'today' );
+		$current = UserTime::now( $uid )->setTime( 12, 0 );
 		$tolerance = 0.10; // ±10 %
 
 		for ( $i = 0; $i < 7; $i++ ) {

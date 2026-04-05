@@ -19,7 +19,7 @@ class Settings {
 		'jf_openai_api_key'      => [ 'label' => 'OpenAI API Key',          'type' => 'password', 'placeholder' => 'sk-…'        ],
 		'jf_clicksend_username'  => [ 'label' => 'ClickSend Username',       'type' => 'text',     'placeholder' => 'you@email.com' ],
 		'jf_clicksend_api_key'   => [ 'label' => 'ClickSend API Key',        'type' => 'password', 'placeholder' => ''             ],
-		'jf_clicksend_sender_id' => [ 'label' => 'SMS Sender ID (≤11 chars)','type' => 'text',     'placeholder' => 'Johnny5k'    ],
+		'jf_clicksend_sender_id' => [ 'label' => 'SMS Sender ID (≤11 chars)','type' => 'text',     'placeholder' => 'Johnny5000'  ],
 	];
 
 	public static function render(): void {
@@ -76,9 +76,12 @@ class Settings {
 		echo '<tr><td></td><td><p class="description">Used for the AI coach (Johnny 5000), meal analysis, and workout summaries. Get your key at <strong>platform.openai.com/api-keys</strong>.</p></td></tr>';
 
 		// ── ClickSend section ─────────────────────────────────────────────
+		$current_sender_id = (string) get_option( 'jf_clicksend_sender_id', '' );
+		$effective_sender_id = $current_sender_id !== '' ? $current_sender_id : 'Johnny5000';
 		echo '<tr><th colspan="2"><h2 style="margin:0;padding-top:16px">ClickSend SMS</h2></th></tr>';
 		self::render_field( 'jf_clicksend_username' );
 		self::render_field( 'jf_clicksend_api_key' );
+		echo '<tr><th scope="row">Effective SMS Sender</th><td><strong>' . esc_html( $effective_sender_id ) . '</strong><p class="description" style="margin:6px 0 0">This is the sender name Johnny5k will use when texting users. If you leave the field below blank, it falls back to Johnny5000.</p></td></tr>';
 		self::render_field( 'jf_clicksend_sender_id' );
 		echo '<tr><td></td><td><p class="description">Used for daily motivation and milestone SMS messages. Credentials found in your ClickSend dashboard under <strong>API Credentials</strong>.</p></td></tr>';
 
@@ -94,6 +97,20 @@ class Settings {
 		echo '<button class="button" id="jf-test-openai">Test OpenAI</button> ';
 		echo '<span id="jf-openai-result" style="margin-left:8px"></span>';
 		echo '</p>';
+		echo '<h2 style="margin-top:24px">Test SMS Reminder</h2>';
+		echo '<p class="description">Sends a real SMS to the selected user using their saved phone, timezone, and reminder settings context.</p>';
+		echo '<p>';
+		echo '<select id="jf-sms-user" style="min-width:280px"></select> ';
+		echo '<select id="jf-sms-trigger">';
+		echo '<option value="workout_reminder">Workout reminder</option>';
+		echo '<option value="meal_reminder">Meal reminder</option>';
+		echo '<option value="sleep_reminder">Sleep reminder</option>';
+		echo '<option value="weekly_summary">Weekly summary</option>';
+		echo '</select> ';
+		echo '<button class="button" id="jf-test-sms">Send Test SMS</button> ';
+		echo '<span id="jf-sms-result" style="margin-left:8px"></span>';
+		echo '</p>';
+		self::render_recent_sms_logs();
 
 		self::render_test_script();
 
@@ -106,12 +123,10 @@ class Settings {
 		$field = self::FIELDS[ $key ];
 		$val   = (string) get_option( $key, '' );
 
-		// Mask stored values — show last 4 chars only
+		$is_secret = $field['type'] === 'password';
 		$display = '';
-		if ( $val !== '' ) {
-			$display = $field['type'] === 'password'
-				? str_repeat( '•', max( 0, strlen( $val ) - 4 ) ) . substr( $val, -4 )
-				: $val;
+		if ( $val !== '' && $is_secret ) {
+			$display = str_repeat( '•', max( 0, strlen( $val ) - 4 ) ) . substr( $val, -4 );
 		}
 
 		echo '<tr>';
@@ -119,8 +134,8 @@ class Settings {
 		echo '<td>';
 		echo '<input type="' . esc_attr( $field['type'] ) . '" ';
 		echo 'id="' . esc_attr( $key ) . '" name="' . esc_attr( $key ) . '" ';
-		echo 'value="" ';
-		echo 'placeholder="' . esc_attr( $val !== '' ? $display : $field['placeholder'] ) . '" ';
+		echo 'value="' . esc_attr( $is_secret ? '' : $val ) . '" ';
+		echo 'placeholder="' . esc_attr( $is_secret && $val !== '' ? $display : $field['placeholder'] ) . '" ';
 		echo 'class="regular-text">';
 
 		if ( $val !== '' ) {
@@ -130,10 +145,117 @@ class Settings {
 		echo '</tr>';
 	}
 
+	private static function render_recent_sms_logs(): void {
+		global $wpdb;
+
+		$rows = $wpdb->get_results(
+			"SELECT l.id, l.user_id, l.phone, l.trigger_type, l.message_preview, l.status, l.cost_usd,
+			        l.clicksend_message_id, l.sent_at, l.created_at, u.user_email, p.first_name, p.last_name
+			 FROM {$wpdb->prefix}fit_sms_logs l
+			 LEFT JOIN {$wpdb->prefix}users u ON u.ID = l.user_id
+			 LEFT JOIN {$wpdb->prefix}fit_user_profiles p ON p.user_id = l.user_id
+			 ORDER BY l.created_at DESC
+			 LIMIT 25"
+		);
+
+		echo '<h2 style="margin-top:28px">Recent SMS Activity</h2>';
+		echo '<p class="description">Latest 25 SMS sends and failures recorded by Johnny5k.</p>';
+
+		if ( empty( $rows ) ) {
+			echo '<p>No SMS activity logged yet.</p>';
+			return;
+		}
+
+		echo '<table class="widefat striped" style="max-width:100%;margin-top:12px">';
+		echo '<thead><tr>';
+		echo '<th>User</th>';
+		echo '<th>Trigger</th>';
+		echo '<th>Status</th>';
+		echo '<th>Phone</th>';
+		echo '<th>Preview</th>';
+		echo '<th>Cost</th>';
+		echo '<th>Sent At (UTC)</th>';
+		echo '<th>Created</th>';
+		echo '</tr></thead><tbody>';
+
+		foreach ( $rows as $row ) {
+			$name = trim( implode( ' ', array_filter( [ $row->first_name ?? '', $row->last_name ?? '' ] ) ) );
+			$user_label = $name ?: ( $row->user_email ?: 'Unknown user' );
+			$user_meta = $row->user_email && $name ? '<br><span style="color:#666">' . esc_html( $row->user_email ) . '</span>' : '';
+			$status_color = match ( $row->status ) {
+				'sent' => '#127c39',
+				'failed' => '#b42318',
+				default => '#8a6d1f',
+			};
+
+			echo '<tr>';
+			echo '<td><strong>' . esc_html( $user_label ) . '</strong>' . $user_meta . '</td>';
+			echo '<td>' . esc_html( self::format_trigger_label( (string) $row->trigger_type ) ) . '</td>';
+			echo '<td><span style="font-weight:700;color:' . esc_attr( $status_color ) . '">' . esc_html( ucfirst( (string) $row->status ) ) . '</span>';
+			if ( ! empty( $row->clicksend_message_id ) ) {
+				echo '<br><span style="color:#666">ID: ' . esc_html( (string) $row->clicksend_message_id ) . '</span>';
+			}
+			echo '</td>';
+			echo '<td>' . esc_html( (string) $row->phone ) . '</td>';
+			echo '<td style="max-width:320px">' . esc_html( (string) $row->message_preview ) . '</td>';
+			echo '<td>' . esc_html( null !== $row->cost_usd ? '$' . number_format( (float) $row->cost_usd, 4 ) : '—' ) . '</td>';
+			echo '<td>' . esc_html( $row->sent_at ? (string) $row->sent_at : '—' ) . '</td>';
+			echo '<td>' . esc_html( (string) $row->created_at ) . '</td>';
+			echo '</tr>';
+		}
+
+		echo '</tbody></table>';
+	}
+
+	private static function format_trigger_label( string $trigger_type ): string {
+		return ucwords( str_replace( '_', ' ', $trigger_type ) );
+	}
+
 	private static function render_test_script(): void {
 		$nonce = wp_create_nonce( 'wp_rest' );
 		?>
 		<script>
+		(async function loadSmsUsers() {
+			const select = document.getElementById('jf-sms-user');
+			const result = document.getElementById('jf-sms-result');
+			if (!select) return;
+			select.innerHTML = '<option value="">Loading users…</option>';
+			try {
+				const res = await fetch('/wp-json/fit/v1/admin/users', {
+					credentials: 'same-origin',
+					headers: { 'X-WP-Nonce': '<?php echo esc_js( $nonce ); ?>' },
+				});
+				const users = await res.json();
+				if (!res.ok) {
+					throw new Error(users?.message || 'Failed to load users.');
+				}
+				if (!Array.isArray(users)) {
+					throw new Error('Unexpected admin users response.');
+				}
+				if (users.length === 0) {
+					select.innerHTML = '<option value="">No users found</option>';
+					if (result) {
+						result.textContent = 'No WordPress users are available for SMS testing.';
+						result.style.color = '#666';
+					}
+					return;
+				}
+				select.innerHTML = users.map(user => {
+					const name = [user.first_name, user.last_name].filter(Boolean).join(' ').trim() || user.user_email;
+					return `<option value="${user.user_id}">${name} (${user.user_email})</option>`;
+				}).join('');
+				if (result) {
+					result.textContent = '';
+				}
+			} catch (e) {
+				select.innerHTML = '<option value="">Unable to load users</option>';
+				if (result) {
+					result.textContent = '✗ ' + e.message;
+					result.style.color = 'red';
+				}
+			}
+		})();
+
 		document.getElementById('jf-test-openai')?.addEventListener('click', async function() {
 			const el = document.getElementById('jf-openai-result');
 			el.textContent = 'Testing…';
@@ -146,6 +268,36 @@ class Settings {
 				const data = await res.json();
 				if (data.reply) {
 					el.textContent = '✓ OpenAI connected: ' + data.reply.slice(0, 80);
+					el.style.color = 'green';
+				} else {
+					el.textContent = '✗ ' + (data.message || JSON.stringify(data));
+					el.style.color = 'red';
+				}
+			} catch (e) {
+				el.textContent = '✗ ' + e.message;
+				el.style.color = 'red';
+			}
+		});
+
+		document.getElementById('jf-test-sms')?.addEventListener('click', async function() {
+			const el = document.getElementById('jf-sms-result');
+			const userSelect = document.getElementById('jf-sms-user');
+			const triggerSelect = document.getElementById('jf-sms-trigger');
+			if (!userSelect?.value) {
+				el.textContent = 'Select a user first.';
+				el.style.color = 'red';
+				return;
+			}
+			el.textContent = 'Sending…';
+			try {
+				const res = await fetch('/wp-json/fit/v1/admin/sms/test', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json', 'X-WP-Nonce': '<?php echo esc_js( $nonce ); ?>' },
+					body: JSON.stringify({ user_id: Number(userSelect.value), trigger_type: triggerSelect.value }),
+				});
+				const data = await res.json();
+				if (data?.sent && data?.result) {
+					el.textContent = `✓ Sent to ${data.result.phone} | ${data.result.timezone} | local now ${data.result.local_now} | scheduled hour ${data.result.scheduled_hour}:00 | enabled ${data.result.enabled ? 'yes' : 'no'}`;
 					el.style.color = 'green';
 				} else {
 					el.textContent = '✗ ' + (data.message || JSON.stringify(data));

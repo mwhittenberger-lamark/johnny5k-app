@@ -4,6 +4,7 @@ namespace Johnny5k\REST;
 defined( 'ABSPATH' ) || exit;
 
 use Johnny5k\Services\AiService;
+use Johnny5k\Services\UserTime;
 
 /**
  * REST Controller: Dashboard
@@ -57,9 +58,11 @@ class DashboardController {
 	public static function get_daily_snapshot( \WP_REST_Request $req ): \WP_REST_Response {
 		global $wpdb;
 		$user_id = get_current_user_id();
-		$today   = current_time( 'Y-m-d' );
-		$tomorrow = date( 'Y-m-d', strtotime( '+1 day', strtotime( $today ) ) );
 		$p       = $wpdb->prefix;
+		$today = UserTime::today( $user_id );
+		$tomorrow = UserTime::tomorrow( $user_id );
+		$today_schedule = self::get_plan_day_for_date( $user_id, $today );
+		$tomorrow_schedule = self::get_plan_day_for_date( $user_id, $tomorrow );
 
 		// Calorie goal
 		$goal = $wpdb->get_row( $wpdb->prepare(
@@ -118,12 +121,14 @@ class DashboardController {
 		if ( ! $tomorrow_preview ) {
 			$tomorrow_preview = (object) [
 				'date'             => $tomorrow,
-				'planned_day_type' => self::infer_next_day_type( $user_id ),
-				'time_tier'        => $session->time_tier ?? 'medium',
+				'planned_day_type' => $tomorrow_schedule->day_type ?? self::infer_next_day_type( $user_id, $tomorrow ),
+				'time_tier'        => $tomorrow_schedule->time_tier ?? $session->time_tier ?? 'medium',
+				'weekday_label'    => $tomorrow_schedule->weekday_label ?? self::weekday_label_for_date( $tomorrow ),
 				'inferred'         => true,
 			];
 		} else {
 			$tomorrow_preview->date = $tomorrow;
+			$tomorrow_preview->weekday_label = self::weekday_label_for_date( $tomorrow );
 			$tomorrow_preview->inferred = false;
 		}
 
@@ -131,7 +136,7 @@ class DashboardController {
 		$sleep = $wpdb->get_row( $wpdb->prepare(
 			"SELECT hours_sleep, sleep_quality FROM {$p}fit_sleep_logs
 			 WHERE user_id = %d AND sleep_date = %s",
-			$user_id, date( 'Y-m-d', strtotime( '-1 day' ) )
+			$user_id, UserTime::yesterday( $user_id )
 		) );
 
 		// Steps today
@@ -150,8 +155,9 @@ class DashboardController {
 		// 7-day score (total from daily_scores)
 		$score_7d = (int) $wpdb->get_var( $wpdb->prepare(
 			"SELECT SUM(total_score) FROM {$p}fit_daily_scores
-			 WHERE user_id = %d AND score_date >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)",
-			$user_id
+			 WHERE user_id = %d AND score_date >= %s",
+			$user_id,
+			UserTime::days_ago( $user_id, 6 )
 		) );
 
 		// Skip warning?
@@ -170,7 +176,9 @@ class DashboardController {
 			'micronutrient_totals' => $micronutrient_totals,
 			'meals_today'      => $meals_today,
 			'session'          => $session,
+			'today_schedule'   => $today_schedule,
 			'tomorrow_preview' => $tomorrow_preview,
+			'tomorrow_schedule'=> $tomorrow_schedule,
 			'sleep'            => $sleep,
 			'steps'            => [ 'today' => $steps, 'target' => (int) ( $goal->target_steps ?? 8000 ) ],
 			'latest_weight'    => $latest_weight,
@@ -233,7 +241,7 @@ class DashboardController {
 
 		global $wpdb;
 		$angle = sanitize_text_field( $req->get_param( 'angle' ) ?: 'front' );
-		$date  = sanitize_text_field( $req->get_param( 'date' ) ?: current_time( 'Y-m-d' ) );
+		$date  = sanitize_text_field( $req->get_param( 'date' ) ?: UserTime::today( $user_id ) );
 
 		$wpdb->insert( $wpdb->prefix . 'fit_progress_photos', [
 			'user_id'       => $user_id,
@@ -306,7 +314,7 @@ class DashboardController {
 		exit;
 	}
 
-	private static function infer_next_day_type( int $user_id ): string {
+	private static function infer_next_day_type( int $user_id, ?string $date = null ): string {
 		global $wpdb;
 		$p = $wpdb->prefix;
 
@@ -319,41 +327,73 @@ class DashboardController {
 			return 'rest';
 		}
 
-		$last_day_type = $wpdb->get_var( $wpdb->prepare(
-			"SELECT planned_day_type FROM {$p}fit_workout_sessions
-			 WHERE user_id = %d AND completed = 1
-			 ORDER BY session_date DESC LIMIT 1",
-			$user_id
+		$target_date = $date ?: UserTime::today( $user_id );
+		$weekday_order = self::weekday_order_for_date( $user_id, $target_date );
+		$day_type = $wpdb->get_var( $wpdb->prepare(
+			"SELECT day_type FROM {$p}fit_user_training_days
+			 WHERE training_plan_id = %d AND day_order = %d
+			 LIMIT 1",
+			$plan_id,
+			$weekday_order
 		) );
 
-		$days = $wpdb->get_results( $wpdb->prepare(
+		if ( $day_type ) {
+			return (string) $day_type;
+		}
+
+		$first_active_day = $wpdb->get_var( $wpdb->prepare(
 			"SELECT day_type FROM {$p}fit_user_training_days
 			 WHERE training_plan_id = %d AND day_type != 'rest'
-			 ORDER BY day_order",
+			 ORDER BY day_order LIMIT 1",
 			$plan_id
 		) );
 
-		if ( ! $days ) {
-			return 'rest';
+		return $first_active_day ? (string) $first_active_day : 'rest';
+	}
+
+	private static function get_plan_day_for_date( int $user_id, string $date ): ?object {
+		global $wpdb;
+		$p = $wpdb->prefix;
+
+		$plan_id = (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT id FROM {$p}fit_user_training_plans WHERE user_id = %d AND active = 1 ORDER BY created_at DESC LIMIT 1",
+			$user_id
+		) );
+
+		if ( ! $plan_id ) {
+			return null;
 		}
 
-		$types = array_map( fn( $day ) => $day->day_type, $days );
+		$weekday_order = self::weekday_order_for_date( $user_id, $date );
+		$day = $wpdb->get_row( $wpdb->prepare(
+			"SELECT id, day_type, day_order, time_tier
+			 FROM {$p}fit_user_training_days
+			 WHERE training_plan_id = %d AND day_order = %d
+			 LIMIT 1",
+			$plan_id,
+			$weekday_order
+		) );
 
-		if ( ! $last_day_type ) {
-			return $types[0];
+		if ( ! $day ) {
+			return null;
 		}
 
-		$index = array_search( $last_day_type, $types, true );
-		if ( false === $index ) {
-			return $types[0];
-		}
+		$day->date = $date;
+		$day->weekday_label = self::weekday_label_for_date( $user_id, $date );
+		return $day;
+	}
 
-		return $types[ ( $index + 1 ) % count( $types ) ];
+	private static function weekday_order_for_date( int $user_id, string $date ): int {
+		return UserTime::weekday_order_for_date( $user_id, $date );
+	}
+
+	private static function weekday_label_for_date( int $user_id, string $date ): string {
+		return UserTime::weekday_label_for_date( $user_id, $date );
 	}
 
 	private static function count_meal_streak( int $user_id ): int {
 		global $wpdb;
-		return self::count_consecutive_days( function( string $date ) use ( $wpdb, $user_id ): bool {
+		return self::count_consecutive_days( $user_id, function( string $date ) use ( $wpdb, $user_id ): bool {
 			$count = (int) $wpdb->get_var( $wpdb->prepare(
 				"SELECT COUNT(*) FROM {$wpdb->prefix}fit_meals
 				 WHERE user_id = %d AND DATE(meal_datetime) = %s AND confirmed = 1",
@@ -365,7 +405,7 @@ class DashboardController {
 
 	private static function count_workout_streak( int $user_id ): int {
 		global $wpdb;
-		return self::count_consecutive_days( function( string $date ) use ( $wpdb, $user_id ): bool {
+		return self::count_consecutive_days( $user_id, function( string $date ) use ( $wpdb, $user_id ): bool {
 			$count = (int) $wpdb->get_var( $wpdb->prepare(
 				"SELECT COUNT(*) FROM {$wpdb->prefix}fit_workout_sessions
 				 WHERE user_id = %d AND session_date = %s AND completed = 1",
@@ -377,7 +417,7 @@ class DashboardController {
 
 	private static function count_sleep_streak( int $user_id ): int {
 		global $wpdb;
-		return self::count_consecutive_days( function( string $date ) use ( $wpdb, $user_id ): bool {
+		return self::count_consecutive_days( $user_id, function( string $date ) use ( $wpdb, $user_id ): bool {
 			$hours = (float) $wpdb->get_var( $wpdb->prepare(
 				"SELECT hours_sleep FROM {$wpdb->prefix}fit_sleep_logs WHERE user_id = %d AND sleep_date = %s",
 				$user_id, $date
@@ -388,7 +428,7 @@ class DashboardController {
 
 	private static function count_cardio_streak( int $user_id ): int {
 		global $wpdb;
-		return self::count_consecutive_days( function( string $date ) use ( $wpdb, $user_id ): bool {
+		return self::count_consecutive_days( $user_id, function( string $date ) use ( $wpdb, $user_id ): bool {
 			$count = (int) $wpdb->get_var( $wpdb->prepare(
 				"SELECT COUNT(*) FROM {$wpdb->prefix}fit_cardio_logs WHERE user_id = %d AND cardio_date = %s",
 				$user_id, $date
@@ -397,9 +437,9 @@ class DashboardController {
 		} );
 	}
 
-	private static function count_consecutive_days( callable $has_activity ): int {
+	private static function count_consecutive_days( int $user_id, callable $has_activity ): int {
 		$streak = 0;
-		$current = new \DateTime( 'today' );
+		$current = UserTime::now( $user_id )->setTime( 12, 0 );
 
 		for ( $i = 0; $i < 30; $i++ ) {
 			$date = $current->format( 'Y-m-d' );

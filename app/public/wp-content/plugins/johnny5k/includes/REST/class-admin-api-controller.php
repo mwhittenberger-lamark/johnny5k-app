@@ -19,6 +19,7 @@ use Johnny5k\Services\CostTracker;
  * GET  /fit/v1/admin/persona          — get Johnny 5000 persona settings
  * POST /fit/v1/admin/persona          — save Johnny 5000 persona settings
  * POST /fit/v1/admin/persona/test     — test persona with a message
+ * POST /fit/v1/admin/sms/test         — send a test SMS reminder to a user
  */
 class AdminApiController {
 
@@ -60,6 +61,12 @@ class AdminApiController {
 			'callback'            => [ __CLASS__, 'test_persona' ],
 			'permission_callback' => $admin,
 		] );
+
+		register_rest_route( $ns, '/admin/sms/test', [
+			'methods'             => 'POST',
+			'callback'            => [ __CLASS__, 'test_sms' ],
+			'permission_callback' => $admin,
+		] );
 	}
 
 	// ── GET /admin/users ──────────────────────────────────────────────────────
@@ -69,7 +76,7 @@ class AdminApiController {
 
 		$rows = $wpdb->get_results(
 			"SELECT u.ID AS user_id, u.user_email, u.user_registered,
-			        p.first_name, p.last_name, p.goal_type, p.onboarding_complete
+			        p.first_name, p.last_name, p.current_goal AS goal_type, p.onboarding_complete
 			 FROM {$wpdb->prefix}users u
 			 LEFT JOIN {$wpdb->prefix}fit_user_profiles p ON p.user_id = u.ID
 			 ORDER BY u.user_registered DESC"
@@ -167,6 +174,26 @@ class AdminApiController {
 			'reply_html' => self::render_reply_html( (string) $result['reply'] ),
 			'sources'    => $result['sources'] ?? [],
 			'used_web_search' => (bool) ( $result['used_web_search'] ?? false ),
+		] );
+	}
+
+	public static function test_sms( \WP_REST_Request $req ): \WP_REST_Response {
+		$user_id = (int) $req->get_param( 'user_id' );
+		$trigger_type = sanitize_key( (string) $req->get_param( 'trigger_type' ) );
+
+		if ( $user_id <= 0 ) {
+			return new \WP_REST_Response( [ 'message' => 'A valid user_id is required.' ], 400 );
+		}
+
+		$result = \Johnny5k\Services\SmsService::send_test_reminder( $user_id, $trigger_type );
+
+		if ( is_wp_error( $result ) ) {
+			return new \WP_REST_Response( [ 'message' => $result->get_error_message() ], 400 );
+		}
+
+		return new \WP_REST_Response( [
+			'sent' => true,
+			'result' => $result,
 		] );
 	}
 

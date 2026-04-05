@@ -3,6 +3,8 @@ namespace Johnny5k\REST;
 
 defined( 'ABSPATH' ) || exit;
 
+use Johnny5k\Services\UserTime;
+
 /**
  * REST Controller: Body & Recovery Metrics
  *
@@ -79,7 +81,7 @@ class BodyMetricsController {
 	public static function log_weight( \WP_REST_Request $req ): \WP_REST_Response {
 		$user_id    = get_current_user_id();
 		$weight_lb  = (float) $req->get_param( 'weight_lb' );
-		$date       = sanitize_text_field( $req->get_param( 'date' ) ?: current_time( 'Y-m-d' ) );
+		$date       = sanitize_text_field( $req->get_param( 'date' ) ?: UserTime::today( $user_id ) );
 		$waist_in   = $req->get_param( 'waist_in' )    ? (float) $req->get_param( 'waist_in' )    : null;
 		$body_fat   = $req->get_param( 'body_fat_pct' ) ? (float) $req->get_param( 'body_fat_pct' ) : null;
 		$notes      = sanitize_text_field( $req->get_param( 'notes' ) ?: '' );
@@ -148,7 +150,7 @@ class BodyMetricsController {
 	public static function log_sleep( \WP_REST_Request $req ): \WP_REST_Response {
 		$user_id    = get_current_user_id();
 		$hours      = (float) $req->get_param( 'hours_sleep' );
-		$date       = sanitize_text_field( $req->get_param( 'date' ) ?: current_time( 'Y-m-d' ) );
+		$date       = sanitize_text_field( $req->get_param( 'date' ) ?: UserTime::today( $user_id ) );
 		$quality    = sanitize_text_field( $req->get_param( 'sleep_quality' ) ?: '' );
 
 		if ( $hours <= 0 || $hours > 24 ) {
@@ -214,7 +216,7 @@ class BodyMetricsController {
 	public static function log_steps( \WP_REST_Request $req ): \WP_REST_Response {
 		$user_id = get_current_user_id();
 		$steps   = (int) $req->get_param( 'steps' );
-		$date    = sanitize_text_field( $req->get_param( 'date' ) ?: current_time( 'Y-m-d' ) );
+		$date    = sanitize_text_field( $req->get_param( 'date' ) ?: UserTime::today( $user_id ) );
 
 		if ( $steps < 0 ) {
 			return new \WP_REST_Response( [ 'message' => 'Steps cannot be negative.' ], 400 );
@@ -288,7 +290,7 @@ class BodyMetricsController {
 		$user_id  = get_current_user_id();
 		$type     = sanitize_text_field( $req->get_param( 'cardio_type' ) ?: 'other' );
 		$duration = (int) $req->get_param( 'duration_minutes' );
-		$date     = sanitize_text_field( $req->get_param( 'date' ) ?: current_time( 'Y-m-d' ) );
+		$date     = sanitize_text_field( $req->get_param( 'date' ) ?: UserTime::today( $user_id ) );
 		$intensity = self::normalize_cardio_intensity( $req->get_param( 'intensity' ) );
 
 		if ( $duration <= 0 ) {
@@ -370,7 +372,7 @@ class BodyMetricsController {
 		global $wpdb;
 		$user_id = get_current_user_id();
 		$days    = min( 90, (int) ( $req->get_param( 'days' ) ?: 30 ) );
-		$since   = date( 'Y-m-d', strtotime( "-{$days} days" ) );
+		$since   = UserTime::days_ago( $user_id, $days );
 
 		$weight = $wpdb->get_results( $wpdb->prepare(
 			"SELECT metric_date AS date, weight_lb FROM {$wpdb->prefix}fit_body_metrics
