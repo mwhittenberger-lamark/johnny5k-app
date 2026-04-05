@@ -17,10 +17,9 @@ class Migrator {
 			update_option( 'jf_db_version', '1.0.0' );
 		}
 
-		// Future example:
-		// if ( version_compare( $current, '1.1.0', '<' ) ) {
-		//     self::migration_1_1_0();
-		//     update_option( 'jf_db_version', '1.1.0' );
-		// }
+		if ( version_compare( $current, '1.1.0', '<' ) ) {
+			// v1.1.0 — summary_text added to fit_ai_threads (handled by dbDelta via create_tables).
+			update_option( 'jf_db_version', '1.1.0' );
+		}
 	}
 }
