@@ -1,0 +1,56 @@
+
+<IfModule mod_dir.c>
+DirectoryIndex index.html index.php
+</IfModule>
+
+<IfModule mod_rewrite.c>
+RewriteEngine On
+RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+RewriteBase /
+
+# Force the site root itself to load the React app shell.
+RewriteRule ^$ /index.html [L]
+
+# Keep WordPress admin, core, and API routes handled by WordPress.
+RewriteRule ^wp-admin(?:/.*)?$ - [L]
+RewriteRule ^wp-content(?:/.*)?$ - [L]
+RewriteRule ^wp-includes(?:/.*)?$ - [L]
+RewriteRule ^wp-login\.php$ - [L]
+RewriteRule ^wp-cron\.php$ - [L]
+RewriteRule ^xmlrpc\.php$ - [L]
+RewriteRule ^wp-json(?:/.*)?$ /index.php [QSA,L]
+RewriteRule ^assets(?:/.*)?$ - [L]
+RewriteRule ^icons(?:/.*)?$ - [L]
+RewriteRule ^manifest\.webmanifest$ - [L]
+RewriteRule ^registerSW\.js$ - [L]
+RewriteRule ^sw\.js$ - [L]
+RewriteRule ^workbox-.*\.js$ - [L]
+RewriteRule ^favicon\.svg$ - [L]
+RewriteRule ^icons\.svg$ - [L]
+RewriteRule ^index\.php$ - [L]
+RewriteRule ^index\.html$ - [L]
+
+# Serve existing files and directories directly.
+RewriteCond %{REQUEST_FILENAME} -f [OR]
+RewriteCond %{REQUEST_FILENAME} -d
+RewriteRule ^ - [L]
+
+# Everything else falls through to the React app entrypoint.
+RewriteRule . /index.html [L]
+</IfModule>
+
+# BEGIN WordPress
+# The directives (lines) between "BEGIN WordPress" and "END WordPress" are
+# dynamically generated, and should only be modified via WordPress filters.
+# Any changes to the directives between these markers will be overwritten.
+<IfModule mod_rewrite.c>
+RewriteEngine On
+RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+RewriteBase /
+RewriteRule ^index\.php$ - [L]
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule . /index.php [L]
+</IfModule>
+
+# END WordPress
