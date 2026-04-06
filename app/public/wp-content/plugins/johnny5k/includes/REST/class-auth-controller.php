@@ -54,6 +54,26 @@ class AuthController {
 			'callback'            => [ __CLASS__, 'logout' ],
 			'permission_callback' => '__return_true',
 		] );
+
+		register_rest_route( $ns, '/auth/password/request', [
+			'methods'             => 'POST',
+			'callback'            => [ __CLASS__, 'request_password_reset' ],
+			'permission_callback' => '__return_true',
+			'args'                => [
+				'email' => [ 'required' => true, 'type' => 'string', 'sanitize_callback' => 'sanitize_email' ],
+			],
+		] );
+
+		register_rest_route( $ns, '/auth/password/reset', [
+			'methods'             => 'POST',
+			'callback'            => [ __CLASS__, 'reset_password' ],
+			'permission_callback' => '__return_true',
+			'args'                => [
+				'login'    => [ 'required' => true, 'type' => 'string', 'sanitize_callback' => 'sanitize_user' ],
+				'key'      => [ 'required' => true, 'type' => 'string', 'sanitize_callback' => 'sanitize_text_field' ],
+				'password' => [ 'required' => true, 'type' => 'string' ],
+			],
+		] );
 	}
 
 	// ── POST /auth/login ─────────────────────────────────────────────────────────
@@ -160,6 +180,53 @@ class AuthController {
 		}
 
 		return new \WP_REST_Response( [ 'logged_out' => true ], 200 );
+	}
+
+	// ── POST /auth/password/request ──────────────────────────────────────────
+
+	public static function request_password_reset( \WP_REST_Request $req ): \WP_REST_Response {
+		$email = sanitize_email( (string) $req->get_param( 'email' ) );
+
+		if ( ! is_email( $email ) ) {
+			return self::error( 'invalid_email', 'Please provide a valid email address.', 400 );
+		}
+
+		$user = get_user_by( 'email', $email );
+		if ( $user ) {
+			$result = retrieve_password( $user->user_login );
+			if ( is_wp_error( $result ) ) {
+				return self::error( 'password_reset_failed', $result->get_error_message(), 500 );
+			}
+		}
+
+		return new \WP_REST_Response( [
+			'sent'    => true,
+			'message' => 'If that email exists in Johnny5k, a reset link has been sent.',
+		], 200 );
+	}
+
+	// ── POST /auth/password/reset ────────────────────────────────────────────
+
+	public static function reset_password( \WP_REST_Request $req ): \WP_REST_Response {
+		$login    = sanitize_user( (string) $req->get_param( 'login' ) );
+		$key      = sanitize_text_field( (string) $req->get_param( 'key' ) );
+		$password = (string) $req->get_param( 'password' );
+
+		if ( strlen( $password ) < 8 ) {
+			return self::error( 'weak_password', 'Password must be at least 8 characters.', 400 );
+		}
+
+		$user = check_password_reset_key( $key, $login );
+		if ( is_wp_error( $user ) ) {
+			return self::error( 'invalid_reset_link', $user->get_error_message(), 400 );
+		}
+
+		reset_password( $user, $password );
+
+		return new \WP_REST_Response( [
+			'reset'   => true,
+			'message' => 'Password updated successfully.',
+		], 200 );
 	}
 
 	// ── Permission callbacks ──────────────────────────────────────────────────

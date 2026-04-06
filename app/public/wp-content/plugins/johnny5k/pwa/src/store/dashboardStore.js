@@ -8,6 +8,9 @@ import { dashboardApi } from '../api/client'
 export const useDashboardStore = create((set, get) => ({
   snapshot: null,
   awards: null,
+  johnnyReview: null,
+  johnnyReviewLoading: false,
+  johnnyReviewError: null,
   loading: false,
   error: null,
   lastFetchedAt: null,
@@ -33,6 +36,21 @@ export const useDashboardStore = create((set, get) => ({
       set({ awards: data })
     } catch { /* silent */ }
   },
+
+  loadJohnnyReview: async (force = false) => {
+    const { johnnyReviewLoading } = get()
+    if (!force && johnnyReviewLoading) return
+
+    set({ johnnyReviewLoading: true, johnnyReviewError: null })
+    try {
+      const johnnyReview = await dashboardApi.johnnyReview(force)
+      set({ johnnyReview, johnnyReviewLoading: false, johnnyReviewError: null })
+    } catch (err) {
+      set({ johnnyReviewLoading: false, johnnyReviewError: err.message })
+    }
+  },
+
+  clearJohnnyReview: () => set({ johnnyReview: null, johnnyReviewError: null }),
 
   invalidate: () => set({ lastFetchedAt: null }),
 }))

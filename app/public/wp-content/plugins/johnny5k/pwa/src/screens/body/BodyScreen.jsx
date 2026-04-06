@@ -1,19 +1,24 @@
 import { useEffect, useRef, useState } from 'react'
-import { useLocation } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { bodyApi } from '../../api/client'
+import { formatUsShortDate } from '../../lib/dateFormat'
 import { useDashboardStore } from '../../store/dashboardStore'
 
 export default function BodyScreen() {
   const location = useLocation()
+  const navigate = useNavigate()
   const [weights, setWeights]   = useState([])
   const [sleepLogs, setSleepLogs] = useState([])
   const [stepLogs, setStepLogs] = useState([])
   const [cardioLogs, setCardioLogs] = useState([])
   const [metrics, setMetrics]   = useState({ weight: [], sleep: [], steps: [], cardio: [] })
   const [weightInput, setWt]    = useState('')
+  const [weightDate, setWeightDate] = useState(todayInputValue())
   const [sleepInput, setSleep]  = useState('')
   const [sleepQuality, setSleepQuality] = useState('good')
+  const [sleepDate, setSleepDate] = useState(yesterdayInputValue())
   const [stepsInput, setSteps]  = useState('')
+  const [stepsDate, setStepsDate] = useState(todayInputValue())
   const [tab, setTab]           = useState('weight')
   const [chartRange, setChartRange] = useState({ weight: 14, sleep: 7, steps: 14, cardio: 14 })
   const [editingWeightId, setEditingWeightId] = useState(null)
@@ -56,14 +61,13 @@ export default function BodyScreen() {
     setSaving(true)
     try {
       if (editingWeightId) {
-        await bodyApi.updateWeight(editingWeightId, { weight_lb: +weightInput })
+        await bodyApi.updateWeight(editingWeightId, { weight_lb: +weightInput, date: weightDate })
         setFlash('Weight updated!')
       } else {
-        await bodyApi.logWeight({ weight_lb: +weightInput })
+        await bodyApi.logWeight({ weight_lb: +weightInput, date: weightDate })
         setFlash('Weight logged!')
       }
-      setWt('')
-      setEditingWeightId(null)
+      resetWeightForm()
       invalidate()
       loadSnapshot(true)
       refreshBodyData()
@@ -76,15 +80,13 @@ export default function BodyScreen() {
     setSaving(true)
     try {
       if (editingSleepId) {
-        await bodyApi.updateSleep(editingSleepId, { hours_sleep: +sleepInput, sleep_quality: sleepQuality })
+        await bodyApi.updateSleep(editingSleepId, { hours_sleep: +sleepInput, sleep_quality: sleepQuality, date: sleepDate })
         setFlash('Sleep updated!')
       } else {
-        await bodyApi.logSleep({ hours_sleep: +sleepInput, sleep_quality: sleepQuality })
+        await bodyApi.logSleep({ hours_sleep: +sleepInput, sleep_quality: sleepQuality, date: sleepDate })
         setFlash('Sleep logged!')
       }
-      setSleep('')
-      setSleepQuality('good')
-      setEditingSleepId(null)
+      resetSleepForm()
       invalidate()
       loadSnapshot(true)
       refreshBodyData()
@@ -97,14 +99,13 @@ export default function BodyScreen() {
     setSaving(true)
     try {
       if (editingStepId) {
-        await bodyApi.updateSteps(editingStepId, { steps: +stepsInput })
+        await bodyApi.updateSteps(editingStepId, { steps: +stepsInput, date: stepsDate })
         setFlash('Steps updated!')
       } else {
-        await bodyApi.logSteps({ steps: +stepsInput })
+        await bodyApi.logSteps({ steps: +stepsInput, date: stepsDate })
         setFlash('Steps logged!')
       }
-      setSteps('')
-      setEditingStepId(null)
+      resetStepsForm()
       invalidate()
       loadSnapshot(true)
       refreshBodyData()
@@ -118,8 +119,7 @@ export default function BodyScreen() {
     try {
       await bodyApi.deleteWeight(id)
       if (editingWeightId === id) {
-        setEditingWeightId(null)
-        setWt('')
+        resetWeightForm()
       }
       setFlash('Weight entry deleted.')
       invalidate()
@@ -135,9 +135,7 @@ export default function BodyScreen() {
     try {
       await bodyApi.deleteSleep(id)
       if (editingSleepId === id) {
-        setEditingSleepId(null)
-        setSleep('')
-        setSleepQuality('good')
+        resetSleepForm()
       }
       setFlash('Sleep entry deleted.')
       invalidate()
@@ -153,8 +151,7 @@ export default function BodyScreen() {
     try {
       await bodyApi.deleteSteps(id)
       if (editingStepId === id) {
-        setEditingStepId(null)
-        setSteps('')
+        resetStepsForm()
       }
       setFlash('Step entry deleted.')
       invalidate()
@@ -172,6 +169,9 @@ export default function BodyScreen() {
   const sleepTarget = Number(snapshot?.goal?.target_sleep_hours ?? 8)
   const stepPct = stepTarget ? Math.min(100, Math.round((todaySteps / stepTarget) * 100)) : 0
   const lastSleep = sleepLogs[0]?.hours_sleep ?? snapshot?.sleep?.hours_sleep ?? '—'
+  const recoverySummary = snapshot?.recovery_summary
+  const activeFlagItems = Array.isArray(recoverySummary?.active_flag_items) ? recoverySummary.active_flag_items : []
+  const caloriePreview = snapshot?.calorie_adjustment_preview
   const weightSeries = selectSeries(
     metrics.weight,
     chartRange.weight,
@@ -213,6 +213,7 @@ export default function BodyScreen() {
   function startEditWeight(entry) {
     setEditingWeightId(entry.id)
     setWt(String(entry.weight_lb))
+    setWeightDate(entry.metric_date || todayInputValue())
     scrollToForm(weightFormRef)
   }
 
@@ -220,13 +221,34 @@ export default function BodyScreen() {
     setEditingSleepId(entry.id)
     setSleep(String(entry.hours_sleep))
     setSleepQuality(entry.sleep_quality || 'good')
+    setSleepDate(entry.sleep_date || yesterdayInputValue())
     scrollToForm(sleepFormRef)
   }
 
   function startEditSteps(entry) {
     setEditingStepId(entry.id)
     setSteps(String(entry.steps))
+    setStepsDate(entry.step_date || todayInputValue())
     scrollToForm(stepsFormRef)
+  }
+
+  function resetWeightForm() {
+    setEditingWeightId(null)
+    setWt('')
+    setWeightDate(todayInputValue())
+  }
+
+  function resetSleepForm() {
+    setEditingSleepId(null)
+    setSleep('')
+    setSleepQuality('good')
+    setSleepDate(yesterdayInputValue())
+  }
+
+  function resetStepsForm() {
+    setEditingStepId(null)
+    setSteps('')
+    setStepsDate(todayInputValue())
   }
 
   return (
@@ -258,6 +280,53 @@ export default function BodyScreen() {
           <div className="bar-fill body-progress-fill" style={{ width: `${stepPct}%` }} />
         </div>
       </section>
+
+      <section className="dash-card progress-photos-entry-card">
+        <div className="body-progress-header">
+          <div>
+            <h3>Progress Photos</h3>
+            <p>Manage your shared timeline, choose baselines, and run side-by-side comparisons.</p>
+          </div>
+          <button className="btn-primary" type="button" onClick={() => navigate('/progress-photos')}>
+            Open Photos
+          </button>
+        </div>
+      </section>
+
+      {recoverySummary ? (
+        <section className="dash-card body-recovery-card">
+          <div className="body-card-header">
+            <div>
+              <h3>Recovery Loop</h3>
+              <p>{recoverySummary.headline}</p>
+            </div>
+            <span className={`dashboard-chip ${recoverySummary.mode === 'normal' ? 'success' : 'subtle'}`}>{recoverySummary.mode}</span>
+          </div>
+          <div className="body-mini-stats">
+            <div><strong>{recoverySummary.last_sleep_hours || '—'}h</strong><span>Last night</span></div>
+            <div><strong>{recoverySummary.avg_sleep_3d || '—'}h</strong><span>3-day avg</span></div>
+            <div><strong>{recoverySummary.cardio_minutes_7d || 0}</strong><span>Cardio min / 7d</span></div>
+            <div><strong>{recoverySummary.active_flags || 0}</strong><span>Active flags</span></div>
+          </div>
+          {activeFlagItems.length ? (
+            <div className="dashboard-johnny-metric-row">
+              {activeFlagItems.map(flag => (
+                <span key={flag.id || `${flag.label}-${flag.severity}`} className="dashboard-chip subtle dashboard-johnny-metric">
+                  {flag.label}{flag.severity ? ` • ${flag.severity}` : ''}
+                </span>
+              ))}
+            </div>
+          ) : (
+            <p className="body-recovery-note">Active flags: <strong>None</strong></p>
+          )}
+          <p className="body-recovery-note">Recommended training tier: <strong>{recoverySummary.recommended_time_tier}</strong></p>
+          {caloriePreview ? (
+            <p className="body-recovery-note">Calorie adjustment preview: <strong>{caloriePreview.action}</strong> {caloriePreview.delta_calories > 0 ? '+' : ''}{caloriePreview.delta_calories} kcal. {caloriePreview.reason}</p>
+          ) : (
+            <p className="body-recovery-note">No calorie change is queued right now. Keep logging weight and meals for a stronger adjustment signal.</p>
+          )}
+        </section>
+      ) : null}
 
       <div className="tab-bar">
         {[
@@ -299,13 +368,17 @@ export default function BodyScreen() {
               <h3>{editingWeightId ? 'Edit weigh-in' : 'Log weigh-in'}</h3>
               <p>{editingWeightId ? 'Update the logged value or cancel to keep it as-is.' : 'Use a consistent time of day for the cleanest trend line.'}</p>
             </div>
-            <form className="body-form-grid" onSubmit={logWeight}>
+            <form className="body-form-grid two-column" onSubmit={logWeight}>
               <label>
                 Weight (lbs)
                 <input type="number" min="80" max="600" step="0.1" placeholder="198.4" value={weightInput} onChange={e => setWt(e.target.value)} required />
               </label>
-              <div className="body-form-actions">
-                {editingWeightId ? <button className="btn-secondary" type="button" onClick={() => { setEditingWeightId(null); setWt('') }}>Cancel</button> : null}
+              <label>
+                Date
+                <input type="date" value={weightDate} onChange={e => setWeightDate(e.target.value)} required />
+              </label>
+              <div className="body-form-actions body-form-actions-full">
+                {editingWeightId ? <button className="btn-secondary" type="button" onClick={resetWeightForm}>Cancel</button> : null}
                 <button className="btn-primary" type="submit" disabled={saving}>{saving ? 'Saving…' : editingWeightId ? 'Update Weight' : 'Log Weight'}</button>
               </div>
             </form>
@@ -359,8 +432,8 @@ export default function BodyScreen() {
           </section>
           <section ref={sleepFormRef} className="dash-card body-form-card">
             <div className="body-card-header">
-              <h3>{editingSleepId ? 'Edit sleep log' : 'Log sleep'}</h3>
-              <p>{editingSleepId ? 'Adjust duration or quality, or cancel to leave the log unchanged.' : 'Capture both duration and quality so recovery trends mean something.'}</p>
+              <h3>{editingSleepId ? 'Edit last night sleep' : 'Log last night sleep'}</h3>
+              <p>{editingSleepId ? 'Adjust the night entry or cancel to leave it unchanged.' : 'This defaults to last night so the Recovery Loop card updates off the right sleep entry.'}</p>
             </div>
             <form className="body-form-grid two-column" onSubmit={logSleep}>
               <label>
@@ -373,9 +446,13 @@ export default function BodyScreen() {
                   {['poor', 'fair', 'good', 'great'].map(option => <option key={option} value={option}>{option}</option>)}
                 </select>
               </label>
+              <label>
+                Night of
+                <input type="date" value={sleepDate} onChange={e => setSleepDate(e.target.value)} required />
+              </label>
               <div className="body-form-actions body-form-actions-full">
-                {editingSleepId ? <button className="btn-secondary" type="button" onClick={() => { setEditingSleepId(null); setSleep(''); setSleepQuality('good') }}>Cancel</button> : null}
-                <button className="btn-primary" type="submit" disabled={saving}>{saving ? 'Saving…' : editingSleepId ? 'Update Sleep' : 'Log Sleep'}</button>
+                {editingSleepId ? <button className="btn-secondary" type="button" onClick={resetSleepForm}>Cancel</button> : null}
+                <button className="btn-primary" type="submit" disabled={saving}>{saving ? 'Saving…' : editingSleepId ? 'Update Last Night' : 'Log Last Night'}</button>
               </div>
             </form>
           </section>
@@ -432,13 +509,17 @@ export default function BodyScreen() {
               <h3>{editingStepId ? 'Edit steps' : 'Log steps'}</h3>
               <p>{editingStepId ? 'Update the saved day total or cancel to keep the current entry.' : 'Update the day total if your phone or watch missed part of your movement.'}</p>
             </div>
-            <form className="body-form-grid" onSubmit={logSteps}>
+            <form className="body-form-grid two-column" onSubmit={logSteps}>
               <label>
                 Steps today
                 <input type="number" min="0" max="100000" step="1" placeholder="8559" value={stepsInput} onChange={e => setSteps(e.target.value)} required />
               </label>
-              <div className="body-form-actions">
-                {editingStepId ? <button className="btn-secondary" type="button" onClick={() => { setEditingStepId(null); setSteps('') }}>Cancel</button> : null}
+              <label>
+                Date
+                <input type="date" value={stepsDate} onChange={e => setStepsDate(e.target.value)} required />
+              </label>
+              <div className="body-form-actions body-form-actions-full">
+                {editingStepId ? <button className="btn-secondary" type="button" onClick={resetStepsForm}>Cancel</button> : null}
                 <button className="btn-primary" type="submit" disabled={saving}>{saving ? 'Saving…' : editingStepId ? 'Update Steps' : 'Save Steps'}</button>
               </div>
             </form>
@@ -498,7 +579,7 @@ export default function BodyScreen() {
 }
 
 function CardioTab({ invalidate, cardioLogs, cardioSeries, cardioRange, currentWeight, onRangeChange, onLogged, onRefreshSnapshot, onFlash }) {
-  const [form, setForm] = useState({ cardio_type: 'running', duration_minutes: '', intensity: 'moderate', estimated_calories: '', notes: '' })
+  const [form, setForm] = useState({ cardio_type: 'running', duration_minutes: '', intensity: 'moderate', estimated_calories: '', notes: '', date: todayInputValue() })
   const [editingCardioId, setEditingCardioId] = useState(null)
   const [caloriesDirty, setCaloriesDirty] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -541,6 +622,12 @@ function CardioTab({ invalidate, cardioLogs, cardioSeries, cardioRange, currentW
     })
   }
 
+  function resetCardioForm(nextType = 'running', nextIntensity = 'moderate') {
+    setEditingCardioId(null)
+    setForm({ cardio_type: nextType, duration_minutes: '', intensity: nextIntensity, estimated_calories: '', notes: '', date: todayInputValue() })
+    setCaloriesDirty(false)
+  }
+
   async function handleSubmit(e) {
     e.preventDefault()
     setSaving(true)
@@ -554,9 +641,7 @@ function CardioTab({ invalidate, cardioLogs, cardioSeries, cardioRange, currentW
         setMsg('Cardio logged!')
         onFlash?.('Cardio logged!')
       }
-      setForm({ cardio_type: form.cardio_type, duration_minutes: '', intensity: form.intensity, estimated_calories: '', notes: '' })
-      setEditingCardioId(null)
-      setCaloriesDirty(false)
+      resetCardioForm(form.cardio_type, form.intensity)
       invalidate()
       onRefreshSnapshot?.()
       onLogged?.()
@@ -570,9 +655,7 @@ function CardioTab({ invalidate, cardioLogs, cardioSeries, cardioRange, currentW
     try {
       await bodyApi.deleteCardio(id)
       if (editingCardioId === id) {
-        setEditingCardioId(null)
-        setForm({ cardio_type: 'running', duration_minutes: '', intensity: 'moderate', estimated_calories: '', notes: '' })
-        setCaloriesDirty(false)
+        resetCardioForm()
       }
       setMsg('Cardio entry deleted.')
       onFlash?.('Cardio entry deleted.')
@@ -642,6 +725,10 @@ function CardioTab({ invalidate, cardioLogs, cardioSeries, cardioRange, currentW
             Estimated calories
             <input type="number" min="0" max="3000" placeholder="240" value={form.estimated_calories} onChange={e => update('estimated_calories', e.target.value)} />
           </label>
+          <label>
+            Date
+            <input type="date" value={form.date} onChange={e => update('date', e.target.value)} required />
+          </label>
           <p className="cardio-estimate-note">Auto-estimated from your latest weight, modality, intensity, and duration. You can override it.</p>
           <label className="cardio-notes-field">
             Notes
@@ -649,7 +736,7 @@ function CardioTab({ invalidate, cardioLogs, cardioSeries, cardioRange, currentW
           </label>
           <div className="body-form-actions body-form-actions-full">
             <button className="btn-outline small" type="button" onClick={() => setCaloriesDirty(false)}>Recalculate calories</button>
-            {editingCardioId ? <button className="btn-secondary" type="button" onClick={() => { setEditingCardioId(null); setForm({ cardio_type: 'running', duration_minutes: '', intensity: 'moderate', estimated_calories: '', notes: '' }); setCaloriesDirty(false) }}>Cancel</button> : null}
+            {editingCardioId ? <button className="btn-secondary" type="button" onClick={() => resetCardioForm()}>Cancel</button> : null}
             <button className="btn-primary" type="submit" disabled={saving}>{saving ? 'Saving…' : editingCardioId ? 'Update Cardio' : 'Log Cardio'}</button>
           </div>
         </form>
@@ -681,6 +768,7 @@ function CardioTab({ invalidate, cardioLogs, cardioSeries, cardioRange, currentW
                       intensity: normalizeFrontendCardioIntensity(entry.intensity),
                       estimated_calories: entry.estimated_calories != null ? String(entry.estimated_calories) : '',
                       notes: entry.notes || '',
+                      date: entry.cardio_date || todayInputValue(),
                     })
                     setCaloriesDirty(entry.estimated_calories != null && entry.estimated_calories !== '')
                     scrollToCardioForm()
@@ -829,8 +917,17 @@ function getWeightSparkStyle(weights) {
 
 function formatDate(value) {
   if (!value) return '—'
-  const date = new Date(`${value}T12:00:00`)
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+  return formatUsShortDate(value, value)
+}
+
+function todayInputValue() {
+  return new Date().toISOString().slice(0, 10)
+}
+
+function yesterdayInputValue() {
+  const date = new Date()
+  date.setDate(date.getDate() - 1)
+  return date.toISOString().slice(0, 10)
 }
 
 function selectSeries(items, days, valueGetter, labelGetter) {

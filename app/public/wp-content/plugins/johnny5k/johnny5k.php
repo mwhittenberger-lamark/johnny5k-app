@@ -94,6 +94,21 @@ add_action( 'plugins_loaded', function (): void {
     }
 } );
 
+add_filter( 'retrieve_password_notification_email', function ( array $defaults, string $key, string $user_login, \WP_User $user_data ): array {
+	$reset_url = home_url( '/reset-password?key=' . rawurlencode( $key ) . '&login=' . rawurlencode( $user_login ) );
+
+	$defaults['subject'] = sprintf( '[%s] Reset your Johnny5k password', wp_specialchars_decode( get_option( 'blogname' ), ENT_QUOTES ) );
+	$defaults['message'] = "Hi,\n\nWe received a request to reset your Johnny5k password.\n\nReset it here:\n{$reset_url}\n\nIf you did not request this, you can ignore this email.\n";
+
+	return $defaults;
+}, 10, 4 );
+
+add_action( 'wp_ajax_jf_progress_photo', [ Johnny5k\REST\DashboardController::class, 'ajax_progress_photo' ] );
+add_action( 'wp_ajax_nopriv_jf_progress_photo', function (): void {
+	status_header( 401 );
+	wp_die( 'Authentication required.' );
+} );
+
 // ── Cron handlers ─────────────────────────────────────────────────────────────
 add_action( 'jf_daily_sms_reminders', function (): void {
     Johnny5k\Services\SmsService::run_daily_reminders();

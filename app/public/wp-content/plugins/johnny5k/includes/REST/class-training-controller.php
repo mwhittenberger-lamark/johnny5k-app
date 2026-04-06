@@ -61,6 +61,7 @@ class TrainingController {
 		global $wpdb;
 		$user_id = get_current_user_id();
 		$p       = $wpdb->prefix;
+		$today   = UserTime::today( $user_id );
 
 		$plan = $wpdb->get_row( $wpdb->prepare(
 			"SELECT * FROM {$p}fit_user_training_plans WHERE user_id = %d AND active = 1 ORDER BY created_at DESC LIMIT 1",
@@ -68,7 +69,16 @@ class TrainingController {
 		) );
 
 		if ( ! $plan ) {
-			return new \WP_REST_Response( [ 'plan' => null, 'days' => [] ] );
+			return new \WP_REST_Response( [
+				'plan' => null,
+				'days' => [],
+				'today_context' => [
+					'date' => $today,
+					'weekday_order' => UserTime::weekday_order_for_date( $user_id, $today ),
+					'weekday_label' => UserTime::weekday_label_for_date( $user_id, $today ),
+					'timezone' => UserTime::timezone_string( $user_id ),
+				],
+			] );
 		}
 
 		$days = $wpdb->get_results( $wpdb->prepare(
@@ -85,9 +95,19 @@ class TrainingController {
 				 WHERE ude.training_day_id = %d AND ude.active = 1 ORDER BY ude.sort_order",
 				$day->id
 			) );
+			$day->last_completed_session = self::get_last_completed_session_summary( $user_id, (string) $day->day_type );
 		}
 
-		return new \WP_REST_Response( [ 'plan' => $plan, 'days' => $days ] );
+		return new \WP_REST_Response( [
+			'plan' => $plan,
+			'days' => $days,
+			'today_context' => [
+				'date' => $today,
+				'weekday_order' => UserTime::weekday_order_for_date( $user_id, $today ),
+				'weekday_label' => UserTime::weekday_label_for_date( $user_id, $today ),
+				'timezone' => UserTime::timezone_string( $user_id ),
+			],
+		] );
 	}
 
 	// ── POST /training/plan ───────────────────────────────────────────────────
@@ -97,7 +117,12 @@ class TrainingController {
 		global $wpdb;
 		$user_id     = get_current_user_id();
 		$template_id = (int) ( $req->get_param( 'program_template_id' ) ?: 0 );
+		$template_name = sanitize_text_field( $req->get_param( 'template_name' ) ?: '' );
 		$name        = sanitize_text_field( $req->get_param( 'name' ) ?: 'Custom Plan' );
+
+		if ( $template_id <= 0 ) {
+			$template_id = self::resolve_template_id( $template_name );
+		}
 
 		$wpdb->update( $wpdb->prefix . 'fit_user_training_plans', [ 'active' => 0 ], [ 'user_id' => $user_id ] );
 
@@ -109,7 +134,15 @@ class TrainingController {
 			'active'              => 1,
 		] );
 
-		return new \WP_REST_Response( [ 'plan_id' => $wpdb->insert_id, 'name' => $name ], 201 );
+		$plan_id = (int) $wpdb->insert_id;
+		$days_created = self::copy_template_days_to_plan( $plan_id, $template_id );
+
+		return new \WP_REST_Response( [
+			'plan_id'             => $plan_id,
+			'name'                => $name,
+			'program_template_id' => $template_id,
+			'days_created'        => $days_created,
+		], 201 );
 	}
 
 	// ── PUT /training/day/{id} ────────────────────────────────────────────────
@@ -198,8 +231,52 @@ class TrainingController {
 	public static function get_exercises( \WP_REST_Request $req ): \WP_REST_Response {
 		global $wpdb;
 
-		$where  = [ '1=1' ];
-		$vals   = [];
+		$where       = [ '1=1' ];
+		$vals        = [];
+		$limit       = max( 1, min( 50, (int) ( $req->get_param( 'limit' ) ?: 50 ) ) );
+		$order_parts = [];
+
+		if ( $query = sanitize_text_field( $req->get_param( 'q' ) ?: '' ) ) {
+			$like         = '%' . $wpdb->esc_like( $query ) . '%';
+			$name_prefix  = $wpdb->esc_like( $query ) . '%';
+			$slug_query   = sanitize_title( $query );
+			$slug_like    = '%' . $wpdb->esc_like( $slug_query ) . '%';
+			$slug_prefix  = $wpdb->esc_like( $slug_query ) . '%';
+			$where[] = '(name LIKE %s OR slug LIKE %s)';
+			$vals[]  = $like;
+			$vals[]  = $slug_like;
+			$order_parts[] = $wpdb->prepare(
+				'CASE
+					WHEN LOWER(name) = LOWER(%s) THEN 0
+					WHEN slug = %s THEN 1
+					WHEN LOWER(name) LIKE LOWER(%s) THEN 2
+					WHEN slug LIKE %s THEN 3
+					WHEN LOWER(name) LIKE LOWER(%s) THEN 4
+					WHEN slug LIKE %s THEN 5
+					ELSE 6
+				END, CHAR_LENGTH(name), name',
+				$query,
+				$slug_query,
+				$name_prefix,
+				$slug_prefix,
+				$like,
+				$slug_like
+			);
+		}
+
+		if ( $preferred_muscle = sanitize_text_field( $req->get_param( 'preferred_muscle' ) ?: '' ) ) {
+			$order_parts[] = $wpdb->prepare(
+				'CASE WHEN primary_muscle = %s THEN 0 ELSE 1 END',
+				$preferred_muscle
+			);
+		}
+
+		if ( $preferred_equipment = sanitize_text_field( $req->get_param( 'preferred_equipment' ) ?: '' ) ) {
+			$order_parts[] = $wpdb->prepare(
+				'CASE WHEN equipment = %s THEN 0 ELSE 1 END',
+				$preferred_equipment
+			);
+		}
 
 		if ( $muscle = sanitize_text_field( $req->get_param( 'muscle' ) ?: '' ) ) {
 			$where[] = 'primary_muscle = %s';
@@ -214,18 +291,102 @@ class TrainingController {
 			$vals[]  = '"' . esc_sql( $day_type ) . '"';
 		}
 
-		$where_sql = implode( ' AND ', $where );
-		$sql       = "SELECT id, slug, name, primary_muscle, equipment, difficulty, default_rep_min, default_rep_max, default_sets
-		              FROM {$wpdb->prefix}fit_exercises WHERE active = 1 AND $where_sql ORDER BY name";
+		$order_parts[] = 'CHAR_LENGTH(name)';
+		$order_parts[] = 'name';
 
-		$rows = $vals
-			? $wpdb->get_results( $wpdb->prepare( $sql, ...$vals ) )
-			: $wpdb->get_results( $sql );
+		$where_sql = implode( ' AND ', $where );
+		$order_sql = implode( ', ', $order_parts );
+		$sql       = "SELECT id, slug, name, primary_muscle, equipment, difficulty, default_rep_min, default_rep_max, default_sets
+		              FROM {$wpdb->prefix}fit_exercises WHERE active = 1 AND $where_sql ORDER BY {$order_sql} LIMIT %d";
+		$vals[]    = $limit;
+
+		$rows = $wpdb->get_results( $wpdb->prepare( $sql, ...$vals ) );
 
 		return new \WP_REST_Response( $rows );
 	}
 
 	// ── Helpers ───────────────────────────────────────────────────────────────
+
+	private static function resolve_template_id( string $template_name = '' ): int {
+		global $wpdb;
+		$p = $wpdb->prefix;
+
+		if ( '' !== $template_name ) {
+			$like = '%' . $wpdb->esc_like( $template_name ) . '%';
+			$match = $wpdb->get_var( $wpdb->prepare(
+				"SELECT id FROM {$p}fit_program_templates WHERE active = 1 AND name LIKE %s ORDER BY id ASC LIMIT 1",
+				$like
+			) );
+			if ( $match ) {
+				return (int) $match;
+			}
+		}
+
+		return (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT id FROM {$p}fit_program_templates WHERE active = 1 AND name = %s ORDER BY id ASC LIMIT 1",
+			'PPL Universal'
+		) );
+	}
+
+	private static function copy_template_days_to_plan( int $plan_id, int $template_id ): int {
+		if ( $plan_id <= 0 || $template_id <= 0 ) {
+			return 0;
+		}
+
+		global $wpdb;
+		$p = $wpdb->prefix;
+		$template_days = $wpdb->get_results( $wpdb->prepare(
+			"SELECT * FROM {$p}fit_program_template_days WHERE program_template_id = %d ORDER BY default_order ASC",
+			$template_id
+		) );
+
+		if ( ! $template_days ) {
+			return 0;
+		}
+
+		$days_created = 0;
+		foreach ( $template_days as $template_day ) {
+			$wpdb->insert( $p . 'fit_user_training_days', [
+				'training_plan_id' => $plan_id,
+				'day_type'         => $template_day->day_type,
+				'day_order'        => (int) $template_day->default_order,
+				'time_tier'        => $template_day->time_tier ?: 'medium',
+			] );
+
+			$user_day_id = (int) $wpdb->insert_id;
+			if ( $user_day_id <= 0 ) {
+				continue;
+			}
+
+			$days_created += 1;
+			self::copy_template_day_exercises( (int) $template_day->id, $user_day_id );
+		}
+
+		return $days_created;
+	}
+
+	private static function copy_template_day_exercises( int $template_day_id, int $user_day_id ): void {
+		global $wpdb;
+		$p = $wpdb->prefix;
+
+		$template_exercises = $wpdb->get_results( $wpdb->prepare(
+			"SELECT * FROM {$p}fit_program_template_exercises WHERE template_day_id = %d ORDER BY priority ASC",
+			$template_day_id
+		) );
+
+		foreach ( $template_exercises as $exercise ) {
+			$wpdb->insert( $p . 'fit_user_training_day_exercises', [
+				'training_day_id' => $user_day_id,
+				'exercise_id'     => (int) $exercise->exercise_id,
+				'slot_type'       => $exercise->slot_type,
+				'rep_min'         => (int) $exercise->rep_min,
+				'rep_max'         => (int) $exercise->rep_max,
+				'sets_target'     => (int) $exercise->sets_target,
+				'sort_order'      => (int) $exercise->priority,
+				'active'          => 1,
+			] );
+		}
+	}
 
 	private static function user_owns_day( int $user_id, int $day_id ): bool {
 		global $wpdb;
@@ -237,6 +398,67 @@ class TrainingController {
 			$day_id
 		) );
 		return (int) $owner === $user_id;
+	}
+
+	private static function get_last_completed_session_summary( int $user_id, string $day_type ): ?array {
+		global $wpdb;
+		$p = $wpdb->prefix;
+
+		$session = $wpdb->get_row( $wpdb->prepare(
+			"SELECT id, session_date, time_tier, duration_minutes, completed_at
+			 FROM {$p}fit_workout_sessions
+			 WHERE user_id = %d
+			   AND completed = 1
+			   AND COALESCE(actual_day_type, planned_day_type) = %s
+			 ORDER BY COALESCE(completed_at, updated_at, created_at) DESC, id DESC
+			 LIMIT 1",
+			$user_id,
+			$day_type
+		) );
+
+		if ( ! $session ) {
+			return null;
+		}
+
+		$rows = $wpdb->get_results( $wpdb->prepare(
+			"SELECT wse.id, wse.sort_order, e.name AS exercise_name,
+			        SUM(CASE WHEN ws.completed = 1 THEN 1 ELSE 0 END) AS completed_sets,
+			        MAX(ws.weight) AS best_weight,
+			        MAX(ws.reps) AS best_reps
+			 FROM {$p}fit_workout_session_exercises wse
+			 JOIN {$p}fit_exercises e ON e.id = wse.exercise_id
+			 LEFT JOIN {$p}fit_workout_sets ws ON ws.session_exercise_id = wse.id
+			 WHERE wse.session_id = %d
+			 GROUP BY wse.id, wse.sort_order, e.name
+			 ORDER BY wse.sort_order ASC, wse.id ASC",
+			(int) $session->id
+		) );
+
+		$exercise_summaries   = [];
+		$total_completed_sets = 0;
+
+		foreach ( $rows as $row ) {
+			$completed_sets = (int) $row->completed_sets;
+			$total_completed_sets += $completed_sets;
+
+			$exercise_summaries[] = [
+				'exercise_name'   => (string) $row->exercise_name,
+				'completed_sets'  => $completed_sets,
+				'best_weight'     => null !== $row->best_weight ? (float) $row->best_weight : null,
+				'best_reps'       => null !== $row->best_reps ? (int) $row->best_reps : null,
+			];
+		}
+
+		return [
+			'session_id'           => (int) $session->id,
+			'day_type'             => $day_type,
+			'session_date'         => (string) $session->session_date,
+			'time_tier'            => (string) $session->time_tier,
+			'duration_minutes'     => null !== $session->duration_minutes ? (int) $session->duration_minutes : null,
+			'exercise_count'       => count( $exercise_summaries ),
+			'completed_sets'       => $total_completed_sets,
+			'exercises'            => array_slice( $exercise_summaries, 0, 4 ),
+		];
 	}
 
 	private static function weekday_label( int $day_order ): string {

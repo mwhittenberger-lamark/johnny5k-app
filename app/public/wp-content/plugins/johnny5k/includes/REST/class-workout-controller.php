@@ -31,6 +31,12 @@ class WorkoutController {
 			'permission_callback' => $auth,
 		] );
 
+		register_rest_route( $ns, '/workout/current', [
+			'methods'             => 'GET',
+			'callback'            => [ __CLASS__, 'get_current_session' ],
+			'permission_callback' => $auth,
+		] );
+
 		register_rest_route( $ns, '/workout/(?P<id>\d+)', [
 			'methods'             => 'GET',
 			'callback'            => [ __CLASS__, 'get_session' ],
@@ -51,9 +57,48 @@ class WorkoutController {
 			'permission_callback' => $auth,
 		] );
 
+		register_rest_route( $ns, '/workout/(?P<id>\d+)/set/(?P<set_id>\d+)', [
+			'methods'             => 'DELETE',
+			'callback'            => [ __CLASS__, 'delete_set' ],
+			'permission_callback' => $auth,
+		] );
+
+		register_rest_route( $ns, '/workout/(?P<id>\d+)/set/restore', [
+			'methods'             => 'POST',
+			'callback'            => [ __CLASS__, 'restore_set' ],
+			'permission_callback' => $auth,
+			'args'                => [ 'id' => [ 'required' => true, 'type' => 'integer' ] ],
+		] );
+
+		register_rest_route( $ns, '/workout/(?P<id>\d+)/exercise/(?P<session_exercise_id>\d+)/note', [
+			'methods'             => 'PUT',
+			'callback'            => [ __CLASS__, 'update_exercise_note' ],
+			'permission_callback' => $auth,
+		] );
+
+		register_rest_route( $ns, '/workout/(?P<id>\d+)/exercise/(?P<session_exercise_id>\d+)', [
+			'methods'             => 'DELETE',
+			'callback'            => [ __CLASS__, 'remove_session_exercise' ],
+			'permission_callback' => $auth,
+		] );
+
+		register_rest_route( $ns, '/workout/(?P<id>\d+)/exercise/restore', [
+			'methods'             => 'POST',
+			'callback'            => [ __CLASS__, 'restore_session_exercise' ],
+			'permission_callback' => $auth,
+			'args'                => [ 'id' => [ 'required' => true, 'type' => 'integer' ] ],
+		] );
+
 		register_rest_route( $ns, '/workout/(?P<id>\d+)/swap', [
 			'methods'             => 'POST',
 			'callback'            => [ __CLASS__, 'swap_exercise' ],
+			'permission_callback' => $auth,
+			'args'                => [ 'id' => [ 'required' => true, 'type' => 'integer' ] ],
+		] );
+
+		register_rest_route( $ns, '/workout/(?P<id>\d+)/swap/undo', [
+			'methods'             => 'POST',
+			'callback'            => [ __CLASS__, 'undo_swap_exercise' ],
 			'permission_callback' => $auth,
 			'args'                => [ 'id' => [ 'required' => true, 'type' => 'integer' ] ],
 		] );
@@ -65,9 +110,23 @@ class WorkoutController {
 			'args'                => [ 'id' => [ 'required' => true, 'type' => 'integer' ] ],
 		] );
 
+		register_rest_route( $ns, '/workout/(?P<id>\d+)/quick-add/undo', [
+			'methods'             => 'POST',
+			'callback'            => [ __CLASS__, 'undo_quick_add_exercise' ],
+			'permission_callback' => $auth,
+			'args'                => [ 'id' => [ 'required' => true, 'type' => 'integer' ] ],
+		] );
+
 		register_rest_route( $ns, '/workout/(?P<id>\d+)/skip', [
 			'methods'             => 'POST',
 			'callback'            => [ __CLASS__, 'skip_session' ],
+			'permission_callback' => $auth,
+			'args'                => [ 'id' => [ 'required' => true, 'type' => 'integer' ] ],
+		] );
+
+		register_rest_route( $ns, '/workout/(?P<id>\d+)/restart', [
+			'methods'             => 'POST',
+			'callback'            => [ __CLASS__, 'restart_session' ],
 			'permission_callback' => $auth,
 			'args'                => [ 'id' => [ 'required' => true, 'type' => 'integer' ] ],
 		] );
@@ -85,31 +144,32 @@ class WorkoutController {
 	public static function start( \WP_REST_Request $req ): \WP_REST_Response {
 		$user_id   = get_current_user_id();
 		$time_tier = sanitize_text_field( $req->get_param( 'time_tier' ) ?: 'medium' );
+		$day_type  = self::normalize_day_type( $req->get_param( 'day_type' ) );
 		$readiness = $req->get_param( 'readiness_score' ) !== null ? max( 1, min( 10, (int) $req->get_param( 'readiness_score' ) ) ) : null;
+		$effective_time_tier = self::effective_time_tier( $time_tier, $readiness );
 
 		// Prevent duplicate session for today
 		global $wpdb;
 		$today   = UserTime::today( $user_id );
 		$existing = $wpdb->get_var( $wpdb->prepare(
 			"SELECT id FROM {$wpdb->prefix}fit_workout_sessions
-			 WHERE user_id = %d AND session_date = %s AND skip_requested = 0",
+			 WHERE user_id = %d AND session_date = %s AND completed = 0 AND skip_requested = 0",
 			$user_id, $today
 		) );
 
 		if ( $existing ) {
 			if ( null !== $readiness ) {
-				$wpdb->update(
-					$wpdb->prefix . 'fit_workout_sessions',
-					[ 'readiness_score' => $readiness ],
-					[ 'id' => $existing ]
-				);
+				$wpdb->update( $wpdb->prefix . 'fit_workout_sessions', array_filter( [
+					'readiness_score' => $readiness,
+					'time_tier' => self::is_maintenance_readiness( $readiness ) ? $effective_time_tier : null,
+				], fn( $value ) => null !== $value ), [ 'id' => $existing ] );
 			}
 			// Return the existing session instead of creating a duplicate
 			$req->set_param( 'id', $existing );
 			return self::get_session( $req );
 		}
 
-		$result = TrainingEngine::build_session( $user_id, $time_tier );
+		$result = TrainingEngine::build_session( $user_id, $effective_time_tier, self::is_maintenance_readiness( $readiness ), $day_type );
 
 		if ( is_wp_error( $result ) ) {
 			return new \WP_REST_Response( [ 'message' => $result->get_error_message() ], 400 );
@@ -126,6 +186,29 @@ class WorkoutController {
 		);
 
 		return new \WP_REST_Response( $result, 201 );
+	}
+
+	public static function get_current_session( \WP_REST_Request $req ): \WP_REST_Response {
+		global $wpdb;
+		$user_id = get_current_user_id();
+		$session_id = (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT id FROM {$wpdb->prefix}fit_workout_sessions
+			 WHERE user_id = %d AND session_date = %s AND completed = 0 AND skip_requested = 0
+			 ORDER BY id DESC LIMIT 1",
+			$user_id,
+			UserTime::today( $user_id )
+		) );
+
+		if ( ! $session_id ) {
+			return new \WP_REST_Response( [
+				'session' => null,
+				'exercises' => [],
+				'session_mode' => 'normal',
+			], 200 );
+		}
+
+		$req->set_param( 'id', $session_id );
+		return self::get_session( $req );
 	}
 
 	// ── GET /workout/{id} ─────────────────────────────────────────────────────
@@ -146,7 +229,7 @@ class WorkoutController {
 		}
 
 		$exercises = $wpdb->get_results( $wpdb->prepare(
-			"SELECT wse.*, e.name AS exercise_name, e.primary_muscle, e.coaching_cues_json, e.equipment, e.difficulty,
+			"SELECT wse.*, e.name AS exercise_name, e.primary_muscle, e.coaching_cues_json, e.equipment, e.difficulty, e.movement_pattern,
 			        oe.name AS original_exercise_name
 			 FROM {$p}fit_workout_session_exercises wse
 			 JOIN {$p}fit_exercises e ON e.id = wse.exercise_id
@@ -154,12 +237,19 @@ class WorkoutController {
 			 WHERE wse.session_id = %d ORDER BY wse.sort_order",
 			$sess_id
 		) );
+		$session_mode = self::session_mode_from_readiness( $session->readiness_score );
 
 		foreach ( $exercises as $ex ) {
+			$progression = TrainingEngine::recommended_progression( $user_id, (int) $ex->exercise_id );
 			$ex->sets = $wpdb->get_results( $wpdb->prepare(
 				"SELECT * FROM {$p}fit_workout_sets WHERE session_exercise_id = %d ORDER BY set_number",
 				$ex->id
 			) );
+			$ex->recommended_weight = $progression['weight'];
+			$ex->suggestion_note = 'maintenance' === $session_mode
+				? 'Maintenance mode: get quality work in and stop well before grindy reps.'
+				: $progression['note'];
+			$ex->exercise_summary = self::build_exercise_summary( $ex );
 			$ex->recent_history = self::get_recent_history( $user_id, (int) $ex->exercise_id );
 			$ex->swap_options   = self::get_swap_options( $session, $ex );
 		}
@@ -167,6 +257,7 @@ class WorkoutController {
 		return new \WP_REST_Response( [
 			'session'   => $session,
 			'exercises' => $exercises,
+			'session_mode' => $session_mode,
 		] );
 	}
 
@@ -192,7 +283,7 @@ class WorkoutController {
 			'reps'                => (int)   ( $req->get_param( 'reps' )   ?: 0 ),
 			'rir'                 => $req->get_param( 'rir' ) !== null ? (float) $req->get_param( 'rir' ) : null,
 			'rpe'                 => $req->get_param( 'rpe' ) !== null ? (float) $req->get_param( 'rpe' ) : null,
-			'completed'           => 1,
+			'completed'           => $req->get_param( 'completed' ) !== null ? (int) (bool) $req->get_param( 'completed' ) : 1,
 			'pain_flag'           => (int) (bool) $req->get_param( 'pain_flag' ),
 			'notes'               => sanitize_text_field( $req->get_param( 'notes' ) ?: '' ) ?: null,
 		], fn( $v ) => $v !== null ) );
@@ -217,6 +308,7 @@ class WorkoutController {
 			'weight'     => $req->get_param( 'weight' ) !== null ? (float) $req->get_param( 'weight' ) : null,
 			'reps'       => $req->get_param( 'reps' )   !== null ? (int)   $req->get_param( 'reps' )   : null,
 			'rir'        => $req->get_param( 'rir' )    !== null ? (float) $req->get_param( 'rir' )    : null,
+			'completed'  => $req->get_param( 'completed' ) !== null ? (int) (bool) $req->get_param( 'completed' ) : null,
 			'pain_flag'  => $req->get_param( 'pain_flag' ) !== null ? (int) (bool) $req->get_param( 'pain_flag' ) : null,
 			'notes'      => $req->get_param( 'notes' )  !== null ? sanitize_text_field( $req->get_param( 'notes' ) ) : null,
 		], fn( $v ) => $v !== null );
@@ -226,6 +318,234 @@ class WorkoutController {
 		}
 
 		return new \WP_REST_Response( [ 'updated' => true ] );
+	}
+
+	public static function update_exercise_note( \WP_REST_Request $req ): \WP_REST_Response {
+		global $wpdb;
+		$p                   = $wpdb->prefix;
+		$user_id             = get_current_user_id();
+		$sess_id             = (int) $req->get_param( 'id' );
+		$session_exercise_id = (int) $req->get_param( 'session_exercise_id' );
+		$notes               = sanitize_textarea_field( (string) $req->get_param( 'notes' ) );
+
+		if ( ! self::user_owns_session( $user_id, $sess_id ) ) {
+			return new \WP_REST_Response( [ 'message' => 'Session not found.' ], 404 );
+		}
+
+		if ( ! self::session_contains_exercise( $sess_id, $session_exercise_id ) ) {
+			return new \WP_REST_Response( [ 'message' => 'Exercise not found in session.' ], 404 );
+		}
+
+		$wpdb->update(
+			$p . 'fit_workout_session_exercises',
+			[ 'notes' => '' !== trim( $notes ) ? $notes : null ],
+			[ 'id' => $session_exercise_id, 'session_id' => $sess_id ],
+			[ '%s' ],
+			[ '%d', '%d' ]
+		);
+
+		return new \WP_REST_Response( [ 'updated' => true ] );
+	}
+
+	public static function delete_set( \WP_REST_Request $req ): \WP_REST_Response {
+		global $wpdb;
+		$p        = $wpdb->prefix;
+		$user_id  = get_current_user_id();
+		$sess_id  = (int) $req->get_param( 'id' );
+		$set_id   = (int) $req->get_param( 'set_id' );
+
+		if ( ! self::user_owns_session( $user_id, $sess_id ) ) {
+			return new \WP_REST_Response( [ 'message' => 'Session not found.' ], 404 );
+		}
+
+		$set = $wpdb->get_row( $wpdb->prepare(
+			"SELECT ws.*
+			 FROM {$p}fit_workout_sets ws
+			 JOIN {$p}fit_workout_session_exercises wse ON wse.id = ws.session_exercise_id
+			 WHERE ws.id = %d AND wse.session_id = %d",
+			$set_id,
+			$sess_id
+		) );
+
+		if ( ! $set ) {
+			return new \WP_REST_Response( [ 'message' => 'Set not found.' ], 404 );
+		}
+
+		$wpdb->delete( $p . 'fit_workout_sets', [ 'id' => $set_id ], [ '%d' ] );
+		self::resequence_set_numbers( (int) $set->session_exercise_id );
+
+		return new \WP_REST_Response( [
+			'deleted' => true,
+			'set' => [
+				'session_exercise_id' => (int) $set->session_exercise_id,
+				'set_number' => (int) $set->set_number,
+				'weight' => (float) $set->weight,
+				'reps' => (int) $set->reps,
+				'rir' => null !== $set->rir ? (float) $set->rir : null,
+				'rpe' => null !== $set->rpe ? (float) $set->rpe : null,
+				'completed' => (int) $set->completed,
+				'pain_flag' => (int) $set->pain_flag,
+				'notes' => $set->notes,
+			],
+		] );
+	}
+
+	public static function restore_set( \WP_REST_Request $req ): \WP_REST_Response {
+		global $wpdb;
+		$p                   = $wpdb->prefix;
+		$user_id             = get_current_user_id();
+		$sess_id             = (int) $req->get_param( 'id' );
+		$session_exercise_id = (int) $req->get_param( 'session_exercise_id' );
+		$set_number          = max( 1, (int) ( $req->get_param( 'set_number' ) ?: 1 ) );
+
+		if ( ! self::user_owns_session( $user_id, $sess_id ) ) {
+			return new \WP_REST_Response( [ 'message' => 'Session not found.' ], 404 );
+		}
+
+		if ( ! self::session_contains_exercise( $sess_id, $session_exercise_id ) ) {
+			return new \WP_REST_Response( [ 'message' => 'Exercise not found in session.' ], 404 );
+		}
+
+		$wpdb->query( $wpdb->prepare(
+			"UPDATE {$p}fit_workout_sets
+			 SET set_number = set_number + 1
+			 WHERE session_exercise_id = %d AND set_number >= %d",
+			$session_exercise_id,
+			$set_number
+		) );
+
+		$wpdb->insert( $p . 'fit_workout_sets', array_filter( [
+			'session_exercise_id' => $session_exercise_id,
+			'set_number' => $set_number,
+			'weight' => (float) ( $req->get_param( 'weight' ) ?: 0 ),
+			'reps' => (int) ( $req->get_param( 'reps' ) ?: 0 ),
+			'rir' => $req->get_param( 'rir' ) !== null ? (float) $req->get_param( 'rir' ) : null,
+			'rpe' => $req->get_param( 'rpe' ) !== null ? (float) $req->get_param( 'rpe' ) : null,
+			'completed' => $req->get_param( 'completed' ) !== null ? (int) (bool) $req->get_param( 'completed' ) : 1,
+			'pain_flag' => (int) (bool) $req->get_param( 'pain_flag' ),
+			'notes' => sanitize_text_field( $req->get_param( 'notes' ) ?: '' ) ?: null,
+		], fn( $value ) => null !== $value ) );
+
+		self::resequence_set_numbers( $session_exercise_id );
+
+		return new \WP_REST_Response( [ 'restored' => true, 'set_id' => (int) $wpdb->insert_id ], 201 );
+	}
+
+	public static function remove_session_exercise( \WP_REST_Request $req ): \WP_REST_Response {
+		global $wpdb;
+		$p                   = $wpdb->prefix;
+		$user_id             = get_current_user_id();
+		$sess_id             = (int) $req->get_param( 'id' );
+		$session_exercise_id = (int) $req->get_param( 'session_exercise_id' );
+
+		if ( ! self::user_owns_session( $user_id, $sess_id ) ) {
+			return new \WP_REST_Response( [ 'message' => 'Session not found.' ], 404 );
+		}
+
+		$exercise = $wpdb->get_row( $wpdb->prepare(
+			"SELECT * FROM {$p}fit_workout_session_exercises WHERE id = %d AND session_id = %d",
+			$session_exercise_id,
+			$sess_id
+		) );
+
+		if ( ! $exercise ) {
+			return new \WP_REST_Response( [ 'message' => 'Exercise not found in session.' ], 404 );
+		}
+
+		$sets = $wpdb->get_results( $wpdb->prepare(
+			"SELECT set_number, weight, reps, rir, rpe, completed, pain_flag, notes
+			 FROM {$p}fit_workout_sets
+			 WHERE session_exercise_id = %d
+			 ORDER BY set_number, id",
+			$session_exercise_id
+		) );
+
+		$wpdb->delete( $p . 'fit_workout_sets', [ 'session_exercise_id' => $session_exercise_id ], [ '%d' ] );
+		$wpdb->delete( $p . 'fit_workout_session_exercises', [ 'id' => $session_exercise_id, 'session_id' => $sess_id ], [ '%d', '%d' ] );
+		self::resequence_session_sort_order( $sess_id );
+
+		return new \WP_REST_Response( [
+			'removed' => true,
+			'exercise' => [
+				'session_id' => (int) $exercise->session_id,
+				'exercise_id' => (int) $exercise->exercise_id,
+				'slot_type' => (string) $exercise->slot_type,
+				'planned_rep_min' => (int) $exercise->planned_rep_min,
+				'planned_rep_max' => (int) $exercise->planned_rep_max,
+				'planned_sets' => (int) $exercise->planned_sets,
+				'sort_order' => (int) $exercise->sort_order,
+				'was_swapped' => (int) $exercise->was_swapped,
+				'original_exercise_id' => null !== $exercise->original_exercise_id ? (int) $exercise->original_exercise_id : null,
+				'notes' => $exercise->notes,
+				'sets' => array_map( static function( $set ) {
+					return [
+						'set_number' => (int) $set->set_number,
+						'weight' => (float) $set->weight,
+						'reps' => (int) $set->reps,
+						'rir' => null !== $set->rir ? (float) $set->rir : null,
+						'rpe' => null !== $set->rpe ? (float) $set->rpe : null,
+						'completed' => (int) $set->completed,
+						'pain_flag' => (int) $set->pain_flag,
+						'notes' => $set->notes,
+					];
+				}, is_array( $sets ) ? $sets : [] ),
+			],
+		] );
+	}
+
+	public static function restore_session_exercise( \WP_REST_Request $req ): \WP_REST_Response {
+		global $wpdb;
+		$p             = $wpdb->prefix;
+		$user_id       = get_current_user_id();
+		$sess_id       = (int) $req->get_param( 'id' );
+		$sort_order    = max( 1, (int) ( $req->get_param( 'sort_order' ) ?: 1 ) );
+
+		if ( ! self::user_owns_session( $user_id, $sess_id ) ) {
+			return new \WP_REST_Response( [ 'message' => 'Session not found.' ], 404 );
+		}
+
+		$wpdb->query( $wpdb->prepare(
+			"UPDATE {$p}fit_workout_session_exercises
+			 SET sort_order = sort_order + 1
+			 WHERE session_id = %d AND sort_order >= %d",
+			$sess_id,
+			$sort_order
+		) );
+
+		$wpdb->insert( $p . 'fit_workout_session_exercises', array_filter( [
+			'session_id' => $sess_id,
+			'exercise_id' => (int) $req->get_param( 'exercise_id' ),
+			'slot_type' => sanitize_text_field( $req->get_param( 'slot_type' ) ?: 'accessory' ),
+			'planned_rep_min' => (int) ( $req->get_param( 'planned_rep_min' ) ?: 8 ),
+			'planned_rep_max' => (int) ( $req->get_param( 'planned_rep_max' ) ?: 12 ),
+			'planned_sets' => (int) ( $req->get_param( 'planned_sets' ) ?: 1 ),
+			'sort_order' => $sort_order,
+			'was_swapped' => $req->get_param( 'was_swapped' ) !== null ? (int) (bool) $req->get_param( 'was_swapped' ) : 0,
+			'original_exercise_id' => $req->get_param( 'original_exercise_id' ) !== null ? (int) $req->get_param( 'original_exercise_id' ) : null,
+			'notes' => $req->get_param( 'notes' ) !== null ? sanitize_textarea_field( (string) $req->get_param( 'notes' ) ) : null,
+		], fn( $value ) => null !== $value ) );
+
+		$restored_session_exercise_id = (int) $wpdb->insert_id;
+		$sets = $req->get_param( 'sets' );
+		if ( is_array( $sets ) ) {
+			foreach ( $sets as $set ) {
+				$wpdb->insert( $p . 'fit_workout_sets', array_filter( [
+					'session_exercise_id' => $restored_session_exercise_id,
+					'set_number' => max( 1, (int) ( $set['set_number'] ?? 1 ) ),
+					'weight' => (float) ( $set['weight'] ?? 0 ),
+					'reps' => (int) ( $set['reps'] ?? 0 ),
+					'rir' => array_key_exists( 'rir', $set ) && null !== $set['rir'] ? (float) $set['rir'] : null,
+					'rpe' => array_key_exists( 'rpe', $set ) && null !== $set['rpe'] ? (float) $set['rpe'] : null,
+					'completed' => array_key_exists( 'completed', $set ) ? (int) (bool) $set['completed'] : 1,
+					'pain_flag' => array_key_exists( 'pain_flag', $set ) ? (int) (bool) $set['pain_flag'] : 0,
+					'notes' => array_key_exists( 'notes', $set ) && null !== $set['notes'] ? sanitize_text_field( (string) $set['notes'] ) : null,
+				], fn( $value ) => null !== $value ) );
+			}
+		}
+
+		self::resequence_session_sort_order( $sess_id );
+
+		return new \WP_REST_Response( [ 'restored' => true, 'session_exercise_id' => $restored_session_exercise_id ], 201 );
 	}
 
 	// ── POST /workout/{id}/swap ───────────────────────────────────────────────
@@ -251,18 +571,68 @@ class WorkoutController {
 			return new \WP_REST_Response( [ 'message' => 'Exercise not found in session.' ], 404 );
 		}
 
-		$wpdb->update( $p . 'fit_workout_session_exercises', [
-			'exercise_id'           => $new_ex_id,
-			'was_swapped'           => 1,
-			'original_exercise_id'  => $orig_ex_id,
-		], [ 'id' => $ses_ex_id ] );
+		if ( $orig_ex_id === $new_ex_id ) {
+			return new \WP_REST_Response( [ 'message' => 'That exercise is already active.' ], 400 );
+		}
 
 		$new_ex = $wpdb->get_row( $wpdb->prepare(
-			"SELECT id, name FROM {$p}fit_exercises WHERE id = %d",
+			"SELECT id, name, primary_muscle, equipment, difficulty
+			 FROM {$p}fit_exercises
+			 WHERE id = %d AND active = 1",
 			$new_ex_id
 		) );
 
+		if ( ! $new_ex ) {
+			return new \WP_REST_Response( [ 'message' => 'Selected swap exercise is not available.' ], 404 );
+		}
+
+		$existing_original_id = $wpdb->get_var( $wpdb->prepare(
+			"SELECT original_exercise_id FROM {$p}fit_workout_session_exercises WHERE id = %d AND session_id = %d",
+			$ses_ex_id,
+			$sess_id
+		) );
+
+		$wpdb->update( $p . 'fit_workout_session_exercises', [
+			'exercise_id'           => $new_ex_id,
+			'was_swapped'           => 1,
+			'original_exercise_id'  => $existing_original_id ? (int) $existing_original_id : $orig_ex_id,
+		], [ 'id' => $ses_ex_id ] );
+
 		return new \WP_REST_Response( [ 'swapped' => true, 'exercise' => $new_ex ] );
+	}
+
+	public static function undo_swap_exercise( \WP_REST_Request $req ): \WP_REST_Response {
+		global $wpdb;
+		$p                         = $wpdb->prefix;
+		$user_id                   = get_current_user_id();
+		$sess_id                   = (int) $req->get_param( 'id' );
+		$ses_ex_id                 = (int) $req->get_param( 'session_exercise_id' );
+		$previous_exercise_id      = (int) $req->get_param( 'previous_exercise_id' );
+		$previous_original_id      = $req->get_param( 'previous_original_exercise_id' ) !== null ? (int) $req->get_param( 'previous_original_exercise_id' ) : null;
+		$previous_was_swapped      = (int) (bool) $req->get_param( 'previous_was_swapped' );
+
+		if ( ! self::user_owns_session( $user_id, $sess_id ) ) {
+			return new \WP_REST_Response( [ 'message' => 'Session not found.' ], 404 );
+		}
+
+		if ( ! self::session_contains_exercise( $sess_id, $ses_ex_id ) ) {
+			return new \WP_REST_Response( [ 'message' => 'Exercise not found in session.' ], 404 );
+		}
+
+		$update = [
+			'exercise_id' => $previous_exercise_id,
+			'was_swapped' => $previous_was_swapped,
+		];
+
+		if ( null === $previous_original_id ) {
+			$update['original_exercise_id'] = null;
+		} else {
+			$update['original_exercise_id'] = $previous_original_id;
+		}
+
+		$wpdb->update( $p . 'fit_workout_session_exercises', $update, [ 'id' => $ses_ex_id, 'session_id' => $sess_id ], [ '%d', '%d', '%d' ], [ '%d', '%d' ] );
+
+		return new \WP_REST_Response( [ 'undone' => true ] );
 	}
 
 	public static function quick_add_exercise( \WP_REST_Request $req ): \WP_REST_Response {
@@ -336,6 +706,27 @@ class WorkoutController {
 		] , 201 );
 	}
 
+	public static function undo_quick_add_exercise( \WP_REST_Request $req ): \WP_REST_Response {
+		global $wpdb;
+		$p                     = $wpdb->prefix;
+		$user_id               = get_current_user_id();
+		$sess_id               = (int) $req->get_param( 'id' );
+		$session_exercise_id   = (int) $req->get_param( 'session_exercise_id' );
+
+		if ( ! self::user_owns_session( $user_id, $sess_id ) ) {
+			return new \WP_REST_Response( [ 'message' => 'Session not found.' ], 404 );
+		}
+
+		if ( ! self::session_contains_exercise( $sess_id, $session_exercise_id ) ) {
+			return new \WP_REST_Response( [ 'message' => 'Exercise not found in session.' ], 404 );
+		}
+
+		$wpdb->delete( $p . 'fit_workout_sets', [ 'session_exercise_id' => $session_exercise_id ], [ '%d' ] );
+		$wpdb->delete( $p . 'fit_workout_session_exercises', [ 'id' => $session_exercise_id, 'session_id' => $sess_id ], [ '%d', '%d' ] );
+
+		return new \WP_REST_Response( [ 'undone' => true ] );
+	}
+
 	// ── POST /workout/{id}/skip ───────────────────────────────────────────────
 
 	public static function skip_session( \WP_REST_Request $req ): \WP_REST_Response {
@@ -353,6 +744,45 @@ class WorkoutController {
 			'skip_count'   => $skip_count,
 			'skip_warning' => $skip_count >= 3,
 		] );
+	}
+
+	public static function restart_session( \WP_REST_Request $req ): \WP_REST_Response {
+		global $wpdb;
+		$p       = $wpdb->prefix;
+		$user_id = get_current_user_id();
+		$sess_id = (int) $req->get_param( 'id' );
+
+		$session = $wpdb->get_row( $wpdb->prepare(
+			"SELECT * FROM {$p}fit_workout_sessions WHERE id = %d AND user_id = %d",
+			$sess_id,
+			$user_id
+		) );
+
+		if ( ! $session ) {
+			return new \WP_REST_Response( [ 'message' => 'Session not found.' ], 404 );
+		}
+
+		if ( (int) $session->completed ) {
+			return new \WP_REST_Response( [ 'message' => 'Completed sessions cannot be restarted.' ], 400 );
+		}
+
+		$session_exercise_ids = $wpdb->get_col( $wpdb->prepare(
+			"SELECT id FROM {$p}fit_workout_session_exercises WHERE session_id = %d",
+			$sess_id
+		) );
+
+		if ( ! empty( $session_exercise_ids ) ) {
+			$placeholders = implode( ',', array_fill( 0, count( $session_exercise_ids ), '%d' ) );
+			$wpdb->query( $wpdb->prepare(
+				"DELETE FROM {$p}fit_workout_sets WHERE session_exercise_id IN ($placeholders)",
+				...array_map( 'intval', $session_exercise_ids )
+			) );
+		}
+
+		$wpdb->delete( $p . 'fit_workout_session_exercises', [ 'session_id' => $sess_id ], [ '%d' ] );
+		$wpdb->delete( $p . 'fit_workout_sessions', [ 'id' => $sess_id, 'user_id' => $user_id ], [ '%d', '%d' ] );
+
+		return new \WP_REST_Response( [ 'restarted' => true ] );
 	}
 
 	// ── POST /workout/{id}/complete ───────────────────────────────────────────
@@ -386,6 +816,16 @@ class WorkoutController {
 			'duration_minutes'=> $duration_min,
 		], [ 'id' => $sess_id ] );
 
+		if ( 'rest' === $actual_day_type ) {
+			return new \WP_REST_Response( [
+				'completed'        => true,
+				'duration_minutes' => 0,
+				'snapshots'        => [],
+				'ai_summary'       => null,
+				'rest_day'         => true,
+			] );
+		}
+
 		// Generate PR snapshots + award evaluation
 		$snapshots = TrainingEngine::record_snapshots( $sess_id );
 		AwardEngine::evaluate( $user_id );
@@ -417,6 +857,55 @@ class WorkoutController {
 		) ) === $user_id;
 	}
 
+	private static function session_contains_exercise( int $session_id, int $session_exercise_id ): bool {
+		global $wpdb;
+		return (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT COUNT(*) FROM {$wpdb->prefix}fit_workout_session_exercises WHERE id = %d AND session_id = %d",
+			$session_exercise_id,
+			$session_id
+		) ) > 0;
+	}
+
+	private static function resequence_set_numbers( int $session_exercise_id ): void {
+		global $wpdb;
+		$p = $wpdb->prefix;
+
+		$set_ids = $wpdb->get_col( $wpdb->prepare(
+			"SELECT id FROM {$p}fit_workout_sets WHERE session_exercise_id = %d ORDER BY set_number, id",
+			$session_exercise_id
+		) );
+
+		if ( empty( $set_ids ) ) {
+			return;
+		}
+
+		$position = 1;
+		foreach ( $set_ids as $set_id ) {
+			$wpdb->update( $p . 'fit_workout_sets', [ 'set_number' => $position ], [ 'id' => (int) $set_id ], [ '%d' ], [ '%d' ] );
+			$position++;
+		}
+	}
+
+	private static function resequence_session_sort_order( int $session_id ): void {
+		global $wpdb;
+		$p = $wpdb->prefix;
+
+		$exercise_ids = $wpdb->get_col( $wpdb->prepare(
+			"SELECT id FROM {$p}fit_workout_session_exercises WHERE session_id = %d ORDER BY sort_order, id",
+			$session_id
+		) );
+
+		if ( empty( $exercise_ids ) ) {
+			return;
+		}
+
+		$position = 1;
+		foreach ( $exercise_ids as $exercise_id ) {
+			$wpdb->update( $p . 'fit_workout_session_exercises', [ 'sort_order' => $position ], [ 'id' => (int) $exercise_id ], [ '%d' ], [ '%d' ] );
+			$position++;
+		}
+	}
+
 	private static function get_recent_history( int $user_id, int $exercise_id ): array {
 		global $wpdb;
 		$p = $wpdb->prefix;
@@ -428,7 +917,7 @@ class WorkoutController {
 			 ORDER BY snapshot_date DESC
 			 LIMIT 3",
 			$user_id,
-			exercise_id
+			$exercise_id
 		) );
 
 		return is_array( $rows ) ? $rows : [];
@@ -500,5 +989,56 @@ class WorkoutController {
 		}
 
 		return ucfirst( implode( ' and ', array_slice( $reasons, 0, 2 ) ) ) . '.';
+	}
+
+	private static function build_exercise_summary( object $exercise ): string {
+		$movement  = self::humanize_token( (string) ( $exercise->movement_pattern ?? '' ) );
+		$muscle    = self::humanize_token( (string) ( $exercise->primary_muscle ?? '' ) );
+		$equipment = self::humanize_token( (string) ( $exercise->equipment ?? '' ) );
+
+		if ( $movement && $muscle ) {
+			$summary = sprintf( 'A %1$s movement focused on %2$s.', strtolower( $movement ), strtolower( $muscle ) );
+		} elseif ( $muscle ) {
+			$summary = sprintf( 'A movement aimed at building %s.', strtolower( $muscle ) );
+		} else {
+			$summary = 'A controlled movement with a focus on clean reps and repeatable form.';
+		}
+
+		if ( $equipment ) {
+			$summary .= ' Use ' . strtolower( $equipment ) . ' and own the full range you can control.';
+		}
+
+		return $summary;
+	}
+
+	private static function humanize_token( string $value ): string {
+		if ( '' === $value ) {
+			return '';
+		}
+
+		return trim( ucwords( str_replace( [ '_', '-' ], ' ', $value ) ) );
+	}
+
+	private static function is_maintenance_readiness( ?int $readiness ): bool {
+		return null !== $readiness && $readiness <= 3;
+	}
+
+	private static function effective_time_tier( string $time_tier, ?int $readiness ): string {
+		return self::is_maintenance_readiness( $readiness ) ? 'short' : $time_tier;
+	}
+
+	private static function session_mode_from_readiness( $readiness ): string {
+		return self::is_maintenance_readiness( null !== $readiness ? (int) $readiness : null ) ? 'maintenance' : 'normal';
+	}
+
+	private static function normalize_day_type( $value ): ?string {
+		if ( ! is_string( $value ) || '' === $value ) {
+			return null;
+		}
+
+		$day_type = sanitize_key( $value );
+		$allowed  = [ 'push', 'pull', 'legs', 'arms_shoulders', 'cardio', 'rest' ];
+
+		return in_array( $day_type, $allowed, true ) ? $day_type : null;
 	}
 }

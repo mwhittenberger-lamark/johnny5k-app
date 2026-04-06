@@ -176,6 +176,35 @@ class CalorieEngine {
 		$current_target = (int) $goal->target_calories;
 		$goal_type      = $goal->goal_type;
 		$weekly_change  = $recent_avg - $prior_avg; // + = gaining, - = losing
+		$target_sleep   = (float) ( $goal->target_sleep_hours ?? 8 );
+		$target_steps   = (int) ( $goal->target_steps ?? 8000 );
+
+		$avg_sleep = (float) $wpdb->get_var( $wpdb->prepare(
+			"SELECT AVG(hours_sleep) FROM {$wpdb->prefix}fit_sleep_logs
+			 WHERE user_id = %d AND sleep_date >= %s",
+			$user_id,
+			$since_7
+		) );
+
+		$avg_steps = (float) $wpdb->get_var( $wpdb->prepare(
+			"SELECT AVG(steps) FROM {$wpdb->prefix}fit_step_logs
+			 WHERE user_id = %d AND step_date >= %s",
+			$user_id,
+			$since_7
+		) );
+
+		$cardio_minutes = (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT COALESCE(SUM(duration_minutes), 0) FROM {$wpdb->prefix}fit_cardio_logs
+			 WHERE user_id = %d AND cardio_date >= %s",
+			$user_id,
+			$since_7
+		) );
+
+		$active_flags = (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT COUNT(*) FROM {$wpdb->prefix}fit_user_health_flags
+			 WHERE user_id = %d AND active = 1",
+			$user_id
+		) );
 
 		$action  = 'no_change';
 		$delta   = 0;
@@ -218,6 +247,18 @@ class CalorieEngine {
 			return null;
 		}
 
+		$recovery_guard = $active_flags > 0
+			|| ( $avg_sleep > 0 && $avg_sleep < max( 6.5, $target_sleep - 1 ) )
+			|| ( $target_steps > 0 && $avg_steps > ( $target_steps * 1.15 ) )
+			|| $cardio_minutes >= 150;
+
+		if ( 'decrease' === $action && $recovery_guard ) {
+			$delta = max( $delta, -100 );
+			$reason .= ' Recovery data suggests caution: sleep, steps, cardio load, or active flags mean the adjustment stays conservative.';
+		} elseif ( 'increase' === $action && $recovery_guard ) {
+			$reason .= ' Recovery data supports keeping fuel available while stress is elevated.';
+		}
+
 		$new_target = max( 1200, $current_target + $delta );
 
 		// Recompute macros for new target
@@ -240,6 +281,12 @@ class CalorieEngine {
 				'fat_g'     => $fat_g,
 			],
 			'reason' => $reason,
+			'recovery_context' => [
+				'avg_sleep_7d'      => round( $avg_sleep, 1 ),
+				'avg_steps_7d'      => (int) round( $avg_steps ),
+				'cardio_minutes_7d' => $cardio_minutes,
+				'active_flags'      => $active_flags,
+			],
 		];
 	}
 
