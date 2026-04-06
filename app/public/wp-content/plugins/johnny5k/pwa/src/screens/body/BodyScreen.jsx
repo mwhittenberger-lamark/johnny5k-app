@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { bodyApi } from '../../api/client'
+import { bodyApi, workoutApi } from '../../api/client'
 import { formatUsShortDate } from '../../lib/dateFormat'
 import { useDashboardStore } from '../../store/dashboardStore'
 
@@ -11,6 +11,7 @@ export default function BodyScreen() {
   const [sleepLogs, setSleepLogs] = useState([])
   const [stepLogs, setStepLogs] = useState([])
   const [cardioLogs, setCardioLogs] = useState([])
+  const [workoutLogs, setWorkoutLogs] = useState([])
   const [metrics, setMetrics]   = useState({ weight: [], sleep: [], steps: [], cardio: [] })
   const [weightInput, setWt]    = useState('')
   const [weightDate, setWeightDate] = useState(todayInputValue())
@@ -44,11 +45,25 @@ export default function BodyScreen() {
     }
   }, [location.state?.focusTab])
 
+  useEffect(() => {
+    const notice = location.state?.johnnyActionNotice
+    if (!notice) {
+      return undefined
+    }
+
+    setFlash(notice)
+    const nextState = { ...(location.state || {}) }
+    delete nextState.johnnyActionNotice
+    navigate(location.pathname, { replace: true, state: Object.keys(nextState).length ? nextState : null })
+    return undefined
+  }, [location.pathname, location.state, location.state?.johnnyActionNotice, navigate])
+
   function refreshBodyData() {
     bodyApi.getWeight(14).then(setWeights).catch(() => {})
     bodyApi.getSleep(7).then(setSleepLogs).catch(() => {})
     bodyApi.getSteps(10).then(setStepLogs).catch(() => {})
     bodyApi.getCardio(10).then(setCardioLogs).catch(() => {})
+    workoutApi.getHistory(3, 10).then(setWorkoutLogs).catch(() => {})
     bodyApi.getMetrics(30).then(setMetrics).catch(() => {})
   }
 
@@ -333,6 +348,7 @@ export default function BodyScreen() {
           ['weight', 'Weight'],
           ['sleep', 'Sleep'],
           ['steps', 'Steps'],
+          ['workouts', 'Workouts'],
           ['cardio', 'Cardio'],
         ].map(([key, label]) => (
           <button key={key} className={`tab-btn ${tab === key ? 'active' : ''}`} onClick={() => setTab(key)}>
@@ -574,6 +590,162 @@ export default function BodyScreen() {
           onFlash={setFlash}
         />
       )}
+
+    {tab === 'workouts' && (
+    <WorkoutHistoryTab
+      workoutLogs={workoutLogs}
+      invalidate={invalidate}
+      onRefreshSnapshot={() => loadSnapshot(true)}
+      onRefreshBodyData={refreshBodyData}
+      onFlash={setFlash}
+    />
+    )}
+    </div>
+  )
+}
+
+function WorkoutHistoryTab({ workoutLogs, invalidate, onRefreshSnapshot, onRefreshBodyData, onFlash }) {
+  const [editingWorkoutId, setEditingWorkoutId] = useState(null)
+  const [form, setForm] = useState({ session_date: todayInputValue(), actual_day_type: 'push', duration_minutes: '', time_tier: 'medium' })
+  const [saving, setSaving] = useState(false)
+  const [msg, setMsg] = useState('')
+  const workoutFormRef = useRef(null)
+
+  const totalMinutes = (workoutLogs ?? []).reduce((sum, entry) => sum + Number(entry.duration_minutes || 0), 0)
+  const latestWorkout = workoutLogs?.[0] || null
+
+  function scrollToForm() {
+    requestAnimationFrame(() => {
+    workoutFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    const input = workoutFormRef.current?.querySelector('input, select')
+    input?.focus()
+    })
+  }
+
+  function resetForm() {
+    setEditingWorkoutId(null)
+    setForm({ session_date: todayInputValue(), actual_day_type: 'push', duration_minutes: '', time_tier: 'medium' })
+  }
+
+  function startEdit(entry) {
+    setEditingWorkoutId(entry.id)
+    setForm({
+    session_date: entry.session_date || todayInputValue(),
+    actual_day_type: entry.actual_day_type || entry.planned_day_type || 'push',
+    duration_minutes: entry.duration_minutes != null ? String(entry.duration_minutes) : '',
+    time_tier: entry.time_tier || 'medium',
+    })
+    scrollToForm()
+  }
+
+  async function handleSubmit(e) {
+    e.preventDefault()
+    if (!editingWorkoutId) return
+    setSaving(true)
+    try {
+    await workoutApi.updateHistory(editingWorkoutId, {
+      session_date: form.session_date,
+      actual_day_type: form.actual_day_type,
+      duration_minutes: Number(form.duration_minutes || 0),
+      time_tier: form.time_tier,
+    })
+    setMsg('Workout updated!')
+    onFlash?.('Workout updated!')
+    resetForm()
+    invalidate()
+    onRefreshSnapshot?.()
+    onRefreshBodyData?.()
+    } catch (err) { setMsg('Error: ' + err.message) }
+    setSaving(false)
+  }
+
+  async function handleDelete(id) {
+    if (!window.confirm('Delete this workout and its logged sets?')) return
+    setSaving(true)
+    try {
+    await workoutApi.deleteHistory(id)
+    if (editingWorkoutId === id) {
+      resetForm()
+    }
+    setMsg('Workout deleted.')
+    onFlash?.('Workout deleted.')
+    invalidate()
+    onRefreshSnapshot?.()
+    onRefreshBodyData?.()
+    } catch (err) { setMsg('Error: ' + err.message) }
+    setSaving(false)
+  }
+
+  return (
+    <div className="body-tab cardio-tab">
+    <section className="body-summary-grid cardio-summary-grid">
+      <SummaryCard label="Past 3 days" value={workoutLogs.length} meta={workoutLogs.length ? 'Completed workouts you can still edit' : 'No recent workouts to manage'} accent="orange" />
+      <SummaryCard label="Logged minutes" value={totalMinutes || '—'} suffix={totalMinutes ? ' min' : ''} meta={totalMinutes ? 'Across recent completed sessions' : 'Duration shows up after you complete a workout'} accent="teal" />
+      <SummaryCard label="Latest workout" value={latestWorkout ? formatDayType(latestWorkout.actual_day_type || latestWorkout.planned_day_type) : '—'} meta={latestWorkout ? `${formatDate(latestWorkout.session_date)} • ${latestWorkout.duration_minutes || 0} min` : 'No workout logged in the last 3 days'} accent="pink" />
+    </section>
+    <section ref={workoutFormRef} className="dash-card body-form-card cardio-card">
+      <div className="body-card-header">
+      <h3>{editingWorkoutId ? 'Edit workout' : 'Select a recent workout to edit'}</h3>
+      <p>{editingWorkoutId ? 'Adjust the date, split, time tier, or duration. Delete removes the workout and its logged sets.' : 'Use Edit on any workout from the last 3 days to update it here.'}</p>
+      </div>
+      {editingWorkoutId ? (
+      <form className="body-form-grid two-column cardio-form-grid" onSubmit={handleSubmit}>
+        <label>
+        Workout type
+        <select value={form.actual_day_type} onChange={e => setForm(current => ({ ...current, actual_day_type: e.target.value }))}>
+          {['push', 'pull', 'legs', 'arms_shoulders', 'cardio', 'rest'].map(option => (
+          <option key={option} value={option}>{formatDayType(option)}</option>
+          ))}
+        </select>
+        </label>
+        <label>
+        Time tier
+        <select value={form.time_tier} onChange={e => setForm(current => ({ ...current, time_tier: e.target.value }))}>
+          {['short', 'medium', 'full'].map(option => (
+          <option key={option} value={option}>{formatDayType(option)}</option>
+          ))}
+        </select>
+        </label>
+        <label>
+        Date
+        <input type="date" value={form.session_date} onChange={e => setForm(current => ({ ...current, session_date: e.target.value }))} required />
+        </label>
+        <label>
+        Duration (minutes)
+        <input type="number" min="0" max="600" value={form.duration_minutes} onChange={e => setForm(current => ({ ...current, duration_minutes: e.target.value }))} required />
+        </label>
+        <div className="body-form-actions body-form-actions-full">
+        <button className="btn-secondary" type="button" onClick={resetForm}>Cancel</button>
+        <button className="btn-primary" type="submit" disabled={saving}>{saving ? 'Saving…' : 'Update Workout'}</button>
+        </div>
+      </form>
+      ) : (
+      <p className="body-recovery-note">Pick a workout below to edit it. Only the past 3 days stay editable here.</p>
+      )}
+      {msg && <p className={msg.startsWith('Error') ? 'error' : 'success-msg'}>{msg}</p>}
+    </section>
+    <section className="dash-card">
+      <div className="body-card-header">
+      <h3>Recent workouts</h3>
+      <p>{workoutLogs.length ? 'Completed workouts from the last 3 days.' : 'No completed workouts from the last 3 days yet.'}</p>
+      </div>
+      <div className="trend-chart body-trend-chart cardio-log-list">
+      {workoutLogs.map((entry, index) => (
+        <div key={entry.id || index} className="trend-row body-trend-row cardio-row body-log-row">
+        <div className="body-log-main">
+          <span className="trend-date">{formatDate(entry.session_date)}</span>
+          <strong className="cardio-row-title">{formatDayType(entry.actual_day_type || entry.planned_day_type)}</strong>
+          <span className="cardio-note">{Number(entry.completed_sets || 0)} completed sets across {Number(entry.exercise_count || 0)} exercises</span>
+        </div>
+        <div className="cardio-row-meta">
+          <span className="cardio-intensity-pill moderate">{entry.time_tier || 'medium'}</span>
+          <span className="trend-val">{Number(entry.duration_minutes || 0)} min</span>
+          <RowActions onEdit={() => startEdit(entry)} onDelete={() => handleDelete(entry.id)} />
+        </div>
+        </div>
+      ))}
+      </div>
+    </section>
     </div>
   )
 }
@@ -918,6 +1090,11 @@ function getWeightSparkStyle(weights) {
 function formatDate(value) {
   if (!value) return '—'
   return formatUsShortDate(value, value)
+}
+
+function formatDayType(value) {
+	if (!value) return 'Workout'
+	return value.replace(/_/g, ' ').replace(/\b\w/g, ch => ch.toUpperCase())
 }
 
 function todayInputValue() {

@@ -6,6 +6,7 @@ defined( 'ABSPATH' ) || exit;
 use Johnny5k\Auth\InviteCodes;
 use Johnny5k\Services\AiService;
 use Johnny5k\Services\CostTracker;
+use Johnny5k\Services\UserTime;
 
 /**
  * REST Controller: Admin API
@@ -115,6 +116,18 @@ class AdminApiController {
 		register_rest_route( $ns, '/admin/persona/test', [
 			'methods'             => 'POST',
 			'callback'            => [ __CLASS__, 'test_persona' ],
+			'permission_callback' => $admin,
+		] );
+
+		register_rest_route( $ns, '/admin/persona/time-preview', [
+			'methods'             => 'POST',
+			'callback'            => [ __CLASS__, 'preview_persona_time' ],
+			'permission_callback' => $admin,
+		] );
+
+		register_rest_route( $ns, '/admin/persona/action-preview', [
+			'methods'             => 'POST',
+			'callback'            => [ __CLASS__, 'preview_persona_actions' ],
 			'permission_callback' => $admin,
 		] );
 
@@ -397,16 +410,20 @@ class AdminApiController {
 	// ── GET /admin/persona ────────────────────────────────────────────────────
 
 	public static function get_persona( \WP_REST_Request $req ): \WP_REST_Response {
+		$defaults = AiService::admin_persona_defaults();
+		$persona  = array_merge( $defaults, (array) get_option( 'jf_johnny_persona', [] ) );
+
 		return new \WP_REST_Response( [
-			'persona'       => get_option( 'jf_johnny_persona', [] ),
+			'persona'       => $persona,
 			'system_prompt' => get_option( 'jf_johnny_system_prompt', '' ),
+			'contract_checks' => AiService::admin_persona_contract_checks(),
 		] );
 	}
 
 	// ── POST /admin/persona ───────────────────────────────────────────────────
 
 	public static function save_persona( \WP_REST_Request $req ): \WP_REST_Response {
-		$persona = $req->get_json_params();
+		$persona = array_merge( AiService::admin_persona_defaults(), (array) $req->get_json_params() );
 
 		// Sanitize all fields recursively
 		$clean = array_map( 'sanitize_textarea_field', (array) $persona );
@@ -414,7 +431,7 @@ class AdminApiController {
 		update_option( 'jf_johnny_persona', $clean );
 
 		// Rebuild compiled system prompt from persona fields
-		$compiled = self::compile_persona( $clean );
+		$compiled = AiService::compile_admin_persona_prompt( $clean );
 		update_option( 'jf_johnny_system_prompt', $compiled );
 
 		return new \WP_REST_Response( [
@@ -444,6 +461,69 @@ class AdminApiController {
 		] );
 	}
 
+	public static function preview_persona_time( \WP_REST_Request $req ): \WP_REST_Response {
+		$message  = sanitize_textarea_field( $req->get_param( 'message' ) ?: 'Give me a helpful snack suggestion right now.' );
+		$admin_id = get_current_user_id();
+		$today    = UserTime::today( $admin_id );
+		$timezone = UserTime::timezone( $admin_id );
+		$scenarios = [
+			[ 'key' => 'morning', 'label' => 'Morning', 'time' => '08:00' ],
+			[ 'key' => 'late_night', 'label' => 'Late night', 'time' => '22:30' ],
+		];
+
+		$results = [];
+
+		foreach ( $scenarios as $scenario ) {
+			$datetime = \DateTimeImmutable::createFromFormat( 'Y-m-d H:i', $today . ' ' . $scenario['time'], $timezone );
+			if ( false === $datetime ) {
+				return new \WP_REST_Response( [ 'message' => 'Could not build preview time context.' ], 500 );
+			}
+
+			$context_overrides = [
+				'current_local_date'     => $datetime->format( 'Y-m-d' ),
+				'current_local_time'     => $datetime->format( 'g:i A' ),
+				'current_local_datetime' => $datetime->format( 'Y-m-d g:i A T' ),
+				'user_timezone'          => $timezone->getName(),
+			];
+
+			$preview = AiService::preview_chat( $admin_id, $message, 'general', $context_overrides );
+			if ( is_wp_error( $preview ) ) {
+				return new \WP_REST_Response( [ 'message' => $preview->get_error_message() ], 500 );
+			}
+
+			$results[] = [
+				'key'              => $scenario['key'],
+				'label'            => $scenario['label'],
+				'preview_datetime' => $context_overrides['current_local_datetime'],
+				'reply'            => $preview['reply'],
+				'context'          => $preview['context'],
+			];
+		}
+
+		return new \WP_REST_Response( [
+			'message'   => $message,
+			'scenarios' => $results,
+		] );
+	}
+
+	public static function preview_persona_actions( \WP_REST_Request $req ): \WP_REST_Response {
+		$message  = sanitize_textarea_field( $req->get_param( 'message' ) ?: 'Look at my nutrition today and take the next best action.' );
+		$admin_id = get_current_user_id();
+
+		$preview = AiService::preview_chat( $admin_id, $message );
+		if ( is_wp_error( $preview ) ) {
+			return new \WP_REST_Response( [ 'message' => $preview->get_error_message() ], 500 );
+		}
+
+		return new \WP_REST_Response( [
+			'message'       => $message,
+			'reply'         => $preview['reply'],
+			'actions'       => $preview['actions'] ?? [],
+			'system_prompt' => $preview['system_prompt'] ?? '',
+			'context'       => $preview['context'] ?? [],
+		] );
+	}
+
 	public static function test_sms( \WP_REST_Request $req ): \WP_REST_Response {
 		$user_id = (int) $req->get_param( 'user_id' );
 		$trigger_type = sanitize_key( (string) $req->get_param( 'trigger_type' ) );
@@ -465,30 +545,6 @@ class AdminApiController {
 	}
 
 	// ── Persona compiler ──────────────────────────────────────────────────────
-
-	private static function compile_persona( array $p ): string {
-		$name        = $p['name']        ?? 'Johnny 5000';
-		$tagline     = $p['tagline']     ?? 'Your AI fitness coach and big brother.';
-		$tone        = $p['tone']        ?? 'warm, encouraging, confident, occasionally funny';
-		$rules       = $p['rules']       ?? '';
-		$extra       = $p['extra']       ?? '';
-
-		$compiled  = "You are {$name}. {$tagline}\n\n";
-		$compiled .= "Personality & tone: {$tone}\n\n";
-		$compiled .= "Core rules:\n";
-		$compiled .= "- Always be honest that you are an AI.\n";
-		$compiled .= "- Never shame or belittle the user.\n";
-		$compiled .= "- Keep responses concise but warm.\n";
-		$compiled .= "- Focus on the user's goals and progress.\n";
-		if ( $rules ) {
-			$compiled .= "- {$rules}\n";
-		}
-		if ( $extra ) {
-			$compiled .= "\nAdditional instructions:\n{$extra}\n";
-		}
-
-		return $compiled;
-	}
 
 	private static function render_reply_html( string $reply ): string {
 		$reply = preg_replace( '/\s(?=\d+\.\s+\*\*)/', "\n", trim( $reply ) );

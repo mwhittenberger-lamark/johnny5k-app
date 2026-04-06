@@ -37,6 +37,25 @@ class WorkoutController {
 			'permission_callback' => $auth,
 		] );
 
+		register_rest_route( $ns, '/workout/history', [
+			'methods'             => 'GET',
+			'callback'            => [ __CLASS__, 'get_recent_history_sessions' ],
+			'permission_callback' => $auth,
+		] );
+
+		register_rest_route( $ns, '/workout/history/(?P<id>\d+)', [
+			[
+				'methods'             => 'PUT',
+				'callback'            => [ __CLASS__, 'update_history_session' ],
+				'permission_callback' => $auth,
+			],
+			[
+				'methods'             => 'DELETE',
+				'callback'            => [ __CLASS__, 'delete_history_session' ],
+				'permission_callback' => $auth,
+			],
+		] );
+
 		register_rest_route( $ns, '/workout/(?P<id>\d+)', [
 			'methods'             => 'GET',
 			'callback'            => [ __CLASS__, 'get_session' ],
@@ -209,6 +228,37 @@ class WorkoutController {
 
 		$req->set_param( 'id', $session_id );
 		return self::get_session( $req );
+	}
+
+	public static function get_recent_history_sessions( \WP_REST_Request $req ): \WP_REST_Response {
+		global $wpdb;
+		$p       = $wpdb->prefix;
+		$user_id = get_current_user_id();
+		$days    = max( 1, min( 3, (int) ( $req->get_param( 'days' ) ?: 3 ) ) );
+		$limit   = max( 1, min( 10, (int) ( $req->get_param( 'limit' ) ?: 10 ) ) );
+		$cutoff  = UserTime::days_ago( $user_id, max( 0, $days - 1 ) );
+
+		$rows = $wpdb->get_results( $wpdb->prepare(
+			"SELECT s.id, s.session_date, s.planned_day_type, s.actual_day_type, s.time_tier,
+			        s.readiness_score, s.duration_minutes, s.completed_at,
+			        COUNT(DISTINCT wse.id) AS exercise_count,
+			        COALESCE(SUM(CASE WHEN ws.completed = 1 THEN 1 ELSE 0 END), 0) AS completed_sets
+			 FROM {$p}fit_workout_sessions s
+			 LEFT JOIN {$p}fit_workout_session_exercises wse ON wse.session_id = s.id
+			 LEFT JOIN {$p}fit_workout_sets ws ON ws.session_exercise_id = wse.id
+			 WHERE s.user_id = %d
+			   AND s.completed = 1
+			   AND s.skip_requested = 0
+			   AND s.session_date >= %s
+			 GROUP BY s.id
+			 ORDER BY s.session_date DESC, s.id DESC
+			 LIMIT %d",
+			$user_id,
+			$cutoff,
+			$limit
+		) );
+
+		return new \WP_REST_Response( is_array( $rows ) ? $rows : [] );
 	}
 
 	// ── GET /workout/{id} ─────────────────────────────────────────────────────
@@ -766,21 +816,7 @@ class WorkoutController {
 			return new \WP_REST_Response( [ 'message' => 'Completed sessions cannot be restarted.' ], 400 );
 		}
 
-		$session_exercise_ids = $wpdb->get_col( $wpdb->prepare(
-			"SELECT id FROM {$p}fit_workout_session_exercises WHERE session_id = %d",
-			$sess_id
-		) );
-
-		if ( ! empty( $session_exercise_ids ) ) {
-			$placeholders = implode( ',', array_fill( 0, count( $session_exercise_ids ), '%d' ) );
-			$wpdb->query( $wpdb->prepare(
-				"DELETE FROM {$p}fit_workout_sets WHERE session_exercise_id IN ($placeholders)",
-				...array_map( 'intval', $session_exercise_ids )
-			) );
-		}
-
-		$wpdb->delete( $p . 'fit_workout_session_exercises', [ 'session_id' => $sess_id ], [ '%d' ] );
-		$wpdb->delete( $p . 'fit_workout_sessions', [ 'id' => $sess_id, 'user_id' => $user_id ], [ '%d', '%d' ] );
+		self::delete_session_records( $sess_id, $user_id );
 
 		return new \WP_REST_Response( [ 'restarted' => true ] );
 	}
@@ -847,6 +883,89 @@ class WorkoutController {
 		] );
 	}
 
+	public static function update_history_session( \WP_REST_Request $req ): \WP_REST_Response {
+		global $wpdb;
+		$p       = $wpdb->prefix;
+		$user_id = get_current_user_id();
+		$sess_id = (int) $req->get_param( 'id' );
+		$session = self::get_history_session_record( $user_id, $sess_id );
+
+		if ( ! $session ) {
+			return new \WP_REST_Response( [ 'message' => 'Workout not found.' ], 404 );
+		}
+
+		if ( ! self::is_history_session_editable( $session, $user_id ) ) {
+			return new \WP_REST_Response( [ 'message' => 'Only completed workouts from the last 3 days can be edited.' ], 400 );
+		}
+
+		$update = [];
+		$today  = UserTime::today( $user_id );
+		$cutoff = UserTime::days_ago( $user_id, 2 );
+
+		if ( null !== $req->get_param( 'session_date' ) ) {
+			$session_date = sanitize_text_field( (string) $req->get_param( 'session_date' ) );
+			if ( ! preg_match( '/^\d{4}-\d{2}-\d{2}$/', $session_date ) || $session_date < $cutoff || $session_date > $today ) {
+				return new \WP_REST_Response( [ 'message' => 'Workout date must stay within the last 3 days.' ], 400 );
+			}
+			$update['session_date'] = $session_date;
+		}
+
+		if ( null !== $req->get_param( 'actual_day_type' ) ) {
+			$day_type = self::normalize_day_type( $req->get_param( 'actual_day_type' ) );
+			if ( null === $day_type ) {
+				return new \WP_REST_Response( [ 'message' => 'Workout type is invalid.' ], 400 );
+			}
+			$update['actual_day_type'] = $day_type;
+		}
+
+		if ( null !== $req->get_param( 'time_tier' ) ) {
+			$time_tier = sanitize_key( (string) $req->get_param( 'time_tier' ) );
+			if ( ! in_array( $time_tier, [ 'short', 'medium', 'full' ], true ) ) {
+				return new \WP_REST_Response( [ 'message' => 'Workout time tier is invalid.' ], 400 );
+			}
+			$update['time_tier'] = $time_tier;
+		}
+
+		if ( null !== $req->get_param( 'duration_minutes' ) ) {
+			$update['duration_minutes'] = max( 0, min( 600, (int) $req->get_param( 'duration_minutes' ) ) );
+		}
+
+		if ( null !== $req->get_param( 'readiness_score' ) ) {
+			$raw_readiness = $req->get_param( 'readiness_score' );
+			$update['readiness_score'] = '' === (string) $raw_readiness ? null : max( 1, min( 10, (int) $raw_readiness ) );
+		}
+
+		if ( $update ) {
+			$wpdb->update( $p . 'fit_workout_sessions', $update, [ 'id' => $sess_id, 'user_id' => $user_id ] );
+			if ( isset( $update['session_date'] ) && $update['session_date'] !== $session->session_date ) {
+				self::move_session_snapshots( $sess_id, $user_id, (string) $session->session_date, (string) $update['session_date'] );
+			}
+		}
+
+		$updated = self::get_history_session_summary( $user_id, $sess_id );
+
+		return new \WP_REST_Response( $updated ?: [ 'updated' => true ] );
+	}
+
+	public static function delete_history_session( \WP_REST_Request $req ): \WP_REST_Response {
+		$user_id = get_current_user_id();
+		$sess_id = (int) $req->get_param( 'id' );
+		$session = self::get_history_session_record( $user_id, $sess_id );
+
+		if ( ! $session ) {
+			return new \WP_REST_Response( [ 'message' => 'Workout not found.' ], 404 );
+		}
+
+		if ( ! self::is_history_session_editable( $session, $user_id ) ) {
+			return new \WP_REST_Response( [ 'message' => 'Only completed workouts from the last 3 days can be deleted.' ], 400 );
+		}
+
+		self::delete_session_snapshots( $sess_id, $user_id, (string) $session->session_date );
+		self::delete_session_records( $sess_id, $user_id );
+
+		return new \WP_REST_Response( [ 'deleted' => true ] );
+	}
+
 	// ── Helpers ───────────────────────────────────────────────────────────────
 
 	private static function user_owns_session( int $user_id, int $session_id ): bool {
@@ -864,6 +983,117 @@ class WorkoutController {
 			$session_exercise_id,
 			$session_id
 		) ) > 0;
+	}
+
+	private static function get_history_session_record( int $user_id, int $session_id ): ?object {
+		global $wpdb;
+		$session = $wpdb->get_row( $wpdb->prepare(
+			"SELECT * FROM {$wpdb->prefix}fit_workout_sessions WHERE id = %d AND user_id = %d",
+			$session_id,
+			$user_id
+		) );
+
+		return $session ?: null;
+	}
+
+	private static function is_history_session_editable( object $session, int $user_id ): bool {
+		if ( ! (int) $session->completed || (int) $session->skip_requested ) {
+			return false;
+		}
+
+		$cutoff = UserTime::days_ago( $user_id, 2 );
+		$today  = UserTime::today( $user_id );
+
+		return $session->session_date >= $cutoff && $session->session_date <= $today;
+	}
+
+	private static function get_history_session_summary( int $user_id, int $session_id ): ?object {
+		global $wpdb;
+		$p = $wpdb->prefix;
+
+		$row = $wpdb->get_row( $wpdb->prepare(
+			"SELECT s.id, s.session_date, s.planned_day_type, s.actual_day_type, s.time_tier,
+			        s.readiness_score, s.duration_minutes, s.completed_at,
+			        COUNT(DISTINCT wse.id) AS exercise_count,
+			        COALESCE(SUM(CASE WHEN ws.completed = 1 THEN 1 ELSE 0 END), 0) AS completed_sets
+			 FROM {$p}fit_workout_sessions s
+			 LEFT JOIN {$p}fit_workout_session_exercises wse ON wse.session_id = s.id
+			 LEFT JOIN {$p}fit_workout_sets ws ON ws.session_exercise_id = wse.id
+			 WHERE s.user_id = %d AND s.id = %d
+			 GROUP BY s.id",
+			$user_id,
+			$session_id
+		) );
+
+		return $row ?: null;
+	}
+
+	private static function delete_session_records( int $session_id, int $user_id ): void {
+		global $wpdb;
+		$p = $wpdb->prefix;
+
+		$session_exercise_ids = $wpdb->get_col( $wpdb->prepare(
+			"SELECT id FROM {$p}fit_workout_session_exercises WHERE session_id = %d",
+			$session_id
+		) );
+
+		if ( ! empty( $session_exercise_ids ) ) {
+			$placeholders = implode( ',', array_fill( 0, count( $session_exercise_ids ), '%d' ) );
+			$wpdb->query( $wpdb->prepare(
+				"DELETE FROM {$p}fit_workout_sets WHERE session_exercise_id IN ($placeholders)",
+				...array_map( 'intval', $session_exercise_ids )
+			) );
+		}
+
+		$wpdb->delete( $p . 'fit_workout_session_exercises', [ 'session_id' => $session_id ], [ '%d' ] );
+		$wpdb->delete( $p . 'fit_workout_sessions', [ 'id' => $session_id, 'user_id' => $user_id ], [ '%d', '%d' ] );
+	}
+
+	private static function move_session_snapshots( int $session_id, int $user_id, string $from_date, string $to_date ): void {
+		global $wpdb;
+		$p = $wpdb->prefix;
+		$exercise_ids = $wpdb->get_col( $wpdb->prepare(
+			"SELECT DISTINCT exercise_id FROM {$p}fit_workout_session_exercises WHERE session_id = %d",
+			$session_id
+		) );
+
+		if ( empty( $exercise_ids ) ) {
+			return;
+		}
+
+		$placeholders = implode( ',', array_fill( 0, count( $exercise_ids ), '%d' ) );
+		$args = array_merge( [ $to_date, $user_id, $from_date ], array_map( 'intval', $exercise_ids ) );
+		$wpdb->query( $wpdb->prepare(
+			"UPDATE {$p}fit_exercise_performance_snapshots
+			 SET snapshot_date = %s
+			 WHERE user_id = %d
+			   AND snapshot_date = %s
+			   AND exercise_id IN ($placeholders)",
+			...$args
+		) );
+	}
+
+	private static function delete_session_snapshots( int $session_id, int $user_id, string $session_date ): void {
+		global $wpdb;
+		$p = $wpdb->prefix;
+		$exercise_ids = $wpdb->get_col( $wpdb->prepare(
+			"SELECT DISTINCT exercise_id FROM {$p}fit_workout_session_exercises WHERE session_id = %d",
+			$session_id
+		) );
+
+		if ( empty( $exercise_ids ) ) {
+			return;
+		}
+
+		$placeholders = implode( ',', array_fill( 0, count( $exercise_ids ), '%d' ) );
+		$args = array_merge( [ $user_id, $session_date ], array_map( 'intval', $exercise_ids ) );
+		$wpdb->query( $wpdb->prepare(
+			"DELETE FROM {$p}fit_exercise_performance_snapshots
+			 WHERE user_id = %d
+			   AND snapshot_date = %s
+			   AND exercise_id IN ($placeholders)",
+			...$args
+		) );
 	}
 
 	private static function resequence_set_numbers( int $session_exercise_id ): void {

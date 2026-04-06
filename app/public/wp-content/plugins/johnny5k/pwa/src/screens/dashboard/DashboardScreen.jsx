@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { formatUsFriendlyDate, formatUsWeekday } from '../../lib/dateFormat'
+import AppIcon, { normalizeAppIconName } from '../../components/ui/AppIcon'
 import { useDashboardStore } from '../../store/dashboardStore'
 import { useAuthStore } from '../../store/authStore'
 import { useJohnnyAssistantStore } from '../../store/johnnyAssistantStore'
@@ -21,6 +22,7 @@ export default function DashboardScreen() {
   const location = useLocation()
   const openDrawer = useJohnnyAssistantStore(state => state.openDrawer)
   const [noticeDismissed, setNoticeDismissed] = useState(false)
+  const [actionNoticeDismissed, setActionNoticeDismissed] = useState(false)
   const email = useAuthStore(state => state.email)
 
   useEffect(() => {
@@ -32,6 +34,10 @@ export default function DashboardScreen() {
     setNoticeDismissed(false)
   }, [location.state?.targetsUpdated])
 
+  useEffect(() => {
+    setActionNoticeDismissed(false)
+  }, [location.state?.johnnyActionNotice])
+
   const reviewTrigger = useMemo(() => buildDashboardReviewTrigger(snapshot), [snapshot])
 
   useEffect(() => {
@@ -42,6 +48,9 @@ export default function DashboardScreen() {
   const s = snapshot
   const quickPrompts = useMemo(() => buildQuickPrompts(s), [s])
   const fallbackJohnnyReview = useMemo(() => buildJohnnyDashboardReview(s), [s])
+  const bestNextMove = useMemo(() => buildBestNextMove(s), [s])
+  const editorialCard = useMemo(() => buildEditorialCard(s), [s])
+  const momentumCard = useMemo(() => buildMomentumCard(s, awards?.earned ?? []), [awards?.earned, s])
   const johnnyReview = useMemo(() => {
     if (!aiJohnnyReview) return fallbackJohnnyReview
     return {
@@ -56,13 +65,11 @@ export default function DashboardScreen() {
 
   const goal = s?.goal
   const nt   = s?.nutrition_totals
-  const micros = s?.micronutrient_totals
   const sess = s?.session
   const tomorrow = s?.tomorrow_preview
-  const streaks = s?.streaks
   const targetsUpdated = location.state?.targetsUpdated
   const earnedAwards = awards?.earned ?? []
-  const latestAward = earnedAwards[0]
+  const johnnyActionNotice = location.state?.johnnyActionNotice
 
   const calPct = goal && nt ? Math.round((nt.calories / goal.target_calories) * 100) : 0
   const proPct = goal && nt ? Math.round((nt.protein_g / goal.target_protein_g) * 100) : 0
@@ -73,14 +80,9 @@ export default function DashboardScreen() {
   const greetingName = getGreetingName(email)
   const dateLabel = formatFriendlyDate(s?.date)
   const coachLine = buildCoachLine(s)
-  const storyCard = buildStoryCard(s)
-  const tipCard = buildTipCard(s)
   const tomorrowRecommendation = buildTomorrowRecommendation(s)
-  const weeklyScoreLabel = (s?.score_7d ?? 0) >= 80 ? 'Strong week' : (s?.score_7d ?? 0) >= 40 ? 'Solid momentum' : 'Plenty of runway'
+  const weeklyScoreLabel = (s?.score_7d ?? 0) >= 80 ? 'Momentum is holding' : (s?.score_7d ?? 0) >= 40 ? 'Rhythm is building' : 'Still easy to steady'
   const mealCount = s?.meals_today?.length ?? 0
-  const fiber = Number(micros?.fiber_g ?? 0)
-  const sugar = Number(micros?.sugar_g ?? 0)
-  const sodium = Number(micros?.sodium_mg ?? 0)
   const recoverySummary = s?.recovery_summary
   const recoveryFlagItems = Array.isArray(recoverySummary?.active_flag_items) ? recoverySummary.active_flag_items : []
   const todayFocus = sess?.actual_day_type || sess?.planned_day_type || 'rest'
@@ -91,8 +93,18 @@ export default function DashboardScreen() {
       ? `${todayWeekday} • ${formatDayType(todayFocus)} day`
       : `${todayWeekday} • Recovery day`
 
-  async function handleRefreshReview(event) {
-    event.stopPropagation()
+  function handleDashboardAction(action) {
+    if (!action) return
+    if (action.prompt) {
+      openDrawer(action.prompt)
+      return
+    }
+    if (action.href) {
+      navigate(action.href, action.state ? { state: action.state } : undefined)
+    }
+  }
+
+  async function handleRefreshReview() {
     await Promise.all([
       loadSnapshot(true),
       loadJohnnyReview(true),
@@ -120,32 +132,49 @@ export default function DashboardScreen() {
         </div>
       )}
 
-      <section className="dashboard-hero-grid">
-        <div className="dashboard-hero-stack">
-          <div className="dash-card dashboard-hero-card" onClick={() => navigate('/nutrition')}>
-            <div className="dashboard-hero-top">
-              <div>
-                <span className="dashboard-chip">Fuel</span>
-                <h2>{caloriesRemaining != null ? `${caloriesRemaining} cal left` : 'Nutrition ready'}</h2>
-                <p>{nt?.calories ?? 0} of {goal?.target_calories ?? '—'} calories logged today.</p>
-              </div>
-              <div className="dashboard-orbit">
-                <span>{Math.min(100, calPct)}%</span>
-              </div>
-            </div>
-            <div className="dashboard-macro-grid">
-              <MacroPill label="Protein" current={nt?.protein_g} target={goal?.target_protein_g} pct={proPct} />
-              <MacroPill label="Carbs" current={nt?.carbs_g} target={goal?.target_carbs_g} pct={carbPct} />
-              <MacroPill label="Fat" current={nt?.fat_g} target={goal?.target_fat_g} pct={fatPct} />
-            </div>
-            <div className="dashboard-meal-meta">
-              <span>{mealCount} meals logged</span>
-              <span>{goal?.goal_type ? `${formatGoalType(goal.goal_type)} phase` : 'Targets active'}</span>
-            </div>
+      {johnnyActionNotice && !actionNoticeDismissed && (
+        <div className="dash-card settings-warning dashboard-notice" role="status">
+          <div>
+            <strong>Johnny opened this screen.</strong>
+            <p>{johnnyActionNotice}</p>
           </div>
+          <button className="btn-outline small" onClick={() => setActionNoticeDismissed(true)}>Dismiss</button>
+        </div>
+      )}
+
+      <section className="dashboard-primary-grid">
+        <div className="dashboard-primary-stack">
+          <button className="dash-card dashboard-card-button dashboard-best-next-card" type="button" onClick={() => handleDashboardAction(bestNextMove)}>
+            <div className="dashboard-card-head">
+              <span className="dashboard-chip ai">Best next move</span>
+              <span className="dashboard-card-kicker">Right now</span>
+            </div>
+            <h2>{bestNextMove.title}</h2>
+            <p>{bestNextMove.body}</p>
+            <div className="dashboard-best-next-meta">
+              <span>{bestNextMove.context}</span>
+              <span>{bestNextMove.actionLabel}</span>
+            </div>
+          </button>
+
+          <button className="dash-card dashboard-card-button dashboard-hero-card" type="button" onClick={() => navigate('/nutrition')}>
+            <div className="dashboard-card-head">
+              <span className="dashboard-chip">Fuel</span>
+              <span className="dashboard-card-kicker">{mealCount} meal{mealCount === 1 ? '' : 's'} logged</span>
+            </div>
+            <h2>{caloriesRemaining != null ? `${caloriesRemaining} cal left` : 'Nutrition ready'}</h2>
+            <p>{proteinTargetCopy(nt, goal, mealCount)}</p>
+            <div className="dashboard-hero-progress-row">
+              <MacroPill label="Calories" current={nt?.calories} target={goal?.target_calories} pct={calPct} compact />
+              <MacroPill label="Protein" current={nt?.protein_g} target={goal?.target_protein_g} pct={proPct} compact suffix="g" />
+              <MacroPill label="Carbs" current={nt?.carbs_g} target={goal?.target_carbs_g} pct={carbPct} compact suffix="g" />
+              <MacroPill label="Fat" current={nt?.fat_g} target={goal?.target_fat_g} pct={fatPct} compact suffix="g" />
+            </div>
+            <span className="dashboard-card-cta">Open nutrition</span>
+          </button>
 
           {recoverySummary ? (
-            <button className="dash-card dashboard-recovery-summary-card" type="button" onClick={() => navigate('/body')}>
+            <button className="dash-card dashboard-card-button dashboard-recovery-summary-card" type="button" onClick={() => navigate('/body')}>
               <div className="dashboard-card-head">
                 <span className="dashboard-chip subtle">Recovery Loop</span>
                 <span className={`dashboard-chip ${recoverySummary.mode === 'normal' ? 'success' : 'subtle'}`}>{recoverySummary.mode}</span>
@@ -177,11 +206,12 @@ export default function DashboardScreen() {
               ) : (
                 <p className="dashboard-recovery-summary-note">No active flags right now.</p>
               )}
+              <span className="dashboard-card-cta">Open progress</span>
             </button>
           ) : null}
         </div>
 
-        <div className="dash-card dashboard-coach-card" onClick={() => openDrawer()}>
+        <article className="dash-card dashboard-coach-card">
           <div className="dashboard-card-head">
             <div className="dashboard-johnny-head-actions">
               <div className="dashboard-johnny-head-copy">
@@ -211,7 +241,6 @@ export default function DashboardScreen() {
               type="button"
               className="btn-outline small"
               onClick={event => {
-                event.stopPropagation()
                 openDrawer(johnnyReview.starterPrompt)
               }}
             >
@@ -225,7 +254,6 @@ export default function DashboardScreen() {
                 className="dashboard-prompt-chip"
                 type="button"
                 onClick={e => {
-                  e.stopPropagation()
                   openDrawer(prompt)
                 }}
               >
@@ -233,55 +261,39 @@ export default function DashboardScreen() {
               </button>
             ))}
           </div>
+        </article>
+      </section>
+
+      <section className="dashboard-section">
+        <div className="dashboard-section-title-row dashboard-section-title-row-tight">
+          <h2>Do this now</h2>
+          <span className="dashboard-section-caption">Fast one-thumb actions</span>
+        </div>
+        <div className="dashboard-action-grid compact">
+          <QuickActionCard title="Log meal" meta="Nutrition" icon="meal" onClick={() => navigate('/nutrition')} />
+          <QuickActionCard title={sess?.completed ? 'Review workout' : 'Start workout'} meta="Training" icon="workout" onClick={() => navigate('/workout')} />
+          <QuickActionCard title="Ask Johnny" meta="Coach" icon="coach" onClick={() => openDrawer(quickPrompts[0])} />
+          <QuickActionCard title="Add sleep" meta="Recovery" icon="sleep" onClick={() => navigate('/body', { state: { focusTab: 'sleep' } })} />
+          <QuickActionCard title="Add cardio" meta="Conditioning" icon="cardio" onClick={() => navigate('/body', { state: { focusTab: 'cardio' } })} />
+          <QuickActionCard title="Progress photos" meta="Timeline" icon="photos" onClick={() => navigate('/progress-photos')} />
         </div>
       </section>
 
       <section className="dashboard-section">
         <div className="dashboard-section-title-row">
-          <h2>Today at a glance</h2>
+          <h2>Today snapshot</h2>
           <button className="btn-outline small" onClick={() => navigate('/settings')}>Edit targets</button>
         </div>
         <div className="dashboard-stat-grid">
           <StatCard label="Steps" value={s?.steps?.today?.toLocaleString() ?? '—'} meta={`Goal ${s?.steps?.target?.toLocaleString() ?? '—'} • ${Math.min(100, stepPct)}%`} accent="pink" onClick={() => navigate('/body')} />
           <StatCard label="Sleep" value={s?.sleep?.hours_sleep != null ? `${s.sleep.hours_sleep}h` : '—'} meta={s?.sleep?.sleep_quality ? `Quality: ${s.sleep.sleep_quality}` : 'Last night recovery'} accent="teal" onClick={() => navigate('/body')} />
           <StatCard label="Weight" value={s?.latest_weight?.weight_lb != null ? `${s.latest_weight.weight_lb}` : '—'} meta={s?.latest_weight?.metric_date ? `Logged ${formatFriendlyDate(s.latest_weight.metric_date)}` : 'No bodyweight yet'} accent="orange" onClick={() => navigate('/body')} />
-          <StatCard label="Weekly score" value={s?.score_7d ?? 0} meta={weeklyScoreLabel} accent="yellow" onClick={() => navigate('/body')} />
+          <StatCard label="Week rhythm" value={s?.score_7d ?? 0} meta={weeklyScoreLabel} accent="yellow" onClick={() => navigate('/body')} />
         </div>
       </section>
 
       <section className="dashboard-section dashboard-two-col">
-        <div className="dash-card dashboard-micros-card" onClick={() => navigate('/nutrition')}>
-          <div className="dashboard-card-head">
-            <span className="dashboard-chip subtle">Key micros</span>
-            <strong>Today</strong>
-          </div>
-          <h3>Fiber, sugar, and sodium snapshot</h3>
-          <div className="dashboard-micro-grid">
-            <MicroStat label="Fiber" value={`${Math.round(fiber * 10) / 10}g`} meta={fiber >= 25 ? 'On target' : 'Aim for 25g+'} accent="teal" />
-            <MicroStat label="Sugar" value={`${Math.round(sugar * 10) / 10}g`} meta={sugar <= 50 ? 'Reasonable pace' : 'Keep the back half lighter'} accent="pink" />
-            <MicroStat label="Sodium" value={`${Math.round(sodium).toLocaleString()}mg`} meta={sodium <= 2300 ? 'Inside the usual cap' : 'Hydrate and keep dinner cleaner'} accent="orange" />
-          </div>
-        </div>
-
-        <div className="dash-card dashboard-tomorrow-card" onClick={() => navigate('/workout')}>
-          <div className="dashboard-card-head">
-            <span className="dashboard-chip workout">Tomorrow</span>
-            {tomorrow?.inferred ? <span className="dashboard-chip subtle">Preview</span> : <span className="dashboard-chip subtle">Queued</span>}
-          </div>
-          <h3>{`${tomorrow?.weekday_label || 'Tomorrow'}${tomorrow?.planned_day_type ? ` • ${formatDayType(tomorrow.planned_day_type)}` : ' • Recovery'}`}</h3>
-          <p>{tomorrow?.planned_day_type ? `Next up: ${formatDayType(tomorrow.planned_day_type).toLowerCase()} focus${tomorrow?.inferred ? ' based on your saved weekly split.' : '.'}` : 'No training preview is queued yet, so tomorrow is currently open.'}</p>
-          <div className="dashboard-session-meta">
-            <span>{tomorrow?.time_tier ? `${tomorrow.time_tier} session` : 'medium session'}</span>
-            <span>{tomorrow?.date ? formatFriendlyDate(tomorrow.date) : 'Tomorrow'}</span>
-          </div>
-        </div>
-      </section>
-
-      <section className="dashboard-section dashboard-two-col">
-        <div
-          className={`dash-card dashboard-session-card ${sess?.completed ? 'done' : ''}`}
-          onClick={() => navigate('/workout')}
-        >
+        <button className={`dash-card dashboard-card-button dashboard-session-card ${sess?.completed ? 'done' : ''}`} type="button" onClick={() => navigate('/workout')}>
           <div className="dashboard-card-head">
             <span className="dashboard-chip workout">Training</span>
             {sess?.time_tier ? <span className="dashboard-chip subtle">{sess.time_tier}</span> : null}
@@ -293,65 +305,67 @@ export default function DashboardScreen() {
             <span>{tomorrowRecommendation}</span>
           </div>
           {s?.skip_warning && <p className="skip-warn">{s.skip_count_30d} skips in the last 30 days</p>}
-        </div>
+          <span className="dashboard-card-cta">Open workout</span>
+        </button>
 
         <div className="dashboard-side-stack">
-          <div className="dash-card dashboard-streak-card" onClick={() => navigate('/body')}>
+          <button className="dash-card dashboard-card-button dashboard-tomorrow-card" type="button" onClick={() => navigate('/workout')}>
             <div className="dashboard-card-head">
-              <span className="dashboard-chip awards">Streaks</span>
-              <strong>{bestStreak(streaks)}d best live</strong>
+              <span className="dashboard-chip subtle">Tomorrow</span>
+              {tomorrow?.inferred ? <span className="dashboard-chip subtle">Preview</span> : <span className="dashboard-chip subtle">Queued</span>}
             </div>
-            <h3>Recent streaks</h3>
-            <div className="dashboard-streak-list">
-              <StreakRow label="Meals" days={streaks?.logging_days ?? 0} />
-              <StreakRow label="Training" days={streaks?.training_days ?? 0} />
-              <StreakRow label="Sleep 7h+" days={streaks?.sleep_days ?? 0} />
-              <StreakRow label="Cardio" days={streaks?.cardio_days ?? 0} />
+            <h3>{`${tomorrow?.weekday_label || 'Tomorrow'}${tomorrow?.planned_day_type ? ` • ${formatDayType(tomorrow.planned_day_type)}` : ' • Recovery'}`}</h3>
+            <p>{tomorrow?.planned_day_type ? `Next up: ${formatDayType(tomorrow.planned_day_type).toLowerCase()} focus${tomorrow?.inferred ? ' based on your saved weekly split.' : '.'}` : 'No training preview is queued yet, so tomorrow is currently open.'}</p>
+            <div className="dashboard-session-meta">
+              <span>{tomorrow?.time_tier ? `${tomorrow.time_tier} session` : 'medium session'}</span>
+              <span>{tomorrow?.date ? formatFriendlyDate(tomorrow.date) : 'Tomorrow'}</span>
             </div>
-          </div>
+            <span className="dashboard-card-cta">Open training</span>
+          </button>
 
-          <div className="dash-card dashboard-award-card" onClick={() => navigate('/body')}>
+          <button className="dash-card dashboard-card-button dashboard-momentum-card" type="button" onClick={() => navigate('/body')}>
             <div className="dashboard-card-head">
-              <span className="dashboard-chip awards">Awards</span>
-              <strong>{earnedAwards.length}</strong>
+              <span className="dashboard-chip awards">Momentum</span>
+              <strong>{momentumCard.badge}</strong>
             </div>
-            <h3>{latestAward ? `${latestAward.icon} ${latestAward.name}` : 'First award waiting'}</h3>
-            <p>{latestAward?.description || 'Keep logging meals, workouts, and recovery to unlock streaks and milestone badges.'}</p>
-            <div className="dashboard-award-meta">
-              <span>{latestAward?.points ? `${latestAward.points} pts` : 'Streaks active'}</span>
-              <span>{earnedAwards.length ? 'Recent award earned' : 'No awards yet'}</span>
+            <h3 className="dashboard-momentum-title">
+              {momentumCard.iconName ? <span className="dashboard-momentum-icon"><AppIcon name={momentumCard.iconName} /></span> : null}
+              <span>{momentumCard.title}</span>
+            </h3>
+            <p>{momentumCard.body}</p>
+            <div className="dashboard-streak-list compact">
+              {momentumCard.rows.map(row => (
+                <StreakRow key={row.label} label={row.label} days={row.value} suffix={row.suffix} />
+              ))}
             </div>
-          </div>
+            <span className="dashboard-card-cta">Open progress</span>
+          </button>
         </div>
       </section>
 
       <section className="dashboard-section">
-        <h2>Quick actions</h2>
-        <div className="dashboard-action-grid">
-          <QuickActionCard title="Log meal" meta="Nutrition" icon="🍽" onClick={() => navigate('/nutrition')} />
-          <QuickActionCard title={sess?.completed ? 'Review workout' : 'Start workout'} meta="Training" icon="🏋️" onClick={() => navigate('/workout')} />
-          <QuickActionCard title="Add sleep" meta="Recovery" icon="😴" onClick={() => navigate('/body', { state: { focusTab: 'sleep' } })} />
-          <QuickActionCard title="Add cardio" meta="Conditioning" icon="🚴" onClick={() => navigate('/body', { state: { focusTab: 'cardio' } })} />
-          <QuickActionCard title="Progress photos" meta="Timeline" icon="📸" onClick={() => navigate('/progress-photos')} />
-          <QuickActionCard title="Ask Johnny" meta="Coach" icon="🤖" onClick={() => openDrawer(quickPrompts[0])} />
+        <div className="dashboard-section-title-row dashboard-section-title-row-tight">
+          <h2>Today note</h2>
+          <span className="dashboard-section-caption">One lighter coaching card</span>
         </div>
-      </section>
-
-      <section className="dashboard-story-grid">
-        <StoryCard chip="Healthy story" title={storyCard.title} body={storyCard.body} actionLabel={storyCard.actionLabel} onClick={() => navigate(storyCard.href, storyCard.state ? { state: storyCard.state } : undefined)} />
-        <StoryCard chip="Today's tip" title={tipCard.title} body={tipCard.body} actionLabel={tipCard.actionLabel} onClick={() => navigate(tipCard.href, tipCard.state ? { state: tipCard.state } : undefined)} />
-        <StoryCard chip="Small win" title={storyCard.winTitle} body={storyCard.winBody} actionLabel={storyCard.winActionLabel} onClick={() => navigate(storyCard.winHref, storyCard.winState ? { state: storyCard.winState } : undefined)} />
+        <EditorialCard
+          chip={editorialCard.chip}
+          title={editorialCard.title}
+          body={editorialCard.body}
+          actionLabel={editorialCard.actionLabel}
+          onClick={() => handleDashboardAction(editorialCard)}
+        />
       </section>
     </div>
   )
 }
 
-function MacroPill({ label, current, target, pct }) {
+function MacroPill({ label, current, target, pct, compact = false, suffix = '' }) {
   return (
-    <div className="dashboard-macro-pill">
+    <div className={`dashboard-macro-pill ${compact ? 'compact' : ''}`}>
       <div className="dashboard-macro-top">
         <span>{label}</span>
-        <strong>{Math.round(current ?? 0)} / {Math.round(target ?? 0)}g</strong>
+        <strong>{Math.round(current ?? 0)} / {Math.round(target ?? 0)}{suffix}</strong>
       </div>
       <div className="bar-track thin">
         <div className="bar-fill" style={{ width: `${Math.min(100, pct)}%` }} />
@@ -362,7 +376,7 @@ function MacroPill({ label, current, target, pct }) {
 
 function StatCard({ label, value, meta, accent, onClick }) {
   return (
-    <button className={`dash-card dashboard-stat-card ${accent || ''}`} type="button" onClick={onClick}>
+    <button className={`dash-card dashboard-card-button dashboard-stat-card ${accent || ''}`} type="button" onClick={onClick}>
       <span className="dashboard-stat-label">{label}</span>
       <strong className="dashboard-stat-value">{value}</strong>
       <span className="dashboard-stat-meta">{meta}</span>
@@ -372,17 +386,19 @@ function StatCard({ label, value, meta, accent, onClick }) {
 
 function QuickActionCard({ title, meta, icon, onClick }) {
   return (
-    <button className="dash-card dashboard-action-card" type="button" onClick={onClick}>
-      <span className="dashboard-action-icon">{icon}</span>
-      <strong>{title}</strong>
-      <span>{meta}</span>
+    <button className="dash-card dashboard-card-button dashboard-action-card" type="button" onClick={onClick}>
+      <span className="dashboard-action-icon"><ActionIcon name={icon} /></span>
+      <span className="dashboard-action-copy">
+        <strong>{title}</strong>
+        <span>{meta}</span>
+      </span>
     </button>
   )
 }
 
-function StoryCard({ chip, title, body, actionLabel, onClick }) {
+function EditorialCard({ chip, title, body, actionLabel, onClick }) {
   return (
-    <button className="dash-card dashboard-story-card" type="button" onClick={onClick}>
+    <button className="dash-card dashboard-card-button dashboard-editorial-card" type="button" onClick={onClick}>
       <span className="dashboard-chip subtle">{chip}</span>
       <h3>{title}</h3>
       <p>{body}</p>
@@ -391,23 +407,57 @@ function StoryCard({ chip, title, body, actionLabel, onClick }) {
   )
 }
 
-function MicroStat({ label, value, meta, accent }) {
+function StreakRow({ label, days, suffix = 'd' }) {
   return (
-    <div className={`dashboard-micro-stat ${accent || ''}`}>
-      <span className="dashboard-stat-label">{label}</span>
-      <strong className="dashboard-stat-value">{value}</strong>
-      <span className="dashboard-stat-meta">{meta}</span>
+    <div className="dashboard-streak-row">
+      <span>{label}</span>
+      <strong>{typeof days === 'number' ? `${days}${suffix}` : days}</strong>
     </div>
   )
 }
 
-function StreakRow({ label, days }) {
-  return (
-    <div className="dashboard-streak-row">
-      <span>{label}</span>
-      <strong>{days}d</strong>
-    </div>
-  )
+function ActionIcon({ name }) {
+  switch (name) {
+    case 'meal':
+      return (
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M7 3v7M10 3v7M7 7h3M15 3v18M18 3c0 3-1.3 5-3 6" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      )
+    case 'workout':
+      return (
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M3 10v4M7 8v8M17 8v8M21 10v4M7 12h10" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      )
+    case 'sleep':
+      return (
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M18 15a6 6 0 1 1-6-10 7 7 0 0 0 6 10ZM5 17h7" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      )
+    case 'cardio':
+      return (
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M5 17a2 2 0 1 0 0 .01M19 17a2 2 0 1 0 0 .01M7 17h4l2-5h3l2 5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      )
+    case 'photos':
+      return (
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4 7h4l2-2h4l2 2h4v11H4Z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+          <circle cx="12" cy="13" r="3.2" fill="none" stroke="currentColor" strokeWidth="1.8" />
+        </svg>
+      )
+    case 'coach':
+    default:
+      return (
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 4 5 8v5c0 4 3.2 6.8 7 7 3.8-.2 7-3 7-7V8l-7-4Z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M9.5 12.2 11.3 14l3.2-3.4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      )
+  }
 }
 
 function getGreetingName(email) {
@@ -431,10 +481,6 @@ function formatWeekdayLabel(value) {
 function formatDayType(value) {
   if (!value) return 'Workout'
   return value.replace(/_/g, ' ').replace(/\b\w/g, ch => ch.toUpperCase())
-}
-
-function formatGoalType(value) {
-  return value === 'gain' ? 'Gain' : value === 'lose' ? 'Cut' : 'Maintain'
 }
 
 function bestStreak(streaks) {
@@ -656,79 +702,171 @@ function buildQuickPrompts(snapshot) {
   return prompts
 }
 
-function buildStoryCard(snapshot) {
+function buildEditorialCard(snapshot) {
+  const sleep = snapshot?.sleep?.hours_sleep
+  const stepsToday = snapshot?.steps?.today ?? 0
+  const stepTarget = snapshot?.steps?.target ?? 8000
   const meals = snapshot?.meals_today?.length ?? 0
   const skipWarning = snapshot?.skip_warning
 
   if (skipWarning) {
     return {
-      title: 'Momentum compounds when the floor stays high',
-      body: 'You do not need a heroic rebound. One workout start or one clean meal is enough to stop drift and re-anchor the week.',
-      actionLabel: 'Go to workout',
+      chip: 'Daily note',
+      title: 'Raise the floor before you chase a rebound',
+      body: 'You do not need a heroic comeback. One workout start or one clean meal is enough to stop drift and make the week feel organized again.',
+      actionLabel: 'Open training',
       href: '/workout',
-      winTitle: 'Suggested small win',
-      winBody: 'Start the session, log the first set, and let the rest of the workout negotiate itself after that.',
-      winActionLabel: 'Open training',
-      winHref: '/workout',
     }
   }
-
-  if (meals === 0) {
-    return {
-      title: 'Good days usually start with the first log',
-      body: 'The first meal entry gives the rest of the day shape. Once the board has a number on it, decisions get easier.',
-      actionLabel: 'Log a meal',
-      href: '/nutrition',
-      winTitle: 'Suggested small win',
-      winBody: 'Log your next meal before you eat it so the rest of the day can be steered instead of repaired.',
-      winActionLabel: 'Open nutrition',
-      winHref: '/nutrition',
-    }
-  }
-
-  return {
-    title: 'Consistency beats intensity when the week is long',
-    body: 'Today already has useful signal. Keep stacking honest entries and the trend line will do more than any single perfect day.',
-    actionLabel: 'Review progress trends',
-    href: '/body',
-    winTitle: 'Suggested small win',
-    winBody: 'Close one remaining gap today: steps, sleep planning, or your session start. One clean closeout is enough.',
-    winActionLabel: 'Open progress tab',
-    winHref: '/body',
-  }
-}
-
-function buildTipCard(snapshot) {
-  const sleep = snapshot?.sleep?.hours_sleep
-  const stepsToday = snapshot?.steps?.today ?? 0
-  const stepTarget = snapshot?.steps?.target ?? 8000
 
   if (sleep != null && sleep < 7) {
     return {
-      title: 'Today’s tip: shrink the decision window',
-      body: 'When sleep is low, default to easier wins: pre-decide your next meal, reduce workout friction, and avoid chasing novelty.',
-      actionLabel: 'Ask coach for a low-recovery plan',
-      href: '/ai',
-      state: { starterPrompt: 'I slept poorly. Give me a lower-friction plan for the rest of today.' },
+      chip: 'Today\'s tip',
+      title: 'Shrink the decision window',
+      body: 'When recovery is light, make the next decision easy: pre-decide the next meal, keep training crisp, and skip unnecessary complexity.',
+      actionLabel: 'Ask Johnny for a low-recovery plan',
+      prompt: 'I slept poorly. Give me a lower-friction plan for the rest of today.',
     }
   }
 
   if (stepsToday < stepTarget * 0.5) {
     return {
-      title: 'Today’s tip: steal movement from transitions',
-      body: 'Short walks after meals or calls are easier to repeat than one giant catch-up walk at night.',
-      actionLabel: 'Log movement',
+      chip: 'Today\'s tip',
+      title: 'Steal movement from transitions',
+      body: 'A short walk after meals or calls is easier to repeat than one giant catch-up walk at night. Keep the move small and automatic.',
+      actionLabel: 'Open progress',
       href: '/body',
       state: { focusTab: 'steps' },
     }
   }
 
+  if (meals === 0) {
+    return {
+      chip: 'Healthy story',
+      title: 'Good days usually start with the first log',
+      body: 'The first meal entry gives the day shape. Once the board has a number on it, the rest of your decisions usually get easier.',
+      actionLabel: 'Log a meal',
+      href: '/nutrition',
+    }
+  }
+
   return {
-    title: 'Today’s tip: protect protein first',
-    body: 'If the rest of the day gets messy, hitting protein still preserves recovery and makes tomorrow easier to manage.',
+    chip: 'Small win',
+    title: 'Protect protein first and let the day stay boring',
+    body: 'If the rest of the day gets messy, protein still protects recovery and makes tomorrow easier to manage. The boring close usually wins.',
     actionLabel: 'Open nutrition',
     href: '/nutrition',
   }
+}
+
+function buildBestNextMove(snapshot) {
+  const stepsToday = Number(snapshot?.steps?.today ?? 0)
+  const stepTarget = Number(snapshot?.steps?.target ?? 8000)
+  const stepPct = stepTarget > 0 ? stepsToday / stepTarget : 0
+  const mealsLogged = Number(snapshot?.meals_today?.length ?? 0)
+  const protein = Number(snapshot?.nutrition_totals?.protein_g ?? 0)
+  const proteinTarget = Number(snapshot?.goal?.target_protein_g ?? 0)
+  const proteinPct = proteinTarget > 0 ? protein / proteinTarget : 0
+  const sleep = Number(snapshot?.sleep?.hours_sleep ?? 0)
+  const session = snapshot?.session
+  const plannedType = session?.actual_day_type || session?.planned_day_type || snapshot?.today_schedule?.day_type || ''
+  const recoveryMode = snapshot?.recovery_summary?.mode || 'normal'
+
+  if (!mealsLogged) {
+    return {
+      title: 'Log your next meal before you eat it',
+      body: 'Your board is still open. Put the first meal in on purpose so the rest of the day has structure instead of cleanup.',
+      context: 'Nutrition is still blank today',
+      actionLabel: 'Open nutrition',
+      href: '/nutrition',
+    }
+  }
+
+  if (!session?.completed && plannedType && recoveryMode !== 'maintenance' && sleep >= 7) {
+    return {
+      title: `Start your ${formatDayType(plannedType).toLowerCase()} session`,
+      body: 'Training is still the highest-leverage move on the board. Start the session and let the rest of the day organize around that win.',
+      context: 'Workout is still open',
+      actionLabel: 'Open workout',
+      href: '/workout',
+    }
+  }
+
+  if (proteinTarget > 0 && proteinPct < 0.6) {
+    return {
+      title: 'Make the next meal protein-first',
+      body: `You are sitting at ${Math.round(protein)} of ${Math.round(proteinTarget)} grams. Close that gap early so recovery and appetite stay easier later.`,
+      context: 'Protein is the clearest food gap',
+      actionLabel: 'Plan the next meal',
+      prompt: `I have logged ${Math.round(protein)}g of protein so far. Give me the cleanest next meal to close the gap today.`,
+    }
+  }
+
+  if (stepPct < 0.55) {
+    return {
+      title: 'Steal a 15-minute walk before the day gets later',
+      body: `You are at ${stepsToday.toLocaleString()} of ${stepTarget.toLocaleString()} steps. A short movement block now is easier than a late-night catch-up attempt.`,
+      context: 'Movement is the easiest gap to close',
+      actionLabel: 'Open progress',
+      href: '/body',
+      state: { focusTab: 'steps' },
+    }
+  }
+
+  if (sleep > 0 && sleep < 7) {
+    return {
+      title: 'Keep the rest of today low-friction',
+      body: 'Recovery is a little light. Tighten the next meal, keep movement easy, and do not turn tonight into a willpower contest.',
+      context: 'Recovery is the main constraint',
+      actionLabel: 'Ask Johnny',
+      prompt: 'Recovery is light today. Give me the simplest plan for the rest of today based on that.',
+    }
+  }
+
+  return {
+    title: 'Close the day cleanly, not perfectly',
+    body: 'You already have useful signal on the board. Protect the next meal, keep movement honest, and avoid creating cleanup for tomorrow.',
+    context: 'Momentum is already in play',
+    actionLabel: 'Ask Johnny',
+    prompt: 'My dashboard is in decent shape. What is the single smartest move left for today?',
+  }
+}
+
+function buildMomentumCard(snapshot, awards) {
+  const streaks = snapshot?.streaks || {}
+  const latestAward = awards?.[0]
+  const best = bestStreak(streaks)
+  const iconName = latestAward ? normalizeAppIconName(latestAward.icon, 'award') : null
+
+  return {
+    badge: best > 0 ? `${best}d live` : `${awards.length} earned`,
+    iconName,
+    title: latestAward ? latestAward.name : 'Momentum stays built through repeatable days',
+    body: latestAward?.description || 'Streaks, awards, and long-run trend changes all start with ordinary entries that keep stacking.',
+    rows: [
+      { label: 'Meals', value: streaks?.logging_days ?? 0 },
+      { label: 'Training', value: streaks?.training_days ?? 0 },
+      { label: 'Sleep', value: streaks?.sleep_days ?? 0 },
+      { label: 'Awards', value: awards.length, suffix: '' },
+    ],
+  }
+}
+
+function proteinTargetCopy(nutritionTotals, goal, mealCount) {
+  const calories = Math.round(Number(nutritionTotals?.calories ?? 0))
+  const calorieTarget = Math.round(Number(goal?.target_calories ?? 0))
+  const protein = Math.round(Number(nutritionTotals?.protein_g ?? 0))
+  const proteinTarget = Math.round(Number(goal?.target_protein_g ?? 0))
+
+  if (!calorieTarget && !proteinTarget) {
+    return mealCount ? 'Your nutrition board is active and ready for the next clean decision.' : 'Targets are ready when you start logging.'
+  }
+
+  if (proteinTarget > 0) {
+    return `${calories} of ${calorieTarget || '—'} calories logged. Protein is ${protein} of ${proteinTarget} grams.`
+  }
+
+  return `${calories} of ${calorieTarget} calories logged today.`
 }
 
 function formatNumber(value, decimals = 0) {

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useLocation } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { aiApi, nutritionApi } from '../../api/client'
+import AppIcon from '../../components/ui/AppIcon'
 import { useDashboardStore } from '../../store/dashboardStore'
 
 const MEAL_TYPES = ['breakfast', 'lunch', 'dinner', 'snack']
@@ -56,6 +57,7 @@ function useAutoScrollWhenActive(active) {
 
 export default function NutritionScreen() {
   const location = useLocation()
+  const navigate = useNavigate()
   const today = getCurrentLocalDateString()
   const [meals, setMeals] = useState([])
   const [summary, setSummary] = useState(null)
@@ -98,6 +100,8 @@ export default function NutritionScreen() {
   const pantryVoiceRef = useAutoScrollWhenActive(showPantryVoice)
   const groceryGapFormRef = useAutoScrollWhenActive(showGroceryGapForm)
   const groceryGapVoiceRef = useAutoScrollWhenActive(showGroceryGapVoice)
+  const savedMealsSectionRef = useRef(null)
+  const recipesSectionRef = useRef(null)
   const pantrySectionRef = useRef(null)
   const groceryGapSectionRef = useRef(null)
   const invalidate = useDashboardStore(state => state.invalidate)
@@ -228,17 +232,47 @@ export default function NutritionScreen() {
       return undefined
     }
 
-    if (focusSection === 'pantry' || focusSection === 'groceryGap') {
+    if (['savedMeals', 'pantry', 'recipes', 'groceryGap'].includes(focusSection)) {
       setExpandedSections(current => ({ ...current, [focusSection]: true }))
     }
 
-    const targetRef = focusSection === 'pantry' ? pantrySectionRef : focusSection === 'groceryGap' ? groceryGapSectionRef : null
+    if (location.state?.openSavedMealForm) {
+      setShowSavedMealForm(true)
+    }
+
+    if (location.state?.recipeMealFilter) {
+      setRecipeMealFilter(location.state.recipeMealFilter)
+    }
+
+    const targetRef = focusSection === 'savedMeals'
+      ? savedMealsSectionRef
+      : focusSection === 'pantry'
+        ? pantrySectionRef
+        : focusSection === 'recipes'
+          ? recipesSectionRef
+          : focusSection === 'groceryGap'
+            ? groceryGapSectionRef
+            : null
     const frameId = window.requestAnimationFrame(() => {
       targetRef?.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
     })
 
     return () => window.cancelAnimationFrame(frameId)
-  }, [location.state?.focusSection])
+  }, [location.state?.focusSection, location.state?.openSavedMealForm, location.state?.recipeMealFilter])
+
+  useEffect(() => {
+    const notice = location.state?.johnnyActionNotice
+    if (!notice) {
+      return undefined
+    }
+
+    showToast(notice)
+
+    const nextState = { ...(location.state || {}) }
+    delete nextState.johnnyActionNotice
+    navigate(location.pathname, { replace: true, state: Object.keys(nextState).length ? nextState : null })
+    return undefined
+  }, [location.pathname, location.state, location.state?.johnnyActionNotice, navigate])
 
   useEffect(() => {
     if (groceryGap === null) {
@@ -663,9 +697,18 @@ export default function NutritionScreen() {
           <p className="settings-subtitle">Scan food, confirm it before it logs, and build a saved-food library you can reuse all week.</p>
         </div>
         <div className="header-actions">
-          <button className="btn-icon" title="Scan meal photo" onClick={() => mealInputRef.current?.click()}>📷</button>
-          <button className="btn-icon" title="Scan nutrition label" onClick={() => labelInputRef.current?.click()}>🏷️</button>
-          <button className="btn-icon" title="Add manually" onClick={() => setShowAddForm(current => !current)}>＋</button>
+          <button className="btn-secondary header-action-button" title="Scan meal photo" onClick={() => mealInputRef.current?.click()} type="button">
+            <AppIcon name="camera" />
+            <span>Scan meal</span>
+          </button>
+          <button className="btn-secondary header-action-button" title="Scan nutrition label" onClick={() => labelInputRef.current?.click()} type="button">
+            <AppIcon name="label" />
+            <span>Scan label</span>
+          </button>
+          <button className="btn-secondary header-action-button" title="Add manually" onClick={() => setShowAddForm(current => !current)} type="button">
+            <AppIcon name="plus" />
+            <span>{showAddForm ? 'Close form' : 'Add meal'}</span>
+          </button>
         </div>
       </header>
 
@@ -832,7 +875,7 @@ export default function NutritionScreen() {
       ) : null}
 
       <section ref={pantrySectionRef} className="dashboard-section dashboard-two-col nutrition-planning-grid">
-        <div className="dash-card nutrition-planning-card">
+        <div ref={savedMealsSectionRef} className="dash-card nutrition-planning-card">
           <div className="dashboard-card-head">
             <span className="dashboard-chip nutrition">Saved foods</span>
             <button className="btn-secondary small" onClick={() => setShowSavedFoodForm(current => !current)}>New</button>
@@ -911,6 +954,7 @@ export default function NutritionScreen() {
           {showSavedMealForm ? (
             <div ref={savedMealFormRef}>
               <SavedMealForm
+                initialValues={location.state?.savedMealDraft || null}
                 savedFoods={savedFoods}
                 onError={showErrorToast}
                 onSave={async data => runAction(() => nutritionApi.createSavedMeal(data), 'Saved meal created.', {
@@ -927,7 +971,7 @@ export default function NutritionScreen() {
       </section>
 
       <section ref={groceryGapSectionRef} className="dashboard-section dashboard-two-col nutrition-planning-grid">
-        <div className="dash-card nutrition-planning-card">
+        <div ref={recipesSectionRef} className="dash-card nutrition-planning-card">
           <div className="dashboard-card-head">
             <span className="dashboard-chip workout">Pantry</span>
             <div className="nutrition-card-actions">
@@ -1027,7 +1071,7 @@ export default function NutritionScreen() {
         </div>
       </section>
 
-      <section className="dashboard-section dashboard-two-col nutrition-planning-grid">
+      <section ref={groceryGapSectionRef} className="dashboard-section dashboard-two-col nutrition-planning-grid">
         <div className="dash-card nutrition-planning-card">
           <div className="dashboard-card-head">
             <span className="dashboard-chip awards">Grocery gap</span>
@@ -1226,7 +1270,10 @@ function MealCard({ meal, savedFoods, onSave, onDelete, onError }) {
         <span className="meal-type">{meal.meal_type}</span>
         <span className="meal-cals">{Math.round(total)} kcal</span>
         <button className="btn-secondary small" onClick={() => setEditing(true)}>Edit</button>
-        <button className="btn-icon danger" onClick={onDelete} title="Delete">🗑</button>
+        <button className="btn-danger small nutrition-delete-button" onClick={onDelete} title="Delete" type="button">
+          <AppIcon name="trash" />
+          <span>Delete</span>
+        </button>
       </div>
       {visibleItems?.map((item, index) => (
         <p key={index} className="meal-item">{item.food_name} — {item.serving_amount} {item.serving_unit}</p>
@@ -1334,13 +1381,14 @@ function AddMealForm({ savedFoods, onSave, onSaveAsTemplate, onCancel, onError }
   )
 }
 
-function SavedMealForm({ savedFoods, onSave, onCancel, onError }) {
+function SavedMealForm({ initialValues = null, savedFoods, onSave, onCancel, onError }) {
   return (
     <MealComposerForm
       title="Create saved meal"
       requireName
       submitLabel="Save meal"
       savedFoods={savedFoods}
+      initialValues={initialValues}
       onError={onError}
       onSubmit={onSave}
       onCancel={onCancel}
