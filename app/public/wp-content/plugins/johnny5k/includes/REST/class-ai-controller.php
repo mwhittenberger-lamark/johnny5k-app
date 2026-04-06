@@ -219,13 +219,14 @@ class AiController {
 		$user_id    = get_current_user_id();
 		$message    = sanitize_textarea_field( $req->get_param( 'message' ) ?: '' );
 		$thread_key = sanitize_text_field( $req->get_param( 'thread_key' ) ?: 'main' );
+		$mode       = sanitize_text_field( $req->get_param( 'mode' ) ?: 'general' );
 
 		if ( ! $message ) {
 			return new \WP_REST_Response( [ 'message' => 'No message provided.' ], 400 );
 		}
 
 		$thread_key = 'u' . $user_id . '_' . $thread_key;
-		$result     = AiService::chat( $user_id, $thread_key, $message );
+		$result     = AiService::chat( $user_id, $thread_key, $message, $mode );
 
 		if ( is_wp_error( $result ) ) {
 			return new \WP_REST_Response( [ 'message' => $result->get_error_message() ], 500 );
@@ -233,6 +234,7 @@ class AiController {
 
 		return new \WP_REST_Response( [
 			'reply'           => $result['reply'],
+			'actions'         => $result['actions'] ?? [],
 			'sources'         => $result['sources'] ?? [],
 			'used_web_search' => (bool) ( $result['used_web_search'] ?? false ),
 			'used_tools'      => $result['used_tools'] ?? [],
