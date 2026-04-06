@@ -16,7 +16,7 @@ define( 'JF_VERSION',        '1.0.0' );
 define( 'JF_PLUGIN_DIR',     plugin_dir_path( __FILE__ ) );
 define( 'JF_PLUGIN_URL',     plugin_dir_url( __FILE__ ) );
 define( 'JF_REST_NAMESPACE', 'fit/v1' );
-define( 'JF_DB_VERSION',     '1.0.1' );
+define( 'JF_DB_VERSION',     '1.1.0' );
 
 // ── Autoloader ──────────────────────────────────────────────────────────────
 spl_autoload_register( function ( string $class ): void {

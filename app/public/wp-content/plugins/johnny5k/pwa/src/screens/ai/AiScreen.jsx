@@ -4,6 +4,20 @@ import { aiApi } from '../../api/client'
 
 const THREAD_KEY = 'main'
 
+/** Render a single action chip returned by Johnny's structured action response. */
+function ActionChip({ action }) {
+  const labels = {
+    open_screen:          `Open: ${action.payload?.screen ?? 'screen'}`,
+    show_nutrition_summary: 'View nutrition summary',
+    show_grocery_gap:     'View grocery gaps',
+    highlight_goal_issue: 'View goal status',
+    create_saved_meal_draft: `New meal draft: ${action.payload?.name ?? 'draft'}`,
+    suggest_recipe_plan:  'View recipe plan',
+  }
+  const label = labels[action.type] ?? action.type
+  return <span className="action-chip">{label}</span>
+}
+
 export default function AiScreen() {
   const [messages, setMessages] = useState([])
   const [input, setInput]       = useState('')
@@ -31,18 +45,19 @@ export default function AiScreen() {
     sendPrompt(starterPrompt)
   }, [location.state?.starterPrompt, initialising, loading])
 
-  async function sendPrompt(message) {
+  async function sendPrompt(message, mode = 'general') {
     const msg = message.trim()
     if (!msg || loading) return
     setInput('')
     setMessages(prev => [...prev, { role: 'user', message_text: msg }])
     setLoading(true)
     try {
-      const data = await aiApi.chat(msg, THREAD_KEY)
+      const data = await aiApi.chat(msg, THREAD_KEY, mode)
       setMessages(prev => [...prev, {
         role: 'assistant',
         message_text: data.reply,
         sources: data.sources ?? [],
+        actions: data.actions ?? [],
       }])
     } catch (err) {
       setMessages(prev => [...prev, { role: 'assistant', message_text: '⚠️ ' + err.message }])
@@ -76,6 +91,13 @@ export default function AiScreen() {
         {messages.map((m, i) => (
           <div key={i} className={`chat-msg ${m.role}`}>
             <p>{m.message_text}</p>
+            {m.role === 'assistant' && Array.isArray(m.actions) && m.actions.length > 0 && (
+              <div className="chat-actions">
+                {m.actions.map((action, j) => (
+                  <ActionChip key={j} action={action} />
+                ))}
+              </div>
+            )}
             {m.role === 'assistant' && Array.isArray(m.sources) && m.sources.length > 0 && (
               <div className="chat-sources">
                 {m.sources.map(source => (

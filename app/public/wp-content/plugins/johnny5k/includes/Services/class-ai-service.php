@@ -18,6 +18,18 @@ class AiService {
 	private const DEFAULT_MODEL    = 'gpt-4o-mini';
 	private const RESPONSES_ENDPOINT = 'https://api.openai.com/v1/responses';
 
+	/** Minimum assistant turns before the first thread summary is generated. */
+	private const SUMMARY_MIN_TURNS = 4;
+
+	/** Regenerate the thread summary after every N assistant turns. */
+	private const SUMMARY_REFRESH_INTERVAL = 5;
+
+	/** Minimum messages required to generate a thread summary. */
+	private const SUMMARY_MIN_MESSAGES = 6;
+
+	/** Calorie tolerance (kcal) above/below target before flagging as off-track. */
+	private const CALORIE_TOLERANCE_KCAL = 200;
+
 	// ── Chat with Johnny 5000 ─────────────────────────────────────────────────
 
 	/**
@@ -30,7 +42,7 @@ class AiService {
 	 * @param  string $user_message
 	 * @return array{reply:string, tokens_in:int, tokens_out:int, sources:array<int,array{url:string,title:string}>, used_web_search:bool, model:string}|WP_Error
 	 */
-	public static function chat( int $user_id, string $thread_key, string $user_message ) {
+	public static function chat( int $user_id, string $thread_key, string $user_message, string $mode = 'general' ) {
 		global $wpdb;
 		$p = $wpdb->prefix;
 
@@ -44,28 +56,40 @@ class AiService {
 				'user_id'    => $user_id,
 				'thread_key' => $thread_key,
 			] );
-			$thread_id = $wpdb->insert_id;
+			$thread_id      = $wpdb->insert_id;
+			$thread_summary = '';
 		} else {
-			$thread_id = (int) $thread->id;
+			$thread_id      = (int) $thread->id;
+			$thread_summary = (string) ( $thread->summary_text ?? '' );
 		}
 
-		// Load conversation history (last 20 messages to stay within context limits)
+		// Load conversation history — query only the last 18 rows at DB level
 		$history = $wpdb->get_results( $wpdb->prepare(
 			"SELECT role, message_text FROM {$p}fit_ai_messages
-			 WHERE thread_id = %d ORDER BY id ASC",
+			 WHERE thread_id = %d AND role IN ('user','assistant')
+			 ORDER BY id DESC LIMIT 18",
 			$thread_id
 		) );
+		$history = array_reverse( $history );
 
 		$messages = [];
 
-		// System prompt (Johnny's personality + user context)
+		// System prompt (persona + live user context + mode instructions)
 		$messages[] = [
 			'role'    => 'system',
-			'content' => self::build_system_prompt( $user_id ),
+			'content' => self::build_system_prompt( $user_id, $mode ),
 		];
 
-		// History
-		foreach ( array_slice( $history, -18 ) as $h ) {
+		// Thread memory block — prepend summary so long-term context is never lost
+		if ( $thread_summary ) {
+			$messages[] = [
+				'role'    => 'system',
+				'content' => "Coaching memory for this thread:\n" . $thread_summary,
+			];
+		}
+
+		// Recent conversation history
+		foreach ( $history as $h ) {
 			$messages[] = [
 				'role'    => $h->role,
 				'content' => $h->message_text,
@@ -96,16 +120,28 @@ class AiService {
 		);
 		if ( is_wp_error( $result ) ) return $result;
 
-		$reply      = $result['reply'];
+		$raw_reply  = $result['reply'];
 		$tokens_in  = $result['tokens_in'];
 		$tokens_out = $result['tokens_out'];
 
-		// ── Persist assistant reply ───────────────────────────────────────────
+		// ── Parse structured actions if model returned JSON ───────────────────
+		$reply   = $raw_reply;
+		$actions = [];
+		$decoded = json_decode( trim( $raw_reply ), true );
+		if ( is_array( $decoded ) && isset( $decoded['reply'] ) ) {
+			$reply   = (string) $decoded['reply'];
+			$actions = is_array( $decoded['actions'] ?? null ) ? $decoded['actions'] : [];
+		}
+
+		// ── Persist assistant reply (plain text only) ─────────────────────────
 		$wpdb->insert( $p . 'fit_ai_messages', [
 			'thread_id'    => $thread_id,
 			'role'         => 'assistant',
 			'message_text' => $reply,
 		] );
+
+		// ── Refresh thread summary every 5 assistant turns ────────────────────
+		self::maybe_refresh_thread_summary( $thread_id, $user_id );
 
 		// ── Log cost ─────────────────────────────────────────────────────────
 		CostTracker::log_openai(
@@ -122,6 +158,7 @@ class AiService {
 
 		return [
 			'reply'           => $reply,
+			'actions'         => $actions,
 			'tokens_in'       => $tokens_in,
 			'tokens_out'      => $tokens_out,
 			'sources'         => $result['sources'],
@@ -377,65 +414,408 @@ class AiService {
 
 	/**
 	 * Compile the active system prompt by combining Johnny's personality
-	 * (from the admin editor) with real-time user context.
+	 * (from the admin editor) with real-time user context and optional mode instructions.
+	 *
+	 * @param int    $user_id
+	 * @param string $mode  One of: general, coach, nutrition, workout_review, accountability, planning, education
 	 */
-	public static function build_system_prompt( int $user_id ): string {
-		$persona   = get_option( 'jf_johnny_system_prompt', self::default_persona() );
+	public static function build_system_prompt( int $user_id, string $mode = 'general' ): string {
+		$admin_prompt = get_option( 'jf_johnny_system_prompt', '' );
+
+		// Use admin prompt if set; append behavioral rules so they always apply.
+		// Fall back to the improved default persona if no admin prompt exists.
+		if ( $admin_prompt ) {
+			$persona = $admin_prompt . "\n\n" . self::behavioral_rules();
+		} else {
+			$persona = self::default_persona();
+		}
+
 		$context   = self::get_user_context( $user_id );
-
-		$ctx_lines = [];
-		if ( ! empty( $context['first_name'] ) )    $ctx_lines[] = "User's name: {$context['first_name']}";
-		if ( ! empty( $context['goal_type'] ) )      $ctx_lines[] = "Current goal: {$context['goal_type']}";
-		if ( ! empty( $context['experience'] ) )     $ctx_lines[] = "Training experience: {$context['experience']}";
-		if ( ! empty( $context['target_calories'] ) ) $ctx_lines[] = "Daily calorie target: {$context['target_calories']} kcal";
-		if ( ! empty( $context['target_protein_g'] ) ) $ctx_lines[] = "Protein target: {$context['target_protein_g']} g";
-		if ( ! empty( $context['latest_weight_lb'] ) ) $ctx_lines[] = "Latest logged weight: {$context['latest_weight_lb']} lb";
-
+		$ctx_lines = self::format_context_block( $context );
 		$ctx_block = $ctx_lines ? "\n\nUser context:\n" . implode( "\n", $ctx_lines ) : '';
 
-		return $persona . $ctx_block;
+		$mode_block = '';
+		$mode_instr = self::get_mode_instructions( $mode );
+		if ( $mode_instr ) {
+			$mode_block = "\n\n" . $mode_instr;
+		}
+
+		// Brief action-capability note so the model can optionally return structured actions.
+		$action_block = "\n\nAction capability: When genuinely useful, you may wrap your response as JSON — {\"reply\":\"...\",\"actions\":[{\"type\":\"action_name\",\"payload\":{}}]} — so the app can take action. Supported types: open_screen (payload: {\"screen\":\"name\"}), show_nutrition_summary, show_grocery_gap, highlight_goal_issue. If no action is needed, respond in plain text.";
+
+		return $persona . $ctx_block . $mode_block . $action_block;
 	}
 
 	private static function default_persona(): string {
 		return <<<PERSONA
-You are Johnny 5000 — the user's cool, buff, knowledgeable, and genuinely kind fitness coach and friend. You're built, confident, and real. You speak plainly and don't sugarcoat things, but you're always in the user's corner.
+You are Johnny 5000, the user's embedded fitness coach inside the Johnny5k app.
 
-Your tone: direct, warm, occasionally funny. Not corporate. Not overly enthusiastic. Like a big brother who happens to know everything about fitness and nutrition.
+You are direct, calm, warm, observant, and grounded. You do not sound corporate, generic, or like a chatbot. You speak like a strong, experienced coach who actually knows the user's data and gives a damn.
 
-If users ask whether you are an AI, be honest and matter-of-fact about it. You're an AI built to be their personal trainer and friend — no shame in that.
-
-Keep responses concise unless detailed guidance is explicitly requested. Always tie advice back to the user's specific goal and current data when available.
+Behavior rules:
+- Notice patterns and name them clearly.
+- Use the user's current data whenever it helps.
+- Give one useful next step early in your response.
+- Avoid generic motivational fluff — skip "great job" filler unless it means something.
+- Be honest when the user is off track, but never demeaning.
+- Stay concise unless the user asks for detail.
+- Vary your sentence openings and rhythm.
+- Sound like a real person, not a feature.
+- If you do not know something, say so plainly.
+- If asked whether you are an AI, be honest and matter-of-fact about it.
 PERSONA;
+	}
+
+	private static function behavioral_rules(): string {
+		return <<<RULES
+Behavior rules (always apply):
+- Notice patterns and name them clearly.
+- Use the user's current data whenever it helps.
+- Give one useful next step early.
+- Avoid generic motivational fluff.
+- Be honest when the user is off track, but never demeaning.
+- Stay concise unless detail is requested.
+- Vary sentence openings and rhythm.
+- Sound like a real person, not a feature.
+RULES;
+	}
+
+	/**
+	 * Return mode-specific instructions to append to the system prompt.
+	 */
+	private static function get_mode_instructions( string $mode ): string {
+		switch ( $mode ) {
+			case 'nutrition':
+				return 'Mode: Nutrition coaching. Be practical and macro-aware. Focus on food swaps, meal timing, and hitting macro targets. Give specific, actionable food suggestions tied to the user\'s current numbers.';
+			case 'accountability':
+				return 'Mode: Accountability check. Be direct and brief. Name the gap clearly without judgment. Push for commitment on one specific action before ending your response.';
+			case 'planning':
+				return 'Mode: Planning session. Use structured output — clear next steps in priority order. Lean toward numbered lists and concrete timelines.';
+			case 'education':
+				return 'Mode: Education. Explain the why behind advice. Add more context than usual. Be thorough and clear, not rushed.';
+			case 'workout_review':
+				return 'Mode: Workout review. Frame everything around performance and recovery. Reference sets, reps, and progression. Note what to push next session.';
+			case 'coach':
+				return 'Mode: Coaching session. Act as a focused personal trainer. Ask a clarifying question if something is unclear. Hold the user accountable to their stated goals.';
+			default:
+				return '';
+		}
+	}
+
+	/**
+	 * Format the user context array into a compact list of labeled lines.
+	 *
+	 * @param array<string,mixed> $context
+	 * @return string[]
+	 */
+	private static function format_context_block( array $context ): array {
+		$lines = [];
+
+		if ( ! empty( $context['first_name'] ) )           $lines[] = "Name: {$context['first_name']}";
+		if ( ! empty( $context['goal_type'] ) )            $lines[] = "Goal: {$context['goal_type']}";
+		if ( ! empty( $context['experience'] ) )           $lines[] = "Training experience: {$context['experience']}";
+		if ( ! empty( $context['target_calories'] ) )      $lines[] = "Daily calorie target: {$context['target_calories']} kcal";
+		if ( ! empty( $context['target_protein_g'] ) )     $lines[] = "Protein target: {$context['target_protein_g']} g";
+		if ( ! empty( $context['latest_weight_lb'] ) )     $lines[] = "Latest weight: {$context['latest_weight_lb']} lb";
+
+		if ( isset( $context['weight_change_last_14_days'] ) && $context['weight_change_last_14_days'] !== null ) {
+			$sign  = $context['weight_change_last_14_days'] >= 0 ? '+' : '';
+			$lines[] = "Weight trend (14 days): {$sign}{$context['weight_change_last_14_days']} lb";
+		}
+
+		if ( isset( $context['workouts_last_7_days'] ) )   $lines[] = "Workouts last 7 days: {$context['workouts_last_7_days']}";
+
+		if ( isset( $context['days_since_last_workout'] ) ) {
+			$dsw = $context['days_since_last_workout'];
+			$lines[] = $dsw === null ? 'Last workout: no workouts on record' : "Days since last workout: {$dsw}";
+		}
+
+		if ( isset( $context['avg_calories_last_7_days'] ) && $context['avg_calories_last_7_days'] > 0 ) {
+			$lines[] = "Avg daily calories (7 days): {$context['avg_calories_last_7_days']} kcal";
+		}
+
+		if ( isset( $context['avg_protein_last_7_days'] ) && $context['avg_protein_last_7_days'] > 0 ) {
+			$lines[] = "Avg daily protein (7 days): {$context['avg_protein_last_7_days']} g";
+		}
+
+		if ( isset( $context['days_with_meal_logs_last_7_days'] ) ) {
+			$lines[] = "Meal-logged days (last 7): {$context['days_with_meal_logs_last_7_days']} of 7";
+		}
+
+		if ( isset( $context['pantry_item_count'] ) )      $lines[] = "Pantry items: {$context['pantry_item_count']}";
+		if ( isset( $context['saved_meals_count'] ) )      $lines[] = "Saved meals: {$context['saved_meals_count']}";
+
+		if ( ! empty( $context['adherence_summary'] ) )    $lines[] = "Adherence: {$context['adherence_summary']}";
+		if ( ! empty( $context['goal_trend_summary'] ) )   $lines[] = "Goal trend: {$context['goal_trend_summary']}";
+
+		return $lines;
 	}
 
 	// ── User context helper ───────────────────────────────────────────────────
 
+	/**
+	 * Gather live user context for use in system prompts.
+	 * Returns profile, goal, latest metrics, and recent behavioral data.
+	 *
+	 * @return array<string,mixed>
+	 */
 	private static function get_user_context( int $user_id ): array {
 		global $wpdb;
 		$p = $wpdb->prefix;
 
+		// ── Profile & goal ────────────────────────────────────────────────────
 		$profile = $wpdb->get_row( $wpdb->prepare(
-			"SELECT * FROM {$p}fit_user_profiles WHERE user_id = %d",
+			"SELECT first_name, training_experience FROM {$p}fit_user_profiles WHERE user_id = %d",
 			$user_id
 		) );
 		$goal = $wpdb->get_row( $wpdb->prepare(
-			"SELECT * FROM {$p}fit_user_goals WHERE user_id = %d AND active = 1 ORDER BY created_at DESC LIMIT 1",
-			$user_id
-		) );
-		$latest_weight = $wpdb->get_var( $wpdb->prepare(
-			"SELECT weight_lb FROM {$p}fit_body_metrics WHERE user_id = %d ORDER BY metric_date DESC LIMIT 1",
+			"SELECT goal_type, target_calories, target_protein_g FROM {$p}fit_user_goals
+			 WHERE user_id = %d AND active = 1 ORDER BY created_at DESC LIMIT 1",
 			$user_id
 		) );
 
+		// ── Latest weight + 14-day trend ──────────────────────────────────────
+		$weight_rows = $wpdb->get_col( $wpdb->prepare(
+			"SELECT weight_lb FROM {$p}fit_body_metrics
+			 WHERE user_id = %d ORDER BY metric_date DESC LIMIT 14",
+			$user_id
+		) );
+		$latest_weight       = $weight_rows ? (float) $weight_rows[0] : null;
+		$weight_change_14d   = count( $weight_rows ) >= 2
+			? round( (float) $weight_rows[0] - (float) $weight_rows[ count( $weight_rows ) - 1 ], 1 )
+			: null;
+
+		// ── Workout stats (last 7 days) ───────────────────────────────────────
+		$since_7d = UserTime::days_ago( $user_id, 6 );
+
+		$workouts_7d = (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT COUNT(*) FROM {$p}fit_workout_sessions
+			 WHERE user_id = %d AND completed = 1 AND session_date >= %s",
+			$user_id, $since_7d
+		) );
+
+		$last_workout_date = $wpdb->get_var( $wpdb->prepare(
+			"SELECT session_date FROM {$p}fit_workout_sessions
+			 WHERE user_id = %d AND completed = 1 ORDER BY session_date DESC LIMIT 1",
+			$user_id
+		) );
+		$days_since_workout = null;
+		if ( $last_workout_date ) {
+			$today = new \DateTimeImmutable( UserTime::today( $user_id ) );
+			$last  = new \DateTimeImmutable( $last_workout_date );
+			$days_since_workout = (int) $today->diff( $last )->days;
+		}
+
+		// ── Nutrition stats (last 7 days) ─────────────────────────────────────
+		$nutrition_row = $wpdb->get_row( $wpdb->prepare(
+			"SELECT
+			   AVG(daily_cal)  AS avg_cal,
+			   AVG(daily_pro)  AS avg_pro,
+			   COUNT(DISTINCT d) AS days_logged
+			 FROM (
+			   SELECT DATE(m.meal_datetime) AS d,
+			          SUM(mi.calories)  AS daily_cal,
+			          SUM(mi.protein_g) AS daily_pro
+			   FROM {$p}fit_meal_items mi
+			   JOIN {$p}fit_meals m ON m.id = mi.meal_id
+			   WHERE m.user_id = %d AND m.confirmed = 1
+			     AND DATE(m.meal_datetime) >= %s
+			   GROUP BY DATE(m.meal_datetime)
+			 ) t",
+			$user_id, $since_7d
+		) );
+
+		$avg_calories_7d    = $nutrition_row && $nutrition_row->avg_cal  ? (int) round( (float) $nutrition_row->avg_cal )  : 0;
+		$avg_protein_7d     = $nutrition_row && $nutrition_row->avg_pro  ? (int) round( (float) $nutrition_row->avg_pro )  : 0;
+		$days_logged_7d     = $nutrition_row ? (int) $nutrition_row->days_logged : 0;
+
+		// ── Pantry & saved meals counts ───────────────────────────────────────
+		$pantry_count      = (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT COUNT(*) FROM {$p}fit_pantry_items WHERE user_id = %d",
+			$user_id
+		) );
+		$saved_meals_count = (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT COUNT(*) FROM {$p}fit_saved_meals WHERE user_id = %d",
+			$user_id
+		) );
+
+		// ── Adherence & goal trend summaries ──────────────────────────────────
+		$adherence_summary  = self::compute_adherence_summary( $days_logged_7d, $workouts_7d );
+		$goal_trend_summary = self::compute_goal_trend_summary(
+			$goal->goal_type ?? '',
+			$avg_calories_7d,
+			(int) ( $goal->target_calories ?? 0 ),
+			$avg_protein_7d,
+			(int) ( $goal->target_protein_g ?? 0 )
+		);
+
 		return [
-			'first_name'       => $profile->first_name ?? '',
-			'goal_type'        => $goal->goal_type ?? '',
-			'experience'       => $profile->training_experience ?? '',
-			'target_calories'  => $goal->target_calories ?? null,
-			'target_protein_g' => $goal->target_protein_g ?? null,
-			'latest_weight_lb' => $latest_weight ? (float) $latest_weight : null,
+			'first_name'                 => $profile->first_name ?? '',
+			'goal_type'                  => $goal->goal_type ?? '',
+			'experience'                 => $profile->training_experience ?? '',
+			'target_calories'            => $goal->target_calories ?? null,
+			'target_protein_g'           => $goal->target_protein_g ?? null,
+			'latest_weight_lb'           => $latest_weight,
+			'weight_change_last_14_days' => $weight_change_14d,
+			'workouts_last_7_days'       => $workouts_7d,
+			'days_since_last_workout'    => $days_since_workout,
+			'avg_calories_last_7_days'   => $avg_calories_7d,
+			'avg_protein_last_7_days'    => $avg_protein_7d,
+			'days_with_meal_logs_last_7_days' => $days_logged_7d,
+			'pantry_item_count'          => $pantry_count,
+			'saved_meals_count'          => $saved_meals_count,
+			'adherence_summary'          => $adherence_summary,
+			'goal_trend_summary'         => $goal_trend_summary,
 		];
 	}
+
+	/**
+	 * Produce a short adherence description from recent logging activity.
+	 */
+	private static function compute_adherence_summary( int $days_logged, int $workouts ): string {
+		$parts = [];
+		if ( $days_logged >= 6 ) {
+			$parts[] = 'strong meal logging';
+		} elseif ( $days_logged >= 4 ) {
+			$parts[] = 'moderate meal logging';
+		} elseif ( $days_logged > 0 ) {
+			$parts[] = 'inconsistent meal logging';
+		} else {
+			$parts[] = 'no meal logs this week';
+		}
+
+		if ( $workouts >= 4 ) {
+			$parts[] = 'strong workout consistency';
+		} elseif ( $workouts >= 2 ) {
+			$parts[] = 'moderate workout consistency';
+		} elseif ( $workouts === 1 ) {
+			$parts[] = 'only 1 workout this week';
+		} else {
+			$parts[] = 'no workouts this week';
+		}
+
+		return implode( ', ', $parts );
+	}
+
+	/**
+	 * Produce a short goal trend string based on calorie and protein averages vs. targets.
+	 */
+	private static function compute_goal_trend_summary( string $goal_type, int $avg_cal, int $target_cal, int $avg_pro, int $target_pro ): string {
+		if ( ! $goal_type || ( ! $avg_cal && ! $avg_pro ) ) {
+			return '';
+		}
+
+		$issues = [];
+
+		if ( $target_pro > 0 && $avg_pro > 0 ) {
+			$pro_pct = $avg_pro / $target_pro;
+			if ( $pro_pct < 0.75 ) {
+				$issues[] = "protein well under target ({$avg_pro} g vs {$target_pro} g)";
+			} elseif ( $pro_pct < 0.90 ) {
+				$issues[] = "protein slightly under target ({$avg_pro} g vs {$target_pro} g)";
+			}
+		}
+
+		if ( $target_cal > 0 && $avg_cal > 0 ) {
+			$cal_delta = $avg_cal - $target_cal;
+			if ( in_array( $goal_type, [ 'cut', 'recomp' ], true ) && $cal_delta > self::CALORIE_TOLERANCE_KCAL ) {
+				$issues[] = "calories over target ({$avg_cal} kcal vs {$target_cal} kcal)";
+			} elseif ( in_array( $goal_type, [ 'gain' ], true ) && $cal_delta < -self::CALORIE_TOLERANCE_KCAL ) {
+				$issues[] = "calories under target ({$avg_cal} kcal vs {$target_cal} kcal)";
+			}
+		}
+
+		if ( $issues ) {
+			return 'Falling behind — ' . implode( '; ', $issues );
+		}
+
+		return 'On track';
+	}
+
+	// ── Thread memory / summary ───────────────────────────────────────────────
+
+	/**
+	 * After every 5 assistant turns, regenerate the thread summary so Johnny
+	 * maintains useful long-term memory without growing the context window.
+	 */
+	private static function maybe_refresh_thread_summary( int $thread_id, int $user_id ): void {
+		global $wpdb;
+		$p = $wpdb->prefix;
+
+		$assistant_count = (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT COUNT(*) FROM {$p}fit_ai_messages WHERE thread_id = %d AND role = 'assistant'",
+			$thread_id
+		) );
+
+		// Require at least SUMMARY_MIN_TURNS turns before first summary; refresh every SUMMARY_REFRESH_INTERVAL turns.
+		if ( $assistant_count < self::SUMMARY_MIN_TURNS || $assistant_count % self::SUMMARY_REFRESH_INTERVAL !== 0 ) {
+			return;
+		}
+
+		$summary = self::generate_thread_summary( $thread_id, $user_id );
+		if ( $summary ) {
+			$wpdb->update(
+				$p . 'fit_ai_threads',
+				[ 'summary_text' => $summary ],
+				[ 'id' => $thread_id ]
+			);
+		}
+	}
+
+	/**
+	 * Call OpenAI to produce a compact coaching memory summary for the thread.
+	 * Reads the most recent 40 messages to keep the summary call fast.
+	 */
+	private static function generate_thread_summary( int $thread_id, int $user_id ): ?string {
+		global $wpdb;
+		$p = $wpdb->prefix;
+
+		$rows = $wpdb->get_results( $wpdb->prepare(
+			"SELECT role, message_text FROM {$p}fit_ai_messages
+			 WHERE thread_id = %d AND role IN ('user','assistant')
+			 ORDER BY id DESC LIMIT 40",
+			$thread_id
+		) );
+
+		if ( count( $rows ) < self::SUMMARY_MIN_MESSAGES ) {
+			return null;
+		}
+
+		$rows         = array_reverse( $rows );
+		$conversation = implode( "\n\n", array_map(
+			static fn( $m ) => ucfirst( $m->role ) . ': ' . $m->message_text,
+			$rows
+		) );
+
+		$prompt_messages = [
+			[
+				'role'    => 'system',
+				'content' => 'You are a memory assistant. Summarize the key coaching context from this conversation in 8-12 concise bullet points. Focus on: goals the user is pursuing, recurring struggles, plans suggested, coaching style preferences, commitments made, and notable wins or frustrations. Be specific and factual. No preamble, no headers — bullet points only.',
+			],
+			[
+				'role'    => 'user',
+				'content' => $conversation,
+			],
+		];
+
+		$result = self::call_openai( $prompt_messages, self::DEFAULT_MODEL );
+		if ( is_wp_error( $result ) ) {
+			return null;
+		}
+
+		CostTracker::log_openai(
+			$user_id,
+			self::DEFAULT_MODEL,
+			'/v1/responses',
+			$result['tokens_in'],
+			$result['tokens_out'],
+			[ 'context' => 'thread_summary' ]
+		);
+
+		return trim( $result['reply'] ) ?: null;
+	}
+
+	// ── Weekly stats helper ───────────────────────────────────────────────────
 
 	private static function compile_weekly_stats( int $user_id ): array {
 		global $wpdb;

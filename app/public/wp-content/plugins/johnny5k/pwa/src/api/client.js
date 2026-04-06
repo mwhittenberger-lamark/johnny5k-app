@@ -194,7 +194,7 @@ export const nutritionApi = {
 
 // ── AI ────────────────────────────────────────────────────────────────────────
 export const aiApi = {
-  chat:         (message, threadKey = 'main') => api.post('/ai/chat', { message, thread_key: threadKey }),
+  chat:         (message, threadKey = 'main', mode = 'general') => api.post('/ai/chat', { message, thread_key: threadKey, mode }),
   analyseMeal:  (base64)                      => api.post('/ai/analyse/meal',  { image_base64: base64 }),
   analyseLabel: (base64)                      => api.post('/ai/analyse/label', { image_base64: base64 }),
   getThread:    (key)                         => api.get(`/ai/thread/${key}`),
