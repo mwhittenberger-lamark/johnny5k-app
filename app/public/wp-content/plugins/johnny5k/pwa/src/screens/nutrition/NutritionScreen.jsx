@@ -3,9 +3,20 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { aiApi, nutritionApi } from '../../api/client'
 import AppIcon from '../../components/ui/AppIcon'
 import { useDashboardStore } from '../../store/dashboardStore'
+import { useJohnnyAssistantStore } from '../../store/johnnyAssistantStore'
 
 const MEAL_TYPES = ['breakfast', 'lunch', 'dinner', 'snack']
-const RECIPE_FILTER_VISIBLE_LIMIT = 20
+const RECIPE_CARD_VISIBLE_LIMIT = 5
+const PANTRY_CATEGORY_CONFIG = [
+  { key: 'proteins', label: 'Proteins', keywords: ['chicken', 'beef', 'turkey', 'salmon', 'tuna', 'shrimp', 'tofu', 'tempeh', 'protein', 'sausage', 'bacon', 'pork', 'ham'] },
+  { key: 'produce', label: 'Produce', keywords: ['apple', 'banana', 'berry', 'berries', 'orange', 'lemon', 'lime', 'avocado', 'spinach', 'lettuce', 'kale', 'broccoli', 'carrot', 'pepper', 'onion', 'garlic', 'tomato', 'cucumber', 'zucchini', 'potato', 'sweet potato', 'fruit', 'vegetable'] },
+  { key: 'dairy-eggs', label: 'Dairy and eggs', keywords: ['milk', 'yogurt', 'yoghurt', 'cheese', 'egg', 'eggs', 'butter', 'cottage cheese', 'cream'] },
+  { key: 'grains', label: 'Grains and bakery', keywords: ['rice', 'bread', 'pasta', 'oats', 'oatmeal', 'tortilla', 'wrap', 'bagel', 'bun', 'quinoa', 'cereal', 'noodle'] },
+  { key: 'staples', label: 'Pantry staples', keywords: ['olive oil', 'oil', 'vinegar', 'salt', 'pepper', 'spice', 'sauce', 'beans', 'lentils', 'flour', 'sugar', 'broth', 'stock', 'peanut butter', 'almond butter'] },
+  { key: 'frozen', label: 'Frozen', keywords: ['frozen', 'ice cream'] },
+  { key: 'snacks', label: 'Snacks', keywords: ['chips', 'cracker', 'bar', 'trail mix', 'popcorn', 'nuts', 'cookie'] },
+  { key: 'drinks', label: 'Drinks', keywords: ['water', 'juice', 'coffee', 'tea', 'soda', 'drink', 'electrolyte'] },
+]
 const FOOD_SEARCH_CACHE = new Map()
 const GROCERY_GAP_CHECKLIST_STORAGE_KEY = 'johnny5k:nutrition:grocery-gap-checked'
 const MICRO_TARGETS = {
@@ -58,6 +69,7 @@ function useAutoScrollWhenActive(active) {
 export default function NutritionScreen() {
   const location = useLocation()
   const navigate = useNavigate()
+  const isPantryPage = location.pathname.endsWith('/pantry')
   const today = getCurrentLocalDateString()
   const [meals, setMeals] = useState([])
   const [summary, setSummary] = useState(null)
@@ -81,6 +93,8 @@ export default function NutritionScreen() {
   const [checkedGapItems, setCheckedGapItems] = useState(() => loadStoredCheckedGapItems())
   const [error, setError] = useState('')
   const [toastQueue, setToastQueue] = useState([])
+  const [activeView, setActiveView] = useState('today')
+  const [showMicros, setShowMicros] = useState(false)
   const [selectedRecipeKeys, setSelectedRecipeKeys] = useState([])
   const [recipeMealFilter, setRecipeMealFilter] = useState('all')
   const [expandedSections, setExpandedSections] = useState({
@@ -93,6 +107,9 @@ export default function NutritionScreen() {
   })
   const mealInputRef = useRef()
   const labelInputRef = useRef()
+  const mealsSectionRef = useRef(null)
+  const savedFoodsSectionRef = useRef(null)
+  const planningSectionRef = useRef(null)
   const addMealFormRef = useAutoScrollWhenActive(showAddForm)
   const savedFoodFormRef = useAutoScrollWhenActive(showSavedFoodForm)
   const savedMealFormRef = useAutoScrollWhenActive(showSavedMealForm)
@@ -105,8 +122,11 @@ export default function NutritionScreen() {
   const pantrySectionRef = useRef(null)
   const groceryGapSectionRef = useRef(null)
   const invalidate = useDashboardStore(state => state.invalidate)
+  const openDrawer = useJohnnyAssistantStore(state => state.openDrawer)
 
   const activeToast = toastQueue[0] ?? null
+  const latestMeal = meals[0] ?? null
+  const latestMealLabel = useMemo(() => formatMealTimeLabel(latestMeal?.meal_datetime), [latestMeal?.meal_datetime])
   const summaryMicros = useMemo(() => {
     if (Array.isArray(summary?.micros) && summary.micros.length) {
       return summary.micros
@@ -129,7 +149,7 @@ export default function NutritionScreen() {
   const visibleMeals = useMemo(() => getVisibleItems(meals, expandedSections.meals, 4), [expandedSections.meals, meals])
   const visibleSavedFoods = useMemo(() => getVisibleItems(savedFoods, expandedSections.savedFoods, 4), [expandedSections.savedFoods, savedFoods])
   const visibleSavedMeals = useMemo(() => getVisibleItems(savedMeals, expandedSections.savedMeals, 4), [expandedSections.savedMeals, savedMeals])
-  const visiblePantry = useMemo(() => getVisibleItems(pantry, expandedSections.pantry, 5), [expandedSections.pantry, pantry])
+  const pantryCategories = useMemo(() => groupPantryItemsByCategory(pantry), [pantry])
   const filteredRecipes = useMemo(
     () => (recipeMealFilter === 'all'
       ? recipes
@@ -137,15 +157,27 @@ export default function NutritionScreen() {
     [recipeMealFilter, recipes],
   )
   const visibleRecipes = useMemo(
-    () => getVisibleItems(filteredRecipes, expandedSections.recipes, RECIPE_FILTER_VISIBLE_LIMIT),
-    [expandedSections.recipes, filteredRecipes],
+    () => filteredRecipes.slice(0, RECIPE_CARD_VISIBLE_LIMIT),
+    [filteredRecipes],
   )
   const visibleGapItems = useMemo(
     () => getVisibleItems(orderedGapItems, expandedSections.groceryGap, 10),
     [expandedSections.groceryGap, orderedGapItems],
   )
+  const libraryItemCount = savedFoods.length + savedMeals.length
+  const planningItemCount = recipes.length + displayedGroceryGap.missing_items.length + pantry.length
   const allGapItemsChecked = displayedGroceryGap.missing_items.length > 0
     && checkedGapItems.length === displayedGroceryGap.missing_items.length
+  const macroCards = useMemo(
+    () => buildNutritionMacroCards(summary),
+    [summary],
+  )
+  const proteinMacroCard = macroCards.find(card => card.priority === 'primary') || null
+  const secondaryMacroCards = macroCards.filter(card => card.priority !== 'primary')
+  const coachPrompts = useMemo(
+    () => buildNutritionCoachPrompts(summary),
+    [summary],
+  )
 
   function showToast(message, tone = 'success') {
     setToastQueue(current => [...current, { id: Date.now() + Math.random(), message, tone }])
@@ -228,9 +260,16 @@ export default function NutritionScreen() {
 
   useEffect(() => {
     const focusSection = location.state?.focusSection
-    if (!focusSection) {
+    if (!focusSection || isPantryPage) {
       return undefined
     }
+
+    const nextView = ['savedMeals', 'savedFoods'].includes(focusSection)
+      ? 'library'
+      : ['pantry', 'recipes', 'groceryGap'].includes(focusSection)
+        ? 'plan'
+        : 'today'
+    setActiveView(nextView)
 
     if (['savedMeals', 'pantry', 'recipes', 'groceryGap'].includes(focusSection)) {
       setExpandedSections(current => ({ ...current, [focusSection]: true }))
@@ -258,7 +297,7 @@ export default function NutritionScreen() {
     })
 
     return () => window.cancelAnimationFrame(frameId)
-  }, [location.state?.focusSection, location.state?.openSavedMealForm, location.state?.recipeMealFilter])
+  }, [isPantryPage, location.state?.focusSection, location.state?.openSavedMealForm, location.state?.recipeMealFilter])
 
   useEffect(() => {
     const notice = location.state?.johnnyActionNotice
@@ -317,6 +356,7 @@ export default function NutritionScreen() {
   async function handlePhotoAnalyse(event) {
     const file = event.target.files?.[0]
     if (!file) return
+    setActiveView('today')
     setAnalysing(true)
     setAiMealDraft(null)
     setLabelReview(null)
@@ -341,6 +381,7 @@ export default function NutritionScreen() {
   async function handleLabelAnalyse(event) {
     const file = event.target.files?.[0]
     if (!file) return
+    setActiveView('today')
     setAnalysing(true)
     setAiMealDraft(null)
     setLabelReview(null)
@@ -487,6 +528,18 @@ export default function NutritionScreen() {
     setExpandedSections(current => ({ ...current, [section]: !current[section] }))
   }
 
+  function changeActiveView(nextView, ref = null) {
+    setActiveView(nextView)
+
+    if (!ref?.current) {
+      return
+    }
+
+    window.requestAnimationFrame(() => {
+      ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
+  }
+
   function toggleRecipeSelection(recipe) {
     const recipeKey = getRecipeKey(recipe)
     setSelectedRecipeKeys(current => current.includes(recipeKey)
@@ -506,6 +559,10 @@ export default function NutritionScreen() {
 
   function handleClearCheckedGapItems() {
     setCheckedGapItems([])
+  }
+
+  function handleClearSelectedRecipes() {
+    setSelectedRecipeKeys([])
   }
 
   async function handleBulkGroceryGapImport(items) {
@@ -688,26 +745,130 @@ export default function NutritionScreen() {
     }
   }
 
+  function openPantryPage() {
+    setActiveView('plan')
+    navigate('/nutrition/pantry')
+  }
+
+  function closePantryPage() {
+    navigate('/nutrition', { state: { focusSection: 'pantry' } })
+  }
+
+  if (isPantryPage) {
+    return (
+      <div className="screen nutrition-screen upgraded-nutrition-screen">
+        <header className="screen-header nutrition-header">
+          <div>
+            <p className="dashboard-eyebrow">Nutrition</p>
+            <h1>Pantry by category</h1>
+            <p className="settings-subtitle">Group what you have on hand by food type, then add, edit, or clean up items without digging through the full nutrition dashboard.</p>
+          </div>
+          <div className="header-actions nutrition-pantry-header-actions">
+            <button className="btn-secondary header-action-button" onClick={closePantryPage} type="button">
+              <span>Back to nutrition</span>
+            </button>
+            <button className="btn-secondary header-action-button" onClick={() => setShowPantryVoice(current => !current)} type="button">
+              <span>{showPantryVoice ? 'Close voice' : 'Speak list'}</span>
+            </button>
+            <button className="btn-secondary header-action-button" onClick={() => setShowPantryForm(current => !current)} type="button">
+              <AppIcon name="plus" />
+              <span>{showPantryForm ? 'Close add' : 'Add item'}</span>
+            </button>
+          </div>
+        </header>
+
+        {error ? <p className="error">{error}</p> : null}
+
+        <div className="nutrition-pantry-summary-grid">
+          <div className="dash-card nutrition-planning-card nutrition-pantry-stat-card">
+            <span className="dashboard-chip workout">Pantry items</span>
+            <strong>{pantry.length}</strong>
+            <p>Total ingredients and staples currently on hand.</p>
+          </div>
+          <div className="dash-card nutrition-planning-card nutrition-pantry-stat-card">
+            <span className="dashboard-chip nutrition">Food types</span>
+            <strong>{pantryCategories.length}</strong>
+            <p>Auto-grouped so you can scan proteins, produce, grains, and more.</p>
+          </div>
+        </div>
+
+        {showPantryVoice ? (
+          <div ref={pantryVoiceRef} className="dash-card nutrition-planning-card nutrition-pantry-utility-card">
+            <PantryVoiceCapture
+              onError={showErrorToast}
+              onAddItems={handleBulkPantryImport}
+              onCancel={() => setShowPantryVoice(false)}
+            />
+          </div>
+        ) : null}
+
+        {showPantryForm ? (
+          <div ref={pantryFormRef} className="dash-card nutrition-planning-card nutrition-pantry-utility-card">
+            <PantryForm
+              onError={showErrorToast}
+              onSave={handleCreatePantryItem}
+              onCancel={() => setShowPantryForm(false)}
+            />
+          </div>
+        ) : null}
+
+        {pantryCategories.length ? (
+          <div className="nutrition-pantry-category-list">
+            {pantryCategories.map(category => (
+              <PantryCategorySection
+                key={category.key}
+                category={category}
+                onDeleteItem={item => runAction(() => nutritionApi.deletePantry(item.id), 'Pantry item deleted.', { onSuccess: refreshPlanning })}
+                onSaveItem={(item, data) => handleUpdatePantryItem(item.id, data)}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="dash-card nutrition-planning-card">
+            <h3>Pantry on hand</h3>
+            <p className="empty-state">No pantry items yet. Add your staples and Johnny5k can suggest meals around them.</p>
+          </div>
+        )}
+
+        {activeToast ? (
+          <div className={`app-toast ${activeToast.tone || 'success'}`} role="status" aria-live="polite">
+            <p>{activeToast.message}</p>
+            <button type="button" className="app-toast-dismiss" onClick={() => dismissToast(activeToast.id)} aria-label="Dismiss toast">×</button>
+          </div>
+        ) : null}
+      </div>
+    )
+  }
+
   return (
     <div className="screen nutrition-screen upgraded-nutrition-screen">
       <header className="screen-header nutrition-header">
         <div>
           <p className="dashboard-eyebrow">Nutrition</p>
-          <h1>Meals, pantry, and planning</h1>
-          <p className="settings-subtitle">Scan food, confirm it before it logs, and build a saved-food library you can reuse all week.</p>
+          <h1>Log today first</h1>
+          <p className="settings-subtitle">Keep today&apos;s meals fast and obvious. Planning, shopping, and pantry upkeep stay one tap away when you need them.</p>
         </div>
-        <div className="header-actions">
-          <button className="btn-secondary header-action-button" title="Scan meal photo" onClick={() => mealInputRef.current?.click()} type="button">
-            <AppIcon name="camera" />
-            <span>Scan meal</span>
+        <div className="header-actions nutrition-header-actions">
+          <button className="btn-primary header-action-button nutrition-primary-header-action" title="Add manually" onClick={() => {
+            setActiveView('today')
+            setShowAddForm(current => !current)
+          }} type="button">
+            <AppIcon name="plus" />
+            <span>{showAddForm ? 'Close add meal' : 'Add meal'}</span>
           </button>
-          <button className="btn-secondary header-action-button" title="Scan nutrition label" onClick={() => labelInputRef.current?.click()} type="button">
+          <button className="btn-secondary header-action-button" title="Snap meal photo" onClick={() => {
+            setActiveView('today')
+            mealInputRef.current?.click()
+          }} type="button">
+            <AppIcon name="camera" />
+            <span>Snap meal</span>
+          </button>
+          <button className="btn-secondary header-action-button" title="Scan nutrition label" onClick={() => {
+            setActiveView('today')
+            labelInputRef.current?.click()
+          }} type="button">
             <AppIcon name="label" />
             <span>Scan label</span>
-          </button>
-          <button className="btn-secondary header-action-button" title="Add manually" onClick={() => setShowAddForm(current => !current)} type="button">
-            <AppIcon name="plus" />
-            <span>{showAddForm ? 'Close form' : 'Add meal'}</span>
           </button>
         </div>
       </header>
@@ -717,113 +878,20 @@ export default function NutritionScreen() {
 
       {error ? <p className="error">{error}</p> : null}
 
-      <div className="dash-card nutrition-planning-card nutrition-meals-card">
-        <div className="dashboard-card-head">
-          <span className="dashboard-chip nutrition">Logged meals</span>
-          <button className="btn-secondary small" onClick={() => setShowAddForm(current => !current)}>{showAddForm ? 'Close' : 'Add meal'}</button>
-        </div>
-        <h3>What you logged today</h3>
-        <p>Your latest meals stay at the top so edits and confirmations are easier to find.</p>
-        {showAddForm ? (
-          <div ref={addMealFormRef}>
-            <AddMealForm
-              savedFoods={savedFoods}
-              onError={showErrorToast}
-              onSave={async data => {
-                await runAction(() => nutritionApi.logMeal(data), 'Meal logged.', {
-                  onSuccess: async () => {
-                    invalidate()
-                    setShowAddForm(false)
-                    await loadData()
-                  },
-                })
-              }}
-              onSaveAsTemplate={async data => {
-                await runAction(() => nutritionApi.createSavedMeal(data), 'Saved meal created.', {
-                  onSuccess: async () => {
-                    setShowAddForm(false)
-                    await refreshPlanning()
-                  },
-                })
-              }}
-              onCancel={() => setShowAddForm(false)}
-            />
-          </div>
-        ) : null}
-        <div className="meals-list">
-          {visibleMeals.map(meal => (
-            <MealCard
-              key={meal.id}
-              meal={meal}
-              savedFoods={savedFoods}
-              onError={showErrorToast}
-              onSave={async data => {
-                await runAction(
-                  () => nutritionApi.updateMeal(meal.id, { meal_datetime: data.meal_datetime, meal_type: data.meal_type, source: meal.source, items: data.items }),
-                  'Logged meal updated.',
-                  {
-                    onSuccess: async () => {
-                      invalidate()
-                      await loadData()
-                    },
-                  },
-                )
-              }}
-              onDelete={async () => {
-                await runAction(() => nutritionApi.deleteMeal(meal.id), 'Logged meal deleted.', {
-                  onSuccess: async () => {
-                    invalidate()
-                    await loadData()
-                  },
-                })
-              }}
-            />
-          ))}
-          {!meals.length && !showAddForm ? <p className="empty-state">No meals logged yet today. Scan one or add one manually.</p> : null}
-        </div>
-        <SectionClampToggle
-          count={meals.length}
-          expanded={expandedSections.meals}
-          limit={4}
-          label="meals"
-          onToggle={() => toggleSection('meals')}
-        />
+      <div className="nutrition-mode-tabs" role="tablist" aria-label="Nutrition sections">
+        <button type="button" className={`nutrition-mode-tab${activeView === 'today' ? ' active' : ''}`} onClick={() => changeActiveView('today', mealsSectionRef)}>
+          Today
+          <small>{meals.length ? `${meals.length} logged` : 'Start logging'}</small>
+        </button>
+        <button type="button" className={`nutrition-mode-tab${activeView === 'library' ? ' active' : ''}`} onClick={() => changeActiveView('library', savedFoodsSectionRef)}>
+          Library
+          <small>{libraryItemCount ? `${libraryItemCount} saved` : 'Foods and meals'}</small>
+        </button>
+        <button type="button" className={`nutrition-mode-tab${activeView === 'plan' ? ' active' : ''}`} onClick={() => changeActiveView('plan', planningSectionRef)}>
+          Plan
+          <small>{planningItemCount ? `${planningItemCount} planning items` : 'Recipes and grocery gap'}</small>
+        </button>
       </div>
-
-      {summary ? (
-        <>
-          <div className="nutrition-summary">
-            <MacroStat label="Calories" val={Math.round(summary.totals?.calories ?? 0)} target={summary.targets?.target_calories} unit="" />
-            <MacroStat label="Protein" val={Math.round(summary.totals?.protein_g ?? 0)} target={summary.targets?.target_protein_g} unit="g" />
-            <MacroStat label="Carbs" val={Math.round(summary.totals?.carbs_g ?? 0)} target={summary.targets?.target_carbs_g} unit="g" />
-            <MacroStat label="Fat" val={Math.round(summary.totals?.fat_g ?? 0)} target={summary.targets?.target_fat_g} unit="g" />
-          </div>
-          <div className="dash-card nutrition-planning-card nutrition-micro-card">
-            <div className="dashboard-card-head">
-              <span className="dashboard-chip nutrition">Micronutrients today</span>
-              <span className="dashboard-chip subtle">Auto-aggregated</span>
-            </div>
-            <h3>Vitamin and mineral totals</h3>
-            <p>Combined from logged foods and scaled meal-template servings.</p>
-            {highlightedMicros.length ? (
-              <>
-                <p className="nutrition-micro-intro">Top logged nutrients for today</p>
-                <div className="nutrition-micro-grid">
-                  {highlightedMicros.map(micro => (
-                    <div key={micro.key || micro.label} className="nutrition-micro-stat">
-                      <strong>{micro.label}</strong>
-                      <span className="nutrition-micro-value">{formatMicroAmount(micro)}</span>
-                      <p>{formatMicroTargetMeta(micro)}</p>
-                    </div>
-                  ))}
-                </div>
-              </>
-            ) : (
-              <p className="empty-state">No micronutrients logged yet today. AI-filled foods, label-based foods, and saved foods with vitamin or mineral data will show up here once logged.</p>
-            )}
-          </div>
-        </>
-      ) : null}
 
       {analysing ? <p className="ai-thinking">Analysing photo…</p> : null}
 
@@ -874,8 +942,201 @@ export default function NutritionScreen() {
         </div>
       ) : null}
 
-      <section ref={pantrySectionRef} className="dashboard-section dashboard-two-col nutrition-planning-grid">
-        <div ref={savedMealsSectionRef} className="dash-card nutrition-planning-card">
+      {activeView === 'today' ? (
+        <section ref={mealsSectionRef} className="nutrition-section-shell nutrition-section-shell-today">
+          <div className="dash-card nutrition-planning-card nutrition-today-hero">
+            <div className="nutrition-today-hero-head">
+              <div>
+                <span className="dashboard-chip nutrition">Today&apos;s intake</span>
+                <h2>Keep today tight and protein-first</h2>
+                <p>{meals.length ? `${meals.length} meal${meals.length === 1 ? '' : 's'} logged${latestMealLabel ? ` · last update ${latestMealLabel}` : ''}.` : 'No meals logged yet today. Start with a scan or a quick manual entry.'}</p>
+              </div>
+              <button className="btn-secondary" type="button" onClick={() => changeActiveView('plan', planningSectionRef)}>Open planning</button>
+            </div>
+            {proteinMacroCard ? (
+              <div className="nutrition-summary-primary">
+                <MacroStat
+                  label={proteinMacroCard.label}
+                  val={proteinMacroCard.val}
+                  target={proteinMacroCard.target}
+                  unit={proteinMacroCard.unit}
+                  tone={proteinMacroCard.tone}
+                  priority={proteinMacroCard.priority}
+                  detail={proteinMacroCard.detail}
+                  actionLabel={proteinMacroCard.actionLabel}
+                  callout={proteinMacroCard.callout}
+                  warning={proteinMacroCard.warning}
+                  onClick={() => openDrawer(proteinMacroCard.prompt)}
+                />
+              </div>
+            ) : null}
+            <div className="nutrition-summary nutrition-summary-actionable nutrition-summary-secondary-grid">
+              {secondaryMacroCards.map(card => (
+                <MacroStat
+                  key={card.label}
+                  label={card.label}
+                  val={card.val}
+                  target={card.target}
+                  unit={card.unit}
+                  tone={card.tone}
+                  priority={card.priority}
+                  detail={card.detail}
+                  actionLabel={card.actionLabel}
+                  callout={card.callout}
+                  warning={card.warning}
+                  onClick={() => openDrawer(card.prompt)}
+                />
+              ))}
+            </div>
+            <div className="nutrition-today-shortcuts">
+              <button type="button" className="nutrition-shortcut-card" onClick={() => changeActiveView('library', savedFoodsSectionRef)}>
+                <strong>Use saved foods</strong>
+                <span>{savedFoods.length ? `${savedFoods.length} items ready to log fast` : 'Build a repeatable food library'}</span>
+              </button>
+              <button type="button" className="nutrition-shortcut-card" onClick={() => changeActiveView('library', savedMealsSectionRef)}>
+                <strong>Reuse saved meals</strong>
+                <span>{savedMeals.length ? `${savedMeals.length} meal defaults ready` : 'Save your common breakfast or lunch'}</span>
+              </button>
+              <button type="button" className="nutrition-shortcut-card" onClick={() => setShowMicros(current => !current)}>
+                <strong>{showMicros ? 'Hide micros' : 'See micronutrients'}</strong>
+                <span>{highlightedMicros.length ? `${highlightedMicros.length} top nutrients logged` : 'No micronutrient data logged yet'}</span>
+              </button>
+            </div>
+            <div className="nutrition-coach-card">
+              <div className="dashboard-card-head">
+                <span className="dashboard-chip ai">Ask Johnny</span>
+                <span className="dashboard-chip subtle">Context-aware</span>
+              </div>
+              <h3>{buildNutritionCoachHeadline(summary)}</h3>
+              <p>{buildNutritionCoachBody(summary)}</p>
+              <div className="nutrition-coach-prompt-grid">
+                {coachPrompts.map(prompt => (
+                  <button
+                    key={prompt.label}
+                    type="button"
+                    className="nutrition-coach-prompt"
+                    onClick={() => openDrawer(prompt.prompt)}
+                  >
+                    <strong>{prompt.label}</strong>
+                    <span>{prompt.meta}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {showMicros ? (
+            <div className="dash-card nutrition-planning-card nutrition-micro-card nutrition-micro-card-inline">
+              <div className="dashboard-card-head">
+                <span className="dashboard-chip nutrition">Micronutrients today</span>
+                <button type="button" className="btn-ghost small" onClick={() => setShowMicros(false)}>Hide</button>
+              </div>
+              <h3>Vitamin and mineral totals</h3>
+              <p>Combined from logged foods and scaled meal-template servings.</p>
+              {highlightedMicros.length ? (
+                <>
+                  <p className="nutrition-micro-intro">Top logged nutrients for today</p>
+                  <div className="nutrition-micro-grid">
+                    {highlightedMicros.map(micro => (
+                      <div key={micro.key || micro.label} className="nutrition-micro-stat">
+                        <strong>{micro.label}</strong>
+                        <span className="nutrition-micro-value">{formatMicroAmount(micro)}</span>
+                        <p>{formatMicroTargetMeta(micro)}</p>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <p className="empty-state">No micronutrients logged yet today. AI-filled foods, label-based foods, and saved foods with vitamin or mineral data will show up here once logged.</p>
+              )}
+            </div>
+          ) : null}
+
+          <div className="dash-card nutrition-planning-card nutrition-meals-card">
+            <div className="dashboard-card-head">
+              <span className="dashboard-chip nutrition">Logged meals</span>
+              <button className="btn-secondary small" onClick={() => setShowAddForm(current => !current)}>{showAddForm ? 'Close' : 'Add meal'}</button>
+            </div>
+            <h3>What you logged today</h3>
+            <p>Your latest meals stay at the top so edits and confirmations are easier to find.</p>
+            {showAddForm ? (
+              <div ref={addMealFormRef}>
+                <AddMealForm
+                  savedFoods={savedFoods}
+                  onError={showErrorToast}
+                  onSave={async data => {
+                    await runAction(() => nutritionApi.logMeal(data), 'Meal logged.', {
+                      onSuccess: async () => {
+                        invalidate()
+                        setShowAddForm(false)
+                        await loadData()
+                      },
+                    })
+                  }}
+                  onSaveAsTemplate={async data => {
+                    await runAction(() => nutritionApi.createSavedMeal(data), 'Saved meal created.', {
+                      onSuccess: async () => {
+                        setShowAddForm(false)
+                        await refreshPlanning()
+                      },
+                    })
+                  }}
+                  onCancel={() => setShowAddForm(false)}
+                />
+              </div>
+            ) : null}
+            <div className="meals-list">
+              {visibleMeals.map(meal => (
+                <MealCard
+                  key={meal.id}
+                  meal={meal}
+                  savedFoods={savedFoods}
+                  onError={showErrorToast}
+                  onSave={async data => {
+                    await runAction(
+                      () => nutritionApi.updateMeal(meal.id, { meal_datetime: data.meal_datetime, meal_type: data.meal_type, source: meal.source, items: data.items }),
+                      'Logged meal updated.',
+                      {
+                        onSuccess: async () => {
+                          invalidate()
+                          await loadData()
+                        },
+                      },
+                    )
+                  }}
+                  onDelete={async () => {
+                    await runAction(() => nutritionApi.deleteMeal(meal.id), 'Logged meal deleted.', {
+                      onSuccess: async () => {
+                        invalidate()
+                        await loadData()
+                      },
+                    })
+                  }}
+                />
+              ))}
+              {!meals.length && !showAddForm ? <p className="empty-state">No meals logged yet today. Scan one or add one manually.</p> : null}
+            </div>
+            <SectionClampToggle
+              count={meals.length}
+              expanded={expandedSections.meals}
+              limit={4}
+              label="meals"
+              onToggle={() => toggleSection('meals')}
+            />
+          </div>
+        </section>
+      ) : null}
+
+      {activeView === 'library' ? (
+        <section className="nutrition-section-shell nutrition-section-shell-library">
+          <div className="dash-card nutrition-planning-card nutrition-section-intro-card">
+            <span className="dashboard-chip nutrition">Library</span>
+            <h2>Reusable foods and meals</h2>
+            <p>Build the repeatable pieces here so daily logging stays quick and planning doesn&apos;t start from zero.</p>
+          </div>
+
+      <section className="dashboard-section dashboard-two-col nutrition-planning-grid">
+        <div ref={savedFoodsSectionRef} className="dash-card nutrition-planning-card">
           <div className="dashboard-card-head">
             <span className="dashboard-chip nutrition">Saved foods</span>
             <button className="btn-secondary small" onClick={() => setShowSavedFoodForm(current => !current)}>New</button>
@@ -923,7 +1184,7 @@ export default function NutritionScreen() {
           ) : null}
         </div>
 
-        <div className="dash-card nutrition-planning-card">
+        <div ref={savedMealsSectionRef} className="dash-card nutrition-planning-card">
           <div className="dashboard-card-head">
             <span className="dashboard-chip nutrition">Saved meals</span>
             <button className="btn-secondary small" onClick={() => setShowSavedMealForm(current => !current)}>New</button>
@@ -969,68 +1230,58 @@ export default function NutritionScreen() {
           ) : null}
         </div>
       </section>
+        </section>
+      ) : null}
+
+      {activeView === 'plan' ? (
+        <section ref={planningSectionRef} className="nutrition-section-shell nutrition-section-shell-plan">
+          <div className="dash-card nutrition-planning-card nutrition-section-intro-card nutrition-section-intro-plan">
+            <span className="dashboard-chip awards">Plan</span>
+            <h2>Recipes, pantry, and shopping</h2>
+            <p>Use this after logging to decide what to cook next, what you already have, and what still needs to be picked up.</p>
+          </div>
 
       <section ref={groceryGapSectionRef} className="dashboard-section dashboard-two-col nutrition-planning-grid">
         <div ref={recipesSectionRef} className="dash-card nutrition-planning-card">
           <div className="dashboard-card-head">
             <span className="dashboard-chip workout">Pantry</span>
             <div className="nutrition-card-actions">
-              <button className="btn-secondary small" onClick={() => setShowPantryVoice(current => !current)}>{showPantryVoice ? 'Close voice' : 'Speak list'}</button>
-              <button className="btn-secondary small" onClick={() => setShowPantryForm(current => !current)}>{showPantryForm ? 'Close' : 'Add'}</button>
+              <button className="btn-secondary small" onClick={openPantryPage}>Open pantry</button>
             </div>
           </div>
           <h3>Pantry on hand</h3>
-          <p>Use what you already have before creating shopping friction.</p>
-          {showPantryVoice ? (
-            <div ref={pantryVoiceRef}>
-              <PantryVoiceCapture
-                onError={showErrorToast}
-                onAddItems={handleBulkPantryImport}
-                onCancel={() => setShowPantryVoice(false)}
-              />
-            </div>
-          ) : null}
-          <div className="nutrition-stack-list">
-            {visiblePantry.map(item => (
-              <PantryRow
-                key={item.id}
-                item={item}
-                onSave={async data => handleUpdatePantryItem(item.id, data)}
-                onDelete={async () => runAction(() => nutritionApi.deletePantry(item.id), 'Pantry item deleted.', { onSuccess: refreshPlanning })}
-              />
+          <p>Use what you already have before creating shopping friction. The full pantry page handles editing, voice capture, and category cleanup.</p>
+          <div className="nutrition-pantry-preview-list">
+            {pantryCategories.map(category => (
+              <div key={category.key} className="nutrition-item-row nutrition-pantry-preview-row">
+                <div>
+                  <strong>{category.label}</strong>
+                  <p>{category.items.slice(0, 3).map(item => item.item_name).join(', ')}{category.items.length > 3 ? ` + ${category.items.length - 3} more` : ''}</p>
+                </div>
+                <span className="nutrition-inline-badge pantry-category">{category.items.length} item{category.items.length === 1 ? '' : 's'}</span>
+              </div>
             ))}
             {!pantry.length ? <p className="empty-state">No pantry items yet. Add your staples and Johnny5k can suggest meals around them.</p> : null}
           </div>
-          <SectionClampToggle
-            count={pantry.length}
-            expanded={expandedSections.pantry}
-            limit={5}
-            label="pantry items"
-            onToggle={() => toggleSection('pantry')}
-          />
-          {showPantryForm ? (
-            <div ref={pantryFormRef}>
-              <PantryForm
-                onError={showErrorToast}
-                onSave={handleCreatePantryItem}
-                onCancel={() => setShowPantryForm(false)}
-              />
-            </div>
-          ) : null}
+          {pantry.length ? <p className="nutrition-list-note">Grouped into {pantryCategories.length} food type {pantryCategories.length === 1 ? 'category' : 'categories'} so planning stays readable on mobile.</p> : null}
         </div>
 
         <div className="dash-card nutrition-planning-card">
           <div className="dashboard-card-head">
             <span className="dashboard-chip coach">Recipe ideas</span>
-            <button className="btn-secondary small" onClick={async () => {
-              const refreshed = await refreshPlanning({ recipeRefreshToken: String(Date.now()) })
-              if (refreshed) {
-                showToast('Recipe ideas refreshed.')
-              }
-            }} disabled={loadingExtras}>{loadingExtras ? 'Refreshing…' : 'Refresh'}</button>
+            <div className="nutrition-card-actions">
+              <span className="dashboard-chip subtle">{selectedRecipeKeys.length} selected</span>
+              {selectedRecipeKeys.length ? <button type="button" className="btn-ghost small" onClick={handleClearSelectedRecipes}>Clear</button> : null}
+              <button className="btn-secondary small" onClick={async () => {
+                const refreshed = await refreshPlanning({ recipeRefreshToken: String(Date.now()) })
+                if (refreshed) {
+                  showToast('Recipe ideas refreshed.')
+                }
+              }} disabled={loadingExtras}>{loadingExtras ? 'Refreshing…' : 'Refresh'}</button>
+            </div>
           </div>
           <h3>What you can make next</h3>
-          <p>Pick a recipe to push its missing ingredients into the grocery gap and keep the shopping list tied to what you actually want to cook.</p>
+          <p>Select recipes to feed the grocery gap below. Keep details collapsed until you need to inspect ingredients or steps.</p>
           <div className="nutrition-gap-list nutrition-quick-picks">
             <button type="button" className={`onboarding-chip${recipeMealFilter === 'all' ? ' active' : ''}`} onClick={() => setRecipeMealFilter('all')}>
               All ({recipes.length})
@@ -1061,13 +1312,7 @@ export default function NutritionScreen() {
             {!recipes.length ? <p className="empty-state">No suggestions yet. Add pantry items or refresh recipe ideas.</p> : null}
             {recipes.length > 0 && !filteredRecipes.length ? <p className="empty-state">No {formatMealTypeLabel(recipeMealFilter).toLowerCase()} ideas are loaded right now. Refresh and try again.</p> : null}
           </div>
-          <SectionClampToggle
-            count={filteredRecipes.length}
-            expanded={expandedSections.recipes}
-            limit={RECIPE_FILTER_VISIBLE_LIMIT}
-            label="recipes"
-            onToggle={() => toggleSection('recipes')}
-          />
+          {filteredRecipes.length > RECIPE_CARD_VISIBLE_LIMIT ? <p className="nutrition-list-note">Showing 5 of {filteredRecipes.length} recipe ideas on the dashboard.</p> : null}
         </div>
       </section>
 
@@ -1077,40 +1322,42 @@ export default function NutritionScreen() {
             <span className="dashboard-chip awards">Grocery gap</span>
             <div className="nutrition-card-actions">
               <span className="dashboard-chip subtle">{displayedGroceryGap.recipe_items.length ? `${displayedGroceryGap.recipe_items.length} recipe-driven` : 'Planning'}</span>
-              <button className="btn-secondary small" onClick={() => setShowGroceryGapVoice(current => !current)}>{showGroceryGapVoice ? 'Close voice' : 'Speak list'}</button>
-              <button className="btn-secondary small" onClick={() => setShowGroceryGapForm(current => !current)}>{showGroceryGapForm ? 'Close' : 'Add'}</button>
-              {displayedGroceryGap.missing_items.length ? (
-                <>
-                  <button
-                    type="button"
-                    className="btn-ghost small"
-                    onClick={handleSelectAllGapItems}
-                    disabled={allGapItemsChecked}
-                  >
-                    Select all
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-ghost small"
-                    onClick={handleClearCheckedGapItems}
-                    disabled={!checkedGapItems.length}
-                  >
-                    Clear
-                  </button>
-                </>
-              ) : null}
+            </div>
+          </div>
+          <h3>Missing staples</h3>
+          <p>Check items off as you grab them at the store. Your checklist stays put after a refresh, and checked items drop to the bottom until you add them into pantry.</p>
+          <div className="nutrition-gap-toolbar">
+            <button className="btn-secondary small" onClick={() => setShowGroceryGapVoice(current => !current)}>{showGroceryGapVoice ? 'Close voice' : 'Speak list'}</button>
+            <button className="btn-secondary small" onClick={() => setShowGroceryGapForm(current => !current)}>{showGroceryGapForm ? 'Close add' : 'Add item'}</button>
+          </div>
+          {displayedGroceryGap.missing_items.length ? (
+            <div className="nutrition-gap-bulk-bar">
               <button
                 type="button"
-                className="btn-secondary small"
+                className="btn-ghost small"
+                onClick={handleSelectAllGapItems}
+                disabled={allGapItemsChecked}
+              >
+                Select all
+              </button>
+              <button
+                type="button"
+                className="btn-ghost small"
+                onClick={handleClearCheckedGapItems}
+                disabled={!checkedGapItems.length}
+              >
+                Clear
+              </button>
+              <button
+                type="button"
+                className="btn-primary small"
                 onClick={handleMoveGapToPantry}
                 disabled={syncingGapToPantry || !checkedGapItems.length}
               >
                 {syncingGapToPantry ? 'Updating…' : `Add checked to pantry${checkedGapItems.length ? ` (${checkedGapItems.length})` : ''}`}
               </button>
             </div>
-          </div>
-          <h3>Missing staples</h3>
-          <p>Check items off as you grab them at the store. Your checklist stays put after a refresh, and checked items drop to the bottom until you add them into pantry.</p>
+          ) : null}
           {showGroceryGapVoice ? (
             <div ref={groceryGapVoiceRef}>
               <GroceryGapVoiceCapture
@@ -1187,6 +1434,8 @@ export default function NutritionScreen() {
           />
         </div>
       </section>
+        </section>
+      ) : null}
 
       {activeToast ? (
         <div className={`app-toast ${activeToast.tone || 'success'}`} role="status" aria-live="polite">
@@ -1207,17 +1456,27 @@ function FieldLabel({ label, children, className = '' }) {
   )
 }
 
-function MacroStat({ label, val, target, unit }) {
+function MacroStat({ label, val, target, unit, actionLabel = '', onClick = null, tone = 'green', priority = 'tertiary', detail = '', callout = '', warning = '' }) {
   const pct = target ? Math.min(100, Math.round((val / target) * 100)) : 0
+  const Component = typeof onClick === 'function' ? 'button' : 'div'
+
   return (
-    <div className="macro-stat">
-      <span className="macro-label">{label}</span>
+    <Component className={`macro-stat macro-stat-${priority} macro-stat-${tone}${typeof onClick === 'function' ? ' macro-stat-actionable' : ''}`} onClick={onClick ?? undefined} type={Component === 'button' ? 'button' : undefined}>
+      <div className="macro-stat-head">
+        <span className="macro-label">{label}</span>
+        {detail ? <span className={`macro-detail macro-detail-${tone}`}>{detail}</span> : null}
+      </div>
       <span className="macro-val">{val}{unit}</span>
       <div className="bar-track">
-        <div className="bar-fill" style={{ width: `${pct}%` }} />
+        <div className={`bar-fill bar-fill-${tone}`} style={{ width: `${pct}%` }} />
       </div>
-      <span className="macro-target">/{target ?? '?'}{unit}</span>
-    </div>
+      {callout ? <p className={`macro-callout macro-callout-${tone}`}>{callout}</p> : null}
+      {warning ? <p className={`macro-warning macro-warning-${tone}`}>{warning}</p> : null}
+      <div className="macro-stat-footer">
+        <span className="macro-target">/{target ?? '?'}{unit}</span>
+        {actionLabel ? <span className="macro-action-label">{actionLabel}</span> : null}
+      </div>
+    </Component>
   )
 }
 
@@ -1239,6 +1498,7 @@ function MealCard({ meal, savedFoods, onSave, onDelete, onError }) {
   const editRef = useAutoScrollWhenActive(editing)
   const total = meal.items?.reduce((acc, item) => acc + (+item.calories || 0), 0) ?? 0
   const visibleItems = expandedItems ? meal.items : (meal.items || []).slice(0, 3)
+  const mealCount = meal.items?.length ?? 0
 
   if (editing) {
     return (
@@ -1267,14 +1527,19 @@ function MealCard({ meal, savedFoods, onSave, onDelete, onError }) {
   return (
     <div className="meal-card">
       <div className="meal-card-header">
-        <span className="meal-type">{meal.meal_type}</span>
-        <span className="meal-cals">{Math.round(total)} kcal</span>
-        <button className="btn-secondary small" onClick={() => setEditing(true)}>Edit</button>
-        <button className="btn-danger small nutrition-delete-button" onClick={onDelete} title="Delete" type="button">
-          <AppIcon name="trash" />
-          <span>Delete</span>
-        </button>
+        <div className="meal-card-header-main">
+          <span className="meal-type">{meal.meal_type}</span>
+          <span className="meal-cals">{Math.round(total)} kcal</span>
+        </div>
+        <div className="meal-card-header-actions">
+          <button className="btn-secondary small" onClick={() => setEditing(true)}>Edit</button>
+          <button className="btn-danger small nutrition-delete-button nutrition-delete-button-compact" onClick={onDelete} title="Delete" type="button">
+            <AppIcon name="trash" />
+            <span>Delete</span>
+          </button>
+        </div>
       </div>
+      <p className="meal-card-meta">{mealCount} item{mealCount === 1 ? '' : 's'} logged</p>
       {visibleItems?.map((item, index) => (
         <p key={index} className="meal-item">{item.food_name} — {item.serving_amount} {item.serving_unit}</p>
       ))}
@@ -1288,8 +1553,11 @@ function MealCard({ meal, savedFoods, onSave, onDelete, onError }) {
 }
 
 function RecipeIdeaCard({ recipe, selected, onToggle }) {
-  const onHand = Array.isArray(recipe?.on_hand_ingredients) ? recipe.on_hand_ingredients : []
-  const missing = Array.isArray(recipe?.missing_ingredients) ? recipe.missing_ingredients : []
+  const [detailsOpen, setDetailsOpen] = useState(false)
+  const onHand = dedupeIngredientList(recipe?.on_hand_ingredients)
+  const missing = dedupeIngredientList(recipe?.missing_ingredients)
+  const ingredients = dedupeIngredientList(recipe?.ingredients)
+  const sourceLabel = recipe?.source === 'admin_library' ? 'Admin recipe' : 'Generated'
 
   return (
     <div className={`nutrition-recipe-card nutrition-recipe-idea${selected ? ' selected' : ''}`}>
@@ -1299,18 +1567,21 @@ function RecipeIdeaCard({ recipe, selected, onToggle }) {
           <p>{formatMealTypeLabel(recipe.meal_type || 'lunch')} · {Math.round(recipe.estimated_calories)} kcal · {Math.round(recipe.estimated_protein_g)}g protein · {Math.round(recipe.estimated_carbs_g)}g carbs · {Math.round(recipe.estimated_fat_g)}g fat</p>
         </div>
         <button type="button" className={`btn-secondary small${selected ? ' active-toggle' : ''}`} onClick={onToggle}>
-          {selected ? 'Added to gap' : 'Add missing to gap'}
+          {selected ? 'Selected' : 'Select'}
         </button>
       </div>
-      {recipe.why_this_works ? <p className="nutrition-recipe-note">{recipe.why_this_works}</p> : null}
       <div className="nutrition-recipe-badges">
-        {onHand.map(item => <span key={`on-hand-${item}`} className="nutrition-inline-badge on-hand">On hand: {item}</span>)}
-        {missing.map(item => <span key={`missing-${item}`} className="nutrition-inline-badge missing">Need: {item}</span>)}
+        <span className="nutrition-inline-badge pantry-category">{sourceLabel}</span>
+        <span className="nutrition-inline-badge on-hand">{onHand.length} on hand</span>
+        <span className="nutrition-inline-badge missing">{missing.length} need pickup</span>
       </div>
-      <details className="nutrition-recipe-details">
-        <summary>Ingredients and steps</summary>
+      {recipe.why_this_works ? <p className="nutrition-recipe-note">{recipe.why_this_works}</p> : null}
+      <details className="nutrition-recipe-details" open={detailsOpen} onToggle={event => setDetailsOpen(event.currentTarget.open)}>
+        <summary>{detailsOpen ? 'Hide details' : 'Show details'}</summary>
         <div className="nutrition-recipe-details-body">
-          <p>{(recipe.ingredients || []).join(', ')}</p>
+          {onHand.length ? <p><strong>On hand:</strong> {onHand.join(', ')}</p> : null}
+          {missing.length ? <p><strong>Still need:</strong> {missing.join(', ')}</p> : null}
+          {!onHand.length && !missing.length && ingredients.length ? <p><strong>Ingredients:</strong> {ingredients.join(', ')}</p> : null}
           <ol className="nutrition-recipe-steps">
             {(recipe.instructions || []).map((step, index) => <li key={`${recipe.recipe_name}-${index}`}>{step}</li>)}
           </ol>
@@ -1554,7 +1825,7 @@ function SavedFoodRow({ food, onLog, onSave, onDelete, onError }) {
         <p>{food.brand && displayName !== food.brand ? `${food.brand} · ` : ''}{food.serving_size} · {Math.round(food.calories)} kcal · {Math.round(food.protein_g)}g protein</p>
         {food.micros?.length ? <p>{formatMicroList(food.micros, 3)}</p> : null}
       </div>
-      <div className="nutrition-row-actions">
+      <div className="nutrition-row-actions saved-food-actions-stack">
         <button className="btn-secondary small" onClick={() => onLog(food.id)}>Log</button>
         <button className="btn-secondary small" onClick={() => setEditing(true)}>Edit</button>
         <button className="btn-ghost small" onClick={onDelete}>Delete</button>
@@ -1858,8 +2129,10 @@ function PantryRow({ item, onSave, onDelete }) {
     item_name: item.item_name,
     quantity: item.quantity ?? '',
     unit: item.unit ?? '',
+    notes: item.notes ?? '',
     expires_on: item.expires_on ?? '',
   })
+  const categoryLabel = getPantryCategoryLabel(item)
 
   if (editing) {
     return (
@@ -1874,6 +2147,7 @@ function PantryRow({ item, onSave, onDelete }) {
         <div className="macro-inputs">
           <FieldLabel label="Quantity"><input type="number" value={form.quantity} onChange={event => setForm(current => ({ ...current, quantity: event.target.value }))} /></FieldLabel>
           <FieldLabel label="Unit"><input value={form.unit} onChange={event => setForm(current => ({ ...current, unit: event.target.value }))} /></FieldLabel>
+          <FieldLabel label="Notes"><input value={form.notes} onChange={event => setForm(current => ({ ...current, notes: event.target.value }))} /></FieldLabel>
           <FieldLabel label="Expires on"><input type="date" value={form.expires_on} onChange={event => setForm(current => ({ ...current, expires_on: event.target.value }))} /></FieldLabel>
         </div>
         <div className="nutrition-row-actions">
@@ -1888,13 +2162,39 @@ function PantryRow({ item, onSave, onDelete }) {
     <div className="nutrition-item-row">
       <div>
         <strong>{item.item_name}</strong>
-        <p>{item.quantity ? `${item.quantity} ${item.unit || ''}` : 'No quantity set'}{item.expires_on ? ` · expires ${item.expires_on}` : ''}</p>
+        <p>{item.quantity ? `${item.quantity} ${item.unit || ''}` : 'No quantity set'}{item.expires_on ? ` · expires ${item.expires_on}` : ''}{item.notes ? ` · ${item.notes}` : ''}</p>
       </div>
       <div className="nutrition-row-actions">
+        <span className="nutrition-inline-badge pantry-category">{categoryLabel}</span>
         <button className="btn-secondary small" onClick={() => setEditing(true)}>Edit</button>
         <button className="btn-ghost small" onClick={onDelete}>Delete</button>
       </div>
     </div>
+  )
+}
+
+function PantryCategorySection({ category, onSaveItem, onDeleteItem }) {
+  return (
+    <section className="dash-card nutrition-planning-card nutrition-pantry-category-card">
+      <div className="nutrition-pantry-category-head">
+        <div>
+          <span className="dashboard-chip workout">{category.label}</span>
+          <h3>{category.label}</h3>
+          <p>{category.items.length} item{category.items.length === 1 ? '' : 's'} on hand.</p>
+        </div>
+        <span className="nutrition-inline-badge pantry-category">{category.items.length}</span>
+      </div>
+      <div className="nutrition-stack-list">
+        {category.items.map(item => (
+          <PantryRow
+            key={item.id}
+            item={item}
+            onSave={data => onSaveItem(item, data)}
+            onDelete={() => onDeleteItem(item)}
+          />
+        ))}
+      </div>
+    </section>
   )
 }
 
@@ -2305,6 +2605,206 @@ function buildLabelReview(result, targets) {
   }
 }
 
+function buildNutritionMacroCards(summary) {
+  const totals = summary?.totals ?? {}
+  const targets = summary?.targets ?? {}
+
+  return [
+    buildNutritionMacroCard('protein', 'Protein', Number(totals.protein_g ?? 0), Number(targets.target_protein_g ?? 0), 'g', 'primary'),
+    buildNutritionMacroCard('calories', 'Calories', Number(totals.calories ?? 0), Number(targets.target_calories ?? 0), '', 'secondary'),
+    buildNutritionMacroCard('carbs', 'Carbs', Number(totals.carbs_g ?? 0), Number(targets.target_carbs_g ?? 0), 'g', 'tertiary'),
+    buildNutritionMacroCard('fat', 'Fat', Number(totals.fat_g ?? 0), Number(targets.target_fat_g ?? 0), 'g', 'tertiary'),
+  ]
+}
+
+function buildNutritionMacroCard(key, label, val, target, unit, priority) {
+  const tone = getNutritionMacroTone(key, val, target)
+  const delta = Math.round((target || 0) - val)
+
+  return {
+    label,
+    val: Math.round(val || 0),
+    target: target || 0,
+    unit,
+    priority,
+    tone,
+    detail: getNutritionMacroDetail(key, tone),
+    actionLabel: getNutritionMacroActionLabel(key, delta, unit, tone),
+    callout: getNutritionMacroCallout(key, delta, unit, tone),
+    warning: getNutritionMacroWarning(key, delta, unit, tone),
+    prompt: buildNutritionMacroPrompt(key, label, delta, target, val, unit),
+  }
+}
+
+function getNutritionMacroTone(key, current, target) {
+  if (!target) {
+    return 'green'
+  }
+
+  const ratio = current / target
+
+  if (key === 'protein') {
+    if (ratio >= 1) return 'green'
+    if (ratio >= 0.7) return 'yellow'
+    return 'red'
+  }
+
+  if (ratio > 1) return 'red'
+  if (ratio >= 0.85) return 'yellow'
+  return 'green'
+}
+
+function getNutritionMacroDetail(key, tone) {
+  if (key === 'protein') {
+    if (tone === 'green') return 'on track'
+    if (tone === 'yellow') return 'close'
+    return 'low'
+  }
+
+  if (tone === 'green') return 'on track'
+  if (tone === 'yellow') return 'approaching limit'
+  return 'exceeded'
+}
+
+function getNutritionMacroActionLabel(key, delta, unit, tone) {
+  if (key === 'protein') {
+    if (delta > 0) return `Need ${delta}${unit} more`
+    return tone === 'green' ? 'Target hit' : `${Math.abs(delta)}${unit} over`
+  }
+
+  if (delta > 0) return `${delta}${unit} left`
+  if (delta < 0) return `${Math.abs(delta)}${unit} over`
+  return 'Right on target'
+}
+
+function getNutritionMacroCallout(key, delta, unit, tone) {
+  if (key === 'protein') {
+    if (delta > 0) {
+      return `Still need ${delta}${unit} to land the day.`
+    }
+
+    return tone === 'green' ? 'Protein target is covered.' : `Protein is ${Math.abs(delta)}${unit} over target.`
+  }
+
+  if (delta > 0) {
+    return `${delta}${unit} still available.`
+  }
+
+  if (delta < 0) {
+    return `${Math.abs(delta)}${unit} above target.`
+  }
+
+  return 'Exactly on target.'
+}
+
+function getNutritionMacroWarning(key, delta, unit, tone) {
+  if (key === 'protein') {
+    return delta > 0 ? 'Tap for fast meal ideas that raise protein without wasting calories.' : 'Tap for help using the rest of the day cleanly.'
+  }
+
+  if (tone === 'red') {
+    return key === 'carbs'
+      ? `Carbs are already high. Keep the next meal lean and lower-carb.`
+      : `Fat is already high. Keep the next meal lighter and protein-led.`
+  }
+
+  if (tone === 'yellow') {
+    return key === 'calories'
+      ? `You are close to the ceiling. Place the rest carefully.`
+      : `Approaching the limit. Keep the rest of the day tighter.`
+  }
+
+  return ''
+}
+
+function buildNutritionMacroPrompt(key, label, delta, target, current, unit) {
+  if (key === 'protein') {
+    if (delta > 0) {
+      return `I am at ${Math.round(current)}${unit} of ${Math.round(target)}${unit} protein today, so I need about ${delta}${unit} more. Give me 3 quick high-protein meal ideas that fit the rest of my day.`
+    }
+
+    return `I already hit ${Math.round(current)}${unit} protein today. Based on that, help me finish the rest of my calories cleanly without drifting off plan.`
+  }
+
+  if (delta > 0) {
+    return `I have about ${delta}${unit} ${label.toLowerCase()} left today. Based on my current nutrition board, what should my next meal look like?`
+  }
+
+  return `I am about ${Math.abs(delta)}${unit} over my ${label.toLowerCase()} target today. Help me adjust the rest of today and set up tomorrow better.`
+}
+
+function buildNutritionCoachHeadline(summary) {
+  const proteinTarget = Number(summary?.targets?.target_protein_g ?? 0)
+  const protein = Number(summary?.totals?.protein_g ?? 0)
+  const caloriesTarget = Number(summary?.targets?.target_calories ?? 0)
+  const calories = Number(summary?.totals?.calories ?? 0)
+  const proteinGap = Math.max(0, Math.round(proteinTarget - protein))
+  const calorieGap = Math.round(caloriesTarget - calories)
+
+  if (proteinGap > 0) {
+    return `You still need about ${proteinGap}g of protein.`
+  }
+
+  if (calorieGap > 0) {
+    return `You have about ${calorieGap} calories left to place well.`
+  }
+
+  return 'Johnny can help tighten the rest of the board.'
+}
+
+function buildNutritionCoachBody(summary) {
+  const carbsTarget = Number(summary?.targets?.target_carbs_g ?? 0)
+  const carbs = Number(summary?.totals?.carbs_g ?? 0)
+  const fatTarget = Number(summary?.targets?.target_fat_g ?? 0)
+  const fat = Number(summary?.totals?.fat_g ?? 0)
+
+  if (carbsTarget > 0 && carbs > carbsTarget) {
+    return 'Carbs are already over target, so the next move should be lean protein and low-friction calories.'
+  }
+
+  if (fatTarget > 0 && fat > fatTarget) {
+    return 'Fat is already running high, so Johnny should steer the next meal toward leaner choices.'
+  }
+
+  return 'Use Johnny in context instead of starting from a blank chat. He already has today’s intake board.'
+}
+
+function buildNutritionCoachPrompts(summary) {
+  const totals = summary?.totals ?? {}
+  const targets = summary?.targets ?? {}
+  const proteinGap = Math.max(0, Math.round(Number(targets.target_protein_g ?? 0) - Number(totals.protein_g ?? 0)))
+  const calorieGap = Math.round(Number(targets.target_calories ?? 0) - Number(totals.calories ?? 0))
+
+  return [
+    {
+      label: 'Plan my dinner',
+      meta: calorieGap > 0 ? `${calorieGap} calories left` : 'Close the day cleanly',
+      prompt: `Plan my dinner from my current nutrition board. Keep it realistic and explain how it fits my remaining calories and macros.`,
+    },
+    {
+      label: 'Fix my macros',
+      meta: proteinGap > 0 ? `${proteinGap}g protein to go` : 'Rebalance the board',
+      prompt: `Look at my current nutrition board and tell me exactly how to fix my macros for the rest of today.`,
+    },
+    {
+      label: 'Adjust tomorrow',
+      meta: 'Carry today forward',
+      prompt: `Based on how today’s nutrition is shaping up, how should I adjust tomorrow so the week stays on track?`,
+    },
+    proteinGap > 0
+      ? {
+          label: 'You’re low on protein',
+          meta: `Need ${proteinGap}g more`,
+          prompt: `I am low on protein today and still need about ${proteinGap}g. Give me fast options that fit the rest of my calories.`,
+        }
+      : {
+          label: 'Use the remaining calories well',
+          meta: calorieGap > 0 ? `${calorieGap} left` : 'Tomorrow setup',
+          prompt: `I am close on protein. Help me use the rest of my calories intelligently without overshooting carbs or fat.`,
+        },
+  ]
+}
+
 function createEmptyMealItem() {
   return {
     food_id: null,
@@ -2404,6 +2904,40 @@ function getVisibleItems(items, expanded, limit = 4) {
   return expanded ? list : list.slice(0, limit)
 }
 
+function groupPantryItemsByCategory(items) {
+  const grouped = new Map()
+
+  ;(Array.isArray(items) ? items : []).forEach(item => {
+    const category = getPantryCategory(item)
+    const current = grouped.get(category.key) || { ...category, items: [] }
+    current.items.push(item)
+    grouped.set(category.key, current)
+  })
+
+  return [
+    ...PANTRY_CATEGORY_CONFIG.map(category => grouped.get(category.key)).filter(Boolean),
+    grouped.get('other'),
+  ].filter(Boolean).map(category => ({
+    ...category,
+    items: [...category.items].sort((left, right) => String(left?.item_name || '').localeCompare(String(right?.item_name || ''))),
+  }))
+}
+
+function getPantryCategory(item) {
+  const haystack = normalisePantryMatchText(`${item?.item_name || ''} ${item?.notes || ''} ${item?.unit || ''}`)
+  const match = PANTRY_CATEGORY_CONFIG.find(category => category.keywords.some(keyword => haystack.includes(normalisePantryMatchText(keyword))))
+
+  if (match) {
+    return { key: match.key, label: match.label }
+  }
+
+  return { key: 'other', label: 'Other' }
+}
+
+function getPantryCategoryLabel(item) {
+  return getPantryCategory(item).label
+}
+
 function uniqueGapItems(items) {
   return Array.from(new Set((Array.isArray(items) ? items : []).map(item => String(item?.key || item || '').trim()).filter(Boolean)))
 }
@@ -2476,6 +3010,23 @@ function normalisePantryMatchText(value) {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, ' ')
     .trim()
+}
+
+function dedupeIngredientList(list) {
+  const seen = new Set()
+
+  return (Array.isArray(list) ? list : []).reduce((items, value) => {
+    const label = String(value || '').trim()
+    const key = normalisePantryMatchText(label)
+
+    if (!label || !key || seen.has(key)) {
+      return items
+    }
+
+    seen.add(key)
+    items.push(label)
+    return items
+  }, [])
 }
 
 function pantryContainsIngredient(pantry, ingredient) {
@@ -2839,6 +3390,21 @@ function combineMealDateTime(date, time) {
   const safeDate = date || getCurrentLocalDateString()
   const safeTime = time || '12:00'
   return `${safeDate} ${safeTime}:00`
+}
+
+function formatMealTimeLabel(mealDateTime) {
+  if (!mealDateTime) {
+    return ''
+  }
+
+  const value = String(mealDateTime).replace(' ', 'T')
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) {
+    const timeMatch = String(mealDateTime).match(/(\d{2}:\d{2})/)
+    return timeMatch ? timeMatch[1] : ''
+  }
+
+  return parsed.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }).toLowerCase()
 }
 
 function getCurrentLocalDateString() {

@@ -1508,9 +1508,10 @@ class AiController {
 				}
 
 				$suggestions[] = [
+					'source'               => 'admin_library',
 					'meal_type'            => sanitize_key( (string) ( $recipe['meal_type'] ?? 'lunch' ) ) ?: 'lunch',
 					'recipe_name'          => sanitize_text_field( (string) $recipe['recipe_name'] ),
-					'ingredients'          => array_values( array_filter( array_map( 'sanitize_text_field', (array) ( $recipe['ingredients'] ?? [] ) ) ) ),
+					'ingredients'          => self::unique_recipe_ingredients( (array) ( $recipe['ingredients'] ?? [] ) ),
 					'instructions'         => array_values( array_filter( array_map( 'sanitize_text_field', (array) ( $recipe['instructions'] ?? [] ) ) ) ),
 					'estimated_calories'   => (int) ( $recipe['estimated_calories'] ?? 0 ),
 					'estimated_protein_g'  => (float) ( $recipe['estimated_protein_g'] ?? 0 ),
@@ -1532,9 +1533,10 @@ class AiController {
 		} ) );
 
 		$suggestions = array_map( static function( array $suggestion ) use ( $pantry, $preferred_foods ): array {
-			$ingredients = array_values( array_filter( array_map( 'sanitize_text_field', (array) ( $suggestion['ingredients'] ?? [] ) ) ) );
+			$ingredients = self::unique_recipe_ingredients( (array) ( $suggestion['ingredients'] ?? [] ) );
 			$on_hand = [];
 			$missing = [];
+			$source = sanitize_key( (string) ( $suggestion['source'] ?? 'generated' ) ) ?: 'generated';
 
 			foreach ( $ingredients as $ingredient ) {
 				if ( self::pantry_has_ingredient( $pantry, $ingredient ) ) {
@@ -1552,7 +1554,8 @@ class AiController {
 				}
 			}
 
-			$suggestion['key'] = sanitize_title( (string) ( $suggestion['meal_type'] ?? 'meal' ) . '-' . (string) ( $suggestion['recipe_name'] ?? '' ) );
+			$suggestion['source'] = $source;
+			$suggestion['key'] = sanitize_title( $source . '-' . (string) ( $suggestion['meal_type'] ?? 'meal' ) . '-' . (string) ( $suggestion['recipe_name'] ?? '' ) );
 			$suggestion['ingredients'] = $ingredients;
 			$suggestion['on_hand_ingredients'] = array_values( array_unique( $on_hand ) );
 			$suggestion['missing_ingredients'] = array_values( array_unique( $missing ) );
@@ -1566,6 +1569,13 @@ class AiController {
 			$meal_cmp = strcmp( (string) ( $left['meal_type'] ?? '' ), (string) ( $right['meal_type'] ?? '' ) );
 			if ( 0 !== $meal_cmp ) {
 				return $meal_cmp;
+			}
+
+			$left_source_priority = 'admin_library' === ( $left['source'] ?? '' ) ? 1 : 0;
+			$right_source_priority = 'admin_library' === ( $right['source'] ?? '' ) ? 1 : 0;
+			$source_cmp = $right_source_priority <=> $left_source_priority;
+			if ( 0 !== $source_cmp ) {
+				return $source_cmp;
 			}
 
 			$preferred_cmp = ( $right['preferred_match_count'] <=> $left['preferred_match_count'] );
@@ -1668,6 +1678,7 @@ class AiController {
 
 	private static function recipe_payload( string $meal_type, string $recipe_name, array $ingredients, array $instructions, int $estimated_calories, float $estimated_protein_g, float $estimated_carbs_g, float $estimated_fat_g, string $why_this_works ): array {
 		return [
+			'source'              => 'generated',
 			'meal_type'           => $meal_type,
 			'recipe_name'         => $recipe_name,
 			'ingredients'         => $ingredients,
@@ -1717,6 +1728,25 @@ class AiController {
 		$value = strtolower( trim( $value ) );
 		$value = preg_replace( '/[^a-z0-9]+/', ' ', $value ) ?: '';
 		return trim( $value );
+	}
+
+	private static function unique_recipe_ingredients( array $ingredients ): array {
+		$unique = [];
+		$seen = [];
+
+		foreach ( $ingredients as $ingredient ) {
+			$label = sanitize_text_field( (string) $ingredient );
+			$normalised = self::normalise_food_name( $label );
+
+			if ( '' === $label || '' === $normalised || isset( $seen[ $normalised ] ) ) {
+				continue;
+			}
+
+			$seen[ $normalised ] = true;
+			$unique[] = $label;
+		}
+
+		return array_values( $unique );
 	}
 
 	private static function sanitise_pantry_payload( array $input ): array {

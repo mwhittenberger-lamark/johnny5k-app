@@ -61,7 +61,7 @@ export default function App() {
       <Route path="/" element={<RequireOnboarded><AppShell><LazyRoute><DashboardScreen /></LazyRoute></AppShell></RequireOnboarded>} />
       <Route path="/dashboard" element={<RequireOnboarded><AppShell><LazyRoute><DashboardScreen /></LazyRoute></AppShell></RequireOnboarded>} />
       <Route path="/workout" element={<RequireOnboarded><AppShell><LazyRoute><WorkoutScreen /></LazyRoute></AppShell></RequireOnboarded>} />
-      <Route path="/nutrition" element={<RequireOnboarded><AppShell><LazyRoute><NutritionScreen /></LazyRoute></AppShell></RequireOnboarded>} />
+      <Route path="/nutrition/*" element={<RequireOnboarded><AppShell><LazyRoute><NutritionScreen /></LazyRoute></AppShell></RequireOnboarded>} />
       <Route path="/body" element={<RequireOnboarded><AppShell><LazyRoute><BodyScreen /></LazyRoute></AppShell></RequireOnboarded>} />
       <Route path="/progress-photos" element={<RequireOnboarded><AppShell><LazyRoute><ProgressPhotosScreen /></LazyRoute></AppShell></RequireOnboarded>} />
       <Route path="/ai" element={<RequireOnboarded><AppShell><LazyRoute><AiScreen /></LazyRoute></AppShell></RequireOnboarded>} />

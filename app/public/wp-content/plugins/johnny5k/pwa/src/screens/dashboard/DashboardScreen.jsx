@@ -159,7 +159,7 @@ export default function DashboardScreen() {
 
           <button className="dash-card dashboard-card-button dashboard-hero-card" type="button" onClick={() => navigate('/nutrition')}>
             <div className="dashboard-card-head">
-              <span className="dashboard-chip">Fuel</span>
+              <span className="dashboard-chip">Today&apos;s intake</span>
               <span className="dashboard-card-kicker">{mealCount} meal{mealCount === 1 ? '' : 's'} logged</span>
             </div>
             <h2>{caloriesRemaining != null ? `${caloriesRemaining} cal left` : 'Nutrition ready'}</h2>
@@ -286,7 +286,7 @@ export default function DashboardScreen() {
         </div>
         <div className="dashboard-stat-grid">
           <StatCard label="Steps" value={s?.steps?.today?.toLocaleString() ?? '—'} meta={`Goal ${s?.steps?.target?.toLocaleString() ?? '—'} • ${Math.min(100, stepPct)}%`} accent="pink" onClick={() => navigate('/body')} />
-          <StatCard label="Sleep" value={s?.sleep?.hours_sleep != null ? `${s.sleep.hours_sleep}h` : '—'} meta={s?.sleep?.sleep_quality ? `Quality: ${s.sleep.sleep_quality}` : 'Last night recovery'} accent="teal" onClick={() => navigate('/body')} />
+          <StatCard label="Sleep" value={s?.sleep?.hours_sleep != null ? `${s.sleep.hours_sleep}h` : '—'} meta={buildDashboardSleepMeta(s?.sleep)} accent="teal" onClick={() => navigate('/body')} />
           <StatCard label="Weight" value={s?.latest_weight?.weight_lb != null ? `${s.latest_weight.weight_lb}` : '—'} meta={s?.latest_weight?.metric_date ? `Logged ${formatFriendlyDate(s.latest_weight.metric_date)}` : 'No bodyweight yet'} accent="orange" onClick={() => navigate('/body')} />
           <StatCard label="Week rhythm" value={s?.score_7d ?? 0} meta={weeklyScoreLabel} accent="yellow" onClick={() => navigate('/body')} />
         </div>
@@ -597,13 +597,13 @@ function buildJohnnyDashboardReview(snapshot) {
     encouragement = 'This is a very fixable board. A couple of clean movement blocks can change how the whole day feels.'
     starterPrompt = 'I am behind on steps. Based on my dashboard, give me the simplest plan to recover the day.'
   } else if (mealsLogged === 0 || proteinPct < 0.55) {
-    title = 'Fuel quality is the next lever.'
+    title = 'Today\'s intake is the next lever.'
     message = mealsLogged === 0
       ? 'Johnny sees a pretty open nutrition board right now. That is not a problem yet, but the longer it stays blank, the harder the day gets to steer.'
       : `Johnny sees protein sitting at ${Math.round(protein)}g of ${Math.round(proteinTarget)}g. The board is moving, but your recovery and appetite control will be better if the next meal fixes that gap.`
     nextStep = mealsLogged === 0
       ? 'Log and eat your next meal on purpose, with protein leading the plate, so the rest of the day has structure.'
-      : 'Make the next meal protein-first and keep the extras boring so you can close the target without chasing calories late.'
+      : 'Next meal: hit 40g protein and keep the extras boring so you can close the target without chasing calories late.'
     encouragement = 'You are not behind beyond repair. One intentional meal can steady the entire rest of the day.'
     starterPrompt = 'Review my dashboard and tell me what my next meal should look like today.'
   } else if (weeklyScore >= 80 || bestCurrentStreak >= 5) {
@@ -834,15 +834,32 @@ function buildBestNextMove(snapshot) {
 
 function buildMomentumCard(snapshot, awards) {
   const streaks = snapshot?.streaks || {}
-  const latestAward = awards?.[0]
   const best = bestStreak(streaks)
-  const iconName = latestAward ? normalizeAppIconName(latestAward.icon, 'award') : null
+  const weeklyScore = Number(snapshot?.score_7d ?? 0)
+  const iconName = best >= 7 ? 'award' : best >= 3 || weeklyScore >= 60 ? 'coach' : 'calendar'
+
+  let badge = best > 0 ? `${best}d live` : `${awards.length} earned`
+  let title = 'Momentum starts with repeatable basics'
+  let body = 'Meals, training, sleep, and cardio build momentum when they keep showing up in sequence. Keep the board active instead of waiting for a perfect streak.'
+
+  if ( best >= 7 || weeklyScore >= 80 ) {
+    badge = best > 0 ? `${best}d live` : `${weeklyScore} score`
+    title = 'Momentum is holding'
+    body = 'Your recent board has real traction. The goal now is to protect the pattern, not reinvent it.'
+  } else if ( best >= 3 || weeklyScore >= 50 ) {
+    badge = best > 0 ? `${best}d live` : `${weeklyScore} score`
+    title = 'Rhythm is building'
+    body = 'The recent pattern is getting more stable. Keep stacking ordinary entries so the week stops depending on one big day.'
+  } else if ( awards.length > 0 ) {
+    title = 'Momentum needs another clean rep'
+    body = 'You have prior wins on the board, but the current signal needs fresh consistency. Rebuild with the next meal, workout, or recovery entry.'
+  }
 
   return {
-    badge: best > 0 ? `${best}d live` : `${awards.length} earned`,
+    badge,
     iconName,
-    title: latestAward ? latestAward.name : 'Momentum stays built through repeatable days',
-    body: latestAward?.description || 'Streaks, awards, and long-run trend changes all start with ordinary entries that keep stacking.',
+    title,
+    body,
     rows: [
       { label: 'Meals', value: streaks?.logging_days ?? 0 },
       { label: 'Training', value: streaks?.training_days ?? 0 },
@@ -850,6 +867,17 @@ function buildMomentumCard(snapshot, awards) {
       { label: 'Awards', value: awards.length, suffix: '' },
     ],
   }
+}
+
+function buildDashboardSleepMeta(sleep) {
+  if (!sleep) {
+    return 'Last night recovery'
+  }
+
+  const quality = sleep?.sleep_quality ? `Quality: ${sleep.sleep_quality}` : 'Sleep logged'
+  const dateLabel = sleep?.sleep_date ? `Logged ${formatFriendlyDate(sleep.sleep_date)}` : ''
+
+  return [dateLabel, quality].filter(Boolean).join(' • ')
 }
 
 function proteinTargetCopy(nutritionTotals, goal, mealCount) {

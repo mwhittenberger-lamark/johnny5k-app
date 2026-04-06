@@ -54,6 +54,7 @@ export default function WorkoutScreen() {
   const [restartNotice, setRestartNotice] = useState('')
   const [restartError, setRestartError] = useState('')
   const [addonsExpanded, setAddonsExpanded] = useState(false)
+  const [timerNow, setTimerNow] = useState(() => Date.now())
   const location = useLocation()
   const navigate = useNavigate()
 
@@ -78,6 +79,8 @@ export default function WorkoutScreen() {
   ]
   const isCardioSelection = previewPlan?.day_type === 'cardio'
   const isRestSelection = previewPlan?.day_type === 'rest'
+  const activeSessionStartedAt = session?.session?.started_at || null
+  const activeSessionTimerLabel = formatWorkoutElapsedTime(activeSessionStartedAt, timerNow)
   const johnnyReview = buildJohnnyReview({
     todayLabel,
     scheduledDayType,
@@ -152,6 +155,19 @@ export default function WorkoutScreen() {
     navigate(location.pathname, { replace: true, state: Object.keys(nextState).length ? nextState : null })
     return undefined
   }, [location.pathname, location.state, location.state?.johnnyActionNotice, navigate])
+
+  useEffect(() => {
+    if (!activeSessionStartedAt) {
+      return undefined
+    }
+
+    setTimerNow(Date.now())
+    const intervalId = window.setInterval(() => {
+      setTimerNow(Date.now())
+    }, 1000)
+
+    return () => window.clearInterval(intervalId)
+  }, [activeSessionStartedAt])
 
   async function handleComplete() {
     setCompleting(true)
@@ -402,21 +418,20 @@ export default function WorkoutScreen() {
   return (
     <div className="screen workout-active workout-upgraded">
       <header className="screen-header workout-session-header">
-        <div>
-          <p className="dashboard-eyebrow">Today</p>
+        <div className="workout-session-header-main">
+          <div className="workout-session-header-topline">
+            <p className="dashboard-eyebrow">Today</p>
+            {activeSessionTimerLabel ? <span className="dashboard-chip subtle workout-session-timer">{activeSessionTimerLabel}</span> : null}
+          </div>
           <h1>{todayLabel} • {formatDayType(displayDayType)} day</h1>
-          <p className="settings-subtitle">Readiness {session?.session?.readiness_score ?? readinessScore}/10 · {session?.session?.time_tier} session{isMaintenanceMode ? ' · maintenance mode' : ''}</p>
-          {wasResumed ? <p className="settings-subtitle">Resumed your in-progress workout automatically.</p> : null}
-          {scheduledDayType && displayDayType && scheduledDayType !== displayDayType ? <p className="settings-subtitle">Scheduled for today: {formatDayType(scheduledDayType)}. You chose to run {formatDayType(displayDayType)} instead.</p> : null}
+          <div className="workout-session-header-summary">
+            <span className="dashboard-chip subtle">Readiness {session?.session?.readiness_score ?? readinessScore}/10</span>
+            <span className="dashboard-chip subtle">{session?.session?.time_tier} session</span>
+            {isMaintenanceMode ? <span className="dashboard-chip subtle">Maintenance mode</span> : null}
+          </div>
+          {wasResumed ? <p className="settings-subtitle workout-session-note">Resumed your in-progress workout automatically.</p> : null}
+          {scheduledDayType && displayDayType && scheduledDayType !== displayDayType ? <p className="settings-subtitle workout-session-note">Scheduled for today: {formatDayType(scheduledDayType)}. You chose to run {formatDayType(displayDayType)} instead.</p> : null}
           {restartError ? <p className="error">{restartError}</p> : null}
-        </div>
-        <div className="workout-session-header-actions">
-          <button className="btn-outline small" onClick={handleRestartSession} disabled={restarting}>
-            {restarting ? 'Restarting...' : 'Start over / change split'}
-          </button>
-          <button className="btn-outline small" onClick={handleComplete} disabled={completing}>
-            {completing ? 'Finishing...' : 'Finish'}
-          </button>
         </div>
       </header>
 
@@ -514,6 +529,20 @@ export default function WorkoutScreen() {
         />
       ) : null}
 
+      <section className="dash-card workout-page-actions">
+        <div className="dashboard-card-head">
+          <span className="dashboard-chip workout">Session actions</span>
+        </div>
+        <div className="workout-page-actions-row">
+          <button className="btn-outline" onClick={handleRestartSession} disabled={restarting}>
+            {restarting ? 'Restarting...' : 'Start over / change split'}
+          </button>
+          <button className="btn-primary" onClick={handleComplete} disabled={completing}>
+            {completing ? 'Finishing...' : 'Finish'}
+          </button>
+        </div>
+      </section>
+
       {undoToast ? (
         <div className="undo-toast" role="status" aria-live="polite">
           <div>
@@ -532,6 +561,42 @@ export default function WorkoutScreen() {
       ) : null}
     </div>
   )
+}
+
+function formatWorkoutElapsedTime(startedAt, nowValue = Date.now()) {
+  if (!startedAt) {
+    return ''
+  }
+
+  const normalizedStart = normalizeWorkoutStartTime(startedAt)
+  const parsedStart = new Date(normalizedStart)
+  if (Number.isNaN(parsedStart.getTime())) {
+    return ''
+  }
+
+  const elapsedSeconds = Math.max(0, Math.floor((nowValue - parsedStart.getTime()) / 1000))
+  const hours = Math.floor(elapsedSeconds / 3600)
+  const minutes = Math.floor((elapsedSeconds % 3600) / 60)
+  const seconds = elapsedSeconds % 60
+
+  if (hours > 0) {
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+  }
+
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+}
+
+function normalizeWorkoutStartTime(value) {
+  const rawValue = String(value || '').trim()
+  if (!rawValue) {
+    return rawValue
+  }
+
+  if (/z$/i.test(rawValue) || /[+-]\d{2}:?\d{2}$/.test(rawValue)) {
+    return rawValue
+  }
+
+  return `${rawValue.replace(' ', 'T')}Z`
 }
 
 function formatDayType(value) {

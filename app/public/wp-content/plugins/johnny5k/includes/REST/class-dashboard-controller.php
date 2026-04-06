@@ -179,9 +179,11 @@ class DashboardController {
 		}
 
 		$sleep = $wpdb->get_row( $wpdb->prepare(
-			"SELECT hours_sleep, sleep_quality FROM {$p}fit_sleep_logs
-			 WHERE user_id = %d AND sleep_date = %s",
-			$user_id, UserTime::yesterday( $user_id )
+			"SELECT hours_sleep, sleep_quality, sleep_date FROM {$p}fit_sleep_logs
+			 WHERE user_id = %d
+			 ORDER BY sleep_date DESC, id DESC
+			 LIMIT 1",
+			$user_id
 		) );
 
 		$steps = (int) $wpdb->get_var( $wpdb->prepare(
@@ -330,6 +332,7 @@ class DashboardController {
 
 		// Add signed REST URL for each photo (no direct media URL exposed)
 		foreach ( $photos as $photo ) {
+			$photo->id = (int) $photo->id;
 			$photo->url = self::progress_photo_url( (int) $photo->id );
 			$photo->is_baseline = (int) ( $baselines[ $photo->angle ] ?? 0 ) === (int) $photo->id;
 		}
@@ -368,12 +371,12 @@ class DashboardController {
 			return new \WP_REST_Response( [ 'message' => 'One or both progress photos could not be found.' ], 404 );
 		}
 
-		$first_data_url = self::photo_attachment_to_data_url( (int) $first_photo->attachment_id );
+		$first_data_url = self::photo_attachment_to_ai_data_url( (int) $first_photo->attachment_id );
 		if ( is_wp_error( $first_data_url ) ) {
 			return new \WP_REST_Response( [ 'message' => $first_data_url->get_error_message() ], 500 );
 		}
 
-		$second_data_url = self::photo_attachment_to_data_url( (int) $second_photo->attachment_id );
+		$second_data_url = self::photo_attachment_to_ai_data_url( (int) $second_photo->attachment_id );
 		if ( is_wp_error( $second_data_url ) ) {
 			return new \WP_REST_Response( [ 'message' => $second_data_url->get_error_message() ], 500 );
 		}
@@ -544,6 +547,49 @@ class DashboardController {
 		}
 
 		return 'data:' . $mime . ';base64,' . base64_encode( $contents ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode
+	}
+
+	private static function photo_attachment_to_ai_data_url( int $attachment_id ): string|\WP_Error {
+		$file_path = get_attached_file( $attachment_id );
+		if ( ! $file_path || ! file_exists( $file_path ) ) {
+			return new \WP_Error( 'photo_missing', 'Progress photo file not found.' );
+		}
+
+		$mime = mime_content_type( $file_path ) ?: 'image/jpeg';
+		$allowed_mimes = [ 'image/jpeg', 'image/png', 'image/webp', 'image/gif' ];
+
+		if ( in_array( $mime, $allowed_mimes, true ) ) {
+			return self::photo_attachment_to_data_url( $attachment_id );
+		}
+
+		if ( ! function_exists( 'wp_get_image_editor' ) ) {
+			return new \WP_Error( 'photo_format_unsupported', 'Progress photo format is not supported for AI comparison.' );
+		}
+
+		$image_editor = wp_get_image_editor( $file_path );
+		if ( is_wp_error( $image_editor ) ) {
+			return new \WP_Error( 'photo_convert_failed', 'Progress photo could not be prepared for AI comparison.' );
+		}
+
+		$temp_file = wp_tempnam( wp_basename( $file_path ) . '.jpg' );
+		if ( ! $temp_file ) {
+			return new \WP_Error( 'photo_temp_failed', 'Progress photo could not be prepared for AI comparison.' );
+		}
+
+		$saved = $image_editor->save( $temp_file, 'image/jpeg' );
+		if ( is_wp_error( $saved ) || empty( $saved['path'] ) ) {
+			@unlink( $temp_file ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+			return new \WP_Error( 'photo_convert_failed', 'Progress photo could not be converted for AI comparison.' );
+		}
+
+		$jpeg_contents = file_get_contents( $saved['path'] ); // phpcs:ignore WordPress.WP.AlternativeFunctions
+		@unlink( $saved['path'] ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+
+		if ( false === $jpeg_contents ) {
+			return new \WP_Error( 'photo_read_failed', 'Could not read the prepared progress photo file.' );
+		}
+
+		return 'data:image/jpeg;base64,' . base64_encode( $jpeg_contents ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode
 	}
 
 	private static function build_recovery_summary( int $user_id, ?object $goal, ?object $sleep, int $steps_today ): array {
@@ -728,7 +774,7 @@ class DashboardController {
 				$user_id, $date
 			) );
 			return $hours >= 7.0;
-		} );
+		}, UserTime::yesterday( $user_id ) );
 	}
 
 	private static function count_cardio_streak( int $user_id ): int {
@@ -742,9 +788,16 @@ class DashboardController {
 		} );
 	}
 
-	private static function count_consecutive_days( int $user_id, callable $has_activity ): int {
+	private static function count_consecutive_days( int $user_id, callable $has_activity, ?string $start_date = null ): int {
 		$streak = 0;
 		$current = UserTime::now( $user_id )->setTime( 12, 0 );
+
+		if ( $start_date ) {
+			$custom_start = \DateTimeImmutable::createFromFormat( 'Y-m-d H:i:s', $start_date . ' 12:00:00', UserTime::timezone( $user_id ) );
+			if ( false !== $custom_start ) {
+				$current = $custom_start;
+			}
+		}
 
 		for ( $i = 0; $i < 30; $i++ ) {
 			$date = $current->format( 'Y-m-d' );

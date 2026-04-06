@@ -129,6 +129,36 @@ export function formatReminderHour(hour) {
   return `${displayHour}:00 ${suffix}`
 }
 
+export function normalizePhoneNumber(value) {
+  const raw = String(value ?? '').trim()
+  if (!raw) return ''
+
+  const digits = raw.replace(/\D/g, '')
+  if (!digits) return ''
+
+  if (raw.startsWith('+')) return `+${digits}`
+  return digits
+}
+
+export function formatPhoneInput(value) {
+  const normalized = normalizePhoneNumber(value)
+  if (!normalized) return ''
+
+  const hasCountryCode = normalized.startsWith('+1') || (!normalized.startsWith('+') && normalized.length > 10 && normalized.startsWith('1'))
+  const digits = normalized.startsWith('+') ? normalized.slice(1) : normalized
+
+  if ((digits.length <= 10 || hasCountryCode) && /^1?\d{0,10}$/.test(digits)) {
+    const localDigits = hasCountryCode ? digits.slice(1, 11) : digits.slice(0, 10)
+    const countryPrefix = hasCountryCode ? '+1 ' : ''
+
+    if (localDigits.length <= 3) return `${countryPrefix}${localDigits}`
+    if (localDigits.length <= 6) return `${countryPrefix}(${localDigits.slice(0, 3)}) ${localDigits.slice(3)}`
+    return `${countryPrefix}(${localDigits.slice(0, 3)}) ${localDigits.slice(3, 6)}-${localDigits.slice(6, 10)}`
+  }
+
+  return normalized
+}
+
 export function reminderHourOptions() {
   return Array.from({ length: 24 }, (_, hour) => ({
     value: hour,

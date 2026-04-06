@@ -117,7 +117,7 @@ function ProfileStep() {
   if (loading) return <div className="screen-loading">Loading…</div>
 
   return (
-    <form className="onboarding-screen" onSubmit={next}>
+    <form className="onboarding-screen onboarding-step-form" onSubmit={next}>
       <h2>Body basics</h2>
       <div className="onboarding-form">
         <label>First name<input value={form.first_name} onChange={e => update('first_name', e.target.value)} required /></label>
@@ -134,29 +134,37 @@ function ProfileStep() {
         <label>
           Height
           <div className="height-row">
-            <div className="height-field">
-              <input type="number" min="4" max="7" value={form.height_ft} onChange={e => update('height_ft', e.target.value)} required />
-              <span className="height-unit">ft</span>
-            </div>
-            <div className="height-field">
-              <input type="number" min="0" max="11" value={form.height_in_part} onChange={e => update('height_in_part', e.target.value)} />
-              <span className="height-unit">in</span>
-            </div>
+            <label className="onboarding-subfield">Feet
+              <div className="height-field">
+                <input type="number" min="4" max="7" value={form.height_ft} onChange={e => update('height_ft', e.target.value)} required />
+                <span className="height-unit">ft</span>
+              </div>
+            </label>
+            <label className="onboarding-subfield">Inches
+              <div className="height-field">
+                <input type="number" min="0" max="11" value={form.height_in_part} onChange={e => update('height_in_part', e.target.value)} />
+                <span className="height-unit">in</span>
+              </div>
+            </label>
           </div>
         </label>
         <label>Timezone
           <div className="timezone-picker">
-            <select value={timezoneRegion} onChange={e => {
-              const nextRegion = e.target.value
-              const nextZones = getTimezonesForRegion(nextRegion)
-              setTimezoneRegion(nextRegion)
-              update('timezone', nextZones.includes(form.timezone) ? form.timezone : nextZones[0] || form.timezone)
-            }}>
-              {TIMEZONE_REGIONS.map(region => <option key={region} value={region}>{region}</option>)}
-            </select>
-            <select value={form.timezone} onChange={e => update('timezone', e.target.value)}>
-              {regionTimezones.map(zone => <option key={zone} value={zone}>{zone}</option>)}
-            </select>
+            <label className="onboarding-subfield">Region
+              <select value={timezoneRegion} onChange={e => {
+                const nextRegion = e.target.value
+                const nextZones = getTimezonesForRegion(nextRegion)
+                setTimezoneRegion(nextRegion)
+                update('timezone', nextZones.includes(form.timezone) ? form.timezone : nextZones[0] || form.timezone)
+              }}>
+                {TIMEZONE_REGIONS.map(region => <option key={region} value={region}>{region}</option>)}
+              </select>
+            </label>
+            <label className="onboarding-subfield">Timezone
+              <select value={form.timezone} onChange={e => update('timezone', e.target.value)}>
+                {regionTimezones.map(zone => <option key={zone} value={zone}>{zone}</option>)}
+              </select>
+            </label>
           </div>
         </label>
         {(error || loadError) && <p className="error">{error || loadError}</p>}
@@ -195,7 +203,7 @@ function BodyStep() {
   if (loading) return <div className="screen-loading">Loading…</div>
 
   return (
-    <form className="onboarding-screen" onSubmit={next}>
+    <form className="onboarding-screen onboarding-step-form" onSubmit={next}>
       <h2>Goal</h2>
       <label>Current weight (lbs)<input type="number" min="80" max="600" step="0.1" value={form.starting_weight_lb} onChange={e => update('starting_weight_lb', e.target.value)} required /></label>
       <label>Goal
@@ -282,7 +290,7 @@ function TrainingStep() {
   if (loading) return <div className="screen-loading">Loading…</div>
 
   return (
-    <form className="onboarding-screen" onSubmit={next}>
+    <form className="onboarding-screen onboarding-step-form" onSubmit={next}>
       <h2>Training background</h2>
       <label>Experience
         <select value={form.training_experience} onChange={e => setForm(current => ({ ...current, training_experience: e.target.value }))}>
@@ -312,12 +320,12 @@ function TrainingStep() {
           {WORKOUT_DAYS.map(day => {
             const scheduled = form.weekly_schedule.find(entry => entry.day === day) || { day, day_type: 'rest' }
             return (
-              <div key={day} className="onboarding-schedule-row">
+              <label key={day} className="onboarding-schedule-row onboarding-schedule-field">
                 <span>{day}</span>
                 <select value={scheduled.day_type} onChange={e => updateSchedule(day, e.target.value)}>
                   {DAY_TYPE_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                 </select>
-              </div>
+              </label>
             )
           })}
         </div>
@@ -395,7 +403,7 @@ function InjuriesStep() {
   if (loading) return <div className="screen-loading">Loading…</div>
 
   return (
-    <form className="onboarding-screen" onSubmit={next}>
+    <form className="onboarding-screen onboarding-step-form" onSubmit={next}>
       <h2>Injuries and limits</h2>
       <label>Exercises to avoid<textarea value={form.exercise_avoid} onChange={e => setForm(current => ({ ...current, exercise_avoid: e.target.value }))} placeholder="Example: upright rows, deep lunges" /></label>
       <div className="onboarding-chip-grid">
@@ -456,7 +464,7 @@ function EquipmentStep() {
   if (loading) return <div className="screen-loading">Loading…</div>
 
   return (
-    <form className="onboarding-screen" onSubmit={next}>
+    <form className="onboarding-screen onboarding-step-form" onSubmit={next}>
       <h2>Equipment</h2>
       <div className="onboarding-chip-grid">
         {EQUIPMENT_OPTIONS.map(item => (
@@ -508,7 +516,7 @@ function FoodStep() {
   if (loading) return <div className="screen-loading">Loading…</div>
 
   return (
-    <form className="onboarding-screen" onSubmit={next}>
+    <form className="onboarding-screen onboarding-step-form" onSubmit={next}>
       <h2>Food habits</h2>
       <label>Preferred foods<textarea value={form.preferred_foods} onChange={e => update('preferred_foods', e.target.value)} placeholder="Greek yogurt, eggs, chicken, rice" /></label>
       <label>Disliked foods<textarea value={form.disliked_foods} onChange={e => update('disliked_foods', e.target.value)} placeholder="Separate with commas" /></label>
@@ -575,7 +583,7 @@ function HabitsStep() {
   if (loading) return <div className="screen-loading">Loading…</div>
 
   return (
-    <form className="onboarding-screen" onSubmit={next}>
+    <form className="onboarding-screen onboarding-step-form" onSubmit={next}>
       <h2>Baseline habits</h2>
       <label>Average steps<input type="number" min="1000" max="30000" step="1" value={form.target_steps} onChange={e => update('target_steps', e.target.value)} /></label>
       <label>Average sleep<input type="number" min="4" max="12" step="0.5" value={form.target_sleep_hours} onChange={e => update('target_sleep_hours', e.target.value)} /></label>
@@ -587,7 +595,7 @@ function HabitsStep() {
           <option value="5+x">5x or more</option>
         </select>
       </label>
-      <label className="toggle-row">
+      <label className="toggle-row onboarding-toggle-field">
         <span>SMS reminders</span>
         <input type="checkbox" checked={form.notifications_enabled} onChange={e => update('notifications_enabled', e.target.checked)} />
       </label>
@@ -690,7 +698,7 @@ function PhotosStep() {
   if (loading) return <div className="screen-loading">Loading…</div>
 
   return (
-    <form className="onboarding-screen" onSubmit={next}>
+    <form className="onboarding-screen onboarding-step-form" onSubmit={next}>
       <h2>Optional progress photos</h2>
       <label>Front photo<input type="file" accept="image/*" capture="environment" onChange={e => setFrontFile(e.target.files?.[0] || null)} /></label>
       <label>Side photo<input type="file" accept="image/*" capture="environment" onChange={e => setSideFile(e.target.files?.[0] || null)} /></label>
