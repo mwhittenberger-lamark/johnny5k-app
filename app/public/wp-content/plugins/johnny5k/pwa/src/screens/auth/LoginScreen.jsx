@@ -42,6 +42,7 @@ export default function LoginScreen() {
         </button>
       </form>
 
+      <p className="auth-link"><Link to="/forgot-password">Forgot password?</Link></p>
       <p className="auth-link">New here? <Link to="/register">Create account</Link></p>
     </div>
   )

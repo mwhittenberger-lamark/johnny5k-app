@@ -4,6 +4,7 @@ namespace Johnny5k\REST;
 defined( 'ABSPATH' ) || exit;
 
 use Johnny5k\Auth\InviteCodes;
+use Johnny5k\Services\AiService;
 use Johnny5k\Services\CostTracker;
 
 /**
@@ -49,6 +50,61 @@ class AdminApiController {
 			'methods'             => 'GET',
 			'callback'            => [ __CLASS__, 'get_costs' ],
 			'permission_callback' => $admin,
+		] );
+
+		register_rest_route( $ns, '/admin/exercises', [
+			[ 'methods' => 'GET',  'callback' => [ __CLASS__, 'list_exercises' ], 'permission_callback' => $admin ],
+			[ 'methods' => 'POST', 'callback' => [ __CLASS__, 'save_exercise' ],  'permission_callback' => $admin ],
+		] );
+
+		register_rest_route( $ns, '/admin/exercises/(?P<id>\d+)', [
+			'methods'             => 'PUT',
+			'callback'            => [ __CLASS__, 'save_exercise' ],
+			'permission_callback' => $admin,
+		] );
+
+		register_rest_route( $ns, '/admin/substitutions', [
+			[ 'methods' => 'GET',  'callback' => [ __CLASS__, 'list_substitutions' ], 'permission_callback' => $admin ],
+			[ 'methods' => 'POST', 'callback' => [ __CLASS__, 'save_substitution' ],  'permission_callback' => $admin ],
+		] );
+
+		register_rest_route( $ns, '/admin/substitutions/(?P<id>\d+)', [
+			'methods'             => 'DELETE',
+			'callback'            => [ __CLASS__, 'delete_substitution' ],
+			'permission_callback' => $admin,
+		] );
+
+		register_rest_route( $ns, '/admin/awards', [
+			[ 'methods' => 'GET',  'callback' => [ __CLASS__, 'list_awards' ], 'permission_callback' => $admin ],
+			[ 'methods' => 'POST', 'callback' => [ __CLASS__, 'save_award' ],  'permission_callback' => $admin ],
+		] );
+
+		register_rest_route( $ns, '/admin/awards/(?P<id>\d+)', [
+			'methods'             => 'PUT',
+			'callback'            => [ __CLASS__, 'save_award' ],
+			'permission_callback' => $admin,
+		] );
+
+		register_rest_route( $ns, '/admin/recipes', [
+			[ 'methods' => 'GET',  'callback' => [ __CLASS__, 'get_recipe_library' ], 'permission_callback' => $admin ],
+			[ 'methods' => 'POST', 'callback' => [ __CLASS__, 'save_recipe_library_item' ], 'permission_callback' => $admin ],
+		] );
+
+		register_rest_route( $ns, '/admin/recipes/discover', [
+			'methods'             => 'POST',
+			'callback'            => [ __CLASS__, 'discover_recipes' ],
+			'permission_callback' => $admin,
+		] );
+
+		register_rest_route( $ns, '/admin/recipes/(?P<id>\d+)', [
+			'methods'             => 'DELETE',
+			'callback'            => [ __CLASS__, 'delete_recipe_library_item' ],
+			'permission_callback' => $admin,
+		] );
+
+		register_rest_route( $ns, '/admin/settings', [
+			[ 'methods' => 'GET',  'callback' => [ __CLASS__, 'get_settings' ], 'permission_callback' => $admin ],
+			[ 'methods' => 'POST', 'callback' => [ __CLASS__, 'save_settings' ], 'permission_callback' => $admin ],
 		] );
 
 		register_rest_route( $ns, '/admin/persona', [
@@ -125,6 +181,217 @@ class AdminApiController {
 			'monthly_by_user'  => CostTracker::monthly_by_user(),
 			'daily_last_30'    => CostTracker::daily_totals_last_30(),
 		] );
+	}
+
+	public static function list_exercises( \WP_REST_Request $req ): \WP_REST_Response {
+		global $wpdb;
+
+		$rows = $wpdb->get_results(
+			"SELECT id, slug, name, movement_pattern, primary_muscle, equipment, difficulty, default_rep_min, default_rep_max, default_sets, active
+			 FROM {$wpdb->prefix}fit_exercises
+			 ORDER BY active DESC, name ASC"
+		);
+
+		return new \WP_REST_Response( $rows );
+	}
+
+	public static function save_exercise( \WP_REST_Request $req ): \WP_REST_Response {
+		global $wpdb;
+		$id = (int) $req->get_param( 'id' );
+		$data = [
+			'slug'             => sanitize_title( (string) $req->get_param( 'slug' ) ?: (string) $req->get_param( 'name' ) ),
+			'name'             => sanitize_text_field( (string) $req->get_param( 'name' ) ),
+			'movement_pattern' => sanitize_text_field( (string) $req->get_param( 'movement_pattern' ) ),
+			'primary_muscle'   => sanitize_text_field( (string) $req->get_param( 'primary_muscle' ) ),
+			'equipment'        => sanitize_text_field( (string) $req->get_param( 'equipment' ) ?: 'other' ),
+			'difficulty'       => sanitize_text_field( (string) $req->get_param( 'difficulty' ) ?: 'beginner' ),
+			'default_rep_min'  => max( 1, (int) ( $req->get_param( 'default_rep_min' ) ?: 8 ) ),
+			'default_rep_max'  => max( 1, (int) ( $req->get_param( 'default_rep_max' ) ?: 12 ) ),
+			'default_sets'     => max( 1, (int) ( $req->get_param( 'default_sets' ) ?: 3 ) ),
+			'active'           => null !== $req->get_param( 'active' ) ? (int) (bool) $req->get_param( 'active' ) : 1,
+		];
+
+		if ( $id > 0 ) {
+			$wpdb->update( $wpdb->prefix . 'fit_exercises', $data, [ 'id' => $id ] );
+			return new \WP_REST_Response( [ 'updated' => true ] );
+		}
+
+		$wpdb->insert( $wpdb->prefix . 'fit_exercises', $data + [
+			'age_friendliness_score' => 8,
+			'joint_stress_score'     => 2,
+			'spinal_load_score'      => 2,
+			'default_progression_type' => 'double_progression',
+			'day_types_json'         => wp_json_encode( [] ),
+			'slot_types_json'        => wp_json_encode( [ 'accessory' ] ),
+		] );
+
+		return new \WP_REST_Response( [ 'id' => (int) $wpdb->insert_id ], 201 );
+	}
+
+	public static function list_substitutions( \WP_REST_Request $req ): \WP_REST_Response {
+		global $wpdb;
+
+		$rows = $wpdb->get_results(
+			"SELECT s.id, s.exercise_id, s.substitute_exercise_id, s.reason_code, s.priority,
+			        base.name AS exercise_name, sub.name AS substitute_name
+			 FROM {$wpdb->prefix}fit_exercise_substitutions s
+			 JOIN {$wpdb->prefix}fit_exercises base ON base.id = s.exercise_id
+			 JOIN {$wpdb->prefix}fit_exercises sub ON sub.id = s.substitute_exercise_id
+			 ORDER BY base.name ASC, s.priority ASC"
+		);
+
+		return new \WP_REST_Response( $rows );
+	}
+
+	public static function save_substitution( \WP_REST_Request $req ): \WP_REST_Response {
+		global $wpdb;
+
+		$wpdb->insert( $wpdb->prefix . 'fit_exercise_substitutions', [
+			'exercise_id'            => (int) $req->get_param( 'exercise_id' ),
+			'substitute_exercise_id' => (int) $req->get_param( 'substitute_exercise_id' ),
+			'reason_code'            => sanitize_text_field( (string) ( $req->get_param( 'reason_code' ) ?: 'variation' ) ),
+			'priority'               => max( 1, (int) ( $req->get_param( 'priority' ) ?: 1 ) ),
+		] );
+
+		return new \WP_REST_Response( [ 'id' => (int) $wpdb->insert_id ], 201 );
+	}
+
+	public static function delete_substitution( \WP_REST_Request $req ): \WP_REST_Response {
+		global $wpdb;
+		$wpdb->delete( $wpdb->prefix . 'fit_exercise_substitutions', [ 'id' => (int) $req->get_param( 'id' ) ] );
+
+		return new \WP_REST_Response( [ 'deleted' => true ] );
+	}
+
+	public static function list_awards( \WP_REST_Request $req ): \WP_REST_Response {
+		global $wpdb;
+
+		return new \WP_REST_Response( $wpdb->get_results(
+			"SELECT id, code, name, description, icon, points, active
+			 FROM {$wpdb->prefix}fit_awards
+			 ORDER BY points ASC, name ASC"
+		) );
+	}
+
+	public static function save_award( \WP_REST_Request $req ): \WP_REST_Response {
+		global $wpdb;
+		$id = (int) $req->get_param( 'id' );
+		$data = [
+			'code'        => sanitize_key( (string) $req->get_param( 'code' ) ),
+			'name'        => sanitize_text_field( (string) $req->get_param( 'name' ) ),
+			'description' => sanitize_textarea_field( (string) $req->get_param( 'description' ) ),
+			'icon'        => sanitize_text_field( (string) $req->get_param( 'icon' ) ),
+			'points'      => max( 0, (int) ( $req->get_param( 'points' ) ?: 0 ) ),
+			'active'      => null !== $req->get_param( 'active' ) ? (int) (bool) $req->get_param( 'active' ) : 1,
+		];
+
+		if ( $id > 0 ) {
+			$wpdb->update( $wpdb->prefix . 'fit_awards', $data, [ 'id' => $id ] );
+			return new \WP_REST_Response( [ 'updated' => true ] );
+		}
+
+		$wpdb->insert( $wpdb->prefix . 'fit_awards', $data );
+		return new \WP_REST_Response( [ 'id' => (int) $wpdb->insert_id ], 201 );
+	}
+
+	public static function get_recipe_library( \WP_REST_Request $req ): \WP_REST_Response {
+		$recipes = get_option( 'jf_recipe_library', [] );
+		$recipes = is_array( $recipes ) ? array_values( array_map( [ __CLASS__, 'normalise_recipe_library_item' ], $recipes ) ) : [];
+		usort( $recipes, static function( array $left, array $right ): int {
+			$meal_cmp = strcmp( (string) ( $left['meal_type'] ?? '' ), (string) ( $right['meal_type'] ?? '' ) );
+			if ( 0 !== $meal_cmp ) {
+				return $meal_cmp;
+			}
+
+			return strcmp( (string) ( $left['recipe_name'] ?? '' ), (string) ( $right['recipe_name'] ?? '' ) );
+		} );
+
+		return new \WP_REST_Response( $recipes );
+	}
+
+	public static function save_recipe_library_item( \WP_REST_Request $req ): \WP_REST_Response {
+		$recipes = get_option( 'jf_recipe_library', [] );
+		$recipes = is_array( $recipes ) ? array_values( $recipes ) : [];
+		$id      = (int) ( $req->get_param( 'id' ) ?: time() );
+		$item    = self::build_recipe_library_item_from_request( $req, $id );
+
+		$updated = false;
+		foreach ( $recipes as $index => $recipe ) {
+			if ( (int) ( $recipe['id'] ?? 0 ) === $id ) {
+				$recipes[ $index ] = $item;
+				$updated = true;
+				break;
+			}
+		}
+
+		if ( ! $updated ) {
+			$recipes[] = $item;
+		}
+
+		update_option( 'jf_recipe_library', $recipes, false );
+
+		return new \WP_REST_Response( [ 'saved' => true, 'id' => $id ] );
+	}
+
+	public static function discover_recipes( \WP_REST_Request $req ): \WP_REST_Response {
+		$user_id   = get_current_user_id();
+		$query     = sanitize_text_field( (string) ( $req->get_param( 'query' ) ?: '' ) );
+		$meal_type = sanitize_key( (string) ( $req->get_param( 'meal_type' ) ?: '' ) );
+		$count     = max( 1, min( 10, (int) ( $req->get_param( 'count' ) ?: 5 ) ) );
+
+		$result = AiService::discover_recipe_library_items( $user_id, [
+			'query'     => $query,
+			'meal_type' => $meal_type,
+			'count'     => $count,
+		] );
+
+		if ( is_wp_error( $result ) ) {
+			return new \WP_REST_Response( [ 'message' => $result->get_error_message() ], 500 );
+		}
+
+		return new \WP_REST_Response( $result );
+	}
+
+	public static function delete_recipe_library_item( \WP_REST_Request $req ): \WP_REST_Response {
+		$id = (int) $req->get_param( 'id' );
+		$recipes = get_option( 'jf_recipe_library', [] );
+		$recipes = is_array( $recipes ) ? array_values( array_filter( $recipes, static fn( $recipe ) => (int) ( $recipe['id'] ?? 0 ) !== $id ) ) : [];
+		update_option( 'jf_recipe_library', $recipes, false );
+
+		return new \WP_REST_Response( [ 'deleted' => true ] );
+	}
+
+	public static function get_settings( \WP_REST_Request $req ): \WP_REST_Response {
+		return new \WP_REST_Response( [
+			'ai_settings'   => get_option( 'jf_ai_settings', [
+				'default_model'    => 'gpt-5.4-mini',
+				'web_search_enabled' => 1,
+				'tool_calls_enabled' => 1,
+			] ),
+			'feature_flags' => get_option( 'jf_feature_flags', [
+				'progress_photos' => 1,
+				'saved_foods'     => 1,
+				'recovery_summary'=> 1,
+			] ),
+		] );
+	}
+
+	public static function save_settings( \WP_REST_Request $req ): \WP_REST_Response {
+		$ai_settings = (array) $req->get_param( 'ai_settings' );
+		$feature_flags = (array) $req->get_param( 'feature_flags' );
+
+		update_option( 'jf_ai_settings', [
+			'default_model'      => sanitize_text_field( (string) ( $ai_settings['default_model'] ?? 'gpt-5.4-mini' ) ),
+			'web_search_enabled' => ! empty( $ai_settings['web_search_enabled'] ) ? 1 : 0,
+			'tool_calls_enabled' => ! empty( $ai_settings['tool_calls_enabled'] ) ? 1 : 0,
+		], false );
+
+		update_option( 'jf_feature_flags', array_map(
+			static fn( $value ) => ! empty( $value ) ? 1 : 0,
+			$feature_flags
+		), false );
+
+		return new \WP_REST_Response( [ 'saved' => true ] );
 	}
 
 	// ── GET /admin/persona ────────────────────────────────────────────────────
@@ -233,5 +500,41 @@ class AdminApiController {
 		$html = preg_replace( '/`([^`]+)`/', '<code>$1</code>', $html );
 
 		return wp_kses_post( wpautop( $html ) );
+	}
+
+	private static function build_recipe_library_item_from_request( \WP_REST_Request $req, int $id ): array {
+		return self::normalise_recipe_library_item( [
+			'id'                  => $id,
+			'meal_type'           => $req->get_param( 'meal_type' ),
+			'recipe_name'         => $req->get_param( 'recipe_name' ),
+			'ingredients'         => $req->get_param( 'ingredients' ),
+			'instructions'        => $req->get_param( 'instructions' ),
+			'estimated_calories'  => $req->get_param( 'estimated_calories' ),
+			'estimated_protein_g' => $req->get_param( 'estimated_protein_g' ),
+			'estimated_carbs_g'   => $req->get_param( 'estimated_carbs_g' ),
+			'estimated_fat_g'     => $req->get_param( 'estimated_fat_g' ),
+			'why_this_works'      => $req->get_param( 'why_this_works' ),
+			'source_url'          => $req->get_param( 'source_url' ),
+			'source_title'        => $req->get_param( 'source_title' ),
+			'source_type'         => $req->get_param( 'source_type' ),
+		] );
+	}
+
+	private static function normalise_recipe_library_item( array $recipe ): array {
+		return [
+			'id'                  => (int) ( $recipe['id'] ?? time() ),
+			'meal_type'           => sanitize_key( (string) ( $recipe['meal_type'] ?? 'lunch' ) ) ?: 'lunch',
+			'recipe_name'         => sanitize_text_field( (string) ( $recipe['recipe_name'] ?? '' ) ),
+			'ingredients'         => array_values( array_filter( array_map( 'sanitize_text_field', (array) ( $recipe['ingredients'] ?? [] ) ) ) ),
+			'instructions'        => array_values( array_filter( array_map( 'sanitize_text_field', (array) ( $recipe['instructions'] ?? [] ) ) ) ),
+			'estimated_calories'  => (int) ( $recipe['estimated_calories'] ?? 0 ),
+			'estimated_protein_g' => (float) ( $recipe['estimated_protein_g'] ?? 0 ),
+			'estimated_carbs_g'   => (float) ( $recipe['estimated_carbs_g'] ?? 0 ),
+			'estimated_fat_g'     => (float) ( $recipe['estimated_fat_g'] ?? 0 ),
+			'why_this_works'      => sanitize_text_field( (string) ( $recipe['why_this_works'] ?? '' ) ),
+			'source_url'          => esc_url_raw( (string) ( $recipe['source_url'] ?? '' ) ),
+			'source_title'        => sanitize_text_field( (string) ( $recipe['source_title'] ?? '' ) ),
+			'source_type'         => sanitize_key( (string) ( $recipe['source_type'] ?? 'manual' ) ) ?: 'manual',
+		];
 	}
 }

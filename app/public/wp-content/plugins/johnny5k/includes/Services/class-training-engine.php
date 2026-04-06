@@ -22,9 +22,11 @@ class TrainingEngine {
 	 *
 	 * @param  int    $user_id
 	 * @param  string $time_tier  'short'|'medium'|'full'
+	* @param  bool   $maintenance_mode
+	* @param  string|null $day_type_override
 	 * @return array{session_id:int, day_type:string, exercises:array, skip_count:int, skip_warning:bool}|WP_Error
 	 */
-	public static function build_session( int $user_id, string $time_tier = 'medium' ) {
+	public static function build_session( int $user_id, string $time_tier = 'medium', bool $maintenance_mode = false, ?string $day_type_override = null ) {
 		global $wpdb;
 		$p = $wpdb->prefix;
 
@@ -38,7 +40,7 @@ class TrainingEngine {
 		}
 
 		// ── Determine next day_type based on last completed session ───────────
-		$next_day_type = self::next_day_type( $user_id, (int) $plan->id );
+	$next_day_type = self::normalize_day_type( $day_type_override ) ?: self::next_day_type( $user_id, (int) $plan->id );
 
 		// ── Skip count check (rolling 30-day window, optional_sessions exempt) ─
 		$skip_count   = self::rolling_skip_count( $user_id );
@@ -78,8 +80,12 @@ class TrainingEngine {
 				$day->id
 			) );
 
+			$selected_exercises = $maintenance_mode
+				? self::select_maintenance_exercises( $plan_exercises )
+				: $plan_exercises;
+
 			$slot_counts = [];
-			foreach ( $plan_exercises as $ex ) {
+			foreach ( $selected_exercises as $ex ) {
 				$slot = $ex->slot_type;
 				if ( isset( $slot_limit[ $slot ] ) ) {
 					$slot_counts[ $slot ] = ( $slot_counts[ $slot ] ?? 0 ) + 1;
@@ -89,14 +95,18 @@ class TrainingEngine {
 				// Apply progression recommendations
 				$prog = self::recommended_progression( $user_id, (int) $ex->exercise_id );
 
+				$planned_sets = $maintenance_mode ? self::maintenance_set_target( $slot, (int) $ex->sets_target ) : (int) $ex->sets_target;
+				$planned_rep_min = $maintenance_mode ? max( 5, (int) $ex->rep_min ) : (int) $ex->rep_min;
+				$planned_rep_max = $maintenance_mode ? max( $planned_rep_min, min( 12, (int) $ex->rep_max ) ) : (int) $ex->rep_max;
+
 				$order = count( $exercises ) + 1;
 				$wpdb->insert( $p . 'fit_workout_session_exercises', [
 					'session_id'      => $session_id,
 					'exercise_id'     => $ex->exercise_id,
 					'slot_type'       => $slot,
-					'planned_rep_min' => $ex->rep_min,
-					'planned_rep_max' => $ex->rep_max,
-					'planned_sets'    => $ex->sets_target,
+					'planned_rep_min' => $planned_rep_min,
+					'planned_rep_max' => $planned_rep_max,
+					'planned_sets'    => $planned_sets,
 					'sort_order'      => $order,
 					'was_swapped'     => 0,
 				] );
@@ -106,11 +116,11 @@ class TrainingEngine {
 					'exercise_id'         => (int) $ex->exercise_id,
 					'exercise_name'       => $ex->exercise_name,
 					'slot_type'           => $slot,
-					'rep_min'             => $ex->rep_min,
-					'rep_max'             => $ex->rep_max,
-					'sets'                => $ex->sets_target,
+					'rep_min'             => $planned_rep_min,
+					'rep_max'             => $planned_rep_max,
+					'sets'                => $planned_sets,
 					'suggested_weight'    => $prog['weight'],
-					'suggestion_note'     => $prog['note'],
+					'suggestion_note'     => $maintenance_mode ? 'Maintenance mode: clean reps and leave gas in the tank.' : $prog['note'],
 				];
 			}
 		}
@@ -256,9 +266,13 @@ class TrainingEngine {
 	 *
 	 * @return array{weight:float|null, note:string}
 	 */
-	private static function recommended_progression( int $user_id, int $exercise_id ): array {
+	public static function recommended_progression( int $user_id, int $exercise_id ): array {
 		global $wpdb;
 		$p = $wpdb->prefix;
+		$equipment = (string) $wpdb->get_var( $wpdb->prepare(
+			"SELECT equipment FROM {$p}fit_exercises WHERE id = %d LIMIT 1",
+			$exercise_id
+		) );
 
 		// Last 3 sessions where this exercise was performed and at least 1 set completed
 		$last_sets = $wpdb->get_results( $wpdb->prepare(
@@ -283,12 +297,12 @@ class TrainingEngine {
 
 		if ( $avg_rir <= 1.0 ) {
 			// RIR ≤1 — suggest a 2.5–5 lb increase
-			$new_weight = $avg_w + ( $avg_w >= 100 ? 5.0 : 2.5 );
+			$new_weight = self::round_training_weight( $avg_w + ( $avg_w >= 100 ? 5.0 : 2.5 ), $equipment );
 			return [ 'weight' => $new_weight, 'note' => 'Last session was near-failure — time to add weight.' ];
 		}
 
 		// Otherwise, hold weight and aim for top of rep range
-		return [ 'weight' => $avg_w, 'note' => 'Match your last session weight and aim for the top of your rep range.' ];
+		return [ 'weight' => self::round_training_weight( $avg_w, $equipment ), 'note' => 'Match your last session weight and aim for the top of your rep range.' ];
 	}
 
 	// ── Helpers ───────────────────────────────────────────────────────────────
@@ -334,5 +348,71 @@ class TrainingEngine {
 			'full'   => [ 'main' => 2, 'secondary' => 2, 'shoulders' => 2, 'accessory' => 3, 'abs' => 2, 'challenge' => 1 ],
 			default  => [ 'main' => 1, 'secondary' => 2, 'shoulders' => 1, 'accessory' => 2, 'abs' => 1, 'challenge' => 1 ],
 		};
+	}
+
+	private static function select_maintenance_exercises( array $plan_exercises ): array {
+		$slot_caps = [
+			'main' => 1,
+			'secondary' => 1,
+			'shoulders' => 1,
+			'accessory' => 1,
+			'abs' => 0,
+			'challenge' => 0,
+		];
+		$slot_counts = [];
+		$selected = [];
+
+		foreach ( $plan_exercises as $exercise ) {
+			$slot = (string) $exercise->slot_type;
+			$cap = $slot_caps[ $slot ] ?? 0;
+			if ( $cap < 1 ) {
+				continue;
+			}
+
+			$current_count = $slot_counts[ $slot ] ?? 0;
+			if ( $current_count >= $cap ) {
+				continue;
+			}
+
+			$selected[] = $exercise;
+			$slot_counts[ $slot ] = $current_count + 1;
+
+			if ( count( $selected ) >= 3 ) {
+				break;
+			}
+		}
+
+		return ! empty( $selected ) ? $selected : array_slice( array_values( array_filter( $plan_exercises, fn( $exercise ) => ! in_array( (string) $exercise->slot_type, [ 'abs', 'challenge' ], true ) ) ), 0, 2 );
+	}
+
+	private static function maintenance_set_target( string $slot_type, int $default_sets ): int {
+		if ( in_array( $slot_type, [ 'main', 'secondary' ], true ) ) {
+			return max( 1, min( 2, $default_sets ) );
+		}
+
+		return 1;
+	}
+
+	private static function normalize_day_type( ?string $value ): ?string {
+		if ( ! is_string( $value ) || '' === $value ) {
+			return null;
+		}
+
+		$day_type = sanitize_key( $value );
+		$allowed  = [ 'push', 'pull', 'legs', 'arms_shoulders', 'cardio', 'rest' ];
+
+		return in_array( $day_type, $allowed, true ) ? $day_type : null;
+	}
+
+	private static function round_training_weight( float $weight, string $equipment = '' ): float {
+		if ( $weight <= 0 ) {
+			return 0.0;
+		}
+
+		$increment = 'dumbbell' === $equipment
+			? 10.0
+			: ( $weight >= 100 ? 5.0 : 2.5 );
+
+		return round( $weight / $increment ) * $increment;
 	}
 }

@@ -4,6 +4,8 @@ import { useAuthStore } from './store/authStore'
 import AppShell from './components/layout/AppShell'
 import LoginScreen      from './screens/auth/LoginScreen'
 import RegisterScreen   from './screens/auth/RegisterScreen'
+import ForgotPasswordScreen from './screens/auth/ForgotPasswordScreen'
+import ResetPasswordScreen from './screens/auth/ResetPasswordScreen'
 import OnboardingRoutes from './screens/onboarding/OnboardingRoutes'
 import DashboardScreen  from './screens/dashboard/DashboardScreen'
 import WorkoutScreen    from './screens/workout/WorkoutScreen'
@@ -12,6 +14,7 @@ import BodyScreen       from './screens/body/BodyScreen'
 import AiScreen         from './screens/ai/AiScreen'
 import AdminScreen      from './screens/admin/AdminScreen'
 import SettingsScreen   from './screens/settings/SettingsScreen'
+import ProgressPhotosScreen from './screens/progress/ProgressPhotosScreen'
 
 function RequireAuth({ children }) {
   const { isAuthenticated } = useAuthStore()
@@ -51,12 +54,15 @@ export default function App() {
     <Routes>
       <Route path="/login"        element={<LoginScreen />} />
       <Route path="/register"     element={<RegisterScreen />} />
+      <Route path="/forgot-password" element={<ForgotPasswordScreen />} />
+      <Route path="/reset-password" element={<ResetPasswordScreen />} />
       <Route path="/onboarding/*" element={<RequireAuth><OnboardingRoutes /></RequireAuth>} />
       <Route path="/"          element={<RequireOnboarded><AppShell><DashboardScreen /></AppShell></RequireOnboarded>} />
       <Route path="/dashboard" element={<RequireOnboarded><AppShell><DashboardScreen /></AppShell></RequireOnboarded>} />
       <Route path="/workout"   element={<RequireOnboarded><AppShell><WorkoutScreen /></AppShell></RequireOnboarded>} />
       <Route path="/nutrition" element={<RequireOnboarded><AppShell><NutritionScreen /></AppShell></RequireOnboarded>} />
       <Route path="/body"      element={<RequireOnboarded><AppShell><BodyScreen /></AppShell></RequireOnboarded>} />
+      <Route path="/progress-photos" element={<RequireOnboarded><AppShell><ProgressPhotosScreen /></AppShell></RequireOnboarded>} />
       <Route path="/ai"        element={<RequireOnboarded><AppShell><AiScreen /></AppShell></RequireOnboarded>} />
       <Route path="/settings"  element={<RequireOnboarded><AppShell><SettingsScreen /></AppShell></RequireOnboarded>} />
       <Route path="/admin"     element={<RequireAdmin><AppShell><AdminScreen /></AppShell></RequireAdmin>} />

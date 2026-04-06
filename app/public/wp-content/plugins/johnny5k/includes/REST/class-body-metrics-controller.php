@@ -122,6 +122,7 @@ class BodyMetricsController {
 		$user_id   = get_current_user_id();
 		$id        = (int) $req['id'];
 		$weight_lb = (float) $req->get_param( 'weight_lb' );
+		$date      = self::normalize_date_input( $req->get_param( 'date' ), $user_id );
 
 		if ( $weight_lb <= 0 ) {
 			return new \WP_REST_Response( [ 'message' => 'Invalid weight value.' ], 400 );
@@ -130,7 +131,7 @@ class BodyMetricsController {
 		global $wpdb;
 		$updated = $wpdb->update(
 			$wpdb->prefix . 'fit_body_metrics',
-			[ 'weight_lb' => $weight_lb ],
+			[ 'weight_lb' => $weight_lb, 'metric_date' => $date ],
 			[ 'id' => $id, 'user_id' => $user_id ]
 		);
 
@@ -138,7 +139,7 @@ class BodyMetricsController {
 			return new \WP_REST_Response( [ 'message' => 'Could not update weight log.' ], 500 );
 		}
 
-		return new \WP_REST_Response( [ 'id' => $id, 'weight_lb' => $weight_lb, 'updated' => true ] );
+		return new \WP_REST_Response( [ 'id' => $id, 'weight_lb' => $weight_lb, 'date' => $date, 'updated' => true ] );
 	}
 
 	public static function delete_weight( \WP_REST_Request $req ): \WP_REST_Response {
@@ -188,6 +189,7 @@ class BodyMetricsController {
 		$id      = (int) $req['id'];
 		$hours   = (float) $req->get_param( 'hours_sleep' );
 		$quality = sanitize_text_field( $req->get_param( 'sleep_quality' ) ?: '' );
+		$date    = self::normalize_date_input( $req->get_param( 'date' ), $user_id );
 
 		if ( $hours <= 0 || $hours > 24 ) {
 			return new \WP_REST_Response( [ 'message' => 'Invalid hours_sleep value.' ], 400 );
@@ -196,7 +198,7 @@ class BodyMetricsController {
 		global $wpdb;
 		$updated = $wpdb->update(
 			$wpdb->prefix . 'fit_sleep_logs',
-			[ 'hours_sleep' => $hours, 'sleep_quality' => $quality ?: null ],
+			[ 'hours_sleep' => $hours, 'sleep_quality' => $quality ?: null, 'sleep_date' => $date ],
 			[ 'id' => $id, 'user_id' => $user_id ]
 		);
 
@@ -204,7 +206,7 @@ class BodyMetricsController {
 			return new \WP_REST_Response( [ 'message' => 'Could not update sleep log.' ], 500 );
 		}
 
-		return new \WP_REST_Response( [ 'id' => $id, 'hours_sleep' => $hours, 'sleep_quality' => $quality, 'updated' => true ] );
+		return new \WP_REST_Response( [ 'id' => $id, 'hours_sleep' => $hours, 'sleep_quality' => $quality, 'date' => $date, 'updated' => true ] );
 	}
 
 	public static function delete_sleep( \WP_REST_Request $req ): \WP_REST_Response {
@@ -261,15 +263,34 @@ class BodyMetricsController {
 		$user_id = get_current_user_id();
 		$id      = (int) $req['id'];
 		$steps   = (int) $req->get_param( 'steps' );
+		$date    = self::normalize_date_input( $req->get_param( 'date' ), $user_id );
 
 		if ( $steps < 0 ) {
 			return new \WP_REST_Response( [ 'message' => 'Steps cannot be negative.' ], 400 );
 		}
 
 		global $wpdb;
+		$existing_for_date = $wpdb->get_var( $wpdb->prepare(
+			"SELECT id FROM {$wpdb->prefix}fit_step_logs WHERE user_id = %d AND step_date = %s AND id != %d LIMIT 1",
+			$user_id,
+			$date,
+			$id
+		) );
+
+		if ( $existing_for_date ) {
+			$wpdb->update(
+				$wpdb->prefix . 'fit_step_logs',
+				[ 'steps' => $steps ],
+				[ 'id' => (int) $existing_for_date, 'user_id' => $user_id ]
+			);
+			$wpdb->delete( $wpdb->prefix . 'fit_step_logs', [ 'id' => $id, 'user_id' => $user_id ] );
+
+			return new \WP_REST_Response( [ 'id' => (int) $existing_for_date, 'steps' => $steps, 'date' => $date, 'merged' => true, 'updated' => true ] );
+		}
+
 		$updated = $wpdb->update(
 			$wpdb->prefix . 'fit_step_logs',
-			[ 'steps' => $steps ],
+			[ 'steps' => $steps, 'step_date' => $date ],
 			[ 'id' => $id, 'user_id' => $user_id ]
 		);
 
@@ -277,7 +298,7 @@ class BodyMetricsController {
 			return new \WP_REST_Response( [ 'message' => 'Could not update step log.' ], 500 );
 		}
 
-		return new \WP_REST_Response( [ 'id' => $id, 'steps' => $steps, 'updated' => true ] );
+		return new \WP_REST_Response( [ 'id' => $id, 'steps' => $steps, 'date' => $date, 'updated' => true ] );
 	}
 
 	public static function delete_steps( \WP_REST_Request $req ): \WP_REST_Response {
@@ -332,6 +353,7 @@ class BodyMetricsController {
 		$id       = (int) $req['id'];
 		$type     = sanitize_text_field( $req->get_param( 'cardio_type' ) ?: 'other' );
 		$duration = (int) $req->get_param( 'duration_minutes' );
+		$date     = self::normalize_date_input( $req->get_param( 'date' ), $user_id );
 		$intensity = self::normalize_cardio_intensity( $req->get_param( 'intensity' ) );
 		$calories = $req->get_param( 'estimated_calories' ) !== null && '' !== $req->get_param( 'estimated_calories' )
 			? (int) $req->get_param( 'estimated_calories' )
@@ -346,6 +368,7 @@ class BodyMetricsController {
 		$updated = $wpdb->update(
 			$wpdb->prefix . 'fit_cardio_logs',
 			[
+				'cardio_date' => $date,
 				'cardio_type' => $type,
 				'duration_minutes' => $duration,
 				'intensity' => $intensity,
@@ -359,7 +382,7 @@ class BodyMetricsController {
 			return new \WP_REST_Response( [ 'message' => 'Could not update cardio log.' ], 500 );
 		}
 
-		return new \WP_REST_Response( [ 'id' => $id, 'updated' => true ] );
+		return new \WP_REST_Response( [ 'id' => $id, 'date' => $date, 'updated' => true ] );
 	}
 
 	public static function delete_cardio( \WP_REST_Request $req ): \WP_REST_Response {
@@ -468,5 +491,15 @@ class BodyMetricsController {
 			'light', 'moderate', 'hard' => $intensity,
 			default => 'moderate',
 		};
+	}
+
+	private static function normalize_date_input( $value, int $user_id ): string {
+		$date = sanitize_text_field( (string) ( $value ?: '' ) );
+
+		if ( preg_match( '/^\d{4}-\d{2}-\d{2}$/', $date ) ) {
+			return $date;
+		}
+
+		return UserTime::today( $user_id );
 	}
 }

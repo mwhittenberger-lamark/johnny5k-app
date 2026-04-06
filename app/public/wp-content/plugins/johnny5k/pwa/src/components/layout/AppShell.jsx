@@ -2,19 +2,21 @@ import { useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { authApi } from '../../api/client'
 import { useAuthStore } from '../../store/authStore'
+import { useJohnnyAssistantStore } from '../../store/johnnyAssistantStore'
+import JohnnyAssistantDrawer from '../ai/JohnnyAssistantDrawer'
 
 const tabs = [
   { to: '/dashboard',  icon: '🏠', label: 'Home'     },
   { to: '/workout',    icon: '💪', label: 'Workout'  },
   { to: '/nutrition',  icon: '🥗', label: 'Nutrition' },
   { to: '/body',       icon: '📊', label: 'Progress' },
-  { to: '/ai',         icon: '🤖', label: 'Coach'    },
   { to: '/settings',   icon: '👤', label: 'Profile'  },
 ]
 
 export default function AppShell({ children }) {
   const navigate = useNavigate()
   const { isAdmin, clearAuth } = useAuthStore()
+  const openDrawer = useJohnnyAssistantStore(state => state.openDrawer)
   const [loggingOut, setLoggingOut] = useState(false)
 
   async function handleLogout() {
@@ -36,9 +38,14 @@ export default function AppShell({ children }) {
   return (
     <div className="app-shell">
       <header className="app-shell-header">
-        <button className="btn-secondary app-shell-logout" onClick={handleLogout} disabled={loggingOut}>
-          {loggingOut ? 'Signing out…' : 'Sign Out'}
-        </button>
+        <div className="app-shell-actions">
+          <button className="btn-secondary app-shell-coach" onClick={() => openDrawer()} type="button">
+            Johnny
+          </button>
+          <button className="btn-secondary app-shell-logout" onClick={handleLogout} disabled={loggingOut}>
+            {loggingOut ? 'Signing out…' : 'Sign Out'}
+          </button>
+        </div>
       </header>
       <main className="app-content">{children}</main>
       <nav className="bottom-nav">
@@ -55,6 +62,7 @@ export default function AppShell({ children }) {
           </NavLink>
         )}
       </nav>
+      <JohnnyAssistantDrawer />
     </div>
   )
 }

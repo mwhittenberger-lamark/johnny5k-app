@@ -28,6 +28,7 @@ class AdminMenu {
 		add_submenu_page( 'johnny5k', 'Invite Codes',      'Invite Codes',      'manage_options', 'jf-invite-codes',       [ InviteAdmin::class,        'render' ] );
 		add_submenu_page( 'johnny5k', 'API Cost Dashboard','API Cost Dashboard','manage_options', 'jf-cost-dashboard',     [ CostDashboard::class,      'render' ] );
 		add_submenu_page( 'johnny5k', 'Johnny 5000 Persona','Personality Editor','manage_options','jf-personality-editor', [ PersonalityEditor::class,  'render' ] );
+		add_submenu_page( 'johnny5k', 'Recipe Library',    'Recipe Library',    'manage_options', 'jf-recipe-library',     [ RecipeLibrary::class,      'render' ] );
 		add_submenu_page( 'johnny5k', 'Settings',          'Settings',          'manage_options', 'jf-settings',           [ Settings::class,           'render' ] );
 	}
 
