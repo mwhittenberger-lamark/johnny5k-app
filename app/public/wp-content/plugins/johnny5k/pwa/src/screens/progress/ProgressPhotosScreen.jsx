@@ -100,7 +100,8 @@ export default function ProgressPhotosScreen() {
       const items = grouped[currentAngle] ?? []
       const latest = items[0] ?? null
       const previous = items[1] ?? null
-      const baseline = items.find(photo => photo.id === baselines[currentAngle]) ?? null
+      const baselineId = Number(baselines[currentAngle] ?? 0)
+      const baseline = items.find(photo => Number(photo.id) === baselineId) ?? null
 
       return {
         angle: currentAngle,
@@ -161,7 +162,7 @@ export default function ProgressPhotosScreen() {
       setBaselines(data?.baselines ?? {})
       setPhotos(current => current.map(item => ({
         ...item,
-        is_baseline: item.id === photo.id ? true : item.angle === photo.angle ? false : item.is_baseline,
+        is_baseline: Number(item.id) === Number(photo.id) ? true : item.angle === photo.angle ? false : item.is_baseline,
       })))
       if (comparison && [comparison.first_photo?.angle, comparison.second_photo?.angle].includes(photo.angle)) {
         setComparison(null)

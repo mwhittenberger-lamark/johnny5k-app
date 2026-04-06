@@ -376,6 +376,7 @@ export default function BodyScreen() {
               fill={weightSpark.fill}
               emptyLabel="No weight trend yet"
               tickLabels={buildTickLabels(weightSeries)}
+              valueLabels={buildTickValueLabels(weightSeries, point => formatSparkValue(point.value))}
               tooltipFormatter={point => `${formatDate(point.label)}: ${formatSparkValue(point.value)} lbs`}
             />
           </section>
@@ -975,7 +976,7 @@ function SummaryCard({ label, value, suffix = '', meta, accent }) {
   )
 }
 
-function SparklineCard({ values, stroke, fill, emptyLabel, referenceValue = null, referenceLabel = '', tickLabels = [], tooltipFormatter = formatSparkTooltip }) {
+function SparklineCard({ values, stroke, fill, emptyLabel, referenceValue = null, referenceLabel = '', tickLabels = [], valueLabels = [], tooltipFormatter = formatSparkTooltip }) {
   const chart = buildSparkline(values, referenceValue)
 
   if (!chart) {
@@ -1021,10 +1022,18 @@ function SparklineCard({ values, stroke, fill, emptyLabel, referenceValue = null
           ))}
         </div>
       )}
-      <div className="sparkline-scale">
-        <span>{chart.maxLabel}</span>
-        <span>{chart.minLabel}</span>
-      </div>
+      {valueLabels.length > 0 ? (
+        <div className="sparkline-scale">
+          {valueLabels.map((valueLabel, index) => (
+            <span key={`${valueLabel}-${index}`}>{valueLabel}</span>
+          ))}
+        </div>
+      ) : (
+        <div className="sparkline-scale">
+          <span>{chart.maxLabel}</span>
+          <span>{chart.minLabel}</span>
+        </div>
+      )}
     </div>
   )
 }
@@ -1119,8 +1128,18 @@ function selectSeries(items, days, valueGetter, labelGetter) {
 
 function buildTickLabels(series) {
   if (!series || series.length < 2) return []
-  const indices = Array.from(new Set([0, Math.floor((series.length - 1) / 2), series.length - 1]))
+  const indices = buildSparkTickIndices(series)
   return indices.map(index => formatDate(series[index]?.label))
+}
+
+function buildTickValueLabels(series, formatter = point => formatSparkValue(point?.value)) {
+  if (!series || series.length < 2) return []
+  const indices = buildSparkTickIndices(series)
+  return indices.map(index => formatter(series[index]))
+}
+
+function buildSparkTickIndices(series) {
+  return Array.from(new Set([0, Math.floor((series.length - 1) / 2), series.length - 1]))
 }
 
 function buildSparkline(values, referenceValue = null) {

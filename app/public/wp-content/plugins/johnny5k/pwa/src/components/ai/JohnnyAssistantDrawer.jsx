@@ -6,6 +6,7 @@ import { useDashboardStore } from '../../store/dashboardStore'
 import { useJohnnyAssistantStore } from '../../store/johnnyAssistantStore'
 import { useWorkoutStore } from '../../store/workoutStore'
 import AppIcon from '../ui/AppIcon'
+import johnnyDrawerImage from '../../assets/8CD0AD13-4C88-49C7-A455-4B180A3F732B.PNG'
 
 const THREAD_KEY = 'main'
 const ACTION_TOOLS = new Set([
@@ -22,7 +23,7 @@ const ACTION_DESTINATIONS = {
   log_steps: { path: '/body', state: { focusTab: 'steps' }, label: 'Open steps' },
   log_sleep: { path: '/body', state: { focusTab: 'sleep' }, label: 'Open sleep' },
   log_food_from_description: { path: '/nutrition', label: 'Open nutrition' },
-  add_pantry_items: { path: '/nutrition', state: { focusSection: 'pantry' }, label: 'Open pantry' },
+  add_pantry_items: { path: '/nutrition/pantry', label: 'Open pantry' },
   add_grocery_gap_items: { path: '/nutrition', state: { focusSection: 'groceryGap' }, label: 'Open grocery gap' },
   create_training_plan: { path: '/workout', label: 'Open workout' },
   swap_workout_exercise: { path: '/workout', label: 'Open workout' },
@@ -46,6 +47,12 @@ const AUTO_EXECUTABLE_MODEL_ACTIONS = new Set([
   'create_saved_meal_draft',
   'suggest_recipe_plan',
 ])
+
+const STARTER_SUGGESTIONS = [
+  'Plan my dinner',
+  'Fix my macros',
+  'Adjust tomorrow based on today',
+]
 
 export default function JohnnyAssistantDrawer() {
   const navigate = useNavigate()
@@ -219,10 +226,15 @@ export default function JohnnyAssistantDrawer() {
       <aside className={`johnny-drawer ${isOpen ? 'open' : ''}`} aria-hidden={!isOpen} aria-label="Johnny assistant">
         <div className="johnny-drawer-shell">
           <header className="johnny-drawer-header">
-            <div>
-              <span className="dashboard-chip ai">Coach</span>
-              <h2>Johnny 5000</h2>
-              <p>Ask Johnny to coach you or do it for you.</p>
+            <div className="johnny-drawer-header-main">
+              <div>
+                <span className="dashboard-chip ai">Coach</span>
+                <h2>Johnny 5000</h2>
+                <p>Ask Johnny for health advice or have him log an entry for you.</p>
+              </div>
+              <span className="johnny-drawer-header-art" aria-hidden="true">
+                <img src={johnnyDrawerImage} alt="" />
+              </span>
             </div>
             <div className="johnny-drawer-actions">
               <button type="button" className="btn-secondary small johnny-drawer-action-button" title="Clear chat" onClick={handleClearThread} disabled={loading}>
@@ -243,6 +255,13 @@ export default function JohnnyAssistantDrawer() {
             {!initialising && messages.length === 0 ? (
               <div className="chat-welcome johnny-drawer-welcome">
                 <p>Ask Johnny to log steps or sleep, log food, update pantry or grocery gap, swap a workout exercise, build a training plan, or talk through your next move.</p>
+                <div className="johnny-drawer-suggestions">
+                  {STARTER_SUGGESTIONS.map(prompt => (
+                    <button key={prompt} type="button" className="johnny-drawer-suggestion" onClick={() => sendPrompt(prompt)}>
+                      {prompt}
+                    </button>
+                  ))}
+                </div>
               </div>
             ) : null}
 
@@ -588,7 +607,7 @@ function resolveOpenScreenDestination(screen, payload = {}) {
     case 'grocery_gap':
       return { path: '/nutrition', state: { focusSection: 'groceryGap', johnnyActionNotice: 'Johnny opened Grocery Gap so you can fix the missing ingredients list.' }, label: 'Open grocery gap', actionLabel: 'Open again' }
     case 'pantry':
-      return { path: '/nutrition', state: { focusSection: 'pantry', johnnyActionNotice: 'Johnny opened Pantry to work from what you already have.' }, label: 'Open pantry', actionLabel: 'Open again' }
+      return { path: '/nutrition/pantry', state: { johnnyActionNotice: 'Johnny opened Pantry to work from what you already have.' }, label: 'Open pantry', actionLabel: 'Open again' }
     case 'steps':
     case 'sleep':
     case 'weight':

@@ -4,6 +4,7 @@ import { authApi } from '../../api/client'
 import { useAuthStore } from '../../store/authStore'
 import { useJohnnyAssistantStore } from '../../store/johnnyAssistantStore'
 import AppIcon from '../ui/AppIcon'
+import brandmarkImage from '../../assets/F9159E4E-E475-4BE5-8674-456B7BEFDBEE.PNG'
 
 const JohnnyAssistantDrawer = lazy(() => import('../ai/JohnnyAssistantDrawer'))
 
@@ -71,10 +72,12 @@ export default function AppShell({ children }) {
     <div className="app-shell">
       <header className="app-shell-header">
         <NavLink to="/dashboard" className="app-shell-brand" aria-label="Johnny5k home">
-          <span className="app-shell-brand-mark">J5</span>
+          <span className="app-shell-brand-mark">
+            <img src={brandmarkImage} alt="Johnny5k brandmark" />
+          </span>
           <span className="app-shell-brand-copy">
-            <strong>Johnny5k</strong>
-            <small>Your daily home base</small>
+            <strong>Johnny 5000</strong>
+            <small>Your AI Health Coach</small>
           </span>
         </NavLink>
 
@@ -124,7 +127,7 @@ export default function AppShell({ children }) {
           <div className="app-shell-mobile-nav-head">
             <div>
               <p className="dashboard-eyebrow">Navigation</p>
-              <h2>Move fast</h2>
+              <h2>Navigate</h2>
               <p>Use one large tap target per destination instead of the old emoji tab bar.</p>
             </div>
           </div>

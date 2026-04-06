@@ -177,11 +177,21 @@ class WorkoutController {
 		) );
 
 		if ( $existing ) {
+			$session_started_at = $wpdb->get_var( $wpdb->prepare(
+				"SELECT started_at FROM {$wpdb->prefix}fit_workout_sessions WHERE id = %d",
+				$existing
+			) );
+
 			if ( null !== $readiness ) {
 				$wpdb->update( $wpdb->prefix . 'fit_workout_sessions', array_filter( [
 					'readiness_score' => $readiness,
+					'started_at' => $session_started_at ?: current_time( 'mysql', true ),
 					'time_tier' => self::is_maintenance_readiness( $readiness ) ? $effective_time_tier : null,
 				], fn( $value ) => null !== $value ), [ 'id' => $existing ] );
+			} elseif ( ! $session_started_at ) {
+				$wpdb->update( $wpdb->prefix . 'fit_workout_sessions', [
+					'started_at' => current_time( 'mysql', true ),
+				], [ 'id' => $existing ] );
 			}
 			// Return the existing session instead of creating a duplicate
 			$req->set_param( 'id', $existing );
@@ -276,6 +286,13 @@ class WorkoutController {
 
 		if ( ! $session ) {
 			return new \WP_REST_Response( [ 'message' => 'Session not found.' ], 404 );
+		}
+
+		if ( ! $session->completed && ! $session->skip_requested && empty( $session->started_at ) ) {
+			$session->started_at = current_time( 'mysql', true );
+			$wpdb->update( $p . 'fit_workout_sessions', [
+				'started_at' => $session->started_at,
+			], [ 'id' => $sess_id, 'user_id' => $user_id ] );
 		}
 
 		$exercises = $wpdb->get_results( $wpdb->prepare(

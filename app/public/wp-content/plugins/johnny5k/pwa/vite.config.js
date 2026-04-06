@@ -23,6 +23,15 @@ export default defineConfig({
         ],
       },
       workbox: {
+        navigateFallbackDenylist: [
+          /^\/wp-admin(?:\/|$)/,
+          /^\/wp-login\.php$/,
+          /^\/wp-json(?:\/|$)/,
+          /^\/wp-content(?:\/|$)/,
+          /^\/wp-includes(?:\/|$)/,
+          /^\/wp-.*\.php$/,
+          /^\/xmlrpc\.php$/,
+        ],
         // Only cache the workout screen for offline use
         runtimeCaching: [
           {
