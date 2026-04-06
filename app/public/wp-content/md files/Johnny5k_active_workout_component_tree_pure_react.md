@@ -58,7 +58,7 @@ This is the route-level React screen.
 ### Responsibilities
 - Load the current workout session from route params or workout context
 - Trigger session bootstrap
-- Render loading, error, and ready states
+- Render launch, loading, error, resume, and ready states
 - Mount provider and layout
 
 ### Suggested route examples
@@ -66,9 +66,14 @@ This is the route-level React screen.
 - `/workout/today`
 
 ### Behavior
-- If no session exists yet, the screen can initiate one
-- If a session exists, it resumes the active session
+- If no session exists yet, the screen renders the launch state for today's workout
+- The launch state combines workout overview, readiness check, and time-tier selection into one screen
+- If a session exists, it resumes the active session automatically
 - If the session fails to load, show retry state
+
+### Launch-State Rule
+- Do not split orientation and pre-workout configuration into separate screens by default
+- The route should feel like one continuous workout entry surface
 
 ---
 
@@ -104,16 +109,19 @@ This is the main state boundary for the active workout experience.
 ```ts
 type WorkoutSessionState = {
   sessionId: string
-  status: "idle" | "loading" | "ready" | "saving" | "finishing" | "error"
+  status: "idle" | "launch" | "loading" | "ready" | "saving" | "finishing" | "error"
 
   dayType: "push" | "pull" | "legs" | "arms_shoulders" | "cardio" | "rest"
   timeTier: "short" | "medium" | "full"
+  sessionMode: "normal" | "maintenance"
+  readinessLabel: "great" | "good" | "okay" | "tired"
 
   startedAt: string | null
   elapsedSeconds: number
 
   exercises: WorkoutExercise[]
   activeExerciseId: string | null
+  resumable: boolean
 
   ui: {
     isSwapModalOpen: boolean
@@ -123,7 +131,14 @@ type WorkoutSessionState = {
     pendingChanges: boolean
     lastSaveAt: string | null
     errorMessage: string | null
+    undoToast: UndoToastState | null
   }
+}
+
+type UndoToastState = {
+  actionType: "swap" | "add_abs" | "add_challenge"
+  label: string
+  expiresAt: string
 }
 ```
 
@@ -134,6 +149,9 @@ type WorkoutSessionState = {
 ```ts
 type WorkoutSessionActions = {
   bootstrapSession: (sessionId?: string) => Promise<void>
+  startSession: () => Promise<void>
+  resumeSession: () => Promise<void>
+  applyReadiness: (label: "great" | "good" | "okay" | "tired") => void
   completeSet: (payload: CompleteSetPayload) => void
   updateSetField: (payload: UpdateSetFieldPayload) => void
   addSet: (exerciseId: string) => void
@@ -146,9 +164,37 @@ type WorkoutSessionActions = {
 
   openSwapModal: (exerciseId: string) => void
   closeSwapModal: () => void
+  undoLastReversibleAction: () => Promise<void>
+  dismissUndoToast: () => void
 
   finishWorkout: () => Promise<void>
 }
+
+## Suggested State Rules
+
+- If readiness is `tired`, starting the session should switch `sessionMode` to `maintenance`
+- Maintenance mode means the bare minimum effective session for adherence:
+  - reduce volume first
+  - preserve the main lift or top-priority movement
+  - strip optional add-ons by default
+  - suppress aggressive progression prompts
+- If a session already exists and is incomplete, `bootstrapSession()` should prefer resume over creating a new session
+
+## Suggested State Transitions
+
+```plaintext
+idle -> launch
+launch -> loading
+loading -> ready
+ready -> saving -> ready
+ready -> finishing -> idle
+any -> error
+
+resume path:
+idle -> loading -> ready
+
+tired path:
+launch + readiness=tired -> loading -> ready(sessionMode=maintenance)
 ```
 
 ---
@@ -173,6 +219,7 @@ High-level visual layout wrapper for the screen.
 - Respect safe areas on mobile
 - Keep footer sticky
 - Keep layout stable during live editing
+- Support both launch-state and active-session-state composition without a route change
 
 ---
 
@@ -192,6 +239,7 @@ High-level visual layout wrapper for the screen.
 - Display workout identity
 - Display live timer
 - Provide workout completion action
+- Reflect whether the session is in normal mode or maintenance mode
 
 ---
 
@@ -205,6 +253,7 @@ Example:
 - Push Day
 - Pull Day
 - Legs Day
+- Push Day · Maintenance Mode
 
 ---
 
@@ -288,6 +337,7 @@ This is the core repeated unit of the screen.
 - Surface today’s target
 - Allow rapid set entry
 - Provide per-exercise quick actions
+- Allow immediate reversible actions through undo toasts rather than blocking confirmations
 
 ---
 
@@ -516,6 +566,7 @@ Adds a new set row immediately.
 - provide session-wide high-frequency actions
 - remain reachable by thumb at all times
 - avoid requiring scroll to act
+- stay consistent whether the session started fresh or was resumed
 
 ### Notes
 This footer is one of the most important speed layers in the product.
@@ -567,6 +618,7 @@ Use one primary footer completion action and keep header action visually lighter
   <SwapExerciseModal />
   <AddExerciseModal />
   <RestTimerModal />
+  <UndoToastLayer />
 </WorkoutModals>
 ```
 
@@ -611,6 +663,9 @@ Replace current exercise quickly with a smart alternative.
 ### UX rule
 Tap should replace instantly. Prefer no extra confirmation step.
 
+### Recovery rule
+After a swap succeeds optimistically, show an undo toast immediately.
+
 ---
 
 ## `<AddExerciseModal>`
@@ -620,6 +675,8 @@ Potential use cases:
 - add accessory movement
 - add missed movement
 - insert manual exercise
+
+For quick abs and challenge actions, prefer immediate add plus undo toast over an extra confirmation modal.
 
 ---
 
@@ -633,6 +690,16 @@ Optional enhancement.
 - surface next set suggestion
 
 This can be deferred until later implementation if needed.
+
+## `<UndoToastLayer>`
+
+Purpose:
+- support reversible high-speed interactions without blocking the user
+
+Responsibilities:
+- show the last reversible action
+- expose a single-tap `Undo`
+- expire automatically after a short window
 
 ---
 
@@ -684,6 +751,7 @@ Responsibilities:
 - retry on failure
 - mark unsaved changes
 - coordinate optimistic UI
+- restore resumable sessions after refresh or re-entry
 
 ---
 
@@ -707,6 +775,8 @@ Examples:
 - “You may be fatiguing—drop 5 lbs?”
 
 These should feel supportive, not interruptive.
+
+In maintenance mode, prompts should bias toward completion and technical quality rather than load progression.
 
 ---
 
@@ -752,7 +822,21 @@ User taps SwapExerciseGlobalButton
 → user selects alternative
 → local UI updates optimistically
 → API call persists swap
+→ undo toast appears
 → exercise card rerenders with new metadata and target
+
+---
+
+## Example interaction flow: resuming a session
+
+```plaintext
+User leaves the app mid-session
+→ local session state persists
+→ user returns to /workout
+→ bootstrapSession detects active incomplete session
+→ existing session loads
+→ active exercise, logged sets, mode, and timer context are restored
+```
 ```
 
 ---
