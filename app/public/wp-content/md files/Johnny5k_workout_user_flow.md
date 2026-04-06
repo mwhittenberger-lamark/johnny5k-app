@@ -24,13 +24,11 @@ Users can start a workout from:
 
 Home / Workout Tab  
 ↓  
-Workout Plan Overview  
-↓  
-Pre-Workout (Start Screen)  
+Workout Launch Screen  
 ↓  
 Active Workout Logging (Core Screen)  
 ↓  
-Exercise Swap (Modal)  
+Exercise Swap (Modal) / Undo Toasts  
 ↓  
 Workout Summary  
 ↓  
@@ -38,10 +36,10 @@ Return to Dashboard
 
 ---
 
-## 1. Workout Plan Overview Screen
+## 1. Workout Launch Screen
 
 ### Purpose
-Quick orientation. No decisions required.
+Combine orientation and quick pre-session adjustments into one fast screen.
 
 ### Content
 
@@ -49,6 +47,13 @@ Quick orientation. No decisions required.
 - Confidence note (based on recovery)
 - Exercise preview list
 - Tomorrow preview
+- Time tier selector
+- Readiness check:
+  - Great
+  - Good
+  - Okay
+  - Tired
+- Last session references
 
 ### Actions
 
@@ -57,27 +62,17 @@ Quick orientation. No decisions required.
 - Shorten session
 - Regenerate
 
----
-
-## 2. Pre-Workout / Start Screen
-
-### Purpose
-Quick adjustments before starting.
-
-### Content
-
-- Day type and duration
-- Optional readiness check:
-  - Great
-  - Good
-  - Okay
-  - Tired
-- Exercise list preview
-- Last session references
-
 ### Behavior
 
-- Adjusts workout if user reports fatigue
+- If readiness is `Great`, `Good`, or `Okay`, the workout starts in normal mode.
+- If readiness is `Tired`, the workout starts in `maintenance mode`.
+- Maintenance mode means the bare minimum effective session:
+  - reduce the session to the minimum viable volume for the day
+  - keep main movement quality high
+  - remove non-essential accessories first
+  - do not auto-add abs or challenge work
+  - bias prompts toward technical execution, not progression pushes
+- The launch screen and the active screen are the same route family. The user should not feel like they are moving through two separate setup screens.
 
 ### Actions
 
@@ -88,7 +83,7 @@ Quick adjustments before starting.
 
 ---
 
-## 3. Active Workout Logging Screen (Core)
+## 2. Active Workout Logging Screen (Core)
 
 ### Purpose
 Main interaction screen for the workout.
@@ -131,10 +126,22 @@ Each card includes:
 - No interruptions
 - Instant updates
 - One-hand operation
+- The user can leave the session at any time and come back without losing progress.
+
+### Resume Rules
+
+- If a workout session already exists and is not completed, entering `/workout` or tapping today’s workout should resume that session.
+- The app should restore:
+  - active session id
+  - logged sets
+  - current exercise position
+  - time tier
+  - readiness mode
+- Resume should be automatic. Do not ask the user to choose between resume and restart unless they explicitly request a reset.
 
 ---
 
-## 4. Exercise Swap Modal
+## 3. Exercise Swap Modal
 
 ### Purpose
 Replace exercises intelligently.
@@ -151,6 +158,29 @@ Replace exercises intelligently.
 
 - Tap = instant swap
 - No confirmation step
+- Show an undo toast immediately after swap
+- Undo should restore the prior exercise in place without losing the rest of the session state
+
+---
+
+## 4. Undo Toasts
+
+### Purpose
+
+Support fast actions without fragile state.
+
+### Trigger actions
+
+- Swap exercise
+- Add abs
+- Add challenge
+
+### Behavior
+
+- These actions apply immediately
+- After application, show a toast with `Undo`
+- Undo should be available for a short window and revert only the last reversible action
+- Undo should not interrupt lifting flow or force a modal confirmation
 
 ---
 
@@ -161,6 +191,13 @@ Replace exercises intelligently.
 - Auto-progression suggestions
 - Fatigue detection
 - Time-based session adjustments
+
+### Maintenance Mode Rules
+
+- If the session started in maintenance mode, prompts should reinforce completion of the minimum viable work only
+- Progression suggestions should be conservative
+- Challenge work should stay hidden or heavily de-emphasized
+- Completion should still count fully for consistency, streaks, and adherence
 
 ---
 
@@ -215,9 +252,8 @@ Replace exercises intelligently.
 
 ## Screen Summary
 
-1. Workout Plan Overview  
-2. Pre-Workout Screen  
-3. Active Workout Screen  
-4. Swap Exercise Modal  
-5. Workout Summary  
+1. Workout Launch Screen  
+2. Active Workout Screen  
+3. Swap Exercise Modal / Undo Toasts  
+4. Workout Summary  
 
