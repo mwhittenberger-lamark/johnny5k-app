@@ -3,6 +3,8 @@ namespace Johnny5k\Admin;
 
 defined( 'ABSPATH' ) || exit;
 
+use Johnny5k\Services\AiService;
+
 /**
  * Admin sub-page: Johnny 5000 Personality Editor
  *
@@ -38,7 +40,7 @@ class PersonalityEditor {
 
 			update_option( 'jf_johnny_persona', $persona );
 
-			$compiled = self::compile( $persona );
+			$compiled = AiService::compile_admin_persona_prompt( $persona );
 			update_option( 'jf_johnny_system_prompt', $compiled );
 
 			echo '<div class="notice notice-success"><p>Persona saved successfully.</p></div>';
@@ -46,18 +48,14 @@ class PersonalityEditor {
 
 		$persona = (array) get_option( 'jf_johnny_persona', [] );
 		$prompt  = (string) get_option( 'jf_johnny_system_prompt', '' );
+		$contract_checks = AiService::admin_persona_contract_checks();
 
-		$defaults = [
-			'name'    => 'Johnny 5000',
-			'tagline' => 'Your AI fitness coach and big brother.',
-			'tone'    => 'warm, encouraging, confident, occasionally funny',
-			'rules'   => '',
-			'extra'   => '',
-		];
+		$defaults = AiService::admin_persona_defaults();
 		$persona = array_merge( $defaults, $persona );
 
 		echo '<div class="wrap" id="jf-personality-editor">';
 		echo '<h1>Johnny 5000 Personality Editor</h1>';
+		echo '<p style="max-width:860px">These settings shape Johnny\'s identity and voice inside the shared behavioral contract. The contract still enforces pattern-noticing, data-aware coaching, direct next steps, and non-corporate language across chat and SMS.</p>';
 		echo '<div style="display:grid;grid-template-columns:1fr 1fr;gap:24px">';
 
 		// ── Left: Persona fields ──────────────────────────────────────────────
@@ -66,8 +64,8 @@ class PersonalityEditor {
 		wp_nonce_field( 'jf_persona_save' );
 		self::field( 'Name',             'name',    $persona['name'],    'text' );
 		self::field( 'Tagline',          'tagline', $persona['tagline'], 'text' );
-		self::field( 'Tone & style',     'tone',    $persona['tone'],    'textarea' );
-		self::field( 'Extra rules',      'rules',   $persona['rules'],   'textarea' );
+		self::field( 'Voice modifiers',  'tone',    $persona['tone'],    'textarea' );
+		self::field( 'Custom coaching rules', 'rules',   $persona['rules'],   'textarea' );
 		self::field( 'Additional notes', 'extra',   $persona['extra'],   'textarea' );
 
 		echo '<p><button type="submit" name="jf_save_persona" class="button button-primary">Save Persona</button></p>';
@@ -88,6 +86,12 @@ class PersonalityEditor {
 		echo '<input type="text" id="jf-chat-input" style="flex:1;padding:6px" placeholder="Say something to Johnny…" />';
 		echo '<button id="jf-chat-send" class="button button-primary">Send</button>';
 		echo '</div>';
+		echo '<hr style="margin:24px 0" />';
+		echo '<h2>Persona Contract QA</h2>';
+		echo '<p>Run fixed checks for concise coaching, non-corporate tone, data-aware guidance, and honest next steps.</p>';
+		echo '<p><button type="button" id="jf-run-all-checks" class="button button-secondary">Run All Contract Checks</button></p>';
+		echo '<div id="jf-contract-check-list" style="display:grid;gap:12px"></div>';
+		echo '<div id="jf-contract-results" style="display:grid;gap:12px;margin-top:16px"></div>';
 		echo '</div>'; // right
 
 		echo '</div>'; // grid
@@ -96,6 +100,7 @@ class PersonalityEditor {
 		// Inline script for the chat box (admin-only, no nonce needed for nonce is embedded)
 		$nonce    = wp_create_nonce( 'wp_rest' );
 		$endpoint = esc_url( rest_url( 'fit/v1/admin/persona/test' ) );
+		$checks   = wp_json_encode( $contract_checks );
 
 		?>
 		<script>
@@ -103,8 +108,12 @@ class PersonalityEditor {
 			const log   = document.getElementById('jf-chat-log');
 			const input = document.getElementById('jf-chat-input');
 			const btn   = document.getElementById('jf-chat-send');
+			const contractCheckList = document.getElementById('jf-contract-check-list');
+			const contractResults = document.getElementById('jf-contract-results');
+			const runAllChecksBtn = document.getElementById('jf-run-all-checks');
 			const nonce = <?php echo wp_json_encode( $nonce ); ?>;
 			const url   = <?php echo wp_json_encode( $endpoint ); ?>;
+			const checks = <?php echo $checks; ?> || [];
 
 			function addMsg(who, text, html) {
 				const bubble = document.createElement('div');
@@ -132,6 +141,114 @@ class PersonalityEditor {
 				log.scrollTop = log.scrollHeight;
 			}
 
+			async function sendPrompt(message) {
+				const res = await fetch(url, {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json',
+						'X-WP-Nonce': nonce
+					},
+					body: JSON.stringify({ message })
+				});
+				return res.json();
+			}
+
+			function renderChecks() {
+				contractCheckList.innerHTML = '';
+				checks.forEach(check => {
+					const card = document.createElement('div');
+					card.style.cssText = 'border:1px solid #ddd;border-radius:8px;padding:12px;background:#fff';
+					card.innerHTML = '<p style="margin:0 0 8px"><strong>' + check.label + '</strong></p>' +
+						'<p style="margin:0 0 8px">' + check.expectation + '</p>' +
+						'<p style="margin:0 0 12px;color:#50575e">' + check.prompt + '</p>';
+					const button = document.createElement('button');
+					button.type = 'button';
+					button.className = 'button button-secondary';
+					button.textContent = 'Run check';
+					button.addEventListener('click', function () {
+						runSingleCheck(check);
+					});
+					card.appendChild(button);
+					contractCheckList.appendChild(card);
+				});
+			}
+
+			function renderResult(result, prepend) {
+				const card = document.createElement('div');
+				card.style.cssText = 'border:1px solid #ddd;border-radius:8px;padding:12px;background:#f6f7f7';
+				card.innerHTML = '<p style="margin:0 0 8px"><strong>' + result.label + '</strong></p>' +
+					'<p style="margin:0 0 8px"><strong>Expectation:</strong> ' + result.expectation + '</p>' +
+					'<p style="margin:0 0 8px"><strong>Prompt:</strong> ' + result.prompt + '</p>' +
+					'<div>' + result.replyHtml + '</div>';
+
+				const existing = contractResults.querySelector('[data-check-id="' + result.id + '"]');
+				if (existing) {
+					existing.replaceWith(card);
+				} else if (prepend && contractResults.firstChild) {
+					contractResults.insertBefore(card, contractResults.firstChild);
+				} else {
+					contractResults.appendChild(card);
+				}
+				card.dataset.checkId = result.id;
+			}
+
+			function setCheckButtonsDisabled(disabled) {
+				runAllChecksBtn.disabled = disabled;
+				contractCheckList.querySelectorAll('button').forEach(button => {
+					button.disabled = disabled;
+				});
+			}
+
+			async function runSingleCheck(check) {
+				setCheckButtonsDisabled(true);
+				try {
+					const data = await sendPrompt(check.prompt);
+					renderResult({
+						id: check.id,
+						label: check.label,
+						expectation: check.expectation,
+						prompt: check.prompt,
+						replyHtml: data.reply_html || '<p>' + (data.reply || data.message || 'Error') + '</p>'
+					}, true);
+				} catch (e) {
+					renderResult({
+						id: check.id,
+						label: check.label,
+						expectation: check.expectation,
+						prompt: check.prompt,
+						replyHtml: '<p>Request failed: ' + e.message + '</p>'
+					}, true);
+				} finally {
+					setCheckButtonsDisabled(false);
+				}
+			}
+
+			async function runAllChecks() {
+				contractResults.innerHTML = '';
+				setCheckButtonsDisabled(true);
+				for (const check of checks) {
+					try {
+						const data = await sendPrompt(check.prompt);
+						renderResult({
+							id: check.id,
+							label: check.label,
+							expectation: check.expectation,
+							prompt: check.prompt,
+							replyHtml: data.reply_html || '<p>' + (data.reply || data.message || 'Error') + '</p>'
+						}, false);
+					} catch (e) {
+						renderResult({
+							id: check.id,
+							label: check.label,
+							expectation: check.expectation,
+							prompt: check.prompt,
+							replyHtml: '<p>Request failed: ' + e.message + '</p>'
+						}, false);
+					}
+				}
+				setCheckButtonsDisabled(false);
+			}
+
 			btn.addEventListener('click', async function() {
 				const msg = input.value.trim();
 				if (!msg) return;
@@ -140,15 +257,7 @@ class PersonalityEditor {
 				btn.disabled = true;
 
 				try {
-					const res = await fetch(url, {
-						method: 'POST',
-						headers: {
-							'Content-Type': 'application/json',
-							'X-WP-Nonce': nonce
-						},
-						body: JSON.stringify({ message: msg })
-					});
-					const data = await res.json();
+					const data = await sendPrompt(msg);
 					addMsg('johnny', data.reply || data.message || 'Error', data.reply_html || '');
 				} catch(e) {
 					addMsg('johnny', 'Request failed: ' + e.message);
@@ -161,6 +270,9 @@ class PersonalityEditor {
 			input.addEventListener('keydown', function(e) {
 				if (e.key === 'Enter') btn.click();
 			});
+
+			renderChecks();
+			runAllChecksBtn.addEventListener('click', runAllChecks);
 		})();
 		</script>
 		<?php
@@ -189,23 +301,4 @@ class PersonalityEditor {
 		echo '</div>';
 	}
 
-	private static function compile( array $p ): string {
-		$name    = $p['name']    ?? 'Johnny 5000';
-		$tagline = $p['tagline'] ?? '';
-		$tone    = $p['tone']    ?? '';
-		$rules   = $p['rules']   ?? '';
-		$extra   = $p['extra']   ?? '';
-
-		$out  = "You are {$name}. {$tagline}\n\n";
-		$out .= "Personality & tone: {$tone}\n\n";
-		$out .= "Core rules:\n";
-		$out .= "- Always be honest that you are an AI.\n";
-		$out .= "- Never shame or belittle the user.\n";
-		$out .= "- Keep responses concise but warm.\n";
-		$out .= "- Focus on the user's goals and progress.\n";
-		if ( $rules ) $out .= "- {$rules}\n";
-		if ( $extra )  $out .= "\nAdditional instructions:\n{$extra}\n";
-
-		return $out;
-	}
 }

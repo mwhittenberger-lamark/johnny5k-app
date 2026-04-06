@@ -216,8 +216,11 @@ export const trainingApi = {
 // ── Workout (active session) ──────────────────────────────────────────────────
 export const workoutApi = {
   current:   ()              => api.get('/workout/current'),
+  getHistory: (days = 3, limit = 10) => api.get(`/workout/history?days=${days}&limit=${limit}`),
   start:     (data)          => api.post('/workout/start', data),
   get:       (id)            => api.get(`/workout/${id}`),
+  updateHistory: (id, data)  => api.put(`/workout/history/${id}`, data),
+  deleteHistory: (id)        => api.del(`/workout/history/${id}`),
   logSet:    (id, data)      => api.post(`/workout/${id}/set`, data),
   updateSet: (id, sid, data) => api.put(`/workout/${id}/set/${sid}`, data),
   deleteSet: (id, sid)       => api.del(`/workout/${id}/set/${sid}`),
@@ -297,4 +300,6 @@ export const adminApi = {
   getPersona:       ()         => api.get('/admin/persona'),
   savePersona:      (data)     => api.post('/admin/persona', data),
   testPersona:      (message)  => api.post('/admin/persona/test', { message }),
+  previewPersonaTime: (message) => api.post('/admin/persona/time-preview', { message }),
+  previewPersonaActions: (message) => api.post('/admin/persona/action-preview', { message }),
 }

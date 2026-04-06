@@ -19,6 +19,7 @@ class AiService {
 
 	private const DEFAULT_MODEL    = 'gpt-4o-mini';
 	private const RESPONSES_ENDPOINT = 'https://api.openai.com/v1/responses';
+	private const SUPPORTED_ACTION_SCREENS = [ 'nutrition', 'saved_meals', 'recipes', 'grocery_gap', 'pantry', 'steps', 'sleep', 'weight', 'workouts', 'cardio', 'workout', 'dashboard' ];
 
 	/** Minimum assistant turns before the first thread summary is generated. */
 	private const SUMMARY_MIN_TURNS = 4;
@@ -129,13 +130,9 @@ class AiService {
 		$tokens_out = $result['tokens_out'];
 
 		// ── Parse structured actions if model returned JSON ───────────────────
-		$reply   = $raw_reply;
-		$actions = [];
-		$decoded = json_decode( trim( $raw_reply ), true );
-		if ( is_array( $decoded ) && isset( $decoded['reply'] ) ) {
-			$reply   = (string) $decoded['reply'];
-			$actions = is_array( $decoded['actions'] ?? null ) ? $decoded['actions'] : [];
-		}
+		$parsed_reply = self::parse_structured_chat_reply( $raw_reply );
+		$reply        = $parsed_reply['reply'];
+		$actions      = $parsed_reply['actions'];
 
 		// ── Persist assistant reply (plain text only) ─────────────────────────
 		$wpdb->insert( $p . 'fit_ai_messages', [
@@ -171,6 +168,48 @@ class AiService {
 			'model'           => $result['model'],
 			'used_tools'      => $result['used_tools'],
 			'action_results'  => $result['action_results'] ?? [],
+		];
+	}
+
+	/**
+	 * Run a one-off preview chat without persisting thread history.
+	 *
+	 * @return array{reply:string, actions:array<int,array<string,mixed>>, tokens_in:int, tokens_out:int, sources:array<int,array{url:string,title:string}>, used_web_search:bool, model:string, system_prompt:string, context:array<string,mixed>}|WP_Error
+	 */
+	public static function preview_chat( int $user_id, string $user_message, string $mode = 'general', array $context_overrides = [] ) {
+		$system_prompt = self::build_system_prompt( $user_id, $mode, $context_overrides );
+
+		$result = self::call_openai(
+			[
+				[
+					'role'    => 'system',
+					'content' => $system_prompt,
+				],
+				[
+					'role'    => 'user',
+					'content' => $user_message,
+				],
+			],
+			self::DEFAULT_MODEL,
+			[ 'web_search' => false ]
+		);
+
+		if ( is_wp_error( $result ) ) {
+			return $result;
+		}
+
+		$parsed_reply = self::parse_structured_chat_reply( (string) $result['reply'] );
+
+		return [
+			'reply'           => $parsed_reply['reply'],
+			'actions'         => $parsed_reply['actions'],
+			'tokens_in'       => $result['tokens_in'],
+			'tokens_out'      => $result['tokens_out'],
+			'sources'         => $result['sources'],
+			'used_web_search' => $result['used_web_search'],
+			'model'           => $result['model'],
+			'system_prompt'   => $system_prompt,
+			'context'         => self::get_user_context( $user_id, $context_overrides ),
 		];
 	}
 
@@ -658,7 +697,7 @@ class AiService {
 	 * @param int    $user_id
 	 * @param string $mode  One of: general, coach, nutrition, workout_review, accountability, planning, education
 	 */
-	public static function build_system_prompt( int $user_id, string $mode = 'general' ): string {
+	public static function build_system_prompt( int $user_id, string $mode = 'general', array $context_overrides = [] ): string {
 		$admin_prompt = get_option( 'jf_johnny_system_prompt', '' );
 
 		// Use admin prompt if set; append behavioral rules so they always apply.
@@ -669,10 +708,10 @@ class AiService {
 			$persona = self::default_persona();
 		}
 
-		$context   = self::get_user_context( $user_id );
+		$context   = self::get_user_context( $user_id, $context_overrides );
 		$ctx_lines = self::format_context_block( $context );
 		$ctx_block = $ctx_lines ? "\n\nUser context:\n" . implode( "\n", $ctx_lines ) : '';
-		$tool_note = "\n\nYou may use Johnny5k backend tools to read live user data and perform supported actions. When the user clearly asks you to log steps, log food, or create a training plan, do it with the available tools instead of only describing what they should do. If a required detail is missing, ask one short follow-up question. Never claim an action succeeded unless a tool confirmed it. When the user says today, yesterday, tomorrow, tonight, or last night, resolve that against the current local date above. Do not invent a calendar date for relative time references. If the user did not provide a literal YYYY-MM-DD date, omit the date argument and let the backend resolve it from the user's local date.";
+		$tool_note = "\n\nYou may use Johnny5k backend tools to read live user data and perform supported actions. When the user clearly asks you to log steps, log food, or create a training plan, do it with the available tools instead of only describing what they should do. If a required detail is missing, ask one short follow-up question. Never claim an action succeeded unless a tool confirmed it. When the user says today, yesterday, tomorrow, tonight, or last night, resolve that against the current local date and time above. Do not invent a calendar date for relative time references. If the user did not provide a literal YYYY-MM-DD date, omit the date argument and let the backend resolve it from the user's local date.";
 
 		$mode_block = '';
 		$mode_instr = self::get_mode_instructions( $mode );
@@ -681,7 +720,7 @@ class AiService {
 		}
 
 		// Brief action-capability note so the model can optionally return structured actions.
-		$action_block = "\n\nAction capability: When genuinely useful, you may wrap your response as JSON — {\"reply\":\"...\",\"actions\":[{\"type\":\"action_name\",\"payload\":{}}]} — so the app can take action. Supported types: open_screen (payload: {\"screen\":\"name\"}), show_nutrition_summary, show_grocery_gap, highlight_goal_issue, create_saved_meal_draft (payload: {\"name\":\"meal name\"}), suggest_recipe_plan. If no action is needed, respond in plain text.";
+		$action_block = "\n\nAction capability: When genuinely useful, you may wrap your response as JSON — {\"reply\":\"...\",\"actions\":[{\"type\":\"action_name\",\"payload\":{}}]} — so the app can take action. Supported types: open_screen (payload: {\"screen\":\"name\"}), show_nutrition_summary, show_grocery_gap, highlight_goal_issue, create_saved_meal_draft (payload: {\"name\":\"meal name\",\"meal_type\":\"lunch\",\"items\":[]}), suggest_recipe_plan, queue_follow_up (payload: {\"prompt\":\"short follow-up prompt\"}). If no action is needed, respond in plain text.";
 
 		return $persona . $ctx_block . $tool_note . $mode_block . $action_block;
 	}
@@ -718,6 +757,100 @@ Behavior rules (always apply):
 - Vary sentence openings and rhythm.
 - Sound like a real person, not a feature.
 RULES;
+	}
+
+	/**
+	 * Default admin-editable persona fields.
+	 *
+	 * @return array{name:string,tagline:string,tone:string,rules:string,extra:string}
+	 */
+	public static function admin_persona_defaults(): array {
+		return [
+			'name'    => 'Johnny 5000',
+			'tagline' => 'The user\'s embedded fitness coach inside Johnny5k.',
+			'tone'    => 'direct, calm, warm, observant, grounded',
+			'rules'   => '',
+			'extra'   => '',
+		];
+	}
+
+	/**
+	 * Compile admin persona settings into a prompt that plugs into the shared
+	 * behavioral contract applied by build_system_prompt().
+	 */
+	public static function compile_admin_persona_prompt( array $persona ): string {
+		$defaults = self::admin_persona_defaults();
+		$persona  = array_merge( $defaults, $persona );
+
+		$name    = sanitize_text_field( (string) $persona['name'] );
+		$tagline = sanitize_text_field( (string) $persona['tagline'] );
+		$tone    = sanitize_textarea_field( (string) $persona['tone'] );
+		$rules   = sanitize_textarea_field( (string) $persona['rules'] );
+		$extra   = sanitize_textarea_field( (string) $persona['extra'] );
+
+		$lines   = [];
+		$lines[] = "You are {$name}, the user's embedded fitness coach inside the Johnny5k app.";
+
+		if ( '' !== $tagline ) {
+			$lines[] = $tagline;
+		}
+
+		if ( '' !== $tone ) {
+			$lines[] = "Voice and feel: {$tone}.";
+		}
+
+		$lines[] = 'Operate like a real coach who understands the user\'s live data, speaks plainly, and gives practical direction.';
+
+		$custom_rules = array_values( array_filter( array_map( 'trim', preg_split( '/\r\n|\r|\n/', $rules ) ?: [] ) ) );
+		if ( $custom_rules ) {
+			$lines[] = '';
+			$lines[] = 'Custom coaching rules:';
+			foreach ( $custom_rules as $rule ) {
+				$lines[] = '- ' . ltrim( $rule, "- \t" );
+			}
+		}
+
+		if ( '' !== $extra ) {
+			$lines[] = '';
+			$lines[] = 'Additional instructions:';
+			$lines[] = $extra;
+		}
+
+		return implode( "\n", $lines );
+	}
+
+	/**
+	 * Fixed QA prompts used to verify the shared persona contract in admin tools.
+	 *
+	 * @return array<int,array{id:string,label:string,prompt:string,expectation:string}>
+	 */
+	public static function admin_persona_contract_checks(): array {
+		return [
+			[
+				'id'          => 'concise_next_step',
+				'label'       => 'Concise next step',
+				'prompt'      => 'I missed my protein target most of this week and I do not want a lecture. What should I do today?',
+				'expectation' => 'Johnny should stay concise and give one practical next step early.',
+			],
+			[
+				'id'          => 'non_corporate_tone',
+				'label'       => 'Non-corporate tone',
+				'prompt'      => 'Give me a pep talk after a sloppy weekend, but do not sound like an app notification.',
+				'expectation' => 'Johnny should sound human and grounded, not polished, branded, or corporate.',
+			],
+			[
+				'id'          => 'data_aware_coaching',
+				'label'       => 'Data-aware coaching',
+				'prompt'      => 'I averaged 126 g of protein this week against a 180 g target. What should dinner look like tonight?',
+				'expectation' => 'Johnny should use the supplied numbers directly and turn them into a concrete recommendation.',
+			],
+			[
+				'id'          => 'direct_honesty',
+				'label'       => 'Direct honesty',
+				'prompt'      => 'I have skipped three workouts in the last eight days. Be honest about what pattern you see and what I should do next.',
+				'expectation' => 'Johnny should name the pattern clearly, stay supportive, and avoid shaming language.',
+			],
+		];
 	}
 
 	/**
@@ -782,14 +915,37 @@ RULES;
 			$lines[] = "Meal-logged days (last 7): {$context['days_with_meal_logs_last_7_days']} of 7";
 		}
 
+		if ( isset( $context['meal_logs_last_7_days'] ) ) {
+			$lines[] = "Meals logged (last 7): {$context['meal_logs_last_7_days']}";
+		}
+
+		if ( ! empty( $context['last_meal_logged_at'] ) ) {
+			$lines[] = "Last meal logged: {$context['last_meal_logged_at']}";
+		}
+
 		if ( isset( $context['pantry_item_count'] ) )      $lines[] = "Pantry items: {$context['pantry_item_count']}";
 		if ( isset( $context['saved_meals_count'] ) )      $lines[] = "Saved meals: {$context['saved_meals_count']}";
+		if ( isset( $context['saved_meal_logs_last_30_days'] ) ) {
+			$lines[] = "Saved-meal uses (last 30 days): {$context['saved_meal_logs_last_30_days']}";
+		}
+
+		if ( ! empty( $context['top_saved_meal_name'] ) && isset( $context['top_saved_meal_uses_last_30_days'] ) ) {
+			$lines[] = "Most-used saved meal (30 days): {$context['top_saved_meal_name']} ({$context['top_saved_meal_uses_last_30_days']} logs)";
+		}
 
 		if ( ! empty( $context['adherence_summary'] ) )    $lines[] = "Adherence: {$context['adherence_summary']}";
 		if ( ! empty( $context['goal_trend_summary'] ) )   $lines[] = "Goal trend: {$context['goal_trend_summary']}";
 
 		if ( isset( $context['current_local_date'] ) && '' !== (string) $context['current_local_date'] ) {
 			$lines[] = "Current local date: {$context['current_local_date']}";
+		}
+
+		if ( isset( $context['current_local_time'] ) && '' !== (string) $context['current_local_time'] ) {
+			$lines[] = "Current local time: {$context['current_local_time']}";
+		}
+
+		if ( isset( $context['current_local_datetime'] ) && '' !== (string) $context['current_local_datetime'] ) {
+			$lines[] = "Current local datetime: {$context['current_local_datetime']}";
 		}
 
 		if ( isset( $context['user_timezone'] ) && '' !== (string) $context['user_timezone'] ) {
@@ -807,7 +963,7 @@ RULES;
 	 *
 	 * @return array<string,mixed>
 	 */
-	private static function get_user_context( int $user_id ): array {
+	private static function get_user_context( int $user_id, array $context_overrides = [] ): array {
 		global $wpdb;
 		$p = $wpdb->prefix;
 
@@ -876,6 +1032,26 @@ RULES;
 		$avg_calories_7d    = $nutrition_row && $nutrition_row->avg_cal  ? (int) round( (float) $nutrition_row->avg_cal )  : 0;
 		$avg_protein_7d     = $nutrition_row && $nutrition_row->avg_pro  ? (int) round( (float) $nutrition_row->avg_pro )  : 0;
 		$days_logged_7d     = $nutrition_row ? (int) $nutrition_row->days_logged : 0;
+		$meals_logged_7d    = (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT COUNT(*) FROM {$p}fit_meals
+			 WHERE user_id = %d AND confirmed = 1 AND DATE(meal_datetime) >= %s",
+			$user_id,
+			$since_7d
+		) );
+
+		$last_meal_logged_at = $wpdb->get_var( $wpdb->prepare(
+			"SELECT meal_datetime FROM {$p}fit_meals
+			 WHERE user_id = %d AND confirmed = 1 ORDER BY meal_datetime DESC LIMIT 1",
+			$user_id
+		) );
+		$last_meal_logged_display = '';
+		if ( $last_meal_logged_at ) {
+			try {
+				$last_meal_logged_display = ( new \DateTimeImmutable( (string) $last_meal_logged_at, UserTime::timezone( $user_id ) ) )->format( 'Y-m-d g:i A' );
+			} catch ( \Exception $e ) {
+				$last_meal_logged_display = (string) $last_meal_logged_at;
+			}
+		}
 
 		// ── Pantry & saved meals counts ───────────────────────────────────────
 		$pantry_count      = (int) $wpdb->get_var( $wpdb->prepare(
@@ -885,6 +1061,30 @@ RULES;
 		$saved_meals_count = (int) $wpdb->get_var( $wpdb->prepare(
 			"SELECT COUNT(*) FROM {$p}fit_saved_meals WHERE user_id = %d",
 			$user_id
+		) );
+		$since_30d = UserTime::days_ago( $user_id, 29 );
+		$saved_meal_logs_30d = (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT COUNT(*) FROM {$p}fit_meals
+			 WHERE user_id = %d AND confirmed = 1 AND source = 'saved_meal' AND DATE(meal_datetime) >= %s",
+			$user_id,
+			$since_30d
+		) );
+		$top_saved_meal = $wpdb->get_row( $wpdb->prepare(
+			"SELECT sm.name, COUNT(DISTINCT mi.meal_id) AS usage_count
+			 FROM {$p}fit_meal_items mi
+			 JOIN {$p}fit_meals m ON m.id = mi.meal_id
+			 JOIN {$p}fit_saved_meals sm
+			   ON sm.id = CAST(JSON_UNQUOTE(JSON_EXTRACT(mi.source_json, '$.saved_meal_id')) AS UNSIGNED)
+			 WHERE m.user_id = %d
+			   AND m.confirmed = 1
+			   AND m.source = 'saved_meal'
+			   AND DATE(m.meal_datetime) >= %s
+			   AND mi.source_json IS NOT NULL
+			 GROUP BY sm.id, sm.name
+			 ORDER BY usage_count DESC, sm.updated_at DESC, sm.id DESC
+			 LIMIT 1",
+			$user_id,
+			$since_30d
 		) );
 
 		// ── Adherence & goal trend summaries ──────────────────────────────────
@@ -897,7 +1097,9 @@ RULES;
 			(int) ( $goal->target_protein_g ?? 0 )
 		);
 
-		return [
+		$now = UserTime::now( $user_id );
+
+		$context = [
 			'first_name'                 => $profile->first_name ?? '',
 			'goal_type'                  => $goal->goal_type ?? '',
 			'experience'                 => $profile->training_experience ?? '',
@@ -910,13 +1112,22 @@ RULES;
 			'avg_calories_last_7_days'   => $avg_calories_7d,
 			'avg_protein_last_7_days'    => $avg_protein_7d,
 			'days_with_meal_logs_last_7_days' => $days_logged_7d,
+			'meal_logs_last_7_days'      => $meals_logged_7d,
+			'last_meal_logged_at'        => $last_meal_logged_display,
 			'pantry_item_count'          => $pantry_count,
 			'saved_meals_count'          => $saved_meals_count,
+			'saved_meal_logs_last_30_days' => $saved_meal_logs_30d,
+			'top_saved_meal_name'        => $top_saved_meal->name ?? '',
+			'top_saved_meal_uses_last_30_days' => isset( $top_saved_meal->usage_count ) ? (int) $top_saved_meal->usage_count : 0,
 			'adherence_summary'          => $adherence_summary,
 			'goal_trend_summary'         => $goal_trend_summary,
-			'current_local_date'         => UserTime::today( $user_id ),
+			'current_local_date'         => $now->format( 'Y-m-d' ),
+			'current_local_time'         => $now->format( 'g:i A' ),
+			'current_local_datetime'     => $now->format( 'Y-m-d g:i A T' ),
 			'user_timezone'              => UserTime::timezone_string( $user_id ),
 		];
+
+		return array_merge( $context, $context_overrides );
 	}
 
 	/**
@@ -2274,6 +2485,180 @@ RULES;
 		}
 
 		return false;
+	}
+
+	/**
+	 * Parse a chat reply that may optionally wrap text plus structured actions in JSON.
+	 *
+	 * @return array{reply:string,actions:array<int,array<string,mixed>>}
+	 */
+	private static function parse_structured_chat_reply( string $raw_reply ): array {
+		$reply   = trim( $raw_reply );
+		$actions = [];
+		$decoded = self::decode_json_reply( $raw_reply );
+
+		if ( is_array( $decoded ) && isset( $decoded['reply'] ) ) {
+			$reply   = sanitize_textarea_field( (string) $decoded['reply'] );
+			$actions = self::sanitize_structured_actions( is_array( $decoded['actions'] ?? null ) ? $decoded['actions'] : [] );
+		}
+
+		return [
+			'reply'   => '' !== $reply ? $reply : trim( $raw_reply ),
+			'actions' => $actions,
+		];
+	}
+
+	/**
+	 * @param array<int,mixed> $actions
+	 * @return array<int,array<string,mixed>>
+	 */
+	private static function sanitize_structured_actions( array $actions ): array {
+		$clean = [];
+
+		foreach ( $actions as $action ) {
+			if ( ! is_array( $action ) ) {
+				continue;
+			}
+
+			$type = sanitize_key( (string) ( $action['type'] ?? '' ) );
+			if ( '' === $type ) {
+				continue;
+			}
+
+			$payload = is_array( $action['payload'] ?? null ) ? $action['payload'] : [];
+			$sanitised = self::sanitize_structured_action_payload( $type, $payload );
+			if ( null === $sanitised ) {
+				continue;
+			}
+
+			$clean[] = [
+				'type'    => $type,
+				'payload' => $sanitised,
+			];
+		}
+
+		return array_values( $clean );
+	}
+
+	/**
+	 * @param array<string,mixed> $payload
+	 * @return array<string,mixed>|null
+	 */
+	private static function sanitize_structured_action_payload( string $type, array $payload ): ?array {
+		switch ( $type ) {
+			case 'open_screen':
+				$screen = sanitize_key( (string) ( $payload['screen'] ?? '' ) );
+				if ( ! in_array( $screen, self::SUPPORTED_ACTION_SCREENS, true ) ) {
+					return null;
+				}
+
+				$result = [ 'screen' => $screen ];
+				$meal_type = self::sanitize_meal_type_value( (string) ( $payload['meal_type'] ?? '' ), false );
+				if ( '' !== $meal_type ) {
+					$result['meal_type'] = $meal_type;
+				}
+
+				return $result;
+
+			case 'show_nutrition_summary':
+			case 'show_grocery_gap':
+				return [];
+
+			case 'highlight_goal_issue':
+				$issue = sanitize_text_field( (string) ( $payload['issue'] ?? '' ) );
+				$summary = sanitize_textarea_field( (string) ( $payload['summary'] ?? '' ) );
+				if ( '' === $issue && '' === $summary ) {
+					return [];
+				}
+
+				return array_filter([
+					'issue' => $issue,
+					'summary' => $summary,
+				], static fn( $value ) => '' !== $value );
+
+			case 'create_saved_meal_draft':
+				$name = sanitize_text_field( (string) ( $payload['name'] ?? '' ) );
+				if ( '' === $name ) {
+					return null;
+				}
+
+				return [
+					'name'      => $name,
+					'meal_type' => self::sanitize_meal_type_value( (string) ( $payload['meal_type'] ?? 'lunch' ) ),
+					'items'     => self::sanitize_meal_draft_items( is_array( $payload['items'] ?? null ) ? $payload['items'] : [] ),
+				];
+
+			case 'suggest_recipe_plan':
+				$result = [];
+				$title = sanitize_text_field( (string) ( $payload['title'] ?? '' ) );
+				$meal_type = self::sanitize_meal_type_value( (string) ( $payload['meal_type'] ?? '' ), false );
+				if ( '' !== $title ) {
+					$result['title'] = $title;
+				}
+				if ( '' !== $meal_type ) {
+					$result['meal_type'] = $meal_type;
+				}
+
+				return $result;
+
+			case 'queue_follow_up':
+				$prompt = sanitize_textarea_field( (string) ( $payload['prompt'] ?? '' ) );
+				if ( '' === trim( $prompt ) ) {
+					return null;
+				}
+
+				$result = [ 'prompt' => $prompt ];
+				$reason = sanitize_text_field( (string) ( $payload['reason'] ?? '' ) );
+				if ( '' !== $reason ) {
+					$result['reason'] = $reason;
+				}
+
+				return $result;
+
+			default:
+				return null;
+		}
+	}
+
+	private static function sanitize_meal_type_value( string $meal_type, bool $default_to_lunch = true ): string {
+		$meal_type = sanitize_key( $meal_type );
+		if ( in_array( $meal_type, [ 'breakfast', 'lunch', 'dinner', 'snack' ], true ) ) {
+			return $meal_type;
+		}
+
+		return $default_to_lunch ? 'lunch' : '';
+	}
+
+	/**
+	 * @param array<int,mixed> $items
+	 * @return array<int,array<string,mixed>>
+	 */
+	private static function sanitize_meal_draft_items( array $items ): array {
+		$clean = [];
+
+		foreach ( $items as $item ) {
+			if ( ! is_array( $item ) ) {
+				continue;
+			}
+
+			$food_name = sanitize_text_field( (string) ( $item['food_name'] ?? '' ) );
+			if ( '' === $food_name ) {
+				continue;
+			}
+
+			$clean[] = array_filter([
+				'food_id'        => isset( $item['food_id'] ) ? (int) $item['food_id'] : null,
+				'food_name'      => $food_name,
+				'serving_amount' => round( (float) ( $item['serving_amount'] ?? 1 ), 2 ),
+				'serving_unit'   => sanitize_text_field( (string) ( $item['serving_unit'] ?? 'serving' ) ),
+				'calories'       => max( 0, (int) round( (float) ( $item['calories'] ?? 0 ) ) ),
+				'protein_g'      => round( (float) ( $item['protein_g'] ?? 0 ), 2 ),
+				'carbs_g'        => round( (float) ( $item['carbs_g'] ?? 0 ), 2 ),
+				'fat_g'          => round( (float) ( $item['fat_g'] ?? 0 ), 2 ),
+			], static fn( $value ) => null !== $value && '' !== $value );
+		}
+
+		return array_values( $clean );
 	}
 
 	private static function decode_json_reply( string $reply ): ?array {

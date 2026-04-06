@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import ExerciseCard from '../../components/workout/ExerciseCard'
 import { trainingApi } from '../../api/client'
 import { formatUsShortDate, formatUsWeekday } from '../../lib/dateFormat'
@@ -54,6 +54,7 @@ export default function WorkoutScreen() {
   const [restartNotice, setRestartNotice] = useState('')
   const [restartError, setRestartError] = useState('')
   const [addonsExpanded, setAddonsExpanded] = useState(false)
+  const location = useLocation()
   const navigate = useNavigate()
 
   const exercises = session?.exercises ?? []
@@ -138,6 +139,19 @@ export default function WorkoutScreen() {
 
     return () => window.clearTimeout(timer)
   }, [dismissUndoToast, undoToast])
+
+  useEffect(() => {
+    const notice = location.state?.johnnyActionNotice
+    if (!notice) {
+      return undefined
+    }
+
+    setRestartNotice(notice)
+    const nextState = { ...(location.state || {}) }
+    delete nextState.johnnyActionNotice
+    navigate(location.pathname, { replace: true, state: Object.keys(nextState).length ? nextState : null })
+    return undefined
+  }, [location.pathname, location.state, location.state?.johnnyActionNotice, navigate])
 
   async function handleComplete() {
     setCompleting(true)

@@ -5,6 +5,7 @@ import { formatUsShortDate } from '../../lib/dateFormat'
 import { useDashboardStore } from '../../store/dashboardStore'
 import { useJohnnyAssistantStore } from '../../store/johnnyAssistantStore'
 import { useWorkoutStore } from '../../store/workoutStore'
+import AppIcon from '../ui/AppIcon'
 
 const THREAD_KEY = 'main'
 const ACTION_TOOLS = new Set([
@@ -26,6 +27,25 @@ const ACTION_DESTINATIONS = {
   create_training_plan: { path: '/workout', label: 'Open workout' },
   swap_workout_exercise: { path: '/workout', label: 'Open workout' },
 }
+
+const SUPPORTED_MODEL_ACTIONS = new Set([
+  'open_screen',
+  'show_nutrition_summary',
+  'show_grocery_gap',
+  'highlight_goal_issue',
+  'create_saved_meal_draft',
+  'suggest_recipe_plan',
+  'queue_follow_up',
+])
+
+const AUTO_EXECUTABLE_MODEL_ACTIONS = new Set([
+  'open_screen',
+  'show_nutrition_summary',
+  'show_grocery_gap',
+  'highlight_goal_issue',
+  'create_saved_meal_draft',
+  'suggest_recipe_plan',
+])
 
 export default function JohnnyAssistantDrawer() {
   const navigate = useNavigate()
@@ -134,14 +154,17 @@ export default function JohnnyAssistantDrawer() {
 
     try {
       const data = await aiApi.chat(nextMessage, THREAD_KEY)
+      const modelActions = normalizeModelActions(data.actions)
       const usedTools = Array.isArray(data.used_tools) ? data.used_tools : []
       const actionResults = Array.isArray(data.action_results) ? data.action_results : []
       const actionTools = getActionTools(usedTools, actionResults)
+      const autoAction = !actionTools.length ? getAutoExecutableModelAction(modelActions) : null
 
       setMessages(current => [...current, {
         role: 'assistant',
         message_text: data.reply,
         sources: data.sources ?? [],
+        actions: modelActions,
         used_tools: usedTools,
         action_results: actionResults,
       }])
@@ -154,6 +177,15 @@ export default function JohnnyAssistantDrawer() {
         }
         setStatusMessage(buildActionStatus(actionResults, actionTools))
         window.dispatchEvent(new CustomEvent('johnny-assistant-action', { detail: { usedTools: actionTools, actionResults } }))
+      } else if (modelActions.length) {
+        if (autoAction) {
+          const destination = getModelActionDestination(autoAction)
+          if (destination) {
+            navigate(destination.path, destination.state ? { state: destination.state } : undefined)
+          }
+        }
+        setStatusMessage(buildModelActionStatus(modelActions, autoAction))
+        window.dispatchEvent(new CustomEvent('johnny-assistant-action', { detail: { actions: modelActions, autoAction: autoAction?.type || null } }))
       }
     } catch (err) {
       const messageText = err?.message || 'Something went wrong.'
@@ -193,8 +225,14 @@ export default function JohnnyAssistantDrawer() {
               <p>Ask Johnny to coach you or do it for you.</p>
             </div>
             <div className="johnny-drawer-actions">
-              <button type="button" className="btn-icon" title="Clear chat" onClick={handleClearThread} disabled={loading}>🗑</button>
-              <button type="button" className="btn-icon" title="Close Johnny" onClick={closeDrawer}>✕</button>
+              <button type="button" className="btn-secondary small johnny-drawer-action-button" title="Clear chat" onClick={handleClearThread} disabled={loading}>
+                <AppIcon name="trash" />
+                <span>Clear</span>
+              </button>
+              <button type="button" className="btn-secondary small johnny-drawer-action-button" title="Close Johnny" onClick={closeDrawer}>
+                <AppIcon name="close" />
+                <span>Close</span>
+              </button>
             </div>
           </header>
 
@@ -210,6 +248,7 @@ export default function JohnnyAssistantDrawer() {
 
             {messages.map((message, index) => {
               const actionResults = Array.isArray(message.action_results) ? message.action_results : []
+              const modelActions = normalizeModelActions(message.actions)
               const actionTools = getActionTools(
                 Array.isArray(message.used_tools) ? message.used_tools : [],
                 actionResults,
@@ -221,6 +260,12 @@ export default function JohnnyAssistantDrawer() {
                   {actionResults.length ? <ActionResultList actionResults={actionResults} onNavigate={destination => {
                     navigate(destination.path, destination.state ? { state: destination.state } : undefined)
                     closeDrawer()
+                  }} /> : null}
+                  {!actionResults.length && modelActions.length ? <ModelActionList actions={modelActions} onNavigate={destination => {
+                    navigate(destination.path, destination.state ? { state: destination.state } : undefined)
+                    closeDrawer()
+                  }} onQueueFollowUp={prompt => {
+                    sendPrompt(prompt)
                   }} /> : null}
                   {!actionResults.length && actionTools.length ? (
                     <div className="johnny-action-tags">
@@ -266,7 +311,8 @@ export default function JohnnyAssistantDrawer() {
                 </button>
               ) : null}
               <button type="submit" className="btn-send" disabled={loading || !input.trim()}>
-                ➤
+                <AppIcon name="send" />
+                <span>Send</span>
               </button>
             </div>
           </form>
@@ -295,6 +341,40 @@ function ActionResultList({ actionResults, onNavigate }) {
             {destination ? (
               <button type="button" className="btn-secondary small johnny-action-link" onClick={() => onNavigate(destination)}>
                 {destination.label}
+              </button>
+            ) : null}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function ModelActionList({ actions, onNavigate, onQueueFollowUp }) {
+  return (
+    <div className="johnny-action-cards">
+      {actions.map((action, index) => {
+        const destination = getModelActionDestination(action)
+        const summary = buildModelActionSummary(action)
+        const meta = buildModelActionMeta(action)
+        const followUpPrompt = getQueuedFollowUpPrompt(action)
+
+        return (
+          <div key={`${action.type}-${index}`} className="johnny-action-card">
+            <div className="johnny-action-card-head">
+              <span className="johnny-action-tag">{formatModelActionLabel(action.type)}</span>
+            </div>
+            <p className="johnny-action-card-title">{buildModelActionTitle(action)}</p>
+            <p className="johnny-action-card-summary">{summary}</p>
+            {meta ? <p className="johnny-action-card-meta">{meta}</p> : null}
+            {destination ? (
+              <button type="button" className="btn-secondary small johnny-action-link" onClick={() => onNavigate(destination)}>
+                {destination.actionLabel || destination.label}
+              </button>
+            ) : null}
+            {!destination && followUpPrompt ? (
+              <button type="button" className="btn-secondary small johnny-action-link" onClick={() => onQueueFollowUp(followUpPrompt)}>
+                Ask follow-up
               </button>
             ) : null}
           </div>
@@ -342,6 +422,196 @@ function getActionTools(usedTools, actionResults) {
   })
 
   return Array.from(names)
+}
+
+function normalizeModelActions(actions) {
+  return (Array.isArray(actions) ? actions : []).filter(action => {
+    const type = String(action?.type || '').trim()
+    return type && SUPPORTED_MODEL_ACTIONS.has(type)
+  })
+}
+
+function buildModelActionStatus(actions, autoAction = null) {
+  if (!actions.length) return ''
+  if (autoAction) {
+    return `${buildModelActionSummary(autoAction)} Opened automatically.`
+  }
+  if (actions.length === 1) {
+    return buildModelActionSummary(actions[0])
+  }
+  return `${actions.length} suggested actions ready.`
+}
+
+function formatModelActionLabel(type) {
+  switch (type) {
+    case 'open_screen':
+      return 'Open screen'
+    case 'show_nutrition_summary':
+      return 'Nutrition summary'
+    case 'show_grocery_gap':
+      return 'Grocery gap'
+    case 'highlight_goal_issue':
+      return 'Goal issue'
+    case 'create_saved_meal_draft':
+      return 'Saved meal draft'
+    case 'suggest_recipe_plan':
+      return 'Recipe plan'
+    case 'queue_follow_up':
+      return 'Follow-up ready'
+    default:
+      return 'Suggested action'
+  }
+}
+
+function buildModelActionTitle(action) {
+  const payload = action?.payload ?? {}
+
+  switch (action.type) {
+    case 'open_screen':
+      return payload.screen ? `Open ${String(payload.screen).replace(/_/g, ' ')}` : 'Open app screen'
+    case 'show_nutrition_summary':
+      return 'Review nutrition summary'
+    case 'show_grocery_gap':
+      return 'Review grocery gap'
+    case 'highlight_goal_issue':
+      return payload.issue ? String(payload.issue) : 'Goal issue surfaced'
+    case 'create_saved_meal_draft':
+      return payload.name || 'Draft saved meal'
+    case 'suggest_recipe_plan':
+      return payload.title || 'Recipe suggestions ready'
+    case 'queue_follow_up':
+      return 'Queued follow-up'
+    default:
+      return 'Suggested action'
+  }
+}
+
+function buildModelActionSummary(action) {
+  const payload = action?.payload ?? {}
+
+  switch (action.type) {
+    case 'open_screen':
+      return 'Johnny suggested opening the most relevant screen for the next step.'
+    case 'show_nutrition_summary':
+      return 'Open nutrition to review calories, protein, and today\'s meals.'
+    case 'show_grocery_gap':
+      return 'Open nutrition and jump straight to the grocery gap list.'
+    case 'highlight_goal_issue':
+      return payload.summary || 'Johnny flagged a goal issue worth addressing now.'
+    case 'create_saved_meal_draft':
+      return 'Open saved meals with a draft name prefilled so you can finish the meal quickly.'
+    case 'suggest_recipe_plan':
+      return 'Open recipe ideas and keep planning tied to what you can actually cook next.'
+    case 'queue_follow_up':
+      return payload.prompt || 'Johnny suggested one short follow-up question.'
+    default:
+      return 'Johnny suggested a next step.'
+  }
+}
+
+function buildModelActionMeta(action) {
+  const payload = action?.payload ?? {}
+
+  switch (action.type) {
+    case 'create_saved_meal_draft':
+      return [
+        payload.meal_type ? `Meal: ${payload.meal_type}` : '',
+        Array.isArray(payload.items) && payload.items.length ? `${payload.items.length} draft items` : '',
+      ].filter(Boolean).join(' | ')
+    case 'suggest_recipe_plan':
+      return payload.meal_type ? `Focus: ${payload.meal_type}` : ''
+    case 'queue_follow_up':
+      return payload.reason ? `Reason: ${payload.reason}` : ''
+    default:
+      return ''
+  }
+}
+
+function getQueuedFollowUpPrompt(action) {
+  if (action?.type !== 'queue_follow_up') {
+    return ''
+  }
+
+  return String(action?.payload?.prompt || '').trim()
+}
+
+function getModelActionDestination(action) {
+  const payload = action?.payload ?? {}
+
+  switch (action.type) {
+    case 'show_nutrition_summary':
+      return { path: '/nutrition', state: { johnnyActionNotice: 'Johnny opened Nutrition so you can review today\'s totals and meal logs.' }, label: 'Open nutrition' }
+    case 'show_grocery_gap':
+      return { path: '/nutrition', state: { focusSection: 'groceryGap', johnnyActionNotice: 'Johnny jumped you to Grocery Gap so you can close the missing items fast.' }, label: 'Open grocery gap' }
+    case 'highlight_goal_issue':
+      return { path: '/dashboard', state: { johnnyActionNotice: payload.summary || 'Johnny surfaced the main goal issue on your dashboard.' }, label: 'Open dashboard' }
+    case 'suggest_recipe_plan':
+      return {
+        path: '/nutrition',
+        state: { focusSection: 'recipes', recipeMealFilter: payload.meal_type || 'all', johnnyActionNotice: 'Johnny opened recipe ideas so you can plan the next meal instead of guessing.' },
+        label: 'Open recipes',
+      }
+    case 'create_saved_meal_draft':
+      return {
+        path: '/nutrition',
+        state: {
+          focusSection: 'savedMeals',
+          openSavedMealForm: true,
+          johnnyActionNotice: `Johnny started a saved meal draft${payload.name ? ` for ${payload.name}` : ''}.`,
+          savedMealDraft: {
+            name: payload.name || '',
+            meal_type: payload.meal_type || 'lunch',
+            items: Array.isArray(payload.items) ? payload.items : [],
+          },
+        },
+        label: 'Open saved meals',
+      }
+    case 'open_screen':
+      return resolveOpenScreenDestination(payload.screen, payload)
+    default:
+      return null
+  }
+}
+
+function getAutoExecutableModelAction(actions) {
+  return actions.find(action => AUTO_EXECUTABLE_MODEL_ACTIONS.has(action.type) && getModelActionDestination(action)) || null
+}
+
+function resolveOpenScreenDestination(screen, payload = {}) {
+  switch (screen) {
+    case 'nutrition':
+      return { path: '/nutrition', state: { johnnyActionNotice: 'Johnny opened Nutrition for the next step.' }, label: 'Open nutrition', actionLabel: 'Open again' }
+    case 'saved_meals':
+      return { path: '/nutrition', state: { focusSection: 'savedMeals', johnnyActionNotice: 'Johnny opened Saved Meals so you can reuse or build a fast default.' }, label: 'Open saved meals', actionLabel: 'Open again' }
+    case 'recipes':
+      return { path: '/nutrition', state: { focusSection: 'recipes', recipeMealFilter: payload.meal_type || 'all', johnnyActionNotice: 'Johnny opened Recipes to narrow the next best meal option.' }, label: 'Open recipes', actionLabel: 'Open again' }
+    case 'grocery_gap':
+      return { path: '/nutrition', state: { focusSection: 'groceryGap', johnnyActionNotice: 'Johnny opened Grocery Gap so you can fix the missing ingredients list.' }, label: 'Open grocery gap', actionLabel: 'Open again' }
+    case 'pantry':
+      return { path: '/nutrition', state: { focusSection: 'pantry', johnnyActionNotice: 'Johnny opened Pantry to work from what you already have.' }, label: 'Open pantry', actionLabel: 'Open again' }
+    case 'steps':
+    case 'sleep':
+    case 'weight':
+    case 'workouts':
+    case 'cardio':
+      return {
+        path: '/body',
+        state: { focusTab: screen, johnnyActionNotice: `Johnny opened Progress on ${screen} so you can handle that step right now.` },
+        label: `Open ${screen}`,
+        actionLabel: 'Open again',
+      }
+    case 'workout':
+      return {
+        path: '/workout',
+        state: { johnnyActionNotice: 'Johnny opened Workout so you can move straight into the next training step.' },
+        label: 'Open workout',
+        actionLabel: 'Open again',
+      }
+    case 'dashboard':
+      return { path: '/dashboard', state: { johnnyActionNotice: 'Johnny opened your dashboard to anchor the next decision in your live progress.' }, label: 'Open dashboard', actionLabel: 'Open again' }
+    default:
+      return null
+  }
 }
 
 function getActionName(result) {

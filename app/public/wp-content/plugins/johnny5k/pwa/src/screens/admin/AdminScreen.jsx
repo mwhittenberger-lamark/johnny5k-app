@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 import { adminApi } from '../../api/client'
+import AppIcon, { normalizeAppIconName } from '../../components/ui/AppIcon'
 
 const TABS = ['invites', 'costs', 'persona', 'users', 'exercises', 'awards', 'recipes', 'settings']
+const AWARD_ICON_OPTIONS = ['award', 'trophy', 'star', 'flame', 'bolt']
 
 export default function AdminScreen() {
   const [tab, setTab] = useState('invites')
@@ -98,17 +100,28 @@ function CostTab() {
 function PersonaTab() {
   const [persona, setPersona] = useState({ name: '', tagline: '', tone: '', rules: '', extra: '' })
   const [systemPrompt, setSystemPrompt] = useState('')
+  const [contractChecks, setContractChecks] = useState([])
+  const [contractResults, setContractResults] = useState([])
   const [chatMsg, setChatMsg] = useState('')
   const [chatReply, setChatReply] = useState('')
   const [chatSources, setChatSources] = useState([])
+  const [timePreviewMsg, setTimePreviewMsg] = useState('Give me a helpful snack suggestion right now.')
+  const [timePreviewResults, setTimePreviewResults] = useState([])
+  const [actionPreviewMsg, setActionPreviewMsg] = useState('Look at my nutrition today and take the next best action.')
+  const [actionPreviewReply, setActionPreviewReply] = useState('')
+  const [actionPreviewActions, setActionPreviewActions] = useState([])
   const [saving, setSaving] = useState(false)
   const [testing, setTesting] = useState(false)
+  const [runningContractChecks, setRunningContractChecks] = useState(false)
+  const [previewingTime, setPreviewingTime] = useState(false)
+  const [previewingActions, setPreviewingActions] = useState(false)
   const [msg, setMsg] = useState('')
 
   useEffect(() => {
     adminApi.getPersona().then(d => {
       setPersona(d.persona ?? {})
       setSystemPrompt(d.system_prompt ?? '')
+      setContractChecks(Array.isArray(d.contract_checks) ? d.contract_checks : [])
     }).catch(() => {})
   }, [])
 
@@ -136,6 +149,69 @@ function PersonaTab() {
       setChatSources(data.sources ?? [])
     } catch (err) { setChatReply('Error: ' + err.message) }
     setTesting(false)
+  }
+
+  async function testTimePreview(e) {
+    e.preventDefault()
+    setPreviewingTime(true)
+    setTimePreviewResults([])
+    try {
+      const data = await adminApi.previewPersonaTime(timePreviewMsg)
+      setTimePreviewResults(data.scenarios ?? [])
+    } catch (err) { setMsg('Error: ' + err.message) }
+    setPreviewingTime(false)
+  }
+
+  async function testActionPreview(e) {
+    e.preventDefault()
+    setPreviewingActions(true)
+    setActionPreviewReply('')
+    setActionPreviewActions([])
+    try {
+      const data = await adminApi.previewPersonaActions(actionPreviewMsg)
+      setActionPreviewReply(data.reply || '')
+      setActionPreviewActions(Array.isArray(data.actions) ? data.actions : [])
+    } catch (err) { setMsg('Error: ' + err.message) }
+    setPreviewingActions(false)
+  }
+
+  async function runContractCheck(check) {
+    const data = await adminApi.testPersona(check.prompt)
+    return {
+      id: check.id,
+      label: check.label,
+      prompt: check.prompt,
+      expectation: check.expectation,
+      reply: data.reply || '',
+      sources: Array.isArray(data.sources) ? data.sources : [],
+    }
+  }
+
+  async function handleRunAllContractChecks() {
+    setRunningContractChecks(true)
+    setContractResults([])
+    try {
+      const results = []
+      for (const check of contractChecks) {
+        // Keep execution ordered so the output stays easy to compare.
+        results.push(await runContractCheck(check))
+      }
+      setContractResults(results)
+    } catch (err) {
+      setMsg('Error: ' + err.message)
+    }
+    setRunningContractChecks(false)
+  }
+
+  async function handleRunSingleContractCheck(check) {
+    setRunningContractChecks(true)
+    try {
+      const result = await runContractCheck(check)
+      setContractResults(current => [result, ...current.filter(item => item.id !== result.id)])
+    } catch (err) {
+      setMsg('Error: ' + err.message)
+    }
+    setRunningContractChecks(false)
   }
 
   return (
@@ -167,6 +243,40 @@ function PersonaTab() {
         </details>
       )}
 
+      <h3>Persona Contract QA</h3>
+      <p className="settings-subtitle">Run fixed checks for concise coaching, non-corporate tone, data use, and honest next-step guidance.</p>
+      <div className="chat-sources">
+        {contractChecks.map(check => (
+          <div key={check.id} className="chat-msg assistant">
+            <p><strong>{check.label}</strong></p>
+            <p>{check.expectation}</p>
+            <p>{check.prompt}</p>
+            <button type="button" className="btn-secondary" disabled={runningContractChecks} onClick={() => handleRunSingleContractCheck(check)}>
+              {runningContractChecks ? '…' : 'Run check'}
+            </button>
+          </div>
+        ))}
+      </div>
+      {contractChecks.length > 0 ? (
+        <p>
+          <button type="button" className="btn-primary" disabled={runningContractChecks} onClick={handleRunAllContractChecks}>
+            {runningContractChecks ? 'Running checks…' : 'Run all contract checks'}
+          </button>
+        </p>
+      ) : null}
+      {contractResults.length > 0 ? (
+        <div className="chat-sources">
+          {contractResults.map(result => (
+            <div key={result.id} className="chat-msg assistant">
+              <p><strong>{result.label}</strong></p>
+              <p><strong>Expectation:</strong> {result.expectation}</p>
+              <p><strong>Prompt:</strong> {result.prompt}</p>
+              <p>{result.reply}</p>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
       <h3>Test Chat</h3>
       <form onSubmit={testChat} className="test-chat-form">
         <input type="text" value={chatMsg} onChange={e => setChatMsg(e.target.value)} placeholder="Say something…" required />
@@ -186,6 +296,34 @@ function PersonaTab() {
           )}
         </div>
       )}
+
+      <h3>Time-Aware Preview</h3>
+      <form onSubmit={testTimePreview} className="test-chat-form">
+        <input type="text" value={timePreviewMsg} onChange={e => setTimePreviewMsg(e.target.value)} placeholder="Ask for advice that should change by time of day…" required />
+        <button type="submit" className="btn-secondary" disabled={previewingTime}>{previewingTime ? '…' : 'Compare 8am vs 10:30pm'}</button>
+      </form>
+      {timePreviewResults.length > 0 && (
+        <div className="chat-sources">
+          {timePreviewResults.map(result => (
+            <div key={result.key} className="chat-msg assistant">
+              <p><strong>{result.label}</strong> · {result.preview_datetime}</p>
+              <p>{result.reply}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <h3>Structured Action Preview</h3>
+      <form onSubmit={testActionPreview} className="test-chat-form">
+        <input type="text" value={actionPreviewMsg} onChange={e => setActionPreviewMsg(e.target.value)} placeholder="Ask for a next-step action…" required />
+        <button type="submit" className="btn-secondary" disabled={previewingActions}>{previewingActions ? '…' : 'Preview actions'}</button>
+      </form>
+      {actionPreviewReply ? (
+        <div className="chat-msg assistant">
+          <p>{actionPreviewReply}</p>
+          <pre>{JSON.stringify(actionPreviewActions, null, 2)}</pre>
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -291,14 +429,14 @@ function ExercisesTab() {
 
 function AwardsTab() {
   const [awards, setAwards] = useState([])
-  const [form, setForm] = useState({ code: '', name: '', description: '', icon: '🏅', points: 10 })
+  const [form, setForm] = useState({ code: '', name: '', description: '', icon: 'award', points: 10 })
 
   useEffect(() => { adminApi.awards().then(setAwards).catch(() => {}) }, [])
 
   async function save(event) {
     event.preventDefault()
-    await adminApi.saveAward(form)
-    setForm({ code: '', name: '', description: '', icon: '🏅', points: 10 })
+    await adminApi.saveAward({ ...form, icon: normalizeAppIconName(form.icon, 'award') })
+    setForm({ code: '', name: '', description: '', icon: 'award', points: 10 })
     setAwards(await adminApi.awards())
   }
 
@@ -309,14 +447,32 @@ function AwardsTab() {
         <input placeholder="Code" value={form.code} onChange={e => setForm(current => ({ ...current, code: e.target.value }))} required />
         <input placeholder="Name" value={form.name} onChange={e => setForm(current => ({ ...current, name: e.target.value }))} required />
         <textarea placeholder="Description" value={form.description} onChange={e => setForm(current => ({ ...current, description: e.target.value }))} rows={3} />
-        <input placeholder="Icon" value={form.icon} onChange={e => setForm(current => ({ ...current, icon: e.target.value }))} />
+        <div className="admin-award-icon-picker" role="group" aria-label="Award icon">
+          {AWARD_ICON_OPTIONS.map(iconName => (
+            <button
+              key={iconName}
+              type="button"
+              className={`admin-award-icon-option ${form.icon === iconName ? 'active' : ''}`}
+              onClick={() => setForm(current => ({ ...current, icon: iconName }))}
+              aria-pressed={form.icon === iconName}
+            >
+              <AppIcon name={iconName} />
+              <span>{iconName}</span>
+            </button>
+          ))}
+        </div>
         <input type="number" min="0" value={form.points} onChange={e => setForm(current => ({ ...current, points: Number(e.target.value) }))} />
         <button className="btn-primary" type="submit">Save award</button>
       </form>
       <div className="admin-list">
         {awards.map(item => (
-          <div key={item.id} className="cost-row">
-            <span>{item.icon} {item.name}</span>
+          <div key={item.id} className="cost-row admin-award-row">
+            <span className="admin-award-summary">
+              <span className="admin-award-icon">
+                <AppIcon name={normalizeAppIconName(item.icon, 'award')} />
+              </span>
+              <span>{item.name}</span>
+            </span>
             <span>{item.code}</span>
             <span>{item.points} pts</span>
           </div>
