@@ -21,6 +21,8 @@ class SmsService {
 
 	private const API_BASE = 'https://rest.clicksend.com/v3';
 	private const COPY_CACHE_TTL = DAY_IN_SECONDS * 2;
+	private const SCHEDULED_REMINDERS_META_KEY = 'jf_scheduled_sms_reminders';
+	private const MAX_SCHEDULED_REMINDERS = 20;
 
 	// ── Public send methods ───────────────────────────────────────────────────
 
@@ -45,6 +47,139 @@ class SmsService {
 		if ( ! $profile || ! $profile->phone ) return false;
 
 		return self::send( $user_id, (string) $profile->phone, 'encouragement', self::ensure_johnny_identity( self::normalize_sms_message( $message ) ) );
+	}
+
+	public static function list_user_reminders( int $user_id ): array {
+		$timezone = UserTime::timezone_string( $user_id );
+		$reminders = self::get_scheduled_reminders( $user_id );
+
+		usort( $reminders, static fn( array $left, array $right ): int => strcmp( (string) ( $left['send_at_utc'] ?? '' ), (string) ( $right['send_at_utc'] ?? '' ) ) );
+
+		$scheduled = array_values( array_filter( $reminders, static fn( array $reminder ): bool => 'scheduled' === ( $reminder['status'] ?? '' ) ) );
+		$history = array_values( array_filter( $reminders, static fn( array $reminder ): bool => 'scheduled' !== ( $reminder['status'] ?? '' ) ) );
+		usort( $history, static fn( array $left, array $right ): int => strcmp( (string) ( $right['send_at_utc'] ?? '' ), (string) ( $left['send_at_utc'] ?? '' ) ) );
+
+		return [
+			'timezone'        => $timezone,
+			'scheduled_count' => count( $scheduled ),
+			'history_count'   => count( $history ),
+			'scheduled'       => array_map( [ __CLASS__, 'format_reminder_for_response' ], $scheduled ),
+			'history'         => array_map( [ __CLASS__, 'format_reminder_for_response' ], array_slice( $history, 0, 8 ) ),
+		];
+	}
+
+	public static function schedule_user_reminder( int $user_id, string $send_at_local, string $message ): array|\WP_Error {
+		$profile = self::get_profile( $user_id );
+		if ( ! $profile || ! $profile->phone ) {
+			return new \WP_Error( 'missing_phone', 'A phone number is required before Johnny can schedule an SMS reminder.' );
+		}
+
+		$normalized_message = self::ensure_johnny_identity( self::normalize_sms_message( $message ) );
+		if ( '' === trim( $normalized_message ) ) {
+			return new \WP_Error( 'missing_message', 'A reminder message is required.' );
+		}
+
+		$scheduled_for = self::parse_local_datetime( $user_id, $send_at_local );
+		if ( is_wp_error( $scheduled_for ) ) {
+			return $scheduled_for;
+		}
+
+		if ( $scheduled_for <= UserTime::now( $user_id ) ) {
+			return new \WP_Error( 'past_datetime', 'The SMS reminder time must be in the future.' );
+		}
+
+		$timezone = UserTime::timezone_string( $user_id );
+		$scheduled_for_utc = $scheduled_for->setTimezone( new \DateTimeZone( 'UTC' ) );
+		$reminders = self::get_scheduled_reminders( $user_id );
+		$reminder = [
+			'id'            => wp_generate_uuid4(),
+			'message'       => $normalized_message,
+			'send_at_local' => $scheduled_for->format( 'Y-m-d H:i:s' ),
+			'send_at_utc'   => $scheduled_for_utc->format( 'Y-m-d H:i:s' ),
+			'timezone'      => $timezone,
+			'status'        => 'scheduled',
+			'created_at'    => current_time( 'mysql', true ),
+			'sent_at'       => '',
+		];
+
+		$reminders[] = $reminder;
+		usort( $reminders, static fn( array $left, array $right ): int => strcmp( (string) ( $left['send_at_utc'] ?? '' ), (string) ( $right['send_at_utc'] ?? '' ) ) );
+		if ( count( $reminders ) > self::MAX_SCHEDULED_REMINDERS ) {
+			$reminders = array_slice( $reminders, -self::MAX_SCHEDULED_REMINDERS );
+		}
+
+		self::save_scheduled_reminders( $user_id, $reminders );
+		wp_schedule_single_event( $scheduled_for_utc->getTimestamp(), 'jf_send_scheduled_sms_reminder', [ $user_id, $reminder['id'] ] );
+
+		return $reminder;
+	}
+
+	public static function cancel_user_reminder( int $user_id, string $reminder_id ): array|\WP_Error {
+		$reminders = self::get_scheduled_reminders( $user_id );
+		if ( empty( $reminders ) ) {
+			return new \WP_Error( 'not_found', 'Reminder not found.' );
+		}
+
+		$formatted = null;
+		$updated = false;
+		foreach ( $reminders as &$reminder ) {
+			if ( (string) ( $reminder['id'] ?? '' ) !== $reminder_id ) {
+				continue;
+			}
+
+			if ( 'scheduled' !== ( $reminder['status'] ?? '' ) ) {
+				return new \WP_Error( 'invalid_status', 'Only scheduled reminders can be canceled.' );
+			}
+
+			$next_event = wp_next_scheduled( 'jf_send_scheduled_sms_reminder', [ $user_id, $reminder_id ] );
+			if ( $next_event ) {
+				wp_unschedule_event( $next_event, 'jf_send_scheduled_sms_reminder', [ $user_id, $reminder_id ] );
+			}
+
+			$reminder['status'] = 'canceled';
+			$reminder['canceled_at'] = current_time( 'mysql', true );
+			$formatted = self::format_reminder_for_response( $reminder );
+			$updated = true;
+			break;
+		}
+		unset( $reminder );
+
+		if ( ! $updated || ! is_array( $formatted ) ) {
+			return new \WP_Error( 'not_found', 'Reminder not found.' );
+		}
+
+		self::save_scheduled_reminders( $user_id, $reminders );
+
+		return $formatted;
+	}
+
+	public static function send_scheduled_reminder( int $user_id, string $reminder_id ): void {
+		$reminders = self::get_scheduled_reminders( $user_id );
+		if ( empty( $reminders ) ) {
+			return;
+		}
+
+		$updated = false;
+		foreach ( $reminders as &$reminder ) {
+			if ( (string) ( $reminder['id'] ?? '' ) !== $reminder_id ) {
+				continue;
+			}
+
+			if ( 'scheduled' !== ( $reminder['status'] ?? '' ) ) {
+				return;
+			}
+
+			$sent = self::send_encouragement( $user_id, (string) ( $reminder['message'] ?? '' ) );
+			$reminder['status'] = $sent ? 'sent' : 'failed';
+			$reminder['sent_at'] = current_time( 'mysql', true );
+			$updated = true;
+			break;
+		}
+		unset( $reminder );
+
+		if ( $updated ) {
+			self::save_scheduled_reminders( $user_id, $reminders );
+		}
 	}
 
 	// ── Cron: send daily reminders to all opted-in users ─────────────────────
@@ -254,6 +389,76 @@ class SmsService {
 			"SELECT * FROM {$wpdb->prefix}fit_user_profiles WHERE user_id = %d",
 			$user_id
 		) ) ?: null;
+	}
+
+	private static function get_scheduled_reminders( int $user_id ): array {
+		$stored = get_user_meta( $user_id, self::SCHEDULED_REMINDERS_META_KEY, true );
+		if ( ! is_array( $stored ) ) {
+			return [];
+		}
+
+		return array_values( array_filter( array_map( static function( $item ): ?array {
+			if ( ! is_array( $item ) || empty( $item['id'] ) ) {
+				return null;
+			}
+
+			return [
+				'id'            => sanitize_text_field( (string) ( $item['id'] ?? '' ) ),
+				'message'       => self::normalize_sms_message( (string) ( $item['message'] ?? '' ) ),
+				'send_at_local' => sanitize_text_field( (string) ( $item['send_at_local'] ?? '' ) ),
+				'send_at_utc'   => sanitize_text_field( (string) ( $item['send_at_utc'] ?? '' ) ),
+				'timezone'      => sanitize_text_field( (string) ( $item['timezone'] ?? '' ) ),
+				'status'        => sanitize_key( (string) ( $item['status'] ?? 'scheduled' ) ),
+				'created_at'    => sanitize_text_field( (string) ( $item['created_at'] ?? '' ) ),
+				'sent_at'       => sanitize_text_field( (string) ( $item['sent_at'] ?? '' ) ),
+				'canceled_at'   => sanitize_text_field( (string) ( $item['canceled_at'] ?? '' ) ),
+			];
+		}, $stored ) ) );
+	}
+
+	private static function save_scheduled_reminders( int $user_id, array $reminders ): void {
+		if ( empty( $reminders ) ) {
+			delete_user_meta( $user_id, self::SCHEDULED_REMINDERS_META_KEY );
+			return;
+		}
+
+		update_user_meta( $user_id, self::SCHEDULED_REMINDERS_META_KEY, array_values( $reminders ) );
+	}
+
+	private static function parse_local_datetime( int $user_id, string $value ): \DateTimeImmutable|\WP_Error {
+		$raw = trim( $value );
+		if ( '' === $raw ) {
+			return new \WP_Error( 'missing_datetime', 'A future local date and time is required.' );
+		}
+
+		$timezone = UserTime::timezone( $user_id );
+		$formats = [ 'Y-m-d H:i:s', 'Y-m-d H:i', 'Y-m-d\TH:i:s', 'Y-m-d\TH:i' ];
+		foreach ( $formats as $format ) {
+			$parsed = \DateTimeImmutable::createFromFormat( $format, $raw, $timezone );
+			if ( false !== $parsed ) {
+				return $parsed;
+			}
+		}
+
+		try {
+			return new \DateTimeImmutable( $raw, $timezone );
+		} catch ( \Exception $e ) {
+			return new \WP_Error( 'invalid_datetime', 'Johnny could not parse that reminder time. Use a clear local time like 2026-04-07 18:30 or tomorrow 6:30pm.' );
+		}
+	}
+
+	private static function format_reminder_for_response( array $reminder ): array {
+		return [
+			'id'            => sanitize_text_field( (string) ( $reminder['id'] ?? '' ) ),
+			'message'       => self::normalize_sms_message( (string) ( $reminder['message'] ?? '' ) ),
+			'send_at_local' => sanitize_text_field( (string) ( $reminder['send_at_local'] ?? '' ) ),
+			'send_at_utc'   => sanitize_text_field( (string) ( $reminder['send_at_utc'] ?? '' ) ),
+			'timezone'      => sanitize_text_field( (string) ( $reminder['timezone'] ?? '' ) ),
+			'status'        => sanitize_key( (string) ( $reminder['status'] ?? 'scheduled' ) ),
+			'created_at'    => sanitize_text_field( (string) ( $reminder['created_at'] ?? '' ) ),
+			'sent_at'       => sanitize_text_field( (string) ( $reminder['sent_at'] ?? '' ) ),
+			'canceled_at'   => sanitize_text_field( (string) ( $reminder['canceled_at'] ?? '' ) ),
+		];
 	}
 
 	private static function send_trigger_message( int $user_id, string $trigger_type, array $context = [] ): bool {

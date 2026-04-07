@@ -1,7 +1,9 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
+import { onboardingApi } from './api/client'
 import { useAuthStore } from './store/authStore'
 import AppShell from './components/layout/AppShell'
+import { applyColorScheme, getStoredColorScheme, setAvailableColorSchemes } from './lib/theme'
 
 const LoginScreen = lazy(() => import('./screens/auth/LoginScreen'))
 const RegisterScreen = lazy(() => import('./screens/auth/RegisterScreen'))
@@ -16,6 +18,7 @@ const AiScreen = lazy(() => import('./screens/ai/AiScreen'))
 const AdminScreen = lazy(() => import('./screens/admin/AdminScreen'))
 const SettingsScreen = lazy(() => import('./screens/settings/SettingsScreen'))
 const ProgressPhotosScreen = lazy(() => import('./screens/progress/ProgressPhotosScreen'))
+const RewardsScreen = lazy(() => import('./screens/rewards/RewardsScreen'))
 
 function RequireAuth({ children }) {
   const { isAuthenticated } = useAuthStore()
@@ -42,11 +45,33 @@ export default function App() {
   const [ready, setReady] = useState(false)
 
   useEffect(() => {
+    applyColorScheme(getStoredColorScheme())
+  }, [])
+
+  useEffect(() => {
+    let active = true
+
     if (nonce || isAuthenticated) {
-      revalidate().finally(() => setReady(true))
+      revalidate()
+        .then(valid => {
+          if (!valid || !active) return null
+          return onboardingApi.getState()
+            .then(data => {
+              if (!active) return
+              setAvailableColorSchemes(data?.color_schemes)
+              applyColorScheme(data?.prefs?.exercise_preferences_json?.color_scheme)
+            })
+            .catch(() => {})
+        })
+        .finally(() => {
+          if (active) setReady(true)
+        })
     } else {
+      applyColorScheme(getStoredColorScheme())
       setReady(true)
     }
+
+    return () => { active = false }
   }, [nonce, isAuthenticated, revalidate])
 
   if (!ready) return <div className="splash">Loading...</div>
@@ -64,6 +89,7 @@ export default function App() {
       <Route path="/nutrition/*" element={<RequireOnboarded><AppShell><LazyRoute><NutritionScreen /></LazyRoute></AppShell></RequireOnboarded>} />
       <Route path="/body" element={<RequireOnboarded><AppShell><LazyRoute><BodyScreen /></LazyRoute></AppShell></RequireOnboarded>} />
       <Route path="/progress-photos" element={<RequireOnboarded><AppShell><LazyRoute><ProgressPhotosScreen /></LazyRoute></AppShell></RequireOnboarded>} />
+      <Route path="/rewards" element={<RequireOnboarded><AppShell><LazyRoute><RewardsScreen /></LazyRoute></AppShell></RequireOnboarded>} />
       <Route path="/ai" element={<RequireOnboarded><AppShell><LazyRoute><AiScreen /></LazyRoute></AppShell></RequireOnboarded>} />
       <Route path="/settings" element={<RequireOnboarded><AppShell><LazyRoute><SettingsScreen /></LazyRoute></AppShell></RequireOnboarded>} />
       <Route path="/admin" element={<RequireAdmin><AppShell><LazyRoute><AdminScreen /></LazyRoute></AppShell></RequireAdmin>} />

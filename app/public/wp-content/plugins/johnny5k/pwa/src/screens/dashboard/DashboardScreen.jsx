@@ -23,6 +23,8 @@ export default function DashboardScreen() {
   const openDrawer = useJohnnyAssistantStore(state => state.openDrawer)
   const [noticeDismissed, setNoticeDismissed] = useState(false)
   const [actionNoticeDismissed, setActionNoticeDismissed] = useState(false)
+  const [weekRhythmOpen, setWeekRhythmOpen] = useState(false)
+  const [storyIndex, setStoryIndex] = useState(0)
   const email = useAuthStore(state => state.email)
 
   useEffect(() => {
@@ -50,7 +52,10 @@ export default function DashboardScreen() {
   const fallbackJohnnyReview = useMemo(() => buildJohnnyDashboardReview(s), [s])
   const bestNextMove = useMemo(() => buildBestNextMove(s), [s])
   const editorialCard = useMemo(() => buildEditorialCard(s), [s])
+  const inspirationalStories = useMemo(() => buildInspirationalStories(s), [s])
   const momentumCard = useMemo(() => buildMomentumCard(s, awards?.earned ?? []), [awards?.earned, s])
+  const weeklyRhythmBreakdown = useMemo(() => Object.values(s?.score_7d_breakdown ?? {}), [s?.score_7d_breakdown])
+  const activeStory = inspirationalStories[storyIndex] ?? inspirationalStories[0] ?? null
   const johnnyReview = useMemo(() => {
     if (!aiJohnnyReview) return fallbackJohnnyReview
     return {
@@ -60,6 +65,10 @@ export default function DashboardScreen() {
       starterPrompt: aiJohnnyReview.starter_prompt || aiJohnnyReview.starterPrompt || fallbackJohnnyReview.starterPrompt,
     }
   }, [aiJohnnyReview, fallbackJohnnyReview])
+
+  useEffect(() => {
+    setStoryIndex(0)
+  }, [inspirationalStories.length])
 
   if (loading && !snapshot) return <div className="screen-loading">Loading…</div>
 
@@ -82,9 +91,10 @@ export default function DashboardScreen() {
   const coachLine = buildCoachLine(s)
   const tomorrowRecommendation = buildTomorrowRecommendation(s)
   const weeklyScoreLabel = (s?.score_7d ?? 0) >= 80 ? 'Momentum is holding' : (s?.score_7d ?? 0) >= 40 ? 'Rhythm is building' : 'Still easy to steady'
-  const mealCount = s?.meals_today?.length ?? 0
+  const mealCount = countLoggedMealsByType(s?.meals_today)
   const recoverySummary = s?.recovery_summary
   const recoveryFlagItems = Array.isArray(recoverySummary?.active_flag_items) ? recoverySummary.active_flag_items : []
+  const recoverySleepLabel = buildRecoverySleepLabel(recoverySummary)
   const todayFocus = sess?.actual_day_type || sess?.planned_day_type || 'rest'
   const todayWeekday = formatWeekdayLabel(s?.date)
   const sessionLabel = sess?.completed
@@ -182,8 +192,8 @@ export default function DashboardScreen() {
               <h3>{recoverySummary.headline}</h3>
               <div className="dashboard-recovery-summary-grid">
                 <div>
-                  <strong>{recoverySummary.last_sleep_hours || '—'}h</strong>
-                  <span>Last night</span>
+                  <strong>{recoverySummary.last_sleep_is_recent ? `${recoverySummary.last_sleep_hours || '—'}h` : '—'}</strong>
+                  <span>{recoverySleepLabel}</span>
                 </div>
                 <div>
                   <strong>{recoverySummary.avg_sleep_3d || '—'}h</strong>
@@ -288,8 +298,32 @@ export default function DashboardScreen() {
           <StatCard label="Steps" value={s?.steps?.today?.toLocaleString() ?? '—'} meta={`Goal ${s?.steps?.target?.toLocaleString() ?? '—'} • ${Math.min(100, stepPct)}%`} accent="pink" onClick={() => navigate('/body')} />
           <StatCard label="Sleep" value={s?.sleep?.hours_sleep != null ? `${s.sleep.hours_sleep}h` : '—'} meta={buildDashboardSleepMeta(s?.sleep)} accent="teal" onClick={() => navigate('/body')} />
           <StatCard label="Weight" value={s?.latest_weight?.weight_lb != null ? `${s.latest_weight.weight_lb}` : '—'} meta={s?.latest_weight?.metric_date ? `Logged ${formatFriendlyDate(s.latest_weight.metric_date)}` : 'No bodyweight yet'} accent="orange" onClick={() => navigate('/body')} />
-          <StatCard label="Week rhythm" value={s?.score_7d ?? 0} meta={weeklyScoreLabel} accent="yellow" onClick={() => navigate('/body')} />
+          <StatCard label="Week rhythm" value={s?.score_7d ?? 0} meta={weeklyScoreLabel} accent="yellow" onClick={() => setWeekRhythmOpen(open => !open)} />
         </div>
+        {weekRhythmOpen ? (
+          <div className="dash-card dashboard-score-drawer" role="region" aria-label="Week rhythm breakdown">
+            <div className="dashboard-score-drawer-head">
+              <div>
+                <span className="dashboard-chip awards">Week rhythm</span>
+                <h3>{s?.score_7d ?? 0} this week</h3>
+                <p>{buildWeekRhythmDrawerCopy(s?.score_7d ?? 0)}</p>
+              </div>
+              <button type="button" className="btn-outline small" onClick={() => setWeekRhythmOpen(false)}>Close</button>
+            </div>
+            <div className="dashboard-score-drawer-grid">
+              {weeklyRhythmBreakdown.map(item => (
+                <div key={item.label} className="dashboard-score-drawer-card">
+                  <span>{item.label}</span>
+                  <strong>{item.value} / {item.target}</strong>
+                  {item.helper ? <small>{item.helper}</small> : null}
+                </div>
+              ))}
+            </div>
+            <div className="dashboard-score-drawer-actions">
+              <button type="button" className="btn-secondary small" onClick={() => navigate('/rewards')}>Open rewards</button>
+            </div>
+          </div>
+        ) : null}
       </section>
 
       <section className="dashboard-section dashboard-two-col">
@@ -323,7 +357,7 @@ export default function DashboardScreen() {
             <span className="dashboard-card-cta">Open training</span>
           </button>
 
-          <button className="dash-card dashboard-card-button dashboard-momentum-card" type="button" onClick={() => navigate('/body')}>
+          <button className="dash-card dashboard-card-button dashboard-momentum-card" type="button" onClick={() => navigate('/rewards')}>
             <div className="dashboard-card-head">
               <span className="dashboard-chip awards">Momentum</span>
               <strong>{momentumCard.badge}</strong>
@@ -338,23 +372,35 @@ export default function DashboardScreen() {
                 <StreakRow key={row.label} label={row.label} days={row.value} suffix={row.suffix} />
               ))}
             </div>
-            <span className="dashboard-card-cta">Open progress</span>
+            <span className="dashboard-card-cta">Open rewards</span>
           </button>
         </div>
       </section>
 
       <section className="dashboard-section">
         <div className="dashboard-section-title-row dashboard-section-title-row-tight">
-          <h2>Today note</h2>
-          <span className="dashboard-section-caption">One lighter coaching card</span>
+          <h2>Inspirational story</h2>
+          <span className="dashboard-section-caption">{inspirationalStories.length ? `${storyIndex + 1} of ${inspirationalStories.length}` : 'One lighter coaching card'}</span>
         </div>
-        <EditorialCard
-          chip={editorialCard.chip}
-          title={editorialCard.title}
-          body={editorialCard.body}
-          actionLabel={editorialCard.actionLabel}
-          onClick={() => handleDashboardAction(editorialCard)}
-        />
+        {activeStory ? (
+          <RotatingStoryCard
+            story={activeStory}
+            index={storyIndex}
+            total={inspirationalStories.length}
+            onAction={() => handleDashboardAction(activeStory)}
+            onPrevious={() => setStoryIndex(current => (current - 1 + inspirationalStories.length) % inspirationalStories.length)}
+            onNext={() => setStoryIndex(current => (current + 1) % inspirationalStories.length)}
+            onSelect={index => setStoryIndex(index)}
+          />
+        ) : (
+          <EditorialCard
+            chip={editorialCard.chip}
+            title={editorialCard.title}
+            body={editorialCard.body}
+            actionLabel={editorialCard.actionLabel}
+            onClick={() => handleDashboardAction(editorialCard)}
+          />
+        )}
       </section>
     </div>
   )
@@ -404,6 +450,41 @@ function EditorialCard({ chip, title, body, actionLabel, onClick }) {
       <p>{body}</p>
       <span className="dashboard-story-link">{actionLabel}</span>
     </button>
+  )
+}
+
+function RotatingStoryCard({ story, index, total, onAction, onPrevious, onNext, onSelect }) {
+  return (
+    <div className="dash-card dashboard-rotating-story-card" role="region" aria-label="Rotating inspirational stories">
+      <div className="dashboard-rotating-story-head">
+        <div className="dashboard-rotating-story-copy">
+          <span className="dashboard-chip subtle">{story.chip}</span>
+          <h3>{story.title}</h3>
+        </div>
+        <div className="dashboard-rotating-story-controls" aria-label="Story controls">
+          <button type="button" className="dashboard-story-nav" onClick={onPrevious} aria-label="Previous story">‹</button>
+          <button type="button" className="dashboard-story-nav" onClick={onNext} aria-label="Next story">›</button>
+        </div>
+      </div>
+      <p>{story.body}</p>
+      <div className="dashboard-rotating-story-footer">
+        <button type="button" className="btn-secondary small" onClick={onAction}>
+          {story.actionLabel}
+        </button>
+        <div className="dashboard-story-dots" aria-label={`Story ${index + 1} of ${total}`}>
+          {Array.from({ length: total }, (_, dotIndex) => (
+            <button
+              key={dotIndex}
+              type="button"
+              className={`dashboard-story-dot ${dotIndex === index ? 'active' : ''}`}
+              onClick={() => onSelect(dotIndex)}
+              aria-label={`Show story ${dotIndex + 1}`}
+              aria-pressed={dotIndex === index}
+            />
+          ))}
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -473,6 +554,12 @@ function formatFriendlyDate(value) {
   return formatUsFriendlyDate(value, value)
 }
 
+function buildRecoverySleepLabel(recoverySummary) {
+  if (!recoverySummary?.last_sleep_date) return 'No sleep logged'
+  if (recoverySummary.last_sleep_is_recent) return 'Last night'
+  return `Logged ${formatUsShortDate(recoverySummary.last_sleep_date, recoverySummary.last_sleep_date)}`
+}
+
 function formatWeekdayLabel(value) {
   if (!value) return 'Today'
   return formatUsWeekday(value, 'Today')
@@ -490,6 +577,53 @@ function bestStreak(streaks) {
     streaks?.sleep_days ?? 0,
     streaks?.cardio_days ?? 0,
   )
+}
+
+function buildInspirationalStories(snapshot) {
+  const caloriesRemaining = Math.max(0, Number(snapshot?.goal?.target_calories ?? 0) - Number(snapshot?.nutrition_totals?.calories ?? 0))
+  const stepGap = Math.max(0, Number(snapshot?.steps?.target ?? 0) - Number(snapshot?.steps?.today ?? 0))
+  const session = snapshot?.session
+  const currentBestStreak = bestStreak(snapshot?.streaks)
+  const focusDay = formatDayType(session?.actual_day_type || session?.planned_day_type || 'rest').toLowerCase()
+
+  return [
+    {
+      chip: 'Story 01',
+      title: 'The comeback week usually starts with a normal day.',
+      body: currentBestStreak >= 3
+        ? 'Momentum usually stays alive because ordinary habits stay visible. Protect the simple reps that put your current streak on the board.'
+        : 'Most streaks do not restart with a surge of motivation. They restart with one logged meal, one walk, or one workout that looked too small to matter and changed the week.',
+      actionLabel: 'Ask Johnny what to protect',
+      prompt: 'Give me one ordinary habit from today that is worth protecting for the next seven days.',
+    },
+    {
+      chip: 'Story 02',
+      title: 'The steady cut was built on boring lunches.',
+      body: caloriesRemaining > 0
+        ? `The people who stay on track do not win because every meal is perfect. They win because one ordinary meal keeps the day inside range. You still have about ${Math.round(caloriesRemaining)} calories to land this one cleanly.`
+        : 'When the day is already close to target, the smartest move is usually restraint. Closing the night calmly beats trying to compensate with one dramatic swing.',
+      actionLabel: 'Open nutrition',
+      href: '/nutrition',
+    },
+    {
+      chip: 'Story 03',
+      title: 'Training momentum survives on repeatable sessions.',
+      body: session?.completed
+        ? `Today’s ${focusDay} work is already in. The next win is not intensity, it is showing back up on schedule so this session becomes part of a pattern instead of a one-off.`
+        : `The strongest training streaks are built from sessions people are willing to repeat. A clean ${focusDay} session today does more for progress than waiting around for the perfect high-energy window.`,
+      actionLabel: session?.completed ? 'Review workout' : 'Open workout',
+      href: '/workout',
+    },
+    {
+      chip: 'Story 04',
+      title: 'Cardio habits stay alive when they stay small.',
+      body: stepGap > 0
+        ? `A lot of people lose the day by thinking the gap is too big. The better move is simple: keep the board moving. Even a short walk closes part of the ${stepGap.toLocaleString()}-step gap and keeps the habit identity intact.`
+        : 'The day already has movement in it. The next level is consistency, not punishment. Small conditioning wins compound because they are easy to repeat tomorrow.',
+      actionLabel: 'Open body metrics',
+      href: '/body',
+    },
+  ]
 }
 
 function buildCoachLine(snapshot) {
@@ -522,7 +656,7 @@ function buildDashboardReviewTrigger(snapshot) {
     stepsTarget,
     calories: Number(nutrition?.calories ?? 0),
     protein: Number(nutrition?.protein_g ?? 0),
-    mealsCount: Number(snapshot?.meals_today?.length ?? 0),
+    mealsCount: countLoggedMealsByType(snapshot?.meals_today),
     sleepHours: Number(sleep?.hours_sleep ?? 0),
     sleepQuality: sleep?.sleep_quality || '',
     completed: Boolean(session?.completed),
@@ -547,7 +681,7 @@ function buildJohnnyDashboardReview(snapshot) {
   const stepPct = stepTarget > 0 ? stepsToday / stepTarget : 0
   const sleepHours = Number(snapshot?.sleep?.hours_sleep ?? 0)
   const targetSleep = Number(snapshot?.goal?.target_sleep_hours ?? 8)
-  const mealsLogged = Number(snapshot?.meals_today?.length ?? 0)
+  const mealsLogged = countLoggedMealsByType(snapshot?.meals_today)
   const protein = Number(snapshot?.nutrition_totals?.protein_g ?? 0)
   const proteinTarget = Number(snapshot?.goal?.target_protein_g ?? 0)
   const proteinPct = proteinTarget > 0 ? protein / proteinTarget : 0
@@ -642,7 +776,7 @@ function buildTomorrowRecommendation(snapshot) {
 }
 
 function buildQuickPrompts(snapshot) {
-  const mealsLogged = snapshot?.meals_today?.length ?? 0
+  const mealsLogged = countLoggedMealsByType(snapshot?.meals_today)
   const protein = Number(snapshot?.nutrition_totals?.protein_g ?? 0)
   const proteinTarget = Number(snapshot?.goal?.target_protein_g ?? 0)
   const proteinPct = proteinTarget > 0 ? protein / proteinTarget : 0
@@ -706,7 +840,7 @@ function buildEditorialCard(snapshot) {
   const sleep = snapshot?.sleep?.hours_sleep
   const stepsToday = snapshot?.steps?.today ?? 0
   const stepTarget = snapshot?.steps?.target ?? 8000
-  const meals = snapshot?.meals_today?.length ?? 0
+  const meals = countLoggedMealsByType(snapshot?.meals_today)
   const skipWarning = snapshot?.skip_warning
 
   if (skipWarning) {
@@ -763,7 +897,7 @@ function buildBestNextMove(snapshot) {
   const stepsToday = Number(snapshot?.steps?.today ?? 0)
   const stepTarget = Number(snapshot?.steps?.target ?? 8000)
   const stepPct = stepTarget > 0 ? stepsToday / stepTarget : 0
-  const mealsLogged = Number(snapshot?.meals_today?.length ?? 0)
+  const mealsLogged = countLoggedMealsByType(snapshot?.meals_today)
   const protein = Number(snapshot?.nutrition_totals?.protein_g ?? 0)
   const proteinTarget = Number(snapshot?.goal?.target_protein_g ?? 0)
   const proteinPct = proteinTarget > 0 ? protein / proteinTarget : 0
@@ -836,7 +970,7 @@ function buildMomentumCard(snapshot, awards) {
   const streaks = snapshot?.streaks || {}
   const best = bestStreak(streaks)
   const weeklyScore = Number(snapshot?.score_7d ?? 0)
-  const iconName = best >= 7 ? 'award' : best >= 3 || weeklyScore >= 60 ? 'coach' : 'calendar'
+  const iconName = best >= 7 ? 'award' : best >= 3 || weeklyScore >= 60 ? 'bolt' : 'star'
 
   let badge = best > 0 ? `${best}d live` : `${awards.length} earned`
   let title = 'Momentum starts with repeatable basics'
@@ -880,6 +1014,19 @@ function buildDashboardSleepMeta(sleep) {
   return [dateLabel, quality].filter(Boolean).join(' • ')
 }
 
+function countLoggedMealsByType(meals) {
+  const mealTypes = new Set()
+
+  for (const meal of Array.isArray(meals) ? meals : []) {
+    const mealType = String(meal?.meal_type || '').trim().toLowerCase()
+    if (mealType) {
+      mealTypes.add(mealType)
+    }
+  }
+
+  return mealTypes.size
+}
+
 function proteinTargetCopy(nutritionTotals, goal, mealCount) {
   const calories = Math.round(Number(nutritionTotals?.calories ?? 0))
   const calorieTarget = Math.round(Number(goal?.target_calories ?? 0))
@@ -902,4 +1049,10 @@ function formatNumber(value, decimals = 0) {
     minimumFractionDigits: decimals,
     maximumFractionDigits: decimals,
   })
+}
+
+function buildWeekRhythmDrawerCopy(score) {
+  if (score >= 80) return 'The week has strong consistency across the basics. The job is to protect it, not complicate it.'
+  if (score >= 50) return 'The week has usable traction. One or two clean entries in the weaker buckets will move this fast.'
+  return 'The board still needs repeated signal. Focus on filling the weakest buckets instead of chasing a perfect day.'
 }

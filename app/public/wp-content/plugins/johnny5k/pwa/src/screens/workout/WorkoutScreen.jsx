@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import ExerciseCard from '../../components/workout/ExerciseCard'
-import { trainingApi } from '../../api/client'
+import PlanOverviewSwapDrawer from '../../components/workout/PlanOverviewSwapDrawer'
+import { trainingApi, workoutApi } from '../../api/client'
 import { formatUsShortDate, formatUsWeekday } from '../../lib/dateFormat'
 import { useWorkoutStore } from '../../store/workoutStore'
 
 const QUICK_ADD_OPTIONS = [
-  { slot: 'abs', label: 'Quick abs finisher' },
+  { slot: 'abs', label: 'Quick abs add-on' },
   { slot: 'challenge', label: 'Quick challenge' },
 ]
 
@@ -19,12 +20,19 @@ export default function WorkoutScreen() {
     timeTier,
     readinessScore,
     sessionMode,
+    previewDayType: selectedDayType,
+    previewDrafts,
     wasResumed,
     activeExerciseIdx,
     undoToast,
     setTimeTier,
     setReadinessScore,
     setActiveExerciseIdx,
+    setPreviewDayType,
+    setPreviewExerciseOrder,
+    syncPreviewExerciseOrder,
+    applyPreviewSwap,
+    clearPreviewSwap,
     dismissUndoToast,
     bootstrapSession,
     startSession,
@@ -39,6 +47,7 @@ export default function WorkoutScreen() {
     completeSession,
     skipSession,
     restartSession,
+    exitSession,
     takeRestDay,
   } = useWorkoutStore()
 
@@ -46,11 +55,16 @@ export default function WorkoutScreen() {
   const [plan, setPlan] = useState(null)
   const [planLoading, setPlanLoading] = useState(true)
   const [planError, setPlanError] = useState('')
+  const [previewSession, setPreviewSession] = useState(null)
+  const [previewLoading, setPreviewLoading] = useState(false)
+  const [previewError, setPreviewError] = useState('')
+  const [swapDrawerExercise, setSwapDrawerExercise] = useState(null)
+  const [draggedPlanExerciseId, setDraggedPlanExerciseId] = useState(0)
   const [addingSlot, setAddingSlot] = useState('')
   const [undoing, setUndoing] = useState(false)
   const [restarting, setRestarting] = useState(false)
+  const [exiting, setExiting] = useState(false)
   const [takingRestDay, setTakingRestDay] = useState(false)
-  const [selectedDayType, setSelectedDayType] = useState('')
   const [restartNotice, setRestartNotice] = useState('')
   const [restartError, setRestartError] = useState('')
   const [addonsExpanded, setAddonsExpanded] = useState(false)
@@ -65,11 +79,16 @@ export default function WorkoutScreen() {
   const scheduledPlan = plan?.days?.find(day => Number(day.day_order) === todaysOrder) ?? plan?.days?.[0]
   const scheduledDayType = scheduledPlan?.day_type || ''
   const previewDayType = session?.session?.planned_day_type || selectedDayType || scheduledDayType
-  const previewPlan = previewDayType === 'rest'
+  const currentPreviewDraft = previewDayType ? (previewDrafts?.[previewDayType] ?? { exerciseSwaps: {}, exerciseOrder: [] }) : { exerciseSwaps: {}, exerciseOrder: [] }
+  const previewExerciseSwaps = currentPreviewDraft.exerciseSwaps ?? {}
+  const previewExerciseOrder = currentPreviewDraft.exerciseOrder ?? []
+  const plannedDayReference = previewDayType === 'rest'
     ? { day_type: 'rest', exercises: [], time_tier: timeTier, last_completed_session: null }
     : plan?.days?.find(day => day.day_type === previewDayType) ?? scheduledPlan
   const todayLabel = todayContext?.weekday_label || weekdayLabelForDate()
-  const displayDayType = session?.session?.planned_day_type || previewPlan?.day_type
+  const previewSwapPayload = buildPreviewExerciseSwapPayload(previewExerciseSwaps)
+  const previewExercises = orderPreviewExercises(previewSession?.exercises ?? [], previewExerciseOrder)
+  const displayDayType = session?.session?.planned_day_type || previewDayType || plannedDayReference?.day_type
   const splitOptions = [
     ...(plan?.days ?? [])
     .map(day => ({ dayType: day.day_type, dayOrder: Number(day.day_order), weekdayLabel: day.weekday_label }))
@@ -77,23 +96,23 @@ export default function WorkoutScreen() {
     .filter((option, index, list) => list.findIndex(entry => entry.dayType === option.dayType) === index),
     { dayType: 'rest', dayOrder: todaysOrder, weekdayLabel: 'Take today off' },
   ]
-  const isCardioSelection = previewPlan?.day_type === 'cardio'
-  const isRestSelection = previewPlan?.day_type === 'rest'
+  const isCardioSelection = previewDayType === 'cardio'
+  const isRestSelection = previewDayType === 'rest'
   const activeSessionStartedAt = session?.session?.started_at || null
   const activeSessionTimerLabel = formatWorkoutElapsedTime(activeSessionStartedAt, timerNow)
   const johnnyReview = buildJohnnyReview({
     todayLabel,
     scheduledDayType,
-    selectedDayType: previewPlan?.day_type,
-    lastCompletedSession: previewPlan?.last_completed_session,
+    selectedDayType: previewDayType,
+    lastCompletedSession: plannedDayReference?.last_completed_session,
   })
 
   useEffect(() => {
     if (session || selectedDayType) return
     if (scheduledPlan?.day_type) {
-      setSelectedDayType(scheduledPlan.day_type)
+      setPreviewDayType(scheduledPlan.day_type)
     }
-  }, [scheduledPlan?.day_type, selectedDayType, session])
+  }, [scheduledPlan?.day_type, selectedDayType, session, setPreviewDayType])
 
   useEffect(() => {
     bootstrapSession()
@@ -115,6 +134,79 @@ export default function WorkoutScreen() {
 
     return () => { active = false }
   }, [])
+
+  useEffect(() => {
+    if (session) return undefined
+
+    const requestedDayType = selectedDayType || scheduledDayType
+    if (!requestedDayType) {
+      setPreviewSession(null)
+      setPreviewError('')
+      setPreviewLoading(false)
+      return undefined
+    }
+
+    if (requestedDayType === 'rest') {
+      setPreviewSession({
+        day_type: 'rest',
+        time_tier: timeTier,
+        session_mode: readinessScore <= 3 ? 'maintenance' : 'normal',
+        plan_exercise_count: 0,
+        exercises: [],
+      })
+      setPreviewError('')
+      setPreviewLoading(false)
+      return undefined
+    }
+
+    if (requestedDayType === 'cardio') {
+      setPreviewSession({
+        day_type: 'cardio',
+        time_tier: readinessScore <= 3 ? 'short' : timeTier,
+        session_mode: readinessScore <= 3 ? 'maintenance' : 'normal',
+        plan_exercise_count: 0,
+        exercises: [],
+      })
+      setPreviewError('')
+      setPreviewLoading(false)
+      return undefined
+    }
+
+    let active = true
+    setPreviewLoading(true)
+    setPreviewError('')
+
+    workoutApi.preview({
+      time_tier: timeTier,
+      readiness_score: readinessScore,
+      day_type: requestedDayType,
+      ...(previewSwapPayload.length ? { exercise_swaps: previewSwapPayload } : {}),
+      ...(previewExerciseOrder.length ? { exercise_order: previewExerciseOrder } : {}),
+    })
+      .then(data => {
+        if (!active) return
+        const nextExercises = Array.isArray(data?.exercises) ? data.exercises : []
+        const nextIds = nextExercises.map(exercise => Number(exercise.plan_exercise_id)).filter(Boolean)
+        setPreviewSession(data)
+          syncPreviewExerciseOrder(requestedDayType, nextIds)
+        setSwapDrawerExercise(current => {
+          if (!current?.plan_exercise_id) return null
+          return nextExercises.find(exercise => Number(exercise.plan_exercise_id) === Number(current.plan_exercise_id)) ?? null
+        })
+      })
+      .catch(error => {
+        if (!active) return
+        setPreviewSession(null)
+        setPreviewError(error?.message || 'Could not build a workout preview right now.')
+      })
+      .finally(() => {
+        if (active) {
+          setPreviewLoading(false)
+        }
+      })
+
+    return () => { active = false }
+  }, [session, scheduledDayType, selectedDayType, timeTier, readinessScore, JSON.stringify(previewSwapPayload), JSON.stringify(previewExerciseOrder), syncPreviewExerciseOrder])
 
   useEffect(() => {
     if (!exercises.length && activeExerciseIdx !== 0) {
@@ -217,7 +309,11 @@ export default function WorkoutScreen() {
       return
     }
 
-    await startSession({ dayType: selectedDayType || scheduledDayType })
+    await startSession({
+      dayType: selectedDayType || scheduledDayType,
+      exerciseSwaps: previewSwapPayload,
+      exerciseOrder: previewExercises.map(exercise => Number(exercise.plan_exercise_id)).filter(Boolean),
+    })
   }
 
   function handleLogCardio() {
@@ -232,13 +328,55 @@ export default function WorkoutScreen() {
     setRestartError('')
     try {
       await restartSession()
-      setSelectedDayType(scheduledDayType || '')
+      setPreviewDayType(scheduledDayType || '')
       setRestartNotice(`Session cleared. ${todayLabel} resets to ${formatDayType(scheduledDayType)} from your saved schedule, but you can override it before starting again.`)
     } catch (error) {
       setRestartError(error?.message || 'Could not reset this workout right now.')
     } finally {
       setRestarting(false)
     }
+  }
+
+  async function handleExitSession() {
+    if (!session?.session?.id) return
+    if (!window.confirm('Exit and discard this workout? Nothing from this session will be logged and it will be treated as if it never happened.')) return
+
+    setExiting(true)
+    setRestartError('')
+    try {
+      await exitSession()
+      navigate('/dashboard')
+    } catch (error) {
+      setRestartError(error?.message || 'Could not exit this workout right now.')
+    } finally {
+      setExiting(false)
+    }
+  }
+
+  async function handlePreviewSwap(planExerciseId, exerciseId) {
+    applyPreviewSwap(previewDayType, planExerciseId, exerciseId)
+  }
+
+  async function handleClearPreviewSwap(planExerciseId) {
+    clearPreviewSwap(previewDayType, planExerciseId)
+  }
+
+  function handlePreviewDragStart(planExerciseId) {
+    setDraggedPlanExerciseId(planExerciseId)
+  }
+
+  function handlePreviewDrop(targetPlanExerciseId) {
+    if (!draggedPlanExerciseId || draggedPlanExerciseId === targetPlanExerciseId) {
+      setDraggedPlanExerciseId(0)
+      return
+    }
+
+    setPreviewExerciseOrder(previewDayType, reorderPreviewExerciseOrder(previewExerciseOrder, draggedPlanExerciseId, targetPlanExerciseId, previewExercises))
+    setDraggedPlanExerciseId(0)
+  }
+
+  function handlePreviewMove(planExerciseId, direction) {
+    setPreviewExerciseOrder(previewDayType, movePreviewExerciseOrder(previewExerciseOrder, planExerciseId, direction, previewExercises))
   }
 
   const isMaintenanceMode = (sessionMode || session?.session_mode) === 'maintenance' || Number(session?.session?.readiness_score ?? readinessScore) <= 3
@@ -292,7 +430,7 @@ export default function WorkoutScreen() {
                 <strong>Split for today</strong>
                 <p>
                   {todayLabel} is scheduled as {formatDayType(scheduledDayType)} based on your saved schedule.
-                  {previewPlan?.day_type && scheduledDayType && previewPlan.day_type !== scheduledDayType ? ` You are overriding it to ${formatDayType(previewPlan.day_type)}.` : ''}
+                  {previewDayType && scheduledDayType && previewDayType !== scheduledDayType ? ` You are overriding it to ${formatDayType(previewDayType)}.` : ''}
                 </p>
                 {todayContext?.timezone ? <p className="settings-subtitle">Using your local time: {todayLabel} in {todayContext.timezone}.</p> : null}
                 {restartNotice ? <p className="success-msg">{restartNotice}</p> : null}
@@ -317,7 +455,7 @@ export default function WorkoutScreen() {
                     key={option.dayType}
                     type="button"
                     className={`daytype-pill ${selectedDayType === option.dayType ? 'active' : ''}`}
-                    onClick={() => setSelectedDayType(option.dayType)}
+                    onClick={() => setPreviewDayType(option.dayType)}
                   >
                     <span>{formatDayType(option.dayType)}</span>
                     <small>
@@ -370,31 +508,63 @@ export default function WorkoutScreen() {
           </div>
           {planLoading ? <p>Loading plan...</p> : null}
           {!planLoading && planError ? <p className="error">{planError}</p> : null}
-          {!planLoading && !planError && previewPlan ? (
+          {!planLoading && !planError && previewSession ? (
             <>
-              <h3>{todayLabel} • {formatDayType(previewPlan.day_type)} day</h3>
+              <h3>{todayLabel} • {formatDayType(previewSession.day_type)} day</h3>
               <p>
                 {isRestSelection
                   ? 'Today is being treated as a recovery day. No workout will be built unless you switch back to cardio or a lifting split.'
                   : isCardioSelection
                   ? 'Today is set up as cardio. Use the Progress screen to log your conditioning, or override to a lift day if you want a full strength session instead.'
-                  : `${(previewPlan.exercises ?? []).length} planned movements from your saved weekly split with a ${previewPlan.time_tier} time bias.`}
+                  : `${previewExercises.length} exercises will actually be built for this ${previewSession.time_tier} session. Drag to reorder them or swap one before you start.`}
               </p>
+              {!isCardioSelection && !isRestSelection && previewSession.plan_exercise_count > previewExercises.length ? (
+                <p className="settings-subtitle workout-plan-helper">Johnny trimmed this session from {previewSession.plan_exercise_count} programmed slots based on your current time tier and readiness.</p>
+              ) : null}
+              {!isCardioSelection && !isRestSelection && previewLoading ? <p className="settings-subtitle">Refreshing preview...</p> : null}
+              {!isCardioSelection && !isRestSelection && previewError ? <p className="error">{previewError}</p> : null}
               {!isCardioSelection && !isRestSelection ? (
-                <div className="workout-plan-list">
-                  {(previewPlan.exercises ?? []).slice(0, 6).map(exercise => (
-                    <div key={exercise.id} className="workout-plan-row">
-                      <span>{exercise.exercise_name}</span>
-                      <span>{exercise.slot_type}</span>
-                    </div>
-                  ))}
-                </div>
+                previewExercises.length ? (
+                  <div className="workout-plan-list workout-preview-list">
+                    {previewExercises.map((exercise, index) => (
+                      <div
+                        key={exercise.plan_exercise_id}
+                        className={`workout-plan-row workout-preview-row ${draggedPlanExerciseId === exercise.plan_exercise_id ? 'dragging' : ''}`}
+                        draggable
+                        onDragStart={() => handlePreviewDragStart(exercise.plan_exercise_id)}
+                        onDragOver={event => event.preventDefault()}
+                        onDrop={() => handlePreviewDrop(exercise.plan_exercise_id)}
+                        onDragEnd={() => setDraggedPlanExerciseId(0)}
+                      >
+                        <div className="workout-preview-row-main">
+                          <button type="button" className="workout-preview-handle" aria-label={`Drag ${exercise.exercise_name}`}>
+                            ↕
+                          </button>
+                          <span>
+                            {exercise.exercise_name}
+                            {exercise.was_swapped && exercise.original_exercise_name ? <small className="workout-plan-detail">Replacing {exercise.original_exercise_name}</small> : null}
+                            {exercise.primary_muscle ? <small className="workout-plan-detail">{exercise.primary_muscle.replace(/_/g, ' ')}</small> : null}
+                          </span>
+                        </div>
+                        <div className="workout-preview-actions">
+                          <div className="workout-preview-order-buttons">
+                            <button type="button" className="btn-ghost small" onClick={() => handlePreviewMove(exercise.plan_exercise_id, -1)} disabled={index === 0}>↑</button>
+                            <button type="button" className="btn-ghost small" onClick={() => handlePreviewMove(exercise.plan_exercise_id, 1)} disabled={index === previewExercises.length - 1}>↓</button>
+                          </div>
+                          <button type="button" className="btn-outline small" onClick={() => setSwapDrawerExercise(exercise)}>Swap</button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="settings-subtitle">No strength movements are queued for this selection yet.</p>
+                )
               ) : null}
 
               <div className="workout-johnny-review">
                 <div className="dashboard-card-head">
                   <span className="dashboard-chip coach">Johnny&apos;s review</span>
-                  {previewPlan?.day_type && scheduledDayType && previewPlan.day_type !== scheduledDayType ? <span className="dashboard-chip subtle">Override active</span> : null}
+                  {previewDayType && scheduledDayType && previewDayType !== scheduledDayType ? <span className="dashboard-chip subtle">Override active</span> : null}
                 </div>
                 <p>{johnnyReview.message}</p>
                 {johnnyReview.lastSessionLabel ? <p className="settings-subtitle">{johnnyReview.lastSessionLabel}</p> : null}
@@ -411,6 +581,15 @@ export default function WorkoutScreen() {
             </>
           ) : null}
         </div>
+
+        <PlanOverviewSwapDrawer
+          isOpen={Boolean(swapDrawerExercise)}
+          dayType={previewDayType}
+          exercise={swapDrawerExercise}
+          onClose={() => setSwapDrawerExercise(null)}
+          onSwap={handlePreviewSwap}
+          onClearSwap={handleClearPreviewSwap}
+        />
       </div>
     )
   }
@@ -438,15 +617,20 @@ export default function WorkoutScreen() {
       <section className="workout-top-grid dashboard-two-col">
         <div className="dash-card workout-plan-card">
           <div className="dashboard-card-head">
-            <span className="dashboard-chip workout">Session preview</span>
+            <span className="dashboard-chip workout">Prepared workout</span>
             <span className="dashboard-chip subtle">{exercises.length} exercises</span>
           </div>
-          <p>{previewPlan?.exercises?.length ? `Plan track: ${previewPlan.exercises.length} programmed slots today.` : 'Your active session is ready.'}</p>
-          <div className="workout-plan-list compact">
+          <p>{exercises.length ? 'This is the exact order that was carried over from your launch preview. Tap any row to jump to that exercise.' : 'Your active session is ready.'}</p>
+          <div className="workout-plan-list compact active-session-plan-list">
             {exercises.map((exercise, index) => (
               <button key={exercise.id} className={`workout-plan-row action ${index === activeExerciseIdx ? 'active' : ''}`} onClick={() => setActiveExerciseIdx(index)}>
-                <span>{exercise.exercise_name}</span>
-                <span>{exercise.slot_type}</span>
+                <span>
+                  <small className="workout-plan-step">Exercise {index + 1}</small>
+                  {exercise.exercise_name}
+                  {exercise.was_swapped && exercise.original_exercise_name ? <small className="workout-plan-detail">Replacing {exercise.original_exercise_name}</small> : null}
+                  {exercise.primary_muscle ? <small className="workout-plan-detail">{exercise.primary_muscle.replace(/_/g, ' ')}</small> : null}
+                </span>
+                <span>{formatSlotType(exercise.slot_type)}</span>
               </button>
             ))}
           </div>
@@ -484,7 +668,7 @@ export default function WorkoutScreen() {
                 </>
               ) : (
                 <>
-                  <h3>Finish with abs or a challenge</h3>
+                  <h3>Add abs or a challenge</h3>
                   <p>Add one extra slot without leaving the session.</p>
                   <div className="workout-quickadd-grid">
                     {QUICK_ADD_OPTIONS.map(option => (
@@ -533,12 +717,16 @@ export default function WorkoutScreen() {
         <div className="dashboard-card-head">
           <span className="dashboard-chip workout">Session actions</span>
         </div>
+        <p className="workout-session-note">Exit discards this in-progress workout completely. Start over deletes it too, but keeps you here so you can rebuild today&apos;s session.</p>
         <div className="workout-page-actions-row">
+          <button className="btn-secondary" onClick={handleExitSession} disabled={exiting || restarting || completing}>
+            {exiting ? 'Exiting...' : 'Exit and discard'}
+          </button>
           <button className="btn-outline" onClick={handleRestartSession} disabled={restarting}>
             {restarting ? 'Restarting...' : 'Start over / change split'}
           </button>
           <button className="btn-primary" onClick={handleComplete} disabled={completing}>
-            {completing ? 'Finishing...' : 'Finish'}
+            {completing ? 'Completing workout...' : 'Complete workout'}
           </button>
         </div>
       </section>
@@ -586,6 +774,72 @@ function formatWorkoutElapsedTime(startedAt, nowValue = Date.now()) {
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
 }
 
+function buildPreviewExerciseSwapPayload(previewExerciseSwaps) {
+  return Object.entries(previewExerciseSwaps || {})
+    .map(([planExerciseId, exerciseId]) => ({
+      plan_exercise_id: Number(planExerciseId),
+      exercise_id: Number(exerciseId),
+    }))
+    .filter(item => item.plan_exercise_id > 0 && item.exercise_id > 0)
+}
+
+function syncPreviewExerciseOrder(currentOrder, nextIds) {
+  const filteredCurrent = (Array.isArray(currentOrder) ? currentOrder : []).filter(id => nextIds.includes(id))
+  const missingIds = nextIds.filter(id => !filteredCurrent.includes(id))
+  const combined = [...filteredCurrent, ...missingIds]
+
+  return combined.length === nextIds.length ? combined : nextIds
+}
+
+function orderPreviewExercises(exercises, previewExerciseOrder) {
+  if (!Array.isArray(exercises) || !exercises.length) return []
+
+  const orderedIds = syncPreviewExerciseOrder(previewExerciseOrder, exercises.map(exercise => Number(exercise.plan_exercise_id)).filter(Boolean))
+  const orderIndex = new Map(orderedIds.map((id, index) => [id, index]))
+
+  return [...exercises].sort((left, right) => {
+    const leftIndex = orderIndex.get(Number(left.plan_exercise_id)) ?? Number.MAX_SAFE_INTEGER
+    const rightIndex = orderIndex.get(Number(right.plan_exercise_id)) ?? Number.MAX_SAFE_INTEGER
+    return leftIndex - rightIndex
+  })
+}
+
+function reorderPreviewExerciseOrder(currentOrder, draggedPlanExerciseId, targetPlanExerciseId, exercises) {
+  const baseOrder = syncPreviewExerciseOrder(
+    currentOrder,
+    (Array.isArray(exercises) ? exercises : []).map(exercise => Number(exercise.plan_exercise_id)).filter(Boolean),
+  )
+  const fromIndex = baseOrder.indexOf(Number(draggedPlanExerciseId))
+  const targetIndex = baseOrder.indexOf(Number(targetPlanExerciseId))
+
+  if (fromIndex === -1 || targetIndex === -1 || fromIndex === targetIndex) {
+    return baseOrder
+  }
+
+  const nextOrder = [...baseOrder]
+  const [moved] = nextOrder.splice(fromIndex, 1)
+  nextOrder.splice(targetIndex, 0, moved)
+  return nextOrder
+}
+
+function movePreviewExerciseOrder(currentOrder, planExerciseId, direction, exercises) {
+  const baseOrder = syncPreviewExerciseOrder(
+    currentOrder,
+    (Array.isArray(exercises) ? exercises : []).map(exercise => Number(exercise.plan_exercise_id)).filter(Boolean),
+  )
+  const currentIndex = baseOrder.indexOf(Number(planExerciseId))
+  const targetIndex = currentIndex + direction
+
+  if (currentIndex === -1 || targetIndex < 0 || targetIndex >= baseOrder.length) {
+    return baseOrder
+  }
+
+  const nextOrder = [...baseOrder]
+  const [moved] = nextOrder.splice(currentIndex, 1)
+  nextOrder.splice(targetIndex, 0, moved)
+  return nextOrder
+}
+
 function normalizeWorkoutStartTime(value) {
   const rawValue = String(value || '').trim()
   if (!rawValue) {
@@ -603,6 +857,15 @@ function formatDayType(value) {
   if (!value) return 'Workout'
   return String(value)
     .split('_')
+    .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ')
+}
+
+function formatSlotType(value) {
+  if (!value) return 'Accessory'
+  return String(value)
+    .split('_')
+    .filter(Boolean)
     .map(part => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ')
 }

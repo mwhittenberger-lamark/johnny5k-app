@@ -100,6 +100,8 @@ class BodyMetricsController {
 			'notes'        => $notes ?: null,
 		], fn( $v ) => $v !== null ) );
 
+		self::sync_user_awards( $user_id );
+
 		return new \WP_REST_Response( [ 'id' => $wpdb->insert_id, 'weight_lb' => $weight_lb, 'date' => $date ], 201 );
 	}
 
@@ -139,6 +141,8 @@ class BodyMetricsController {
 			return new \WP_REST_Response( [ 'message' => 'Could not update weight log.' ], 500 );
 		}
 
+		self::sync_user_awards( $user_id );
+
 		return new \WP_REST_Response( [ 'id' => $id, 'weight_lb' => $weight_lb, 'date' => $date, 'updated' => true ] );
 	}
 
@@ -165,6 +169,8 @@ class BodyMetricsController {
 			'hours_sleep'   => $hours,
 			'sleep_quality' => $quality ?: null,
 		], fn( $v ) => $v !== null ) );
+
+		self::sync_user_awards( $user_id );
 
 		return new \WP_REST_Response( [ 'id' => $wpdb->insert_id, 'hours_sleep' => $hours, 'date' => $date ], 201 );
 	}
@@ -206,6 +212,8 @@ class BodyMetricsController {
 			return new \WP_REST_Response( [ 'message' => 'Could not update sleep log.' ], 500 );
 		}
 
+		self::sync_user_awards( $user_id );
+
 		return new \WP_REST_Response( [ 'id' => $id, 'hours_sleep' => $hours, 'sleep_quality' => $quality, 'date' => $date, 'updated' => true ] );
 	}
 
@@ -240,6 +248,8 @@ class BodyMetricsController {
 				'steps'     => $steps,
 			] );
 		}
+
+		self::sync_user_awards( $user_id );
 
 		return new \WP_REST_Response( [ 'date' => $date, 'steps' => $steps ], 200 );
 	}
@@ -285,6 +295,8 @@ class BodyMetricsController {
 			);
 			$wpdb->delete( $wpdb->prefix . 'fit_step_logs', [ 'id' => $id, 'user_id' => $user_id ] );
 
+			self::sync_user_awards( $user_id );
+
 			return new \WP_REST_Response( [ 'id' => (int) $existing_for_date, 'steps' => $steps, 'date' => $date, 'merged' => true, 'updated' => true ] );
 		}
 
@@ -297,6 +309,8 @@ class BodyMetricsController {
 		if ( false === $updated ) {
 			return new \WP_REST_Response( [ 'message' => 'Could not update step log.' ], 500 );
 		}
+
+		self::sync_user_awards( $user_id );
 
 		return new \WP_REST_Response( [ 'id' => $id, 'steps' => $steps, 'date' => $date, 'updated' => true ] );
 	}
@@ -329,6 +343,8 @@ class BodyMetricsController {
 			'estimated_calories' => $req->get_param( 'estimated_calories' ) ? (int) $req->get_param( 'estimated_calories' ) : null,
 			'notes'              => sanitize_text_field( $req->get_param( 'notes' ) ?: '' ) ?: null,
 		], fn( $v ) => $v !== null ) );
+
+		self::sync_user_awards( $user_id );
 
 		return new \WP_REST_Response( [ 'id' => $wpdb->insert_id ], 201 );
 	}
@@ -381,6 +397,8 @@ class BodyMetricsController {
 		if ( false === $updated ) {
 			return new \WP_REST_Response( [ 'message' => 'Could not update cardio log.' ], 500 );
 		}
+
+		self::sync_user_awards( $user_id );
 
 		return new \WP_REST_Response( [ 'id' => $id, 'date' => $date, 'updated' => true ] );
 	}
@@ -479,7 +497,13 @@ class BodyMetricsController {
 			return new \WP_REST_Response( [ 'message' => 'Log not found.' ], 404 );
 		}
 
+		self::sync_user_awards( $user_id );
+
 		return new \WP_REST_Response( null, 204 );
+	}
+
+	private static function sync_user_awards( int $user_id ): void {
+		\Johnny5k\Services\AwardEngine::sync_user_awards( $user_id );
 	}
 
 	private static function normalize_cardio_intensity( $value ): string {
