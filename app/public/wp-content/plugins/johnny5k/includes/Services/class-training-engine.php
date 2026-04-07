@@ -26,25 +26,18 @@ class TrainingEngine {
 	* @param  string|null $day_type_override
 	 * @return array{session_id:int, day_type:string, exercises:array, skip_count:int, skip_warning:bool}|WP_Error
 	 */
-	public static function build_session( int $user_id, string $time_tier = 'medium', bool $maintenance_mode = false, ?string $day_type_override = null ) {
+	public static function build_session( int $user_id, string $time_tier = 'medium', bool $maintenance_mode = false, ?string $day_type_override = null, array $exercise_swaps = [], array $exercise_order = [] ) {
 		global $wpdb;
 		$p = $wpdb->prefix;
 
-		// ── Fetch active training plan ────────────────────────────────────────
-		$plan = $wpdb->get_row( $wpdb->prepare(
-			"SELECT * FROM {$p}fit_user_training_plans WHERE user_id = %d AND active = 1 ORDER BY created_at DESC LIMIT 1",
-			$user_id
-		) );
-		if ( ! $plan ) {
-			return new \WP_Error( 'no_plan', 'No active training plan found.' );
+		$blueprint = self::build_session_blueprint( $user_id, $time_tier, $maintenance_mode, $day_type_override, $exercise_swaps, $exercise_order );
+		if ( is_wp_error( $blueprint ) ) {
+			return $blueprint;
 		}
 
-		// ── Determine next day_type based on last completed session ───────────
-	$next_day_type = self::normalize_day_type( $day_type_override ) ?: self::next_day_type( $user_id, (int) $plan->id );
-
-		// ── Skip count check (rolling 30-day window, optional_sessions exempt) ─
-		$skip_count   = self::rolling_skip_count( $user_id );
-		$skip_warning = $skip_count >= 3;
+		$next_day_type = (string) $blueprint['day_type'];
+		$skip_count = (int) $blueprint['skip_count'];
+		$skip_warning = ! empty( $blueprint['skip_warning'] );
 
 		// ── Create session row ────────────────────────────────────────────────
 		$wpdb->insert( $p . 'fit_workout_sessions', [
@@ -58,71 +51,24 @@ class TrainingEngine {
 		] );
 		$session_id = (int) $wpdb->insert_id;
 
-		// ── Fetch exercises for this day_type from the plan ───────────────────
-		$day = $wpdb->get_row( $wpdb->prepare(
-			"SELECT * FROM {$p}fit_user_training_days
-			 WHERE training_plan_id = %d AND day_type = %s
-			 ORDER BY day_order LIMIT 1",
-			$plan->id, $next_day_type
-		) );
-
 		$exercises = [];
 
-		if ( $day ) {
-			$slot_limit = self::slot_limits_for_tier( $time_tier );
+		foreach ( (array) $blueprint['exercises'] as $exercise ) {
+			$order = count( $exercises ) + 1;
+			$wpdb->insert( $p . 'fit_workout_session_exercises', array_filter( [
+				'session_id'          => $session_id,
+				'exercise_id'         => (int) ( $exercise['exercise_id'] ?? 0 ),
+				'slot_type'           => (string) ( $exercise['slot_type'] ?? 'accessory' ),
+				'planned_rep_min'     => (int) ( $exercise['rep_min'] ?? 8 ),
+				'planned_rep_max'     => (int) ( $exercise['rep_max'] ?? 12 ),
+				'planned_sets'        => (int) ( $exercise['sets'] ?? 1 ),
+				'sort_order'          => $order,
+				'was_swapped'         => ! empty( $exercise['was_swapped'] ) ? 1 : 0,
+				'original_exercise_id'=> ! empty( $exercise['was_swapped'] ) ? (int) ( $exercise['original_exercise_id'] ?? 0 ) : null,
+			], static fn( $value ): bool => null !== $value ) );
 
-			$plan_exercises = $wpdb->get_results( $wpdb->prepare(
-				"SELECT ude.*, e.name AS exercise_name, e.default_rep_min, e.default_rep_max, e.default_sets
-				 FROM {$p}fit_user_training_day_exercises ude
-				 JOIN {$p}fit_exercises e ON e.id = ude.exercise_id
-				 WHERE ude.training_day_id = %d AND ude.active = 1
-				 ORDER BY ude.sort_order",
-				$day->id
-			) );
-
-			$selected_exercises = $maintenance_mode
-				? self::select_maintenance_exercises( $plan_exercises )
-				: $plan_exercises;
-
-			$slot_counts = [];
-			foreach ( $selected_exercises as $ex ) {
-				$slot = $ex->slot_type;
-				if ( isset( $slot_limit[ $slot ] ) ) {
-					$slot_counts[ $slot ] = ( $slot_counts[ $slot ] ?? 0 ) + 1;
-					if ( $slot_counts[ $slot ] > $slot_limit[ $slot ] ) continue;
-				}
-
-				// Apply progression recommendations
-				$prog = self::recommended_progression( $user_id, (int) $ex->exercise_id );
-
-				$planned_sets = $maintenance_mode ? self::maintenance_set_target( $slot, (int) $ex->sets_target ) : (int) $ex->sets_target;
-				$planned_rep_min = $maintenance_mode ? max( 5, (int) $ex->rep_min ) : (int) $ex->rep_min;
-				$planned_rep_max = $maintenance_mode ? max( $planned_rep_min, min( 12, (int) $ex->rep_max ) ) : (int) $ex->rep_max;
-
-				$order = count( $exercises ) + 1;
-				$wpdb->insert( $p . 'fit_workout_session_exercises', [
-					'session_id'      => $session_id,
-					'exercise_id'     => $ex->exercise_id,
-					'slot_type'       => $slot,
-					'planned_rep_min' => $planned_rep_min,
-					'planned_rep_max' => $planned_rep_max,
-					'planned_sets'    => $planned_sets,
-					'sort_order'      => $order,
-					'was_swapped'     => 0,
-				] );
-
-				$exercises[] = [
-					'session_exercise_id' => $wpdb->insert_id,
-					'exercise_id'         => (int) $ex->exercise_id,
-					'exercise_name'       => $ex->exercise_name,
-					'slot_type'           => $slot,
-					'rep_min'             => $planned_rep_min,
-					'rep_max'             => $planned_rep_max,
-					'sets'                => $planned_sets,
-					'suggested_weight'    => $prog['weight'],
-					'suggestion_note'     => $maintenance_mode ? 'Maintenance mode: clean reps and leave gas in the tank.' : $prog['note'],
-				];
-			}
+			$exercise['session_exercise_id'] = (int) $wpdb->insert_id;
+			$exercises[] = $exercise;
 		}
 
 		return [
@@ -131,6 +77,23 @@ class TrainingEngine {
 			'exercises'    => $exercises,
 			'skip_count'   => $skip_count,
 			'skip_warning' => $skip_warning,
+		];
+	}
+
+	public static function preview_session( int $user_id, string $time_tier = 'medium', bool $maintenance_mode = false, ?string $day_type_override = null, array $exercise_swaps = [], array $exercise_order = [] ) {
+		$blueprint = self::build_session_blueprint( $user_id, $time_tier, $maintenance_mode, $day_type_override, $exercise_swaps, $exercise_order );
+		if ( is_wp_error( $blueprint ) ) {
+			return $blueprint;
+		}
+
+		return [
+			'day_type'           => (string) $blueprint['day_type'],
+			'time_tier'          => $time_tier,
+			'session_mode'       => $maintenance_mode ? 'maintenance' : 'normal',
+			'plan_exercise_count'=> (int) $blueprint['plan_exercise_count'],
+			'skip_count'         => (int) $blueprint['skip_count'],
+			'skip_warning'       => ! empty( $blueprint['skip_warning'] ),
+			'exercises'          => array_values( (array) $blueprint['exercises'] ),
 		];
 	}
 
@@ -335,6 +298,174 @@ class TrainingEngine {
 		) );
 
 		return $first_active_day ? (string) $first_active_day : 'rest';
+	}
+
+	private static function build_session_blueprint( int $user_id, string $time_tier, bool $maintenance_mode, ?string $day_type_override, array $exercise_swaps, array $exercise_order ) {
+		global $wpdb;
+		$p = $wpdb->prefix;
+
+		$plan = $wpdb->get_row( $wpdb->prepare(
+			"SELECT * FROM {$p}fit_user_training_plans WHERE user_id = %d AND active = 1 ORDER BY created_at DESC LIMIT 1",
+			$user_id
+		) );
+		if ( ! $plan ) {
+			return new \WP_Error( 'no_plan', 'No active training plan found.' );
+		}
+
+		$next_day_type = self::normalize_day_type( $day_type_override ) ?: self::next_day_type( $user_id, (int) $plan->id );
+		$skip_count = self::rolling_skip_count( $user_id );
+		$skip_warning = $skip_count >= 3;
+
+		$day = $wpdb->get_row( $wpdb->prepare(
+			"SELECT * FROM {$p}fit_user_training_days
+			 WHERE training_plan_id = %d AND day_type = %s
+			 ORDER BY day_order LIMIT 1",
+			$plan->id,
+			$next_day_type
+		) );
+
+		$plan_exercises = [];
+		$exercises = [];
+		if ( $day ) {
+			$slot_limit = self::slot_limits_for_tier( $time_tier );
+			$plan_exercises = $wpdb->get_results( $wpdb->prepare(
+				"SELECT ude.*, e.name AS exercise_name, e.default_rep_min, e.default_rep_max, e.default_sets,
+				        e.primary_muscle, e.equipment, e.difficulty
+				 FROM {$p}fit_user_training_day_exercises ude
+				 JOIN {$p}fit_exercises e ON e.id = ude.exercise_id
+				 WHERE ude.training_day_id = %d AND ude.active = 1
+				 ORDER BY ude.sort_order",
+				$day->id
+			) );
+
+			$selected_exercises = $maintenance_mode
+				? self::select_maintenance_exercises( $plan_exercises )
+				: $plan_exercises;
+
+			$slot_counts = [];
+			foreach ( $selected_exercises as $exercise ) {
+				$slot = (string) $exercise->slot_type;
+				if ( isset( $slot_limit[ $slot ] ) ) {
+					$slot_counts[ $slot ] = ( $slot_counts[ $slot ] ?? 0 ) + 1;
+					if ( $slot_counts[ $slot ] > $slot_limit[ $slot ] ) {
+						continue;
+					}
+				}
+
+				$resolved_exercise = self::resolve_session_exercise_selection( $next_day_type, $exercise, (int) ( $exercise_swaps[ (int) $exercise->id ] ?? 0 ) );
+				$resolved_exercise_id = (int) ( $resolved_exercise['exercise_id'] ?? (int) $exercise->exercise_id );
+				$prog = self::recommended_progression( $user_id, $resolved_exercise_id );
+
+				$planned_sets = $maintenance_mode ? self::maintenance_set_target( $slot, (int) $exercise->sets_target ) : (int) $exercise->sets_target;
+				$planned_rep_min = $maintenance_mode ? max( 5, (int) $exercise->rep_min ) : (int) $exercise->rep_min;
+				$planned_rep_max = $maintenance_mode ? max( $planned_rep_min, min( 12, (int) $exercise->rep_max ) ) : (int) $exercise->rep_max;
+
+				$exercises[] = [
+					'plan_exercise_id'    => (int) $exercise->id,
+					'exercise_id'         => $resolved_exercise_id,
+					'original_exercise_id'=> (int) $exercise->exercise_id,
+					'original_exercise_name' => (string) $exercise->exercise_name,
+					'exercise_name'       => (string) ( $resolved_exercise['exercise_name'] ?? $exercise->exercise_name ),
+					'primary_muscle'      => (string) ( $resolved_exercise['primary_muscle'] ?? $exercise->primary_muscle ?? '' ),
+					'equipment'           => (string) ( $resolved_exercise['equipment'] ?? $exercise->equipment ?? '' ),
+					'difficulty'          => (string) ( $resolved_exercise['difficulty'] ?? $exercise->difficulty ?? '' ),
+					'slot_type'           => $slot,
+					'rep_min'             => $planned_rep_min,
+					'rep_max'             => $planned_rep_max,
+					'sets'                => $planned_sets,
+					'suggested_weight'    => $prog['weight'],
+					'suggestion_note'     => $maintenance_mode ? 'Maintenance mode: clean reps and leave gas in the tank.' : $prog['note'],
+					'was_swapped'         => ! empty( $resolved_exercise['was_swapped'] ),
+				];
+			}
+		}
+
+		$exercises = self::apply_exercise_order( $exercises, $exercise_order );
+
+		return [
+			'day_type'            => $next_day_type,
+			'skip_count'          => $skip_count,
+			'skip_warning'        => $skip_warning,
+			'plan_exercise_count' => count( $plan_exercises ),
+			'exercises'           => $exercises,
+		];
+	}
+
+	private static function apply_exercise_order( array $exercises, array $exercise_order ): array {
+		if ( empty( $exercises ) || empty( $exercise_order ) ) {
+			return $exercises;
+		}
+
+		$order_index = [];
+		foreach ( $exercise_order as $position => $plan_exercise_id ) {
+			$plan_exercise_id = (int) $plan_exercise_id;
+			if ( $plan_exercise_id > 0 ) {
+				$order_index[ $plan_exercise_id ] = $position;
+			}
+		}
+
+		if ( empty( $order_index ) ) {
+			return $exercises;
+		}
+
+		usort( $exercises, static function( array $left, array $right ) use ( $order_index ): int {
+			$left_index = $order_index[ (int) ( $left['plan_exercise_id'] ?? 0 ) ] ?? PHP_INT_MAX;
+			$right_index = $order_index[ (int) ( $right['plan_exercise_id'] ?? 0 ) ] ?? PHP_INT_MAX;
+
+			if ( $left_index === $right_index ) {
+				return ( (int) ( $left['plan_exercise_id'] ?? 0 ) ) <=> ( (int) ( $right['plan_exercise_id'] ?? 0 ) );
+			}
+
+			return $left_index <=> $right_index;
+		} );
+
+		return array_values( $exercises );
+	}
+
+	private static function resolve_session_exercise_selection( string $day_type, object $plan_exercise, int $swap_exercise_id ): array {
+		global $wpdb;
+		$p = $wpdb->prefix;
+
+		$selected = [
+			'exercise_id'    => (int) $plan_exercise->exercise_id,
+			'exercise_name'  => (string) $plan_exercise->exercise_name,
+			'primary_muscle' => (string) ( $plan_exercise->primary_muscle ?? '' ),
+			'equipment'      => (string) ( $plan_exercise->equipment ?? '' ),
+			'difficulty'     => (string) ( $plan_exercise->difficulty ?? '' ),
+			'was_swapped'    => false,
+		];
+
+		if ( $swap_exercise_id <= 0 || $swap_exercise_id === (int) $plan_exercise->exercise_id ) {
+			return $selected;
+		}
+
+		$day_json = '"' . esc_sql( $day_type ) . '"';
+		$slot_json = '"' . esc_sql( (string) $plan_exercise->slot_type ) . '"';
+		$override = $wpdb->get_row( $wpdb->prepare(
+			"SELECT id, name, primary_muscle, equipment, difficulty
+			 FROM {$p}fit_exercises
+			 WHERE id = %d
+			   AND active = 1
+			   AND JSON_CONTAINS(day_types_json, %s)
+			   AND JSON_CONTAINS(slot_types_json, %s)
+			 LIMIT 1",
+			$swap_exercise_id,
+			$day_json,
+			$slot_json
+		) );
+
+		if ( ! $override ) {
+			return $selected;
+		}
+
+		return [
+			'exercise_id'    => (int) $override->id,
+			'exercise_name'  => (string) $override->name,
+			'primary_muscle' => (string) ( $override->primary_muscle ?? '' ),
+			'equipment'      => (string) ( $override->equipment ?? '' ),
+			'difficulty'     => (string) ( $override->difficulty ?? '' ),
+			'was_swapped'    => true,
+		];
 	}
 
 	/**

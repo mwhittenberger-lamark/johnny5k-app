@@ -31,6 +31,12 @@ class WorkoutController {
 			'permission_callback' => $auth,
 		] );
 
+		register_rest_route( $ns, '/workout/preview', [
+			'methods'             => 'POST',
+			'callback'            => [ __CLASS__, 'preview' ],
+			'permission_callback' => $auth,
+		] );
+
 		register_rest_route( $ns, '/workout/current', [
 			'methods'             => 'GET',
 			'callback'            => [ __CLASS__, 'get_current_session' ],
@@ -150,6 +156,13 @@ class WorkoutController {
 			'args'                => [ 'id' => [ 'required' => true, 'type' => 'integer' ] ],
 		] );
 
+		register_rest_route( $ns, '/workout/(?P<id>\d+)/discard', [
+			'methods'             => 'POST',
+			'callback'            => [ __CLASS__, 'discard_session' ],
+			'permission_callback' => $auth,
+			'args'                => [ 'id' => [ 'required' => true, 'type' => 'integer' ] ],
+		] );
+
 		register_rest_route( $ns, '/workout/(?P<id>\d+)/complete', [
 			'methods'             => 'POST',
 			'callback'            => [ __CLASS__, 'complete_session' ],
@@ -166,20 +179,34 @@ class WorkoutController {
 		$day_type  = self::normalize_day_type( $req->get_param( 'day_type' ) );
 		$readiness = $req->get_param( 'readiness_score' ) !== null ? max( 1, min( 10, (int) $req->get_param( 'readiness_score' ) ) ) : null;
 		$effective_time_tier = self::effective_time_tier( $time_tier, $readiness );
+		$exercise_swaps = self::normalise_exercise_swaps( $req->get_param( 'exercise_swaps' ) );
+		$exercise_order = self::normalise_exercise_order( $req->get_param( 'exercise_order' ) );
 
 		// Prevent duplicate session for today
 		global $wpdb;
 		$today   = UserTime::today( $user_id );
-		$existing = $wpdb->get_var( $wpdb->prepare(
-			"SELECT id FROM {$wpdb->prefix}fit_workout_sessions
-			 WHERE user_id = %d AND session_date = %s AND completed = 0 AND skip_requested = 0",
-			$user_id, $today
+		$existing = $wpdb->get_row( $wpdb->prepare(
+			"SELECT id, planned_day_type FROM {$wpdb->prefix}fit_workout_sessions
+			 WHERE user_id = %d AND session_date = %s AND completed = 0 AND skip_requested = 0
+			 ORDER BY id DESC LIMIT 1",
+			$user_id,
+			$today
 		) );
+
+		if ( $existing ) {
+			$requested_prepared_plan = ! empty( $exercise_swaps ) || ! empty( $exercise_order );
+			$requested_day_change    = null !== $day_type && $day_type !== (string) $existing->planned_day_type;
+
+			if ( $requested_prepared_plan || $requested_day_change ) {
+				self::delete_active_sessions_for_date( $user_id, $today );
+				$existing = null;
+			}
+		}
 
 		if ( $existing ) {
 			$session_started_at = $wpdb->get_var( $wpdb->prepare(
 				"SELECT started_at FROM {$wpdb->prefix}fit_workout_sessions WHERE id = %d",
-				$existing
+				$existing->id
 			) );
 
 			if ( null !== $readiness ) {
@@ -187,18 +214,18 @@ class WorkoutController {
 					'readiness_score' => $readiness,
 					'started_at' => $session_started_at ?: current_time( 'mysql', true ),
 					'time_tier' => self::is_maintenance_readiness( $readiness ) ? $effective_time_tier : null,
-				], fn( $value ) => null !== $value ), [ 'id' => $existing ] );
+				], fn( $value ) => null !== $value ), [ 'id' => $existing->id ] );
 			} elseif ( ! $session_started_at ) {
 				$wpdb->update( $wpdb->prefix . 'fit_workout_sessions', [
 					'started_at' => current_time( 'mysql', true ),
-				], [ 'id' => $existing ] );
+				], [ 'id' => $existing->id ] );
 			}
 			// Return the existing session instead of creating a duplicate
-			$req->set_param( 'id', $existing );
+			$req->set_param( 'id', $existing->id );
 			return self::get_session( $req );
 		}
 
-		$result = TrainingEngine::build_session( $user_id, $effective_time_tier, self::is_maintenance_readiness( $readiness ), $day_type );
+		$result = TrainingEngine::build_session( $user_id, $effective_time_tier, self::is_maintenance_readiness( $readiness ), $day_type, $exercise_swaps, $exercise_order );
 
 		if ( is_wp_error( $result ) ) {
 			return new \WP_REST_Response( [ 'message' => $result->get_error_message() ], 400 );
@@ -215,6 +242,29 @@ class WorkoutController {
 		);
 
 		return new \WP_REST_Response( $result, 201 );
+	}
+
+	public static function preview( \WP_REST_Request $req ): \WP_REST_Response {
+		$user_id   = get_current_user_id();
+		$time_tier = sanitize_text_field( $req->get_param( 'time_tier' ) ?: 'medium' );
+		$day_type  = self::normalize_day_type( $req->get_param( 'day_type' ) );
+		$readiness = $req->get_param( 'readiness_score' ) !== null ? max( 1, min( 10, (int) $req->get_param( 'readiness_score' ) ) ) : null;
+		$effective_time_tier = self::effective_time_tier( $time_tier, $readiness );
+		$exercise_swaps = self::normalise_exercise_swaps( $req->get_param( 'exercise_swaps' ) );
+		$exercise_order = self::normalise_exercise_order( $req->get_param( 'exercise_order' ) );
+
+		$result = TrainingEngine::preview_session( $user_id, $effective_time_tier, self::is_maintenance_readiness( $readiness ), $day_type, $exercise_swaps, $exercise_order );
+		if ( is_wp_error( $result ) ) {
+			return new \WP_REST_Response( [ 'message' => $result->get_error_message() ], 400 );
+		}
+
+		$preview_day_type = (string) ( $result['day_type'] ?? $day_type ?? '' );
+		$result['exercises'] = array_map( static function( array $exercise ) use ( $preview_day_type ): array {
+			$exercise['swap_options'] = self::get_swap_options_for_day_type( $preview_day_type, (object) $exercise );
+			return $exercise;
+		}, is_array( $result['exercises'] ?? null ) ? $result['exercises'] : [] );
+
+		return new \WP_REST_Response( $result, 200 );
 	}
 
 	public static function get_current_session( \WP_REST_Request $req ): \WP_REST_Response {
@@ -296,7 +346,9 @@ class WorkoutController {
 		}
 
 		$exercises = $wpdb->get_results( $wpdb->prepare(
-			"SELECT wse.*, e.name AS exercise_name, e.primary_muscle, e.coaching_cues_json, e.equipment, e.difficulty, e.movement_pattern,
+			"SELECT wse.*, e.name AS exercise_name, e.description AS exercise_description, e.primary_muscle,
+			        e.secondary_muscles_json, e.coaching_cues_json, e.equipment, e.difficulty, e.movement_pattern,
+			        e.day_types_json, e.slot_types_json,
 			        oe.name AS original_exercise_name
 			 FROM {$p}fit_workout_session_exercises wse
 			 JOIN {$p}fit_exercises e ON e.id = wse.exercise_id
@@ -316,6 +368,10 @@ class WorkoutController {
 			$ex->suggestion_note = 'maintenance' === $session_mode
 				? 'Maintenance mode: get quality work in and stop well before grindy reps.'
 				: $progression['note'];
+			$ex->secondary_muscles = self::decode_json_list( $ex->secondary_muscles_json ?? '' );
+			$ex->coaching_cues     = self::decode_json_list( $ex->coaching_cues_json ?? '' );
+			$ex->day_types         = self::decode_json_list( $ex->day_types_json ?? '' );
+			$ex->slot_types        = self::decode_json_list( $ex->slot_types_json ?? '' );
 			$ex->exercise_summary = self::build_exercise_summary( $ex );
 			$ex->recent_history = self::get_recent_history( $user_id, (int) $ex->exercise_id );
 			$ex->swap_options   = self::get_swap_options( $session, $ex );
@@ -833,9 +889,34 @@ class WorkoutController {
 			return new \WP_REST_Response( [ 'message' => 'Completed sessions cannot be restarted.' ], 400 );
 		}
 
-		self::delete_session_records( $sess_id, $user_id );
+		self::delete_active_sessions_for_date( $user_id, (string) $session->session_date );
 
 		return new \WP_REST_Response( [ 'restarted' => true ] );
+	}
+
+	public static function discard_session( \WP_REST_Request $req ): \WP_REST_Response {
+		global $wpdb;
+		$p       = $wpdb->prefix;
+		$user_id = get_current_user_id();
+		$sess_id = (int) $req->get_param( 'id' );
+
+		$session = $wpdb->get_row( $wpdb->prepare(
+			"SELECT * FROM {$p}fit_workout_sessions WHERE id = %d AND user_id = %d",
+			$sess_id,
+			$user_id
+		) );
+
+		if ( ! $session ) {
+			return new \WP_REST_Response( [ 'message' => 'Session not found.' ], 404 );
+		}
+
+		if ( (int) $session->completed ) {
+			return new \WP_REST_Response( [ 'message' => 'Completed sessions cannot be discarded.' ], 400 );
+		}
+
+		self::discard_active_sessions_for_date( $user_id, (string) $session->session_date );
+
+		return new \WP_REST_Response( [ 'discarded' => true ] );
 	}
 
 	// ── POST /workout/{id}/complete ───────────────────────────────────────────
@@ -1066,6 +1147,90 @@ class WorkoutController {
 		$wpdb->delete( $p . 'fit_workout_sessions', [ 'id' => $session_id, 'user_id' => $user_id ], [ '%d', '%d' ] );
 	}
 
+	private static function delete_active_sessions_for_date( int $user_id, string $session_date ): void {
+		global $wpdb;
+		$p = $wpdb->prefix;
+
+		$session_ids = $wpdb->get_col( $wpdb->prepare(
+			"SELECT id FROM {$p}fit_workout_sessions
+			 WHERE user_id = %d
+			   AND session_date = %s
+			   AND completed = 0
+			   AND skip_requested = 0",
+			$user_id,
+			$session_date
+		) );
+
+		foreach ( array_map( 'intval', $session_ids ) as $session_id ) {
+			if ( $session_id > 0 ) {
+				self::deactivate_active_session_record( $session_id, $user_id );
+				self::delete_session_records( $session_id, $user_id );
+			}
+		}
+	}
+
+	private static function discard_active_sessions_for_date( int $user_id, string $session_date ): void {
+		global $wpdb;
+		$p = $wpdb->prefix;
+
+		$session_ids = $wpdb->get_col( $wpdb->prepare(
+			"SELECT id FROM {$p}fit_workout_sessions
+			 WHERE user_id = %d
+			   AND session_date = %s
+			   AND completed = 0
+			   AND skip_requested = 0",
+			$user_id,
+			$session_date
+		) );
+
+		foreach ( array_map( 'intval', $session_ids ) as $session_id ) {
+			if ( $session_id > 0 ) {
+				self::deactivate_active_session_record( $session_id, $user_id );
+			}
+		}
+	}
+
+	private static function delete_active_sessions_for_user( int $user_id ): void {
+		global $wpdb;
+		$p = $wpdb->prefix;
+
+		$session_ids = $wpdb->get_col( $wpdb->prepare(
+			"SELECT id FROM {$p}fit_workout_sessions
+			 WHERE user_id = %d
+			   AND completed = 0
+			   AND skip_requested = 0",
+			$user_id
+		) );
+
+		foreach ( array_map( 'intval', $session_ids ) as $session_id ) {
+			if ( $session_id > 0 ) {
+				self::deactivate_active_session_record( $session_id, $user_id );
+				self::delete_session_records( $session_id, $user_id );
+			}
+		}
+	}
+
+	private static function deactivate_active_session_record( int $session_id, int $user_id ): void {
+		global $wpdb;
+		$p = $wpdb->prefix;
+
+		$wpdb->update(
+			$p . 'fit_workout_sessions',
+			[
+				'skip_requested' => 1,
+				'is_optional_session' => 1,
+				'ai_summary' => null,
+			],
+			[
+				'id' => $session_id,
+				'user_id' => $user_id,
+				'completed' => 0,
+			],
+			[ '%d', '%d', '%s' ],
+			[ '%d', '%d', '%d' ]
+		);
+	}
+
 	private static function move_session_snapshots( int $session_id, int $user_id, string $from_date, string $to_date ): void {
 		global $wpdb;
 		$p = $wpdb->prefix;
@@ -1171,10 +1336,14 @@ class WorkoutController {
 	}
 
 	private static function get_swap_options( object $session, object $exercise ): array {
+		return self::get_swap_options_for_day_type( (string) $session->planned_day_type, $exercise );
+	}
+
+	private static function get_swap_options_for_day_type( string $day_type, object $exercise ): array {
 		global $wpdb;
 		$p = $wpdb->prefix;
 
-		$day_json  = '"' . esc_sql( $session->planned_day_type ) . '"';
+		$day_json  = '"' . esc_sql( $day_type ) . '"';
 		$slot_json = '"' . esc_sql( $exercise->slot_type ) . '"';
 
 		$options = $wpdb->get_results( $wpdb->prepare(
@@ -1216,6 +1385,41 @@ class WorkoutController {
 		return is_array( $options ) ? $options : [];
 	}
 
+	private static function normalise_exercise_swaps( $value ): array {
+		if ( ! is_array( $value ) ) {
+			return [];
+		}
+
+		$swaps = [];
+		foreach ( $value as $item ) {
+			$payload = is_array( $item ) ? $item : (array) $item;
+			$plan_exercise_id = isset( $payload['plan_exercise_id'] ) ? (int) $payload['plan_exercise_id'] : 0;
+			$exercise_id = isset( $payload['exercise_id'] ) ? (int) $payload['exercise_id'] : ( isset( $payload['replacement_exercise_id'] ) ? (int) $payload['replacement_exercise_id'] : 0 );
+
+			if ( $plan_exercise_id > 0 && $exercise_id > 0 ) {
+				$swaps[ $plan_exercise_id ] = $exercise_id;
+			}
+		}
+
+		return $swaps;
+	}
+
+	private static function normalise_exercise_order( $value ): array {
+		if ( ! is_array( $value ) ) {
+			return [];
+		}
+
+		$order = [];
+		foreach ( $value as $plan_exercise_id ) {
+			$plan_exercise_id = (int) $plan_exercise_id;
+			if ( $plan_exercise_id > 0 && ! in_array( $plan_exercise_id, $order, true ) ) {
+				$order[] = $plan_exercise_id;
+			}
+		}
+
+		return $order;
+	}
+
 	private static function build_swap_reason( object $current, object $candidate ): string {
 		$reasons = [];
 
@@ -1239,6 +1443,11 @@ class WorkoutController {
 	}
 
 	private static function build_exercise_summary( object $exercise ): string {
+		$description = sanitize_text_field( (string) ( $exercise->exercise_description ?? '' ) );
+		if ( '' !== $description ) {
+			return $description;
+		}
+
 		$movement  = self::humanize_token( (string) ( $exercise->movement_pattern ?? '' ) );
 		$muscle    = self::humanize_token( (string) ( $exercise->primary_muscle ?? '' ) );
 		$equipment = self::humanize_token( (string) ( $exercise->equipment ?? '' ) );
@@ -1256,6 +1465,23 @@ class WorkoutController {
 		}
 
 		return $summary;
+	}
+
+	private static function decode_json_list( $value ): array {
+		if ( is_array( $value ) ) {
+			return array_values( array_filter( array_map( 'sanitize_text_field', $value ) ) );
+		}
+
+		if ( ! is_string( $value ) || '' === $value ) {
+			return [];
+		}
+
+		$decoded = json_decode( $value, true );
+		if ( ! is_array( $decoded ) ) {
+			return [];
+		}
+
+		return array_values( array_filter( array_map( 'sanitize_text_field', $decoded ) ) );
 	}
 
 	private static function humanize_token( string $value ): string {

@@ -64,6 +64,18 @@ class OnboardingController {
 			'callback'            => [ __CLASS__, 'update_training_schedule' ],
 			'permission_callback' => $auth,
 		] );
+
+		register_rest_route( $ns, '/onboarding/sms-reminders', [
+			'methods'             => 'GET',
+			'callback'            => [ __CLASS__, 'get_sms_reminders' ],
+			'permission_callback' => $auth,
+		] );
+
+		register_rest_route( $ns, '/onboarding/sms-reminders/(?P<id>[a-z0-9\-]+)', [
+			'methods'             => 'DELETE',
+			'callback'            => [ __CLASS__, 'cancel_sms_reminder' ],
+			'permission_callback' => $auth,
+		] );
 	}
 
 	// ── GET /onboarding ───────────────────────────────────────────────────────
@@ -98,6 +110,7 @@ class OnboardingController {
 			'profile'             => $profile,
 			'prefs'               => self::decode_preferences( $prefs ),
 			'goal'                => $goal,
+			'color_schemes'       => AdminApiController::get_color_schemes_config(),
 			'health_flags'        => $health_flags,
 			'progress_photos'     => $progress_photos,
 			'completion_ready'    => empty( $missing_fields ),
@@ -405,6 +418,25 @@ class OnboardingController {
 			'saved' => true,
 			'week_split' => self::get_plan_preview( $user_id ),
 		], 200 );
+	}
+
+	public static function get_sms_reminders( \WP_REST_Request $req ): \WP_REST_Response {
+		$user_id = get_current_user_id();
+
+		return new \WP_REST_Response( \Johnny5k\Services\SmsService::list_user_reminders( $user_id ), 200 );
+	}
+
+	public static function cancel_sms_reminder( \WP_REST_Request $req ): \WP_REST_Response {
+		$user_id = get_current_user_id();
+		$reminder_id = sanitize_text_field( (string) $req->get_param( 'id' ) );
+		$result = \Johnny5k\Services\SmsService::cancel_user_reminder( $user_id, $reminder_id );
+
+		if ( is_wp_error( $result ) ) {
+			$status = 'not_found' === $result->get_error_code() ? 404 : 400;
+			return new \WP_REST_Response( [ 'message' => $result->get_error_message() ], $status );
+		}
+
+		return new \WP_REST_Response( [ 'canceled' => true, 'reminder' => $result ], 200 );
 	}
 
 	// ── Seed default training plan ────────────────────────────────────────────

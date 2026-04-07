@@ -4,6 +4,10 @@ import { BrowserRouter } from 'react-router-dom'
 import App from './App.jsx'
 import './index.css'
 
+const LOCAL_SW_RESET_KEY = 'jf-local-sw-reset-v1'
+
+void resetLocalServiceWorkerCaches()
+
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <BrowserRouter>
@@ -11,3 +15,34 @@ createRoot(document.getElementById('root')).render(
     </BrowserRouter>
   </StrictMode>,
 )
+
+async function resetLocalServiceWorkerCaches() {
+  if (typeof window === 'undefined' || typeof navigator === 'undefined') {
+    return
+  }
+
+  const hostname = String(window.location.hostname || '').toLowerCase()
+  const isLocalHost = hostname === 'localhost' || hostname === '127.0.0.1' || hostname.endsWith('.local')
+
+  if (!isLocalHost || !('serviceWorker' in navigator) || !('caches' in window)) {
+    return
+  }
+
+  if (window.sessionStorage.getItem(LOCAL_SW_RESET_KEY) === 'done') {
+    return
+  }
+
+  const registrations = await navigator.serviceWorker.getRegistrations()
+  if (!registrations.length) {
+    window.sessionStorage.setItem(LOCAL_SW_RESET_KEY, 'done')
+    return
+  }
+
+  await Promise.all(registrations.map(registration => registration.unregister()))
+
+  const cacheKeys = await window.caches.keys()
+  await Promise.all(cacheKeys.map(cacheKey => window.caches.delete(cacheKey)))
+
+  window.sessionStorage.setItem(LOCAL_SW_RESET_KEY, 'done')
+  window.location.reload()
+}

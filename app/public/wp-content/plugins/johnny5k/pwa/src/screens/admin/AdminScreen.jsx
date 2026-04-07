@@ -1,9 +1,22 @@
 import { useEffect, useState } from 'react'
 import { adminApi } from '../../api/client'
 import AppIcon, { normalizeAppIconName } from '../../components/ui/AppIcon'
+import { getColorSchemeOptions, setAvailableColorSchemes } from '../../lib/theme'
 
 const TABS = ['invites', 'costs', 'persona', 'users', 'exercises', 'awards', 'recipes', 'settings']
 const AWARD_ICON_OPTIONS = ['award', 'trophy', 'star', 'flame', 'bolt']
+const COLOR_FIELDS = ['bg', 'bg2', 'bg3', 'border', 'text', 'textMuted', 'accent', 'accent2', 'accent3', 'danger', 'success', 'yellow']
+
+function createEmptyColorScheme(index = 0) {
+  const fallback = getColorSchemeOptions()[0]
+
+  return {
+    id: `scheme-${Date.now()}-${index}`,
+    label: `New Scheme ${index + 1}`,
+    description: 'Custom color scheme',
+    colors: { ...(fallback?.colors ?? {}) },
+  }
+}
 
 export default function AdminScreen() {
   const [tab, setTab] = useState('invites')
@@ -100,30 +113,52 @@ function CostTab() {
 function PersonaTab() {
   const [persona, setPersona] = useState({ name: '', tagline: '', tone: '', rules: '', extra: '' })
   const [systemPrompt, setSystemPrompt] = useState('')
+  const [promptSource, setPromptSource] = useState('default')
   const [contractChecks, setContractChecks] = useState([])
   const [contractResults, setContractResults] = useState([])
   const [chatMsg, setChatMsg] = useState('')
   const [chatReply, setChatReply] = useState('')
   const [chatSources, setChatSources] = useState([])
+  const [chatWhy, setChatWhy] = useState('')
+  const [chatContextUsed, setChatContextUsed] = useState([])
+  const [chatConfidence, setChatConfidence] = useState('')
   const [timePreviewMsg, setTimePreviewMsg] = useState('Give me a helpful snack suggestion right now.')
   const [timePreviewResults, setTimePreviewResults] = useState([])
   const [actionPreviewMsg, setActionPreviewMsg] = useState('Look at my nutrition today and take the next best action.')
   const [actionPreviewReply, setActionPreviewReply] = useState('')
   const [actionPreviewActions, setActionPreviewActions] = useState([])
+  const [actionPreviewWhy, setActionPreviewWhy] = useState('')
+  const [actionPreviewContextUsed, setActionPreviewContextUsed] = useState([])
+  const [actionPreviewConfidence, setActionPreviewConfidence] = useState('')
   const [saving, setSaving] = useState(false)
   const [testing, setTesting] = useState(false)
   const [runningContractChecks, setRunningContractChecks] = useState(false)
   const [previewingTime, setPreviewingTime] = useState(false)
   const [previewingActions, setPreviewingActions] = useState(false)
+  const [qaUsers, setQaUsers] = useState([])
+  const [followUpQaUserId, setFollowUpQaUserId] = useState('')
+  const [followUpQa, setFollowUpQa] = useState(null)
+  const [loadingFollowUpQa, setLoadingFollowUpQa] = useState(false)
   const [msg, setMsg] = useState('')
 
   useEffect(() => {
     adminApi.getPersona().then(d => {
       setPersona(d.persona ?? {})
       setSystemPrompt(d.system_prompt ?? '')
+      setPromptSource(d.prompt_source ?? 'default')
       setContractChecks(Array.isArray(d.contract_checks) ? d.contract_checks : [])
     }).catch(() => {})
   }, [])
+
+  useEffect(() => {
+    adminApi.users().then(data => {
+      setQaUsers(Array.isArray(data) ? data : [])
+    }).catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    loadFollowUpQa(followUpQaUserId)
+  }, [followUpQaUserId])
 
   function update(k, v) { setPersona(p => ({ ...p, [k]: v })) }
 
@@ -133,9 +168,21 @@ function PersonaTab() {
     try {
       const data = await adminApi.savePersona(persona)
       setSystemPrompt(data.system_prompt)
+      setPromptSource('custom')
       setMsg('Saved!')
     } catch (err) { setMsg('Error: ' + err.message) }
     setSaving(false)
+  }
+
+  async function loadFollowUpQa(userId = '') {
+    setLoadingFollowUpQa(true)
+    try {
+      const data = await adminApi.personaFollowUps(userId || undefined)
+      setFollowUpQa(data)
+    } catch (err) {
+      setMsg('Error: ' + err.message)
+    }
+    setLoadingFollowUpQa(false)
   }
 
   async function testChat(e) {
@@ -143,10 +190,16 @@ function PersonaTab() {
     setTesting(true)
     setChatReply('')
     setChatSources([])
+    setChatWhy('')
+    setChatContextUsed([])
+    setChatConfidence('')
     try {
       const data = await adminApi.testPersona(chatMsg)
       setChatReply(data.reply)
       setChatSources(data.sources ?? [])
+      setChatWhy(data.why || '')
+      setChatContextUsed(Array.isArray(data.context_used) ? data.context_used : [])
+      setChatConfidence(data.confidence || '')
     } catch (err) { setChatReply('Error: ' + err.message) }
     setTesting(false)
   }
@@ -167,10 +220,16 @@ function PersonaTab() {
     setPreviewingActions(true)
     setActionPreviewReply('')
     setActionPreviewActions([])
+    setActionPreviewWhy('')
+    setActionPreviewContextUsed([])
+    setActionPreviewConfidence('')
     try {
       const data = await adminApi.previewPersonaActions(actionPreviewMsg)
       setActionPreviewReply(data.reply || '')
       setActionPreviewActions(Array.isArray(data.actions) ? data.actions : [])
+      setActionPreviewWhy(data.why || '')
+      setActionPreviewContextUsed(Array.isArray(data.context_used) ? data.context_used : [])
+      setActionPreviewConfidence(data.confidence || '')
     } catch (err) { setMsg('Error: ' + err.message) }
     setPreviewingActions(false)
   }
@@ -243,6 +302,11 @@ function PersonaTab() {
         </details>
       )}
 
+      <div className="chat-msg assistant">
+        <p><strong>Live prompt source:</strong> {promptSource === 'custom' ? 'Custom Personality Editor prompt is active.' : 'Default fallback persona is active.'}</p>
+        <p><strong>Test mode:</strong> Admin test chat now runs as a stateless preview against the current compiled prompt, so old thread memory does not blur persona QA.</p>
+      </div>
+
       <h3>Persona Contract QA</h3>
       <p className="settings-subtitle">Run fixed checks for concise coaching, non-corporate tone, data use, and honest next-step guidance.</p>
       <div className="chat-sources">
@@ -278,6 +342,7 @@ function PersonaTab() {
       ) : null}
 
       <h3>Test Chat</h3>
+      <p className="settings-subtitle">Stateless preview using the current saved persona prompt.</p>
       <form onSubmit={testChat} className="test-chat-form">
         <input type="text" value={chatMsg} onChange={e => setChatMsg(e.target.value)} placeholder="Say something…" required />
         <button type="submit" className="btn-secondary" disabled={testing}>{testing ? '…' : 'Send'}</button>
@@ -285,6 +350,9 @@ function PersonaTab() {
       {chatReply && (
         <div className="chat-msg assistant">
           <p>{chatReply}</p>
+          {chatWhy ? <p><strong>Why:</strong> {chatWhy}</p> : null}
+          {chatConfidence ? <p><strong>Confidence:</strong> {chatConfidence}</p> : null}
+          {chatContextUsed.length > 0 ? <p><strong>Context used:</strong> {chatContextUsed.join(' | ')}</p> : null}
           {chatSources.length > 0 && (
             <div className="chat-sources">
               {chatSources.map(source => (
@@ -308,6 +376,9 @@ function PersonaTab() {
             <div key={result.key} className="chat-msg assistant">
               <p><strong>{result.label}</strong> · {result.preview_datetime}</p>
               <p>{result.reply}</p>
+              {result.why ? <p><strong>Why:</strong> {result.why}</p> : null}
+              {result.confidence ? <p><strong>Confidence:</strong> {result.confidence}</p> : null}
+              {Array.isArray(result.context_used) && result.context_used.length ? <p><strong>Context used:</strong> {result.context_used.join(' | ')}</p> : null}
             </div>
           ))}
         </div>
@@ -321,9 +392,60 @@ function PersonaTab() {
       {actionPreviewReply ? (
         <div className="chat-msg assistant">
           <p>{actionPreviewReply}</p>
+          {actionPreviewWhy ? <p><strong>Why:</strong> {actionPreviewWhy}</p> : null}
+          {actionPreviewConfidence ? <p><strong>Confidence:</strong> {actionPreviewConfidence}</p> : null}
+          {actionPreviewContextUsed.length > 0 ? <p><strong>Context used:</strong> {actionPreviewContextUsed.join(' | ')}</p> : null}
           <pre>{JSON.stringify(actionPreviewActions, null, 2)}</pre>
         </div>
       ) : null}
+
+    <h3>Follow-Up History QA</h3>
+    <p className="settings-subtitle">Inspect current pending commitments, missed commitments, and recent follow-up outcomes for any user.</p>
+    <div className="test-chat-form">
+      <select value={followUpQaUserId} onChange={e => setFollowUpQaUserId(e.target.value)}>
+        <option value="">Current admin user</option>
+        {qaUsers.map(user => (
+          <option key={user.user_id} value={String(user.user_id)}>
+            {user.first_name ? `${user.first_name} · ${user.user_email}` : user.user_email}
+          </option>
+        ))}
+      </select>
+      <button type="button" className="btn-secondary" onClick={() => loadFollowUpQa(followUpQaUserId)} disabled={loadingFollowUpQa}>
+        {loadingFollowUpQa ? '…' : 'Refresh'}
+      </button>
+    </div>
+    {followUpQa ? (
+      <div className="chat-sources">
+        <div className="chat-msg assistant">
+          <p><strong>User:</strong> {followUpQa.user?.display_name || followUpQa.user?.email || `User ${followUpQa.user?.id}`}</p>
+          <p><strong>Pending:</strong> {followUpQa.overview?.pending_count ?? 0} | <strong>Missed:</strong> {followUpQa.overview?.missed_count ?? 0} | <strong>Overdue:</strong> {followUpQa.overview?.overdue_count ?? 0} | <strong>Completed 14d:</strong> {followUpQa.overview?.completed_last_14_days ?? 0}</p>
+          {followUpQa.overview?.recent_summary ? <p><strong>Summary:</strong> {followUpQa.overview.recent_summary}</p> : null}
+        </div>
+        {(followUpQa.overview?.missed_items ?? []).map(item => (
+          <div key={`missed-${item.id}`} className="chat-msg assistant">
+            <p><strong>Missed commitment</strong></p>
+            <p>{item.prompt}</p>
+            {item.reason ? <p><strong>Reason:</strong> {item.reason}</p> : null}
+            {item.due_at ? <p><strong>Due:</strong> {item.due_at}</p> : null}
+          </div>
+        ))}
+        {(followUpQa.pending ?? []).slice(0, 6).map(item => (
+          <div key={item.id} className="chat-msg assistant">
+            <p><strong>{String(item.status || 'pending').toUpperCase()}</strong></p>
+            <p>{item.prompt}</p>
+            {item.reason ? <p><strong>Reason:</strong> {item.reason}</p> : null}
+            {item.due_at ? <p><strong>Due:</strong> {item.due_at}</p> : null}
+          </div>
+        ))}
+        {(followUpQa.overview?.history ?? []).slice(0, 6).map((item, index) => (
+          <div key={`${item.id || index}-${item.changed_at || ''}`} className="chat-msg assistant">
+            <p><strong>{String(item.state || 'updated').toUpperCase()}</strong> · {item.changed_at || 'Unknown time'}</p>
+            <p>{item.prompt}</p>
+            {item.reason ? <p><strong>Reason:</strong> {item.reason}</p> : null}
+          </div>
+        ))}
+      </div>
+    ) : null}
     </div>
   )
 }
@@ -607,7 +729,7 @@ function RecipesTab() {
               <div key={`${item.recipe_name}-${index}`} className="admin-card-row">
                 <div>
                   <strong>{item.recipe_name}</strong>
-                  <p>{item.meal_type} · {Math.round(item.estimated_calories || 0)} kcal · {Math.round(item.estimated_protein_g || 0)}g protein</p>
+                  <p>{item.meal_type} · {Math.round(item.estimated_calories || 0)} Calories · {Math.round(item.estimated_protein_g || 0)}g protein</p>
                   <p>{(item.ingredients ?? []).join(', ')}</p>
                   {item.why_this_works ? <p>{item.why_this_works}</p> : null}
                   {item.source_url ? <a href={item.source_url} target="_blank" rel="noreferrer">{item.source_title || item.source_url}</a> : null}
@@ -642,10 +764,18 @@ function SettingsTab() {
       progress_photo_compare_debug_enabled: 0,
     },
     feature_flags: {},
+    color_schemes: getColorSchemeOptions(),
   })
   const [msg, setMsg] = useState('')
 
-  useEffect(() => { adminApi.settings().then(setSettings).catch(() => {}) }, [])
+  useEffect(() => {
+    adminApi.settings()
+      .then(data => {
+        const schemes = setAvailableColorSchemes(data?.color_schemes)
+        setSettings({ ...data, color_schemes: schemes })
+      })
+      .catch(() => {})
+  }, [])
 
   function updateAi(field, value) {
     setSettings(current => ({ ...current, ai_settings: { ...current.ai_settings, [field]: value } }))
@@ -655,9 +785,42 @@ function SettingsTab() {
     setSettings(current => ({ ...current, feature_flags: { ...current.feature_flags, [field]: checked ? 1 : 0 } }))
   }
 
+  function updateScheme(index, field, value) {
+    setSettings(current => ({
+      ...current,
+      color_schemes: current.color_schemes.map((scheme, schemeIndex) => (
+        schemeIndex === index ? { ...scheme, [field]: value } : scheme
+      )),
+    }))
+  }
+
+  function updateSchemeColor(index, colorKey, value) {
+    setSettings(current => ({
+      ...current,
+      color_schemes: current.color_schemes.map((scheme, schemeIndex) => (
+        schemeIndex === index ? { ...scheme, colors: { ...scheme.colors, [colorKey]: value } } : scheme
+      )),
+    }))
+  }
+
+  function addScheme() {
+    setSettings(current => ({
+      ...current,
+      color_schemes: [...(current.color_schemes ?? []), createEmptyColorScheme((current.color_schemes ?? []).length)],
+    }))
+  }
+
+  function removeScheme(index) {
+    setSettings(current => ({
+      ...current,
+      color_schemes: (current.color_schemes ?? []).filter((_, schemeIndex) => schemeIndex !== index),
+    }))
+  }
+
   async function save(event) {
     event.preventDefault()
     await adminApi.saveSettings(settings)
+    setAvailableColorSchemes(settings.color_schemes)
     setMsg('Settings saved.')
   }
 
@@ -673,6 +836,48 @@ function SettingsTab() {
       {Object.keys(settings.feature_flags ?? {}).map(key => (
         <label key={key} className="toggle-row"><input type="checkbox" checked={!!settings.feature_flags[key]} onChange={e => updateFlag(key, e.target.checked)} /> {key}</label>
       ))}
+      <div className="admin-settings-section">
+        <div className="admin-settings-section-head">
+          <h3>Color schemes</h3>
+          <button className="btn-secondary small" type="button" onClick={addScheme}>Add color scheme</button>
+        </div>
+        <p className="settings-subtitle">These schemes drive the profile selector in the app. The first scheme becomes the fallback default.</p>
+        <div className="admin-color-scheme-list">
+          {(settings.color_schemes ?? []).map((scheme, index) => (
+            <div key={`${scheme.id}-${index}`} className="admin-color-scheme-card">
+              <div className="admin-color-scheme-head">
+                <strong>Scheme {index + 1}</strong>
+                <button className="btn-danger small" type="button" onClick={() => removeScheme(index)} disabled={(settings.color_schemes ?? []).length <= 1}>Remove</button>
+              </div>
+              <div className="admin-color-scheme-meta">
+                <label>
+                  <span>ID</span>
+                  <input value={scheme.id ?? ''} onChange={e => updateScheme(index, 'id', e.target.value)} />
+                </label>
+                <label>
+                  <span>Label</span>
+                  <input value={scheme.label ?? ''} onChange={e => updateScheme(index, 'label', e.target.value)} />
+                </label>
+                <label className="admin-color-scheme-description">
+                  <span>Description</span>
+                  <input value={scheme.description ?? ''} onChange={e => updateScheme(index, 'description', e.target.value)} />
+                </label>
+              </div>
+              <div className="admin-color-grid">
+                {COLOR_FIELDS.map(colorKey => (
+                  <label key={colorKey} className="admin-color-field">
+                    <span>{colorKey}</span>
+                    <div className="admin-color-input-row">
+                      <input type="color" value={scheme.colors?.[colorKey] ?? '#000000'} onChange={e => updateSchemeColor(index, colorKey, e.target.value)} />
+                      <input value={scheme.colors?.[colorKey] ?? ''} onChange={e => updateSchemeColor(index, colorKey, e.target.value)} />
+                    </div>
+                  </label>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
       {msg ? <p className="success-msg">{msg}</p> : null}
       <button className="btn-primary" type="submit">Save settings</button>
     </form>
