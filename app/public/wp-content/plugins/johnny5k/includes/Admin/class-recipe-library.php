@@ -15,7 +15,8 @@ class RecipeLibrary {
 		$state = self::handle_post();
 		$recipes = self::get_recipe_library();
 
-		echo '<div class="wrap">';
+		echo '<div class="wrap jf-recipe-library">';
+		self::render_styles();
 		echo '<h1>Johnny5k Recipe Library</h1>';
 		echo '<p>Manage the shared recipe library and import new ideas with AI-backed recipe search.</p>';
 
@@ -27,13 +28,13 @@ class RecipeLibrary {
 			echo '<div class="notice notice-success is-dismissible"><p>' . esc_html( $message ) . '</p></div>';
 		}
 
-		echo '<div style="display:grid;grid-template-columns:minmax(320px,420px) minmax(320px,1fr);gap:24px;align-items:start;">';
-		echo '<div>';
+		echo '<div class="jf-recipe-library__layout">';
+		echo '<div class="jf-recipe-library__sidebar">';
 		self::render_manual_form( $state['form'] );
 		self::render_discovery_form( $state['finder'] );
 		echo '</div>';
 
-		echo '<div>';
+		echo '<div class="jf-recipe-library__content">';
 		if ( ! empty( $state['discoveries'] ) ) {
 			self::render_discoveries( $state['discoveries'] );
 		}
@@ -85,6 +86,51 @@ class RecipeLibrary {
 				$state['form'] = self::empty_recipe_form( $recipe['meal_type'] );
 				return $state;
 
+			case 'save_discoveries':
+				check_admin_referer( 'jf_recipe_library_save_discoveries' );
+				$discoveries = self::decode_discoveries_payload( $_POST['discoveries_payload'] ?? '' );
+				$state['discoveries'] = $discoveries;
+
+				if ( empty( $discoveries ) ) {
+					$state['errors'][] = 'No AI recipes were available to save.';
+					return $state;
+				}
+
+				$save_mode = sanitize_key( (string) ( $_POST['save_mode'] ?? 'selected' ) );
+				$indexes   = 'all' === $save_mode
+					? array_keys( $discoveries )
+					: array_values( array_unique( array_map( 'intval', (array) ( $_POST['selected_discoveries'] ?? [] ) ) ) );
+
+				if ( empty( $indexes ) ) {
+					$state['errors'][] = 'Select at least one AI recipe to save.';
+					return $state;
+				}
+
+				$saved_count = 0;
+				foreach ( $indexes as $index ) {
+					if ( ! isset( $discoveries[ $index ] ) || ! is_array( $discoveries[ $index ] ) ) {
+						continue;
+					}
+
+					$recipe = self::normalise_recipe( $discoveries[ $index ] );
+					if ( '' === $recipe['recipe_name'] || empty( $recipe['ingredients'] ) || empty( $recipe['instructions'] ) ) {
+						continue;
+					}
+
+					self::upsert_recipe( $recipe );
+					++$saved_count;
+				}
+
+				if ( 0 === $saved_count ) {
+					$state['errors'][] = 'None of the selected AI recipes could be saved.';
+					return $state;
+				}
+
+				$state['messages'][] = 1 === $saved_count
+					? 'Saved 1 AI recipe to the library.'
+					: sprintf( 'Saved %d AI recipes to the library.', $saved_count );
+				return $state;
+
 			case 'discover_recipes':
 				check_admin_referer( 'jf_recipe_library_discover' );
 				$finder = [
@@ -119,8 +165,35 @@ class RecipeLibrary {
 		return $state;
 	}
 
+	private static function render_styles(): void {
+		echo '<style>
+			.jf-recipe-library__layout{display:grid;grid-template-columns:minmax(320px,420px) minmax(0,1fr);gap:24px;align-items:start}
+			.jf-recipe-library__sidebar,.jf-recipe-library__content{min-width:0}
+			.jf-recipe-library__card{background:#fff;border:1px solid #dcdcde;border-radius:8px;padding:20px}
+			.jf-recipe-library__card + .jf-recipe-library__card{margin-top:24px}
+			.jf-recipe-library .form-table,.jf-recipe-library .form-table tbody,.jf-recipe-library .form-table tr,.jf-recipe-library .form-table td{width:100%}
+			.jf-recipe-library .form-table th{width:140px}
+			.jf-recipe-library .form-table input.regular-text,
+			.jf-recipe-library .form-table input[type="url"],
+			.jf-recipe-library .form-table input[type="number"],
+			.jf-recipe-library .form-table textarea.large-text{width:100%;max-width:100%;box-sizing:border-box}
+			.jf-recipe-library__results-header{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+			.jf-recipe-library__results-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+			.jf-recipe-library__discovery{border-top:1px solid #f0f0f1;padding:16px 0}
+			.jf-recipe-library__discovery:first-of-type{border-top:0;padding-top:0}
+			.jf-recipe-library__discovery label{display:flex;gap:10px;align-items:flex-start}
+			.jf-recipe-library__discovery input[type="checkbox"]{margin-top:2px}
+			.jf-recipe-library__discovery-body{min-width:0;flex:1}
+			.jf-recipe-library__table{table-layout:fixed}
+			.jf-recipe-library__table th,.jf-recipe-library__table td{vertical-align:top;word-break:break-word}
+			@media (max-width: 1200px){
+				.jf-recipe-library__layout{grid-template-columns:1fr}
+			}
+		</style>';
+	}
+
 	private static function render_manual_form( array $form ): void {
-		echo '<form method="post" style="background:#fff;border:1px solid #dcdcde;border-radius:8px;padding:20px;margin-bottom:24px;">';
+		echo '<form method="post" class="jf-recipe-library__card">';
 		echo '<h2 style="margin-top:0">Add Recipe</h2>';
 		echo '<input type="hidden" name="jf_recipe_action" value="save_recipe">';
 		wp_nonce_field( 'jf_recipe_library_save' );
@@ -149,7 +222,7 @@ class RecipeLibrary {
 	}
 
 	private static function render_discovery_form( array $finder ): void {
-		echo '<form method="post" style="background:#fff;border:1px solid #dcdcde;border-radius:8px;padding:20px;">';
+		echo '<form method="post" class="jf-recipe-library__card">';
 		echo '<h2 style="margin-top:0">Find Recipes With AI</h2>';
 		echo '<input type="hidden" name="jf_recipe_action" value="discover_recipes">';
 		wp_nonce_field( 'jf_recipe_library_discover' );
@@ -170,11 +243,31 @@ class RecipeLibrary {
 	}
 
 	private static function render_discoveries( array $discoveries ): void {
-		echo '<div style="background:#fff;border:1px solid #dcdcde;border-radius:8px;padding:20px;margin-bottom:24px;">';
-		echo '<h2 style="margin-top:0">AI Results</h2>';
+		$discoveries = array_values( array_map( [ __CLASS__, 'normalise_recipe' ], $discoveries ) );
+
+		echo '<div class="jf-recipe-library__card" style="margin-bottom:24px;">';
+		echo '<form method="post">';
+		echo '<input type="hidden" name="jf_recipe_action" value="save_discoveries">';
+		echo '<input type="hidden" name="discoveries_payload" value="' . esc_attr( self::encode_discoveries_payload( $discoveries ) ) . '">';
+		wp_nonce_field( 'jf_recipe_library_save_discoveries' );
+		echo '<div class="jf-recipe-library__results-header">';
+		echo '<div>';
+		echo '<h2 style="margin:0">AI Results</h2>';
+		echo '<p style="margin:6px 0 0;color:#50575e;">Select recipes to save, or save the full set at once.</p>';
+		echo '</div>';
+		echo '<div class="jf-recipe-library__results-actions">';
+		echo '<button type="button" class="button button-secondary button-small" data-jf-toggle-discoveries="all">Select all</button>';
+		echo '<button type="button" class="button button-secondary button-small" data-jf-toggle-discoveries="none">Clear</button>';
+		submit_button( 'Save Selected', 'primary', 'save_mode', false, [ 'value' => 'selected' ] );
+		submit_button( 'Save All', 'secondary', 'save_mode', false, [ 'value' => 'all' ] );
+		echo '</div>';
+		echo '</div>';
 
 		foreach ( $discoveries as $index => $recipe ) {
-			echo '<div style="border-top:' . ( 0 === $index ? '0' : '1px solid #f0f0f1' ) . ';padding:16px 0;">';
+			echo '<div class="jf-recipe-library__discovery">';
+			echo '<label>';
+			echo '<input type="checkbox" name="selected_discoveries[]" value="' . esc_attr( (string) $index ) . '" checked>';
+			echo '<div class="jf-recipe-library__discovery-body">';
 			echo '<h3 style="margin:0 0 8px">' . esc_html( (string) $recipe['recipe_name'] ) . '</h3>';
 			echo '<p style="margin:0 0 8px;color:#50575e;"><strong>' . esc_html( ucfirst( (string) $recipe['meal_type'] ) ) . '</strong> · ' . esc_html( (string) round( (float) ( $recipe['estimated_calories'] ?? 0 ) ) ) . ' kcal · ' . esc_html( (string) round( (float) ( $recipe['estimated_protein_g'] ?? 0 ) ) ) . 'g protein</p>';
 			if ( ! empty( $recipe['why_this_works'] ) ) {
@@ -184,21 +277,33 @@ class RecipeLibrary {
 			if ( ! empty( $recipe['source_url'] ) ) {
 				echo '<p style="margin:0 0 12px;"><a href="' . esc_url( (string) $recipe['source_url'] ) . '" target="_blank" rel="noreferrer">' . esc_html( (string) ( $recipe['source_title'] ?: $recipe['source_url'] ) ) . '</a></p>';
 			}
-
-			echo '<form method="post">';
-			echo '<input type="hidden" name="jf_recipe_action" value="save_recipe">';
-			wp_nonce_field( 'jf_recipe_library_save' );
-			self::render_recipe_hidden_fields( $recipe );
-			submit_button( 'Save To Library', 'primary small', '', false );
-			echo '</form>';
+			echo '</div>';
+			echo '</label>';
 			echo '</div>';
 		}
 
+		echo '<script>
+			document.addEventListener("click", function(event) {
+				var toggle = event.target.closest("[data-jf-toggle-discoveries]");
+				if (!toggle) {
+					return;
+				}
+				var form = toggle.closest("form");
+				if (!form) {
+					return;
+				}
+				var shouldCheck = toggle.getAttribute("data-jf-toggle-discoveries") === "all";
+				form.querySelectorAll("input[name=\'selected_discoveries[]\']").forEach(function(input) {
+					input.checked = shouldCheck;
+				});
+			});
+		</script>';
+		echo '</form>';
 		echo '</div>';
 	}
 
 	private static function render_library_list( array $recipes ): void {
-		echo '<div style="background:#fff;border:1px solid #dcdcde;border-radius:8px;padding:20px;">';
+		echo '<div class="jf-recipe-library__card">';
 		echo '<h2 style="margin-top:0">Saved Recipes</h2>';
 
 		if ( empty( $recipes ) ) {
@@ -207,7 +312,7 @@ class RecipeLibrary {
 			return;
 		}
 
-		echo '<table class="widefat striped"><thead><tr><th>Recipe</th><th>Macros</th><th>Source</th><th style="width:120px">Actions</th></tr></thead><tbody>';
+		echo '<table class="widefat striped jf-recipe-library__table"><thead><tr><th>Recipe</th><th>Macros</th><th>Source</th><th style="width:120px">Actions</th></tr></thead><tbody>';
 		foreach ( $recipes as $recipe ) {
 			echo '<tr>';
 			echo '<td>';
@@ -398,6 +503,24 @@ class RecipeLibrary {
 	private static function format_decimal( $value ): string {
 		$number = (float) $value;
 		return ( abs( $number - round( $number ) ) < 0.01 ) ? (string) (int) round( $number ) : number_format( $number, 1 );
+	}
+
+	private static function encode_discoveries_payload( array $discoveries ): string {
+		return base64_encode( (string) wp_json_encode( array_values( array_map( [ __CLASS__, 'normalise_recipe' ], $discoveries ) ) ) );
+	}
+
+	private static function decode_discoveries_payload( $payload ): array {
+		$decoded = base64_decode( sanitize_text_field( wp_unslash( (string) $payload ) ), true );
+		if ( false === $decoded ) {
+			return [];
+		}
+
+		$discoveries = json_decode( $decoded, true );
+		if ( ! is_array( $discoveries ) ) {
+			return [];
+		}
+
+		return array_values( array_filter( array_map( [ __CLASS__, 'normalise_recipe' ], $discoveries ), 'is_array' ) );
 	}
 
 	private static function generate_recipe_id(): int {

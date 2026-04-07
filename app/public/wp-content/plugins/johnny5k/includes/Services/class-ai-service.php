@@ -20,6 +20,16 @@ class AiService {
 	private const DEFAULT_MODEL    = 'gpt-4o-mini';
 	private const RESPONSES_ENDPOINT = 'https://api.openai.com/v1/responses';
 	private const SUPPORTED_ACTION_SCREENS = [ 'nutrition', 'saved_meals', 'recipes', 'grocery_gap', 'pantry', 'steps', 'sleep', 'weight', 'workouts', 'cardio', 'workout', 'dashboard' ];
+	private const SUPPORTED_WORKFLOWS = [ 'fix_macros', 'plan_next_meal', 'close_grocery_gap', 'review_recovery', 'build_tomorrow_plan' ];
+	private const DURABLE_MEMORY_META_KEY = 'jf_johnny_durable_memory';
+	private const FOLLOW_UP_META_KEY = 'jf_johnny_follow_ups';
+	private const FOLLOW_UP_HISTORY_META_KEY = 'jf_johnny_follow_up_history';
+	private const MAX_TOOL_MEAL_ROWS = 12;
+	private const MAX_TOOL_PANTRY_ROWS = 24;
+	private const MAX_TOOL_RECIPE_ROWS = 12;
+	private const MAX_PENDING_FOLLOW_UPS = 6;
+	private const MAX_FOLLOW_UP_HISTORY_ITEMS = 30;
+	private const MISSED_FOLLOW_UP_HOURS = 24;
 
 	/** Minimum assistant turns before the first thread summary is generated. */
 	private const SUMMARY_MIN_TURNS = 4;
@@ -45,7 +55,7 @@ class AiService {
 	 * @param  string $user_message
 	 * @return array{reply:string, tokens_in:int, tokens_out:int, sources:array<int,array{url:string,title:string}>, used_web_search:bool, model:string, used_tools:array<int,string>, action_results:array<int,array<string,mixed>>}|WP_Error
 	 */
-	public static function chat( int $user_id, string $thread_key, string $user_message, string $mode = 'general' ) {
+	public static function chat( int $user_id, string $thread_key, string $user_message, string $mode = 'general', array $context_overrides = [] ) {
 		global $wpdb;
 		$p = $wpdb->prefix;
 
@@ -80,7 +90,7 @@ class AiService {
 		// System prompt (persona + live user context + mode instructions)
 		$messages[] = [
 			'role'    => 'system',
-			'content' => self::build_system_prompt( $user_id, $mode ),
+			'content' => self::build_system_prompt( $user_id, $mode, $context_overrides ),
 		];
 
 		// Thread memory block — prepend summary so long-term context is never lost
@@ -119,7 +129,7 @@ class AiService {
 			self::DEFAULT_MODEL,
 			[
 				'web_search'    => $enable_web_search,
-				'function_tools'=> self::get_chat_function_tools(),
+				'function_tools'=> self::get_chat_function_tools( $mode, $context_overrides, $user_message ),
 				'tool_executor' => static fn( string $tool_name, array $arguments = [] ) => self::execute_chat_tool( $user_id, $tool_name, $arguments, $user_message ),
 			]
 		);
@@ -133,13 +143,38 @@ class AiService {
 		$parsed_reply = self::parse_structured_chat_reply( $raw_reply );
 		$reply        = $parsed_reply['reply'];
 		$actions      = $parsed_reply['actions'];
+		$why          = $parsed_reply['why'];
+		$context_used = $parsed_reply['context_used'];
+		$confidence   = $parsed_reply['confidence'];
+		$queued_follow_ups = self::store_queued_follow_ups( $user_id, $actions );
 
 		// ── Persist assistant reply (plain text only) ─────────────────────────
-		$wpdb->insert( $p . 'fit_ai_messages', [
+		$assistant_metadata = array_filter([
+			'actions'           => $actions,
+			'sources'           => $result['sources'],
+			'used_tools'        => $result['used_tools'],
+			'action_results'    => $result['action_results'] ?? [],
+			'queued_follow_ups' => $queued_follow_ups,
+			'why'               => $why,
+			'context_used'      => $context_used,
+			'confidence'        => $confidence,
+		], static function( $value ) {
+			if ( is_array( $value ) ) {
+				return ! empty( $value );
+			}
+
+			return null !== $value && '' !== $value;
+		} );
+
+		$assistant_row = [
 			'thread_id'    => $thread_id,
 			'role'         => 'assistant',
 			'message_text' => $reply,
-		] );
+		];
+		if ( ! empty( $assistant_metadata ) ) {
+			$assistant_row['tool_payload_json'] = wp_json_encode( $assistant_metadata );
+		}
+		$wpdb->insert( $p . 'fit_ai_messages', $assistant_row );
 
 		// ── Refresh thread summary every 5 assistant turns ────────────────────
 		self::maybe_refresh_thread_summary( $thread_id, $user_id );
@@ -168,6 +203,10 @@ class AiService {
 			'model'           => $result['model'],
 			'used_tools'      => $result['used_tools'],
 			'action_results'  => $result['action_results'] ?? [],
+			'queued_follow_ups' => $queued_follow_ups,
+			'why'             => $why,
+			'context_used'    => $context_used,
+			'confidence'      => $confidence,
 		];
 	}
 
@@ -203,6 +242,9 @@ class AiService {
 		return [
 			'reply'           => $parsed_reply['reply'],
 			'actions'         => $parsed_reply['actions'],
+			'why'             => $parsed_reply['why'],
+			'context_used'    => $parsed_reply['context_used'],
+			'confidence'      => $parsed_reply['confidence'],
 			'tokens_in'       => $result['tokens_in'],
 			'tokens_out'      => $result['tokens_out'],
 			'sources'         => $result['sources'],
@@ -436,6 +478,164 @@ class AiService {
 
 		return [
 			'recipes'         => $recipes,
+			'notes'           => sanitize_text_field( (string) ( $parsed['notes'] ?? '' ) ),
+			'sources'         => $result['sources'],
+			'used_web_search' => $result['used_web_search'],
+		];
+	}
+
+	/**
+	 * Fill missing exercise library fields for an admin-authored exercise draft.
+	 *
+	 * @param int $user_id
+	 * @param array<string,mixed> $exercise
+	 * @return array<string,mixed>|\WP_Error
+	 */
+	public static function fill_exercise_library_item( int $user_id, array $exercise ) {
+		$name = trim( (string) ( $exercise['name'] ?? '' ) );
+		if ( '' === $name ) {
+			return new \WP_Error( 'missing_exercise_name', 'Provide an exercise name before asking AI to fill fields.' );
+		}
+
+		$current_fields = [
+			'description'              => sanitize_textarea_field( (string) ( $exercise['description'] ?? '' ) ),
+			'movement_pattern'         => sanitize_text_field( (string) ( $exercise['movement_pattern'] ?? '' ) ),
+			'primary_muscle'           => sanitize_text_field( (string) ( $exercise['primary_muscle'] ?? '' ) ),
+			'secondary_muscles'        => array_values( array_filter( array_map( 'sanitize_text_field', (array) ( $exercise['secondary_muscles'] ?? [] ) ) ) ),
+			'equipment'                => sanitize_text_field( (string) ( $exercise['equipment'] ?? '' ) ),
+			'difficulty'               => sanitize_key( (string) ( $exercise['difficulty'] ?? '' ) ),
+			'age_friendliness_score'   => (int) ( $exercise['age_friendliness_score'] ?? 0 ),
+			'joint_stress_score'       => (int) ( $exercise['joint_stress_score'] ?? 0 ),
+			'spinal_load_score'        => (int) ( $exercise['spinal_load_score'] ?? 0 ),
+			'default_rep_min'          => (int) ( $exercise['default_rep_min'] ?? 0 ),
+			'default_rep_max'          => (int) ( $exercise['default_rep_max'] ?? 0 ),
+			'default_sets'             => (int) ( $exercise['default_sets'] ?? 0 ),
+			'default_progression_type' => sanitize_key( (string) ( $exercise['default_progression_type'] ?? '' ) ),
+			'coaching_cues'            => array_values( array_filter( array_map( 'sanitize_text_field', (array) ( $exercise['coaching_cues'] ?? [] ) ) ) ),
+			'day_types'                => array_values( array_filter( array_map( 'sanitize_key', (array) ( $exercise['day_types'] ?? [] ) ) ) ),
+			'slot_types'               => array_values( array_filter( array_map( 'sanitize_key', (array) ( $exercise['slot_types'] ?? [] ) ) ) ),
+		];
+
+		$messages = [
+			[
+				'role'    => 'system',
+				'content' => 'You are an exercise library builder for a fitness app admin. Use web search when helpful and return valid JSON only. Fill unknown exercise metadata conservatively and practically for general gym users.',
+			],
+			[
+				'role'    => 'user',
+				'content' => sprintf(
+					'Fill missing library fields for this exercise draft. Exercise name: "%1$s". Existing data: %2$s. Return only valid JSON in this exact shape: {exercise:{description,movement_pattern,primary_muscle,secondary_muscles:[string],equipment,difficulty,age_friendliness_score,joint_stress_score,spinal_load_score,default_rep_min,default_rep_max,default_sets,default_progression_type,coaching_cues:[string],day_types:[string],slot_types:[string]}, notes}. Rules: keep description to 1-2 sentences. If the current description is empty, you must provide a non-empty description. Use only difficulty from beginner, intermediate, advanced. Use only default_progression_type from double_progression, load_progression, top_set_backoff. Use only day_types from push, pull, legs, arms_shoulders, cardio, rest. Use only slot_types from main, secondary, shoulders, accessory, abs, challenge. Scores are integers 1 to 10. Rep ranges and sets should be realistic defaults, not extreme.',
+					$name,
+					wp_json_encode( $current_fields )
+				),
+			],
+		];
+
+		$result = self::call_openai( $messages, 'gpt-4o-mini', [ 'web_search' => true ] );
+		if ( is_wp_error( $result ) ) {
+			return $result;
+		}
+
+		CostTracker::log_openai( $user_id, 'gpt-4o-mini', '/v1/responses', $result['tokens_in'], $result['tokens_out'], [
+			'context'         => 'exercise_fill',
+			'used_web_search' => $result['used_web_search'] ? 1 : 0,
+			'exercise_name'   => $name,
+		] );
+
+		$parsed = self::decode_json_reply( (string) $result['reply'] );
+		if ( ! is_array( $parsed ) || ! is_array( $parsed['exercise'] ?? null ) ) {
+			return new \WP_Error( 'ai_parse_error', 'Could not parse AI exercise fill response.' );
+		}
+
+		$normalised_exercise = self::normalise_exercise_library_item( (array) $parsed['exercise'], $name );
+		if ( '' === $normalised_exercise['description'] ) {
+			$normalised_exercise['description'] = self::build_fallback_exercise_description( $normalised_exercise );
+		}
+
+		return [
+			'exercise'        => $normalised_exercise,
+			'notes'           => sanitize_text_field( (string) ( $parsed['notes'] ?? '' ) ),
+			'sources'         => $result['sources'],
+			'used_web_search' => $result['used_web_search'],
+		];
+	}
+
+	/**
+	 * Discover exercise candidates that are not already present in the exercise library.
+	 *
+	 * @param int $user_id
+	 * @param array<string,mixed> $args
+	 * @return array<string,mixed>|\WP_Error
+	 */
+	public static function discover_exercise_library_items( int $user_id, array $args = [] ) {
+		$query         = trim( (string) ( $args['query'] ?? '' ) );
+		$count         = max( 1, min( 10, (int) ( $args['count'] ?? 5 ) ) );
+		$exclude_names = array_values( array_filter( array_map( 'sanitize_text_field', (array) ( $args['exclude_names'] ?? [] ) ) ) );
+
+		if ( '' === $query ) {
+			return new \WP_Error( 'missing_exercise_query', 'Provide an exercise search theme or movement to discover.' );
+		}
+
+		$messages = [
+			[
+				'role'    => 'system',
+				'content' => 'You are an exercise researcher for a fitness app admin. Use web search when available, prefer reputable training resources, and return valid JSON only.',
+			],
+			[
+				'role'    => 'user',
+				'content' => sprintf(
+					'Find %1$d useful exercise candidates for an exercise library based on this search: "%2$s". Exclude any exercise already in this library: %3$s. Return only valid JSON in this exact shape: {exercises:[{name,description,movement_pattern,primary_muscle,secondary_muscles:[string],equipment,difficulty,age_friendliness_score,joint_stress_score,spinal_load_score,default_rep_min,default_rep_max,default_sets,default_progression_type,coaching_cues:[string],day_types:[string],slot_types:[string]}], notes}. Rules: each result must be a distinct exercise name not present in the exclude list. Keep description to 1-2 sentences. Use only difficulty from beginner, intermediate, advanced. Use only default_progression_type from double_progression, load_progression, top_set_backoff. Use only day_types from push, pull, legs, arms_shoulders, cardio, rest. Use only slot_types from main, secondary, shoulders, accessory, abs, challenge. Scores are integers 1 to 10.',
+					$count,
+					$query,
+					$exclude_names ? implode( ', ', $exclude_names ) : 'none'
+				),
+			],
+		];
+
+		$result = self::call_openai( $messages, 'gpt-4o-mini', [ 'web_search' => true ] );
+		if ( is_wp_error( $result ) ) {
+			return $result;
+		}
+
+		CostTracker::log_openai( $user_id, 'gpt-4o-mini', '/v1/responses', $result['tokens_in'], $result['tokens_out'], [
+			'context'         => 'exercise_discovery',
+			'used_web_search' => $result['used_web_search'] ? 1 : 0,
+			'query'           => $query,
+		] );
+
+		$parsed = self::decode_json_reply( (string) $result['reply'] );
+		if ( ! is_array( $parsed ) ) {
+			return new \WP_Error( 'ai_parse_error', 'Could not parse AI exercise discovery response.' );
+		}
+
+		$exercises = [];
+		foreach ( (array) ( $parsed['exercises'] ?? [] ) as $exercise ) {
+			if ( ! is_array( $exercise ) ) {
+				continue;
+			}
+
+			$item = self::normalise_exercise_library_item( $exercise );
+			if ( '' === $item['name'] ) {
+				continue;
+			}
+
+			$already_exists = false;
+			foreach ( $exclude_names as $exclude_name ) {
+				if ( 0 === strcasecmp( $exclude_name, $item['name'] ) ) {
+					$already_exists = true;
+					break;
+				}
+			}
+
+			if ( $already_exists ) {
+				continue;
+			}
+
+			$exercises[] = $item;
+		}
+
+		return [
+			'exercises'       => array_values( $exercises ),
 			'notes'           => sanitize_text_field( (string) ( $parsed['notes'] ?? '' ) ),
 			'sources'         => $result['sources'],
 			'used_web_search' => $result['used_web_search'],
@@ -711,7 +911,10 @@ class AiService {
 		$context   = self::get_user_context( $user_id, $context_overrides );
 		$ctx_lines = self::format_context_block( $context );
 		$ctx_block = $ctx_lines ? "\n\nUser context:\n" . implode( "\n", $ctx_lines ) : '';
-		$tool_note = "\n\nYou may use Johnny5k backend tools to read live user data and perform supported actions. When the user clearly asks you to log steps, log food, or create a training plan, do it with the available tools instead of only describing what they should do. If a required detail is missing, ask one short follow-up question. Never claim an action succeeded unless a tool confirmed it. When the user says today, yesterday, tomorrow, tonight, or last night, resolve that against the current local date and time above. Do not invent a calendar date for relative time references. If the user did not provide a literal YYYY-MM-DD date, omit the date argument and let the backend resolve it from the user's local date.";
+		$memory_block = self::format_durable_memory_block( $user_id );
+		$follow_up_block = self::format_follow_up_history_block( $user_id );
+		$tool_note = "\n\nYou may use Johnny5k backend tools to read live user data and perform supported actions. Before answering about meal count, what the user ate for dinner, pantry inventory, available recipes, or whether today's workout already happened, read the live data with the relevant tools instead of guessing from memory. When the user clearly asks you to log steps, log food, update pantry, adjust a workout, create a training plan, or schedule a text reminder, do it with the available tools instead of only describing what they should do. If a required detail is missing or the request is materially ambiguous, ask one short follow-up question instead of guessing. Never claim an action succeeded unless a tool confirmed it. Never create or edit a workout plan when the user is asking about meals, recipes, pantry, groceries, or macros. When the user says today, yesterday, tomorrow, tonight, or last night, resolve that against the current local date and time above. Do not invent a calendar date for relative time references. If the user did not provide a literal YYYY-MM-DD date, omit the date argument and let the backend resolve it from the user's local date. If you estimate food or recovery details, say plainly that it is an estimate and tell the user what detail would make it more accurate.";
+		$format_note = "\n\nResponse format rules: default to one short paragraph or two short paragraphs. Do not use markdown headings. Do not produce canned sections like \"Next steps:\" or label-heavy templates like \"Calorie Target:\" unless the user explicitly asks for a breakdown. Do not pad with generic advice like \"track each meal\" or \"consider a workout\" unless it is specifically grounded in the user's current data. Prefer one concrete next move over a five-point plan. Do not end with an upsell question like \"Would you like recipe suggestions?\" unless the user asked for recipes, meal ideas, or options.";
 
 		$mode_block = '';
 		$mode_instr = self::get_mode_instructions( $mode );
@@ -720,9 +923,9 @@ class AiService {
 		}
 
 		// Brief action-capability note so the model can optionally return structured actions.
-		$action_block = "\n\nAction capability: When genuinely useful, you may wrap your response as JSON — {\"reply\":\"...\",\"actions\":[{\"type\":\"action_name\",\"payload\":{}}]} — so the app can take action. Supported types: open_screen (payload: {\"screen\":\"name\"}), show_nutrition_summary, show_grocery_gap, highlight_goal_issue, create_saved_meal_draft (payload: {\"name\":\"meal name\",\"meal_type\":\"lunch\",\"items\":[]}), suggest_recipe_plan, queue_follow_up (payload: {\"prompt\":\"short follow-up prompt\"}). If no action is needed, respond in plain text.";
+		$action_block = "\n\nAction capability: When genuinely useful, you may wrap your response as JSON — {\"reply\":\"...\",\"why\":\"short reason grounded in the user's data\",\"confidence\":\"high|medium|low\",\"context_used\":[\"brief context bullet\"],\"actions\":[{\"type\":\"action_name\",\"payload\":{}}]} — so the app can take action and show your reasoning. Supported types: open_screen (payload: {\"screen\":\"name\"}), show_nutrition_summary, show_grocery_gap, highlight_goal_issue, create_saved_meal_draft (payload: {\"name\":\"meal name\",\"meal_type\":\"lunch\",\"items\":[]}), suggest_recipe_plan, queue_follow_up (payload: {\"prompt\":\"short follow-up prompt\",\"reason\":\"why ask later\",\"due_at\":\"YYYY-MM-DD HH:MM\",\"next_step\":\"what to do\",\"starter_prompt\":\"prompt to run later\"}), run_workflow (payload: {\"workflow\":\"fix_macros\",\"title\":\"short title\",\"summary\":\"why this workflow helps\",\"steps\":[\"step one\"],\"screen\":\"nutrition\",\"meal_type\":\"dinner\",\"starter_prompt\":\"prompt to kick it off\"}). If no action is needed, respond in plain text.";
 
-		return $persona . $ctx_block . $tool_note . $mode_block . $action_block;
+		return $persona . $ctx_block . $memory_block . $follow_up_block . $tool_note . $format_note . $mode_block . $action_block;
 	}
 
 	private static function default_persona(): string {
@@ -735,13 +938,18 @@ Behavior rules:
 - Notice patterns and name them clearly.
 - Use the user's current data whenever it helps.
 - Give one useful next step early in your response.
+- Reference prior commitments or recurring patterns when they matter.
 - Avoid generic motivational fluff — skip "great job" filler unless it means something.
 - Be honest when the user is off track, but never demeaning.
 - Stay concise unless the user asks for detail.
 - Vary your sentence openings and rhythm.
 - Sound like a real person, not a feature.
+- Admit uncertainty when a detail is unclear and ask one tight clarifying question before guessing.
 - If you do not know something, say so plainly.
 - If asked whether you are an AI, be honest and matter-of-fact about it.
+- Default to plain prose, not a presentation.
+- Avoid markdown headings and templated section labels unless the user explicitly asks for structure.
+- Do not tack on a generic closing question offering recipes, meal plans, or more help unless the user asked for that.
 PERSONA;
 	}
 
@@ -751,11 +959,14 @@ Behavior rules (always apply):
 - Notice patterns and name them clearly.
 - Use the user's current data whenever it helps.
 - Give one useful next step early.
+- Reference prior commitments or recurring patterns when useful.
 - Avoid generic motivational fluff.
 - Be honest when the user is off track, but never demeaning.
 - Stay concise unless detail is requested.
 - Vary sentence openings and rhythm.
 - Sound like a real person, not a feature.
+- Ask one short clarifying question when something important is ambiguous instead of guessing.
+- Default to plain prose instead of headings, labels, or canned sections.
 RULES;
 	}
 
@@ -859,7 +1070,7 @@ RULES;
 	private static function get_mode_instructions( string $mode ): string {
 		switch ( $mode ) {
 			case 'nutrition':
-				return 'Mode: Nutrition coaching. Be practical and macro-aware. Focus on food swaps, meal timing, and hitting macro targets. Give specific, actionable food suggestions tied to the user\'s current numbers.';
+				return 'Mode: Nutrition coaching. Be practical and macro-aware. Focus on food swaps, meal timing, and hitting macro targets. Give specific, actionable food suggestions tied to the user\'s current numbers. Prefer a concrete next meal or two over abstract planning language. Do not invent arbitrary meal-count goals unless the user or data specifically supports them.';
 			case 'accountability':
 				return 'Mode: Accountability check. Be direct and brief. Name the gap clearly without judgment. Push for commitment on one specific action before ending your response.';
 			case 'planning':
@@ -935,6 +1146,12 @@ RULES;
 
 		if ( ! empty( $context['adherence_summary'] ) )    $lines[] = "Adherence: {$context['adherence_summary']}";
 		if ( ! empty( $context['goal_trend_summary'] ) )   $lines[] = "Goal trend: {$context['goal_trend_summary']}";
+		if ( isset( $context['follow_up_pending_count'] ) ) $lines[] = "Pending Johnny follow-ups: {$context['follow_up_pending_count']}";
+		if ( isset( $context['follow_up_overdue_count'] ) ) $lines[] = "Overdue Johnny follow-ups: {$context['follow_up_overdue_count']}";
+		if ( isset( $context['follow_up_missed_count'] ) ) $lines[] = "Missed Johnny follow-ups: {$context['follow_up_missed_count']}";
+		if ( isset( $context['follow_up_completed_last_14_days'] ) ) $lines[] = "Completed Johnny follow-ups (14 days): {$context['follow_up_completed_last_14_days']}";
+		if ( isset( $context['follow_up_dismissed_last_14_days'] ) ) $lines[] = "Dismissed Johnny follow-ups (14 days): {$context['follow_up_dismissed_last_14_days']}";
+		if ( ! empty( $context['follow_up_recent_summary'] ) ) $lines[] = "Recent Johnny follow-up outcomes: {$context['follow_up_recent_summary']}";
 
 		if ( isset( $context['current_local_date'] ) && '' !== (string) $context['current_local_date'] ) {
 			$lines[] = "Current local date: {$context['current_local_date']}";
@@ -953,6 +1170,240 @@ RULES;
 		}
 
 		return $lines;
+	}
+
+	private static function format_durable_memory_block( int $user_id ): string {
+		$memory = self::get_durable_memory( $user_id );
+		$bullets = is_array( $memory['bullets'] ?? null ) ? $memory['bullets'] : [];
+		$bullets = array_values( array_filter( array_map( static fn( $item ) => sanitize_text_field( (string) $item ), $bullets ) ) );
+
+		if ( empty( $bullets ) ) {
+			return '';
+		}
+
+		return "\n\nLong-term coaching memory:\n- " . implode( "\n- ", array_slice( $bullets, 0, 8 ) );
+	}
+
+	private static function format_follow_up_history_block( int $user_id ): string {
+		$overview = self::get_follow_up_overview( $user_id );
+		$parts = [];
+
+		if ( ! empty( $overview['overdue_items'] ) ) {
+			$parts[] = 'Overdue commitments: ' . implode( '; ', array_map( static fn( array $item ): string => (string) ( $item['prompt'] ?? '' ), array_slice( $overview['overdue_items'], 0, 3 ) ) );
+		}
+
+		if ( ! empty( $overview['history'] ) ) {
+			$history_lines = array_map( static function( array $item ): string {
+				$state = sanitize_text_field( (string) ( $item['state'] ?? '' ) );
+				$prompt = sanitize_text_field( (string) ( $item['prompt'] ?? '' ) );
+				$changed = sanitize_text_field( (string) ( $item['changed_at'] ?? '' ) );
+				return trim( $state . ': ' . $prompt . ( $changed ? ' (' . $changed . ')' : '' ) );
+			}, array_slice( $overview['history'], 0, 4 ) );
+			$history_lines = array_values( array_filter( $history_lines ) );
+			if ( $history_lines ) {
+				$parts[] = "Recent follow-up outcomes:\n- " . implode( "\n- ", $history_lines );
+			}
+		}
+
+		if ( empty( $parts ) ) {
+			return '';
+		}
+
+		return "\n\nJohnny follow-up history:\n" . implode( "\n", $parts );
+	}
+
+	public static function get_durable_memory( int $user_id ): array {
+		$stored = get_user_meta( $user_id, self::DURABLE_MEMORY_META_KEY, true );
+		return is_array( $stored ) ? $stored : [];
+	}
+
+	public static function update_durable_memory( int $user_id, array $bullets ): array {
+		$clean = array_values( array_filter( array_map( static fn( $item ) => sanitize_text_field( (string) $item ), $bullets ) ) );
+
+		$payload = [
+			'bullets'    => array_slice( $clean, 0, 8 ),
+			'updated_at' => current_time( 'mysql' ),
+		];
+
+		update_user_meta( $user_id, self::DURABLE_MEMORY_META_KEY, $payload );
+		return $payload;
+	}
+
+	public static function get_follow_up_history( int $user_id ): array {
+		$stored = get_user_meta( $user_id, self::FOLLOW_UP_HISTORY_META_KEY, true );
+		$items = is_array( $stored ) ? $stored : [];
+
+		return array_values( array_filter( array_map( static function( $item ): array {
+			if ( ! is_array( $item ) ) {
+				return [];
+			}
+
+			return [
+				'id'         => sanitize_text_field( (string) ( $item['id'] ?? '' ) ),
+				'prompt'     => sanitize_textarea_field( (string) ( $item['prompt'] ?? '' ) ),
+				'reason'     => sanitize_text_field( (string) ( $item['reason'] ?? '' ) ),
+				'state'      => sanitize_key( (string) ( $item['state'] ?? '' ) ),
+				'changed_at' => sanitize_text_field( (string) ( $item['changed_at'] ?? '' ) ),
+				'due_at'     => sanitize_text_field( (string) ( $item['due_at'] ?? '' ) ),
+			];
+		}, $items ), static fn( array $item ) => ! empty( $item['prompt'] ) && ! empty( $item['state'] ) ) );
+	}
+
+	public static function get_follow_up_overview( int $user_id ): array {
+		$pending = self::get_pending_follow_ups( $user_id );
+		$history = self::get_follow_up_history( $user_id );
+		$now = UserTime::mysql( $user_id );
+		$cutoff = UserTime::days_ago( $user_id, 13 );
+
+		$overdue_items = array_values( array_filter( $pending, static fn( array $item ): bool => ! empty( $item['due_at'] ) && (string) $item['due_at'] < $now ) );
+		$missed_items = array_values( array_filter( $pending, static fn( array $item ): bool => 'missed' === ( $item['status'] ?? '' ) ) );
+		$recent_history = array_values( array_filter( $history, static fn( array $item ): bool => (string) ( $item['changed_at'] ?? '' ) >= $cutoff ) );
+		$completed = count( array_filter( $recent_history, static fn( array $item ): bool => 'completed' === ( $item['state'] ?? '' ) ) );
+		$dismissed = count( array_filter( $recent_history, static fn( array $item ): bool => 'dismissed' === ( $item['state'] ?? '' ) ) );
+		$snoozed = count( array_filter( $pending, static fn( array $item ): bool => 'snoozed' === ( $item['status'] ?? '' ) ) );
+
+		usort( $history, static fn( array $left, array $right ): int => strcmp( (string) ( $right['changed_at'] ?? '' ), (string) ( $left['changed_at'] ?? '' ) ) );
+
+		$recent_summary_parts = [];
+		if ( $completed > 0 ) {
+			$recent_summary_parts[] = $completed . ' completed';
+		}
+		if ( $dismissed > 0 ) {
+			$recent_summary_parts[] = $dismissed . ' dismissed';
+		}
+		if ( count( $overdue_items ) > 0 ) {
+			$recent_summary_parts[] = count( $overdue_items ) . ' overdue';
+		}
+		if ( count( $missed_items ) > 0 ) {
+			$recent_summary_parts[] = count( $missed_items ) . ' missed';
+		}
+
+		return [
+			'pending_count' => count( $pending ),
+			'snoozed_count' => $snoozed,
+			'overdue_count' => count( $overdue_items ),
+			'missed_count' => count( $missed_items ),
+			'completed_last_14_days' => $completed,
+			'dismissed_last_14_days' => $dismissed,
+			'recent_summary' => implode( ', ', $recent_summary_parts ),
+			'overdue_items' => array_slice( $overdue_items, 0, 6 ),
+			'missed_items' => array_slice( $missed_items, 0, 6 ),
+			'history' => array_slice( $history, 0, 10 ),
+		];
+	}
+
+	public static function get_pending_follow_ups( int $user_id ): array {
+		$stored = get_user_meta( $user_id, self::FOLLOW_UP_META_KEY, true );
+		$items = is_array( $stored ) ? $stored : [];
+		$missed_threshold = self::get_missed_follow_up_threshold( $user_id );
+
+		$clean = array_values( array_filter( array_map( static function( $item ) use ( $missed_threshold ): array {
+			if ( ! is_array( $item ) ) {
+				return [];
+			}
+
+			$status = sanitize_key( (string) ( $item['status'] ?? 'pending' ) );
+			if ( in_array( $status, [ 'completed', 'dismissed' ], true ) ) {
+				return [];
+			}
+
+			$due_at = sanitize_text_field( (string) ( $item['due_at'] ?? '' ) );
+			$normalized_status = in_array( $status, [ 'pending', 'snoozed' ], true ) ? $status : 'pending';
+			if ( '' !== $due_at && $due_at < $missed_threshold ) {
+				$normalized_status = 'missed';
+			}
+
+			return [
+				'id'         => sanitize_text_field( (string) ( $item['id'] ?? '' ) ),
+				'prompt'     => sanitize_textarea_field( (string) ( $item['prompt'] ?? '' ) ),
+				'reason'     => sanitize_text_field( (string) ( $item['reason'] ?? '' ) ),
+				'next_step'  => sanitize_text_field( (string) ( $item['next_step'] ?? '' ) ),
+				'starter_prompt' => sanitize_textarea_field( (string) ( $item['starter_prompt'] ?? '' ) ),
+				'commitment_key' => sanitize_key( (string) ( $item['commitment_key'] ?? '' ) ),
+				'due_at'     => $due_at,
+				'status'     => $normalized_status,
+				'created_at' => sanitize_text_field( (string) ( $item['created_at'] ?? '' ) ),
+			];
+		}, $items ), static fn( array $item ) => ! empty( $item['id'] ) && ! empty( $item['prompt'] ) ) );
+
+		usort( $clean, static function( array $left, array $right ): int {
+			$left_due = (string) ( $left['due_at'] ?? '' );
+			$right_due = (string) ( $right['due_at'] ?? '' );
+			if ( '' === $left_due && '' === $right_due ) {
+				return strcmp( (string) ( $left['created_at'] ?? '' ), (string) ( $right['created_at'] ?? '' ) );
+			}
+			if ( '' === $left_due ) {
+				return 1;
+			}
+			if ( '' === $right_due ) {
+				return -1;
+			}
+
+			return strcmp( $left_due, $right_due );
+		} );
+
+		return $clean;
+	}
+
+	public static function update_follow_up_state( int $user_id, string $follow_up_id, string $state, string $due_at = '' ): ?array {
+		$follow_up_id = sanitize_text_field( $follow_up_id );
+		$state        = sanitize_key( $state );
+		if ( '' === $follow_up_id || ! in_array( $state, [ 'pending', 'snoozed', 'completed', 'dismissed' ], true ) ) {
+			return null;
+		}
+
+		$stored = get_user_meta( $user_id, self::FOLLOW_UP_META_KEY, true );
+		$current = is_array( $stored ) ? $stored : [];
+		$updated = null;
+		$next = [];
+
+		foreach ( $current as $item ) {
+			if ( ! is_array( $item ) ) {
+				continue;
+			}
+
+			if ( sanitize_text_field( (string) ( $item['id'] ?? '' ) ) !== $follow_up_id ) {
+				$next[] = $item;
+				continue;
+			}
+
+			if ( in_array( $state, [ 'completed', 'dismissed' ], true ) ) {
+				self::record_follow_up_event( $user_id, [
+					'id'         => $follow_up_id,
+					'prompt'     => sanitize_textarea_field( (string) ( $item['prompt'] ?? '' ) ),
+					'reason'     => sanitize_text_field( (string) ( $item['reason'] ?? '' ) ),
+					'state'      => $state,
+					'changed_at' => current_time( 'mysql' ),
+					'due_at'     => sanitize_text_field( (string) ( $item['due_at'] ?? '' ) ),
+				] );
+				$updated = [ 'id' => $follow_up_id, 'status' => $state ];
+				continue;
+			}
+
+			$item['status'] = $state;
+			$item['due_at'] = 'snoozed' === $state ? sanitize_text_field( $due_at ) : '';
+			$next[] = $item;
+			self::record_follow_up_event( $user_id, [
+				'id'         => $follow_up_id,
+				'prompt'     => sanitize_textarea_field( (string) ( $item['prompt'] ?? '' ) ),
+				'reason'     => sanitize_text_field( (string) ( $item['reason'] ?? '' ) ),
+				'state'      => $state,
+				'changed_at' => current_time( 'mysql' ),
+				'due_at'     => sanitize_text_field( (string) ( $item['due_at'] ?? '' ) ),
+			] );
+			$updated = [
+				'id'     => $follow_up_id,
+				'status' => $state,
+				'due_at' => sanitize_text_field( (string) ( $item['due_at'] ?? '' ) ),
+			];
+		}
+
+		update_user_meta( $user_id, self::FOLLOW_UP_META_KEY, array_values( $next ) );
+		return $updated;
+	}
+
+	public static function dismiss_follow_up( int $user_id, string $follow_up_id ): bool {
+		return null !== self::update_follow_up_state( $user_id, $follow_up_id, 'dismissed' );
 	}
 
 	// ── User context helper ───────────────────────────────────────────────────
@@ -1097,6 +1548,8 @@ RULES;
 			(int) ( $goal->target_protein_g ?? 0 )
 		);
 
+		$follow_up_overview = self::get_follow_up_overview( $user_id );
+
 		$now = UserTime::now( $user_id );
 
 		$context = [
@@ -1121,6 +1574,12 @@ RULES;
 			'top_saved_meal_uses_last_30_days' => isset( $top_saved_meal->usage_count ) ? (int) $top_saved_meal->usage_count : 0,
 			'adherence_summary'          => $adherence_summary,
 			'goal_trend_summary'         => $goal_trend_summary,
+			'follow_up_pending_count'    => $follow_up_overview['pending_count'] ?? 0,
+			'follow_up_overdue_count'    => $follow_up_overview['overdue_count'] ?? 0,
+			'follow_up_missed_count'     => $follow_up_overview['missed_count'] ?? 0,
+			'follow_up_completed_last_14_days' => $follow_up_overview['completed_last_14_days'] ?? 0,
+			'follow_up_dismissed_last_14_days' => $follow_up_overview['dismissed_last_14_days'] ?? 0,
+			'follow_up_recent_summary'   => $follow_up_overview['recent_summary'] ?? '',
 			'current_local_date'         => $now->format( 'Y-m-d' ),
 			'current_local_time'         => $now->format( 'g:i A' ),
 			'current_local_datetime'     => $now->format( 'Y-m-d g:i A T' ),
@@ -1220,6 +1679,7 @@ RULES;
 				[ 'summary_text' => $summary ],
 				[ 'id' => $thread_id ]
 			);
+			self::refresh_durable_memory( $user_id, $summary );
 		}
 	}
 
@@ -1274,6 +1734,119 @@ RULES;
 		);
 
 		return trim( $result['reply'] ) ?: null;
+	}
+
+	private static function refresh_durable_memory( int $user_id, string $thread_summary ): void {
+		$thread_summary = trim( $thread_summary );
+		if ( '' === $thread_summary ) {
+			return;
+		}
+
+		$current_memory = self::get_durable_memory( $user_id );
+		$current_bullets = is_array( $current_memory['bullets'] ?? null ) ? $current_memory['bullets'] : [];
+		$context_lines = self::format_context_block( self::get_user_context( $user_id ) );
+		$prompt_messages = [
+			[
+				'role'    => 'system',
+				'content' => 'You maintain long-term coaching memory for a fitness app. Return only valid JSON with shape {"bullets":["..."]}. Keep 4-8 bullets. Include durable patterns, preferences, recurring struggles, preferred coaching style, or commitments worth remembering across future conversations. Exclude one-off trivia and anything time-sensitive that will be stale quickly.',
+			],
+			[
+				'role'    => 'user',
+				'content' => "Current durable memory:\n" . implode( "\n", array_map( static fn( $item ) => '- ' . sanitize_text_field( (string) $item ), $current_bullets ) ) . "\n\nFresh thread summary:\n" . $thread_summary . "\n\nCurrent user context:\n" . implode( "\n", $context_lines ),
+			],
+		];
+
+		$result = self::call_openai( $prompt_messages, self::DEFAULT_MODEL );
+		if ( is_wp_error( $result ) ) {
+			return;
+		}
+
+		$parsed = self::decode_json_reply( (string) $result['reply'] );
+		$bullets = is_array( $parsed['bullets'] ?? null ) ? $parsed['bullets'] : [];
+		$bullets = array_values( array_filter( array_map( static fn( $item ) => sanitize_text_field( (string) $item ), $bullets ) ) );
+		if ( empty( $bullets ) ) {
+			return;
+		}
+
+		update_user_meta( $user_id, self::DURABLE_MEMORY_META_KEY, [
+			'bullets'    => array_slice( $bullets, 0, 8 ),
+			'updated_at' => current_time( 'mysql' ),
+		] );
+	}
+
+	private static function store_queued_follow_ups( int $user_id, array $actions ): array {
+		$current = self::get_pending_follow_ups( $user_id );
+		$index = [];
+		foreach ( $current as $item ) {
+			$key = strtolower( trim( (string) ( $item['prompt'] ?? '' ) ) );
+			if ( '' !== $key ) {
+				$index[ $key ] = $item;
+			}
+		}
+
+		$created = [];
+		foreach ( $actions as $action ) {
+			if ( ! is_array( $action ) || 'queue_follow_up' !== ( $action['type'] ?? '' ) ) {
+				continue;
+			}
+
+			$payload = is_array( $action['payload'] ?? null ) ? $action['payload'] : [];
+			$prompt = sanitize_textarea_field( (string) ( $payload['prompt'] ?? '' ) );
+			$reason = sanitize_text_field( (string) ( $payload['reason'] ?? '' ) );
+			$key = strtolower( trim( $prompt ) );
+			if ( '' === $key || isset( $index[ $key ] ) ) {
+				continue;
+			}
+
+			$due_at = sanitize_text_field( (string) ( $payload['due_at'] ?? '' ) );
+			$item = [
+				'id'         => wp_generate_uuid4(),
+				'prompt'     => $prompt,
+				'reason'     => $reason,
+				'next_step'  => sanitize_text_field( (string) ( $payload['next_step'] ?? '' ) ),
+				'starter_prompt' => sanitize_textarea_field( (string) ( $payload['starter_prompt'] ?? '' ) ),
+				'commitment_key' => sanitize_key( (string) ( $payload['commitment_key'] ?? '' ) ),
+				'due_at'     => $due_at,
+				'status'     => '' !== $due_at ? 'snoozed' : 'pending',
+				'created_at' => current_time( 'mysql' ),
+			];
+			$current[] = $item;
+			$index[ $key ] = $item;
+			$created[] = $item;
+		}
+
+		if ( count( $current ) > self::MAX_PENDING_FOLLOW_UPS ) {
+			$current = array_slice( $current, -self::MAX_PENDING_FOLLOW_UPS );
+		}
+
+		update_user_meta( $user_id, self::FOLLOW_UP_META_KEY, array_values( $current ) );
+		return $created;
+	}
+
+	private static function record_follow_up_event( int $user_id, array $event ): void {
+		$history = self::get_follow_up_history( $user_id );
+		$history[] = [
+			'id'         => sanitize_text_field( (string) ( $event['id'] ?? wp_generate_uuid4() ) ),
+			'prompt'     => sanitize_textarea_field( (string) ( $event['prompt'] ?? '' ) ),
+			'reason'     => sanitize_text_field( (string) ( $event['reason'] ?? '' ) ),
+			'state'      => sanitize_key( (string) ( $event['state'] ?? '' ) ),
+			'changed_at' => sanitize_text_field( (string) ( $event['changed_at'] ?? current_time( 'mysql' ) ) ),
+			'due_at'     => sanitize_text_field( (string) ( $event['due_at'] ?? '' ) ),
+		];
+
+		usort( $history, static fn( array $left, array $right ): int => strcmp( (string) ( $right['changed_at'] ?? '' ), (string) ( $left['changed_at'] ?? '' ) ) );
+		update_user_meta( $user_id, self::FOLLOW_UP_HISTORY_META_KEY, array_slice( $history, 0, self::MAX_FOLLOW_UP_HISTORY_ITEMS ) );
+	}
+
+	private static function get_missed_follow_up_threshold( int $user_id ): string {
+		$hours = max( 1, self::MISSED_FOLLOW_UP_HOURS );
+
+		try {
+			$now = new \DateTimeImmutable( UserTime::mysql( $user_id ), UserTime::timezone( $user_id ) );
+			return $now->modify( '-' . $hours . ' hours' )->format( 'Y-m-d H:i:s' );
+		} catch ( \Exception $e ) {
+			return UserTime::days_ago( $user_id, 1 );
+		}
 	}
 
 	// ── Weekly stats helper ───────────────────────────────────────────────────
@@ -1467,8 +2040,48 @@ RULES;
 			'get_today_nutrition' => [
 				'read_only'   => true,
 				'enabled'     => true,
-				'description' => 'Get today’s logged nutrition totals and meal count.',
+				'description' => 'Get today’s logged nutrition totals plus meal-entry count, meal-type count, and a meal breakdown with foods so you can answer questions about dinner or how many meals were logged.',
 				'parameters'  => [ 'type' => 'object', 'properties' => $empty_object, 'additionalProperties' => false ],
+			],
+			'get_recent_meals' => [
+				'read_only'   => true,
+				'enabled'     => true,
+				'description' => 'Get detailed logged meals for a specific date, optionally narrowed to breakfast, lunch, dinner, snack, or shake.',
+				'parameters'  => [
+					'type'                 => 'object',
+					'properties'           => [
+						'date'      => [ 'type' => 'string', 'description' => 'Date to inspect in YYYY-MM-DD format. Omit to use today.' ],
+						'meal_type' => [ 'type' => 'string', 'description' => 'Optional meal type filter: breakfast, lunch, dinner, snack, or shake.' ],
+						'limit'     => [ 'type' => 'integer', 'minimum' => 1, 'maximum' => self::MAX_TOOL_MEAL_ROWS ],
+					],
+					'additionalProperties' => false,
+				],
+			],
+			'get_pantry_snapshot' => [
+				'read_only'   => true,
+				'enabled'     => true,
+				'description' => 'Get the current pantry inventory with item names, amounts, categories, and expiry dates when available.',
+				'parameters'  => [
+					'type'                 => 'object',
+					'properties'           => [
+						'limit' => [ 'type' => 'integer', 'minimum' => 1, 'maximum' => self::MAX_TOOL_PANTRY_ROWS ],
+					],
+					'additionalProperties' => false,
+				],
+			],
+			'get_recipe_catalog' => [
+				'read_only'   => true,
+				'enabled'     => true,
+				'description' => 'Get recipe suggestions from the current recipe list, optionally filtered by meal type or minimum protein.',
+				'parameters'  => [
+					'type'                 => 'object',
+					'properties'           => [
+						'meal_type'         => [ 'type' => 'string', 'description' => 'Optional meal type filter: breakfast, lunch, dinner, snack, or shake.' ],
+						'minimum_protein_g' => [ 'type' => 'number', 'minimum' => 0 ],
+						'limit'             => [ 'type' => 'integer', 'minimum' => 1, 'maximum' => self::MAX_TOOL_RECIPE_ROWS ],
+					],
+					'additionalProperties' => false,
+				],
 			],
 			'get_recovery_snapshot' => [
 				'read_only'   => true,
@@ -1499,7 +2112,7 @@ RULES;
 			'log_food_from_description' => [
 				'read_only'   => false,
 				'enabled'     => true,
-				'description' => 'Log food or a meal from a short natural-language description when the user asks Johnny to log what they ate.',
+				'description' => 'Log food or a meal from a short natural-language description when the user asks Johnny to log what they ate. Use only when the description has enough detail to make a responsible estimate; otherwise ask one short clarifying question first.',
 				'parameters'  => [
 					'type'                 => 'object',
 					'properties'           => [
@@ -1611,13 +2224,28 @@ RULES;
 					'additionalProperties' => false,
 				],
 			],
+			'schedule_sms_reminder' => [
+				'read_only'   => false,
+				'enabled'     => true,
+				'description' => 'Schedule an SMS reminder for the user at a specific future local date and time when they explicitly ask for a text reminder.',
+				'parameters'  => [
+					'type'                 => 'object',
+					'properties'           => [
+						'message'       => [ 'type' => 'string', 'description' => 'The reminder message Johnny should text.' ],
+						'send_at_local' => [ 'type' => 'string', 'description' => 'Future local date/time for the user, such as 2026-04-07 18:30 or tomorrow 6:30pm.' ],
+					],
+					'required'             => [ 'message', 'send_at_local' ],
+					'additionalProperties' => false,
+				],
+			],
 		];
 	}
 
-	private static function get_chat_function_tools(): array {
+	private static function get_chat_function_tools( string $mode = 'general', array $context_overrides = [], string $user_message = '' ): array {
+		$request_context = self::derive_tool_request_context( $mode, $context_overrides, $user_message );
 		$tools = [];
 		foreach ( self::tool_registry() as $name => $tool ) {
-			if ( empty( $tool['enabled'] ) ) {
+			if ( empty( $tool['enabled'] ) || ! self::tool_allowed_for_request( $name, $request_context ) ) {
 				continue;
 			}
 
@@ -1632,6 +2260,46 @@ RULES;
 		return $tools;
 	}
 
+	private static function derive_tool_request_context( string $mode, array $context_overrides, string $user_message ): array {
+		$message = strtolower( trim( $user_message ) );
+		$current_screen = sanitize_key( (string) ( $context_overrides['current_screen'] ?? '' ) );
+		$workout_keywords = [
+			'workout', 'training', 'exercise', 'session', 'split', 'push day', 'pull day', 'leg day', 'upper body', 'lower body', 'bench', 'squat', 'deadlift', 'swap exercise', 'replace exercise',
+		];
+		$nutrition_keywords = [
+			'meal', 'meals', 'breakfast', 'lunch', 'dinner', 'snack', 'shake', 'protein', 'calorie', 'macro', 'macros', 'recipe', 'recipes', 'pantry', 'grocery', 'food', 'eat', 'eating',
+		];
+
+		$workout_requested = self::message_contains_any( $message, $workout_keywords );
+		$nutrition_requested = self::message_contains_any( $message, $nutrition_keywords );
+		$workout_surface = in_array( $mode, [ 'coach', 'workout_review' ], true ) || in_array( $current_screen, [ 'workout', 'workouts' ], true );
+
+		return [
+			'workout_mutation_allowed' => $workout_requested || ( $workout_surface && ! $nutrition_requested ),
+		];
+	}
+
+	private static function tool_allowed_for_request( string $tool_name, array $request_context ): bool {
+		return match ( $tool_name ) {
+			'create_training_plan', 'swap_workout_exercise' => ! empty( $request_context['workout_mutation_allowed'] ),
+			default => true,
+		};
+	}
+
+	private static function message_contains_any( string $message, array $needles ): bool {
+		if ( '' === $message ) {
+			return false;
+		}
+
+		foreach ( $needles as $needle ) {
+			if ( false !== strpos( $message, strtolower( (string) $needle ) ) ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
 	private static function execute_chat_tool( int $user_id, string $tool_name, array $arguments = [], string $user_message = '' ): array {
 		$arguments = self::normalise_tool_arguments_from_user_message( $user_id, $tool_name, $arguments, $user_message );
 
@@ -1639,6 +2307,9 @@ RULES;
 			'get_profile_summary'   => self::tool_profile_summary( $user_id ),
 			'get_daily_targets'     => self::tool_daily_targets( $user_id ),
 			'get_today_nutrition'   => self::tool_today_nutrition( $user_id ),
+			'get_recent_meals'      => self::tool_recent_meals( $user_id, $arguments ),
+			'get_pantry_snapshot'   => self::tool_pantry_snapshot( $user_id, $arguments ),
+			'get_recipe_catalog'    => self::tool_recipe_catalog( $user_id, $arguments ),
 			'get_recovery_snapshot' => self::tool_recovery_snapshot( $user_id ),
 			'get_current_workout'   => self::tool_current_workout( $user_id ),
 			'log_steps'             => self::tool_log_steps( $user_id, $arguments ),
@@ -1648,6 +2319,7 @@ RULES;
 			'add_pantry_items'      => self::tool_add_pantry_items( $user_id, $arguments ),
 			'add_grocery_gap_items' => self::tool_add_grocery_gap_items( $user_id, $arguments ),
 			'swap_workout_exercise' => self::tool_swap_workout_exercise( $user_id, $arguments ),
+			'schedule_sms_reminder' => self::tool_schedule_sms_reminder( $user_id, $arguments ),
 			default                 => [ 'error' => 'Tool not available.' ],
 		};
 	}
@@ -1662,7 +2334,7 @@ RULES;
 			return $arguments;
 		}
 
-		if ( in_array( $tool_name, [ 'log_steps', 'log_sleep' ], true ) ) {
+		if ( in_array( $tool_name, [ 'log_steps', 'log_sleep', 'get_recent_meals' ], true ) ) {
 			$arguments['date'] = $relative_date;
 		}
 
@@ -1724,31 +2396,131 @@ RULES;
 	}
 
 	private static function tool_today_nutrition( int $user_id ): array {
-		global $wpdb;
-		$p = $wpdb->prefix;
 		$today = UserTime::today( $user_id );
-
-		$totals = $wpdb->get_row( $wpdb->prepare(
-			"SELECT
-				COALESCE(SUM(mi.calories), 0) AS calories,
-				COALESCE(SUM(mi.protein_g), 0) AS protein_g,
-				COALESCE(SUM(mi.carbs_g), 0) AS carbs_g,
-				COALESCE(SUM(mi.fat_g), 0) AS fat_g,
-				COUNT(DISTINCT m.id) AS meal_count
-			 FROM {$p}fit_meal_items mi
-			 JOIN {$p}fit_meals m ON m.id = mi.meal_id
-			 WHERE m.user_id = %d AND DATE(m.meal_datetime) = %s AND m.confirmed = 1",
-			$user_id,
-			$today
-		) );
+		$meal_payload = self::get_meal_breakdown_for_date( $user_id, $today );
+		$totals = is_array( $meal_payload['totals'] ?? null ) ? $meal_payload['totals'] : [];
+		$entries = is_array( $meal_payload['entries'] ?? null ) ? $meal_payload['entries'] : [];
+		$meal_types = array_values( array_unique( array_values( array_filter( array_map( static fn( array $entry ): string => (string) ( $entry['meal_type'] ?? '' ), $entries ) ) ) ) );
+		$dinner_entries = array_values( array_filter( $entries, static fn( array $entry ): bool => 'dinner' === ( $entry['meal_type'] ?? '' ) ) );
+		$latest_dinner = ! empty( $dinner_entries ) ? end( $dinner_entries ) : null;
 
 		return [
-			'date'       => $today,
-			'calories'   => (int) ( $totals->calories ?? 0 ),
-			'protein_g'  => (float) ( $totals->protein_g ?? 0 ),
-			'carbs_g'    => (float) ( $totals->carbs_g ?? 0 ),
-			'fat_g'      => (float) ( $totals->fat_g ?? 0 ),
-			'meal_count' => (int) ( $totals->meal_count ?? 0 ),
+			'date'              => $today,
+			'calories'          => (int) ( $totals['calories'] ?? 0 ),
+			'protein_g'         => (float) ( $totals['protein_g'] ?? 0 ),
+			'carbs_g'           => (float) ( $totals['carbs_g'] ?? 0 ),
+			'fat_g'             => (float) ( $totals['fat_g'] ?? 0 ),
+			'meal_count'        => count( $entries ),
+			'meal_type_count'   => count( $meal_types ),
+			'meal_types_logged' => $meal_types,
+			'meals'             => $entries,
+			'latest_dinner'     => is_array( $latest_dinner ) ? $latest_dinner : null,
+		];
+	}
+
+	private static function tool_recent_meals( int $user_id, array $arguments = [] ): array {
+		$date = self::normalise_tool_date( $user_id, (string) ( $arguments['date'] ?? '' ) );
+		$limit = max( 1, min( self::MAX_TOOL_MEAL_ROWS, (int) ( $arguments['limit'] ?? self::MAX_TOOL_MEAL_ROWS ) ) );
+		$meal_type = self::sanitize_meal_type_value( (string) ( $arguments['meal_type'] ?? '' ), false );
+		$payload = self::get_meal_breakdown_for_date( $user_id, $date, $meal_type, $limit );
+
+		return [
+			'date'       => $date,
+			'meal_type'  => $meal_type,
+			'totals'     => $payload['totals'] ?? [],
+			'meals'      => $payload['entries'] ?? [],
+			'meal_count' => count( is_array( $payload['entries'] ?? null ) ? $payload['entries'] : [] ),
+		];
+	}
+
+	private static function tool_pantry_snapshot( int $user_id, array $arguments = [] ): array {
+		global $wpdb;
+		$p = $wpdb->prefix;
+		$limit = max( 1, min( self::MAX_TOOL_PANTRY_ROWS, (int) ( $arguments['limit'] ?? self::MAX_TOOL_PANTRY_ROWS ) ) );
+
+		$rows = $wpdb->get_results( $wpdb->prepare(
+			"SELECT id, item_name, quantity, unit, expires_on, category_override, updated_at
+			 FROM {$p}fit_pantry_items
+			 WHERE user_id = %d
+			 ORDER BY updated_at DESC, id DESC
+			 LIMIT %d",
+			$user_id,
+			$limit
+		), ARRAY_A );
+
+		$total_count = (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT COUNT(*) FROM {$p}fit_pantry_items WHERE user_id = %d",
+			$user_id
+		) );
+
+		$items = array_map( static function( array $row ): array {
+			return [
+				'id'         => (int) ( $row['id'] ?? 0 ),
+				'item_name'  => sanitize_text_field( (string) ( $row['item_name'] ?? '' ) ),
+				'quantity'   => isset( $row['quantity'] ) ? (float) $row['quantity'] : null,
+				'unit'       => sanitize_text_field( (string) ( $row['unit'] ?? '' ) ),
+				'expires_on' => sanitize_text_field( (string) ( $row['expires_on'] ?? '' ) ),
+				'category'   => sanitize_key( (string) ( $row['category_override'] ?? '' ) ),
+				'updated_at' => sanitize_text_field( (string) ( $row['updated_at'] ?? '' ) ),
+			];
+		}, is_array( $rows ) ? $rows : [] );
+
+		return [
+			'total_count' => $total_count,
+			'items'       => $items,
+		];
+	}
+
+	private static function tool_recipe_catalog( int $user_id, array $arguments = [] ): array {
+		$limit = max( 1, min( self::MAX_TOOL_RECIPE_ROWS, (int) ( $arguments['limit'] ?? self::MAX_TOOL_RECIPE_ROWS ) ) );
+		$meal_type = self::sanitize_meal_type_value( (string) ( $arguments['meal_type'] ?? '' ), false );
+		$minimum_protein = isset( $arguments['minimum_protein_g'] ) ? max( 0, (float) $arguments['minimum_protein_g'] ) : 0;
+
+		$request = new \WP_REST_Request( 'GET', '/fit/v1/nutrition/recipes' );
+		$response = \Johnny5k\REST\AiController::get_recipe_suggestions( $request );
+		$data = $response->get_data();
+		$status = (int) $response->get_status();
+
+		if ( $status >= 400 || ! is_array( $data ) ) {
+			return [ 'error' => (string) ( $data['message'] ?? 'Could not load recipes.' ) ];
+		}
+
+		$recipes = array_values( array_filter( array_map( static function( $recipe ) {
+			$payload = is_array( $recipe ) ? $recipe : (array) $recipe;
+			return [
+				'recipe_name'          => sanitize_text_field( (string) ( $payload['recipe_name'] ?? '' ) ),
+				'meal_type'            => sanitize_key( (string) ( $payload['meal_type'] ?? '' ) ),
+				'estimated_calories'   => (int) ( $payload['estimated_calories'] ?? 0 ),
+				'estimated_protein_g'  => (float) ( $payload['estimated_protein_g'] ?? 0 ),
+				'estimated_carbs_g'    => (float) ( $payload['estimated_carbs_g'] ?? 0 ),
+				'estimated_fat_g'      => (float) ( $payload['estimated_fat_g'] ?? 0 ),
+				'on_hand_ingredients'  => self::sanitize_string_list( is_array( $payload['on_hand_ingredients'] ?? null ) ? $payload['on_hand_ingredients'] : [] ),
+				'missing_ingredients'  => self::sanitize_string_list( is_array( $payload['missing_ingredients'] ?? null ) ? $payload['missing_ingredients'] : [] ),
+				'pantry_match_count'   => (int) ( $payload['pantry_match_count'] ?? 0 ),
+				'pantry_missing_count' => (int) ( $payload['pantry_missing_count'] ?? 0 ),
+			];
+		}, $data ), static function( array $recipe ) use ( $meal_type, $minimum_protein ): bool {
+			if ( '' !== $meal_type && $meal_type !== ( $recipe['meal_type'] ?? '' ) ) {
+				return false;
+			}
+
+			return (float) ( $recipe['estimated_protein_g'] ?? 0 ) >= $minimum_protein;
+		} ) );
+
+		usort( $recipes, static function( array $left, array $right ): int {
+			$protein_compare = (float) ( $right['estimated_protein_g'] ?? 0 ) <=> (float) ( $left['estimated_protein_g'] ?? 0 );
+			if ( 0 !== $protein_compare ) {
+				return $protein_compare;
+			}
+
+			return (int) ( $right['pantry_match_count'] ?? 0 ) <=> (int) ( $left['pantry_match_count'] ?? 0 );
+		} );
+
+		return [
+			'meal_type'         => $meal_type,
+			'minimum_protein_g' => $minimum_protein,
+			'recipe_count'      => count( $recipes ),
+			'recipes'           => array_slice( $recipes, 0, $limit ),
 		];
 	}
 
@@ -1805,11 +2577,15 @@ RULES;
 			return [ 'error' => $workout['error'] ];
 		}
 
-		$session = is_array( $workout['session'] ?? null ) ? $workout['session'] : [];
-		$exercises = is_array( $workout['exercises'] ?? null ) ? $workout['exercises'] : [];
+		$active_session = is_array( $workout['session'] ?? null ) ? $workout['session'] : [];
+		$active_exercises = is_array( $workout['exercises'] ?? null ) ? $workout['exercises'] : [];
+		$today_payload = self::get_latest_workout_session_payload_for_date( $user_id, UserTime::today( $user_id ) );
+		$today_session = is_array( $today_payload['session'] ?? null ) ? $today_payload['session'] : $active_session;
+		$today_exercises = is_array( $today_payload['exercises'] ?? null ) ? $today_payload['exercises'] : $active_exercises;
+		$last_completed = self::get_latest_completed_workout_session_payload( $user_id );
 
 		return [
-			'session'      => $session,
+			'session'      => $active_session,
 			'session_mode' => (string) ( $workout['session_mode'] ?? 'normal' ),
 			'exercises'    => array_map( static function( array $exercise ): array {
 				return [
@@ -1833,11 +2609,190 @@ RULES;
 						];
 					}, is_array( $exercise['swap_options'] ?? null ) ? $exercise['swap_options'] : [] ),
 				];
-			}, $exercises ),
+			}, $active_exercises ),
+			'has_active_session' => ! empty( $active_session['id'] ),
+			'completed_today'    => ! empty( $today_session['completed'] ),
+			'today_status'       => ! empty( $active_session['id'] ) ? 'active' : ( ! empty( $today_session['completed'] ) ? 'completed' : ( ! empty( $today_session['id'] ) ? 'scheduled' : 'none' ) ),
+			'today_session'      => self::normalise_tool_session_summary( $today_session ),
+			'today_exercises'    => array_map( [ __CLASS__, 'normalise_tool_exercise_summary' ], $today_exercises ),
+			'last_completed_session' => self::normalise_tool_session_summary( is_array( $last_completed['session'] ?? null ) ? $last_completed['session'] : [] ),
 		];
 	}
 
-			private static function tool_log_steps( int $user_id, array $arguments = [] ): array {
+	private static function get_active_goal_targets( int $user_id ): array {
+		global $wpdb;
+		$p = $wpdb->prefix;
+
+		$goal = $wpdb->get_row( $wpdb->prepare(
+			"SELECT target_calories, target_protein_g, target_steps, target_sleep_hours
+			 FROM {$p}fit_user_goals WHERE user_id = %d AND active = 1 ORDER BY created_at DESC LIMIT 1",
+			$user_id
+		) );
+
+		return [
+			'target_calories'    => (int) ( $goal->target_calories ?? 0 ),
+			'target_protein_g'   => (float) ( $goal->target_protein_g ?? 0 ),
+			'target_steps'       => (int) ( $goal->target_steps ?? 0 ),
+			'target_sleep_hours' => (float) ( $goal->target_sleep_hours ?? 0 ),
+		];
+	}
+
+	private static function get_daily_nutrition_totals_for_date( int $user_id, string $date ): array {
+		global $wpdb;
+		$p = $wpdb->prefix;
+
+		$totals = $wpdb->get_row( $wpdb->prepare(
+			"SELECT
+				COALESCE(SUM(mi.calories), 0) AS calories,
+				COALESCE(SUM(mi.protein_g), 0) AS protein_g,
+				COUNT(DISTINCT m.id) AS meal_count
+			 FROM {$p}fit_meal_items mi
+			 JOIN {$p}fit_meals m ON m.id = mi.meal_id
+			 WHERE m.user_id = %d AND m.confirmed = 1 AND DATE(m.meal_datetime) = %s",
+			$user_id,
+			$date
+		) );
+
+		return [
+			'calories'   => (int) ( $totals->calories ?? 0 ),
+			'protein_g'  => (float) ( $totals->protein_g ?? 0 ),
+			'meal_count' => (int) ( $totals->meal_count ?? 0 ),
+		];
+	}
+
+	private static function get_meal_breakdown_for_date( int $user_id, string $date, string $meal_type = '', int $limit = self::MAX_TOOL_MEAL_ROWS ): array {
+		global $wpdb;
+		$p = $wpdb->prefix;
+		$limit = max( 1, min( self::MAX_TOOL_MEAL_ROWS, $limit ) );
+
+		$totals = $wpdb->get_row( $wpdb->prepare(
+			"SELECT
+				COALESCE(SUM(mi.calories), 0) AS calories,
+				COALESCE(SUM(mi.protein_g), 0) AS protein_g,
+				COALESCE(SUM(mi.carbs_g), 0) AS carbs_g,
+				COALESCE(SUM(mi.fat_g), 0) AS fat_g
+			 FROM {$p}fit_meal_items mi
+			 JOIN {$p}fit_meals m ON m.id = mi.meal_id
+			 WHERE m.user_id = %d AND DATE(m.meal_datetime) = %s AND m.confirmed = 1",
+			$user_id,
+			$date
+		), ARRAY_A );
+
+		$where_sql = '' !== $meal_type ? $wpdb->prepare( ' AND m.meal_type = %s', $meal_type ) : '';
+		$rows = $wpdb->get_results( $wpdb->prepare(
+			"SELECT
+				m.id,
+				m.meal_type,
+				m.meal_datetime,
+				COALESCE(SUM(mi.calories), 0) AS calories,
+				COALESCE(SUM(mi.protein_g), 0) AS protein_g,
+				COALESCE(SUM(mi.carbs_g), 0) AS carbs_g,
+				COALESCE(SUM(mi.fat_g), 0) AS fat_g,
+				GROUP_CONCAT(mi.food_name ORDER BY mi.id SEPARATOR ' | ') AS foods
+			 FROM {$p}fit_meals m
+			 LEFT JOIN {$p}fit_meal_items mi ON mi.meal_id = m.id
+			 WHERE m.user_id = %d AND DATE(m.meal_datetime) = %s AND m.confirmed = 1{$where_sql}
+			 GROUP BY m.id, m.meal_type, m.meal_datetime
+			 ORDER BY m.meal_datetime ASC
+			 LIMIT %d",
+			$user_id,
+			$date,
+			$limit
+		), ARRAY_A );
+
+		$entries = array_map( static function( array $row ): array {
+			$foods = array_values( array_filter( array_map( static fn( string $item ): string => sanitize_text_field( trim( $item ) ), explode( '|', (string) ( $row['foods'] ?? '' ) ) ) ) );
+			return [
+				'id'            => (int) ( $row['id'] ?? 0 ),
+				'meal_type'     => sanitize_key( (string) ( $row['meal_type'] ?? '' ) ),
+				'meal_datetime' => sanitize_text_field( (string) ( $row['meal_datetime'] ?? '' ) ),
+				'calories'      => (int) ( $row['calories'] ?? 0 ),
+				'protein_g'     => (float) ( $row['protein_g'] ?? 0 ),
+				'carbs_g'       => (float) ( $row['carbs_g'] ?? 0 ),
+				'fat_g'         => (float) ( $row['fat_g'] ?? 0 ),
+				'foods'         => $foods,
+				'food_summary'  => implode( ', ', array_slice( $foods, 0, 6 ) ),
+			];
+		}, is_array( $rows ) ? $rows : [] );
+
+		return [
+			'totals'  => [
+				'calories'  => (int) ( $totals['calories'] ?? 0 ),
+				'protein_g' => (float) ( $totals['protein_g'] ?? 0 ),
+				'carbs_g'   => (float) ( $totals['carbs_g'] ?? 0 ),
+				'fat_g'     => (float) ( $totals['fat_g'] ?? 0 ),
+			],
+			'entries' => $entries,
+		];
+	}
+
+	private static function normalise_tool_session_summary( array $session ): array {
+		return [
+			'id'               => (int) ( $session['id'] ?? 0 ),
+			'session_date'     => (string) ( $session['session_date'] ?? '' ),
+			'planned_day_type' => (string) ( $session['planned_day_type'] ?? '' ),
+			'actual_day_type'  => (string) ( $session['actual_day_type'] ?? '' ),
+			'completed'        => ! empty( $session['completed'] ),
+			'skip_requested'   => ! empty( $session['skip_requested'] ),
+			'started_at'       => (string) ( $session['started_at'] ?? '' ),
+			'completed_at'     => (string) ( $session['completed_at'] ?? '' ),
+			'time_tier'        => (string) ( $session['time_tier'] ?? '' ),
+			'readiness_score'  => isset( $session['readiness_score'] ) ? (int) $session['readiness_score'] : null,
+		];
+	}
+
+	private static function normalise_tool_exercise_summary( array $exercise ): array {
+		return [
+			'id'             => (int) ( $exercise['id'] ?? 0 ),
+			'exercise_name'  => (string) ( $exercise['exercise_name'] ?? '' ),
+			'slot_type'      => (string) ( $exercise['slot_type'] ?? '' ),
+			'target_sets'    => (int) ( $exercise['target_sets'] ?? 0 ),
+			'target_rep_min' => (int) ( $exercise['target_rep_min'] ?? 0 ),
+			'target_rep_max' => (int) ( $exercise['target_rep_max'] ?? 0 ),
+			'was_swapped'    => ! empty( $exercise['was_swapped'] ),
+		];
+	}
+
+	private static function get_latest_workout_session_payload_for_date( int $user_id, string $date ): array {
+		global $wpdb;
+		$session_id = (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT id FROM {$wpdb->prefix}fit_workout_sessions WHERE user_id = %d AND session_date = %s ORDER BY id DESC LIMIT 1",
+			$user_id,
+			$date
+		) );
+
+		return $session_id > 0 ? self::get_workout_session_payload_by_id( $session_id ) : [];
+	}
+
+	private static function get_latest_completed_workout_session_payload( int $user_id ): array {
+		global $wpdb;
+		$session_id = (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT id FROM {$wpdb->prefix}fit_workout_sessions WHERE user_id = %d AND completed = 1 ORDER BY session_date DESC, id DESC LIMIT 1",
+			$user_id
+		) );
+
+		return $session_id > 0 ? self::get_workout_session_payload_by_id( $session_id ) : [];
+	}
+
+	private static function get_workout_session_payload_by_id( int $session_id ): array {
+		$request = new \WP_REST_Request( 'GET', '/fit/v1/workout/' . $session_id );
+		$request->set_param( 'id', $session_id );
+		$response = \Johnny5k\REST\WorkoutController::get_session( $request );
+		$data = $response->get_data();
+		$status = (int) $response->get_status();
+
+		if ( $status >= 400 ) {
+			return [];
+		}
+
+		return [
+			'session'      => self::normalise_array_value( $data['session'] ?? [] ),
+			'exercises'    => array_map( [ __CLASS__, 'normalise_array_value' ], is_array( $data['exercises'] ?? null ) ? $data['exercises'] : [] ),
+			'session_mode' => (string) ( $data['session_mode'] ?? 'normal' ),
+		];
+	}
+
+	private static function tool_log_steps( int $user_id, array $arguments = [] ): array {
 			$steps = isset( $arguments['steps'] ) ? (int) $arguments['steps'] : -1;
 			if ( $steps < 0 ) {
 				return [ 'error' => 'A non-negative step count is required.' ];
@@ -1861,14 +2816,24 @@ RULES;
 
 			$date_logged = (string) ( $data['date'] ?? UserTime::today( $user_id ) );
 			$date_display = self::format_tool_display_date( $user_id, $date_logged );
+			$targets = self::get_active_goal_targets( $user_id );
+			$target_steps = (int) ( $targets['target_steps'] ?? 0 );
+			$steps_logged = (int) ( $data['steps'] ?? $steps );
+			$remaining_steps = max( 0, $target_steps - $steps_logged );
+			$coach_note = $target_steps > 0
+				? sprintf( 'That puts you at %s of %s steps. %s', number_format_i18n( $steps_logged ), number_format_i18n( $target_steps ), $remaining_steps > 0 ? sprintf( '%s left to close the target.', number_format_i18n( $remaining_steps ) ) : 'Step target closed for the day.' )
+				: 'Step target updated for the day.';
 
 			return [
 				'ok'      => true,
 				'action'  => 'log_steps',
 				'date'    => $date_logged,
 				'date_display' => $date_display,
-				'steps'   => (int) ( $data['steps'] ?? $steps ),
-				'summary' => sprintf( 'Logged %s steps for %s.', number_format_i18n( (int) ( $data['steps'] ?? $steps ) ), $date_display ),
+				'steps'   => $steps_logged,
+				'target_steps' => $target_steps,
+				'remaining_steps' => $remaining_steps,
+				'coach_note' => $coach_note,
+				'summary' => sprintf( 'Logged %s steps for %s. %s', number_format_i18n( $steps_logged ), $date_display, $coach_note ),
 			];
 		}
 
@@ -1915,18 +2880,37 @@ RULES;
 			}
 
 			$food_name = (string) ( $analysis['food_name'] ?? 'Food item' );
+			$meal_datetime = (string) ( $data['meal_datetime'] ?? self::normalise_tool_datetime( $user_id, (string) ( $arguments['meal_datetime'] ?? '' ) ) );
+			$meal_date = substr( $meal_datetime, 0, 10 );
+			$day_totals = self::get_daily_nutrition_totals_for_date( $user_id, $meal_date );
+			$targets = self::get_active_goal_targets( $user_id );
+			$estimated = (float) ( $analysis['confidence'] ?? 0 ) < 0.72;
+			$coach_note = sprintf(
+				'Today now sits at %d calories and %.0f g protein across %d meal%s.',
+				(int) ( $day_totals['calories'] ?? 0 ),
+				(float) ( $day_totals['protein_g'] ?? 0 ),
+				(int) ( $day_totals['meal_count'] ?? 0 ),
+				1 === (int) ( $day_totals['meal_count'] ?? 0 ) ? '' : 's'
+			);
+			if ( ! empty( $targets['target_calories'] ) ) {
+				$coach_note .= sprintf( ' Target is %d calories.', (int) $targets['target_calories'] );
+			}
 
 			return [
 				'ok'         => true,
 				'action'     => 'log_food_from_description',
 				'meal_id'    => (int) ( $data['meal_id'] ?? 0 ),
 				'meal_type'  => $meal_type,
+				'meal_date'  => $meal_date,
 				'food_name'  => $food_name,
 				'calories'   => (int) ( $analysis['calories'] ?? 0 ),
 				'protein_g'  => (float) ( $analysis['protein_g'] ?? 0 ),
 				'confidence' => (float) ( $analysis['confidence'] ?? 0 ),
 				'notes'      => (string) ( $analysis['notes'] ?? '' ),
-				'summary'    => sprintf( 'Logged %s to %s.', $food_name, $meal_type ),
+				'estimated'  => $estimated,
+				'review_recommended' => $estimated,
+				'coach_note' => $coach_note,
+				'summary'    => sprintf( '%s %s to %s. %s', $estimated ? 'Logged an estimate for' : 'Logged', $food_name, $meal_type, $coach_note ),
 			];
 		}
 
@@ -1993,15 +2977,24 @@ RULES;
 
 			$date_logged = (string) ( $data['date'] ?? UserTime::today( $user_id ) );
 			$date_display = self::format_tool_display_date( $user_id, $date_logged );
+			$targets = self::get_active_goal_targets( $user_id );
+			$target_sleep = (float) ( $targets['target_sleep_hours'] ?? 0 );
+			$logged_sleep = (float) ( $data['hours_sleep'] ?? $hours_sleep );
+			$sleep_gap = $target_sleep > 0 ? round( $logged_sleep - $target_sleep, 1 ) : 0;
+			$coach_note = $target_sleep > 0
+				? sprintf( 'Target is %.1f hours, so this is %s%.1f hours.', $target_sleep, $sleep_gap >= 0 ? '+' : '', $sleep_gap )
+				: 'Sleep target updated for the day.';
 			return [
 				'ok'            => true,
 				'action'        => 'log_sleep',
 				'id'            => (int) ( $data['id'] ?? 0 ),
 				'date'          => $date_logged,
 				'date_display'  => $date_display,
-				'hours_sleep'   => (float) ( $data['hours_sleep'] ?? $hours_sleep ),
+				'hours_sleep'   => $logged_sleep,
+				'target_sleep_hours' => $target_sleep,
 				'sleep_quality' => $sleep_quality,
-				'summary'       => sprintf( 'Logged %.1f hours of sleep for %s.', (float) ( $data['hours_sleep'] ?? $hours_sleep ), $date_display ),
+				'coach_note'    => $coach_note,
+				'summary'       => sprintf( 'Logged %.1f hours of sleep for %s. %s', $logged_sleep, $date_display, $coach_note ),
 			];
 		}
 
@@ -2034,6 +3027,7 @@ RULES;
 				'merged_count'  => (int) ( $data['merged_count'] ?? 0 ),
 				'updated_count' => (int) ( $data['updated_count'] ?? 0 ),
 				'item_names'    => $item_names,
+				'coach_note'    => sprintf( 'Pantry now has %d item%s on hand.', count( $item_names ), 1 === count( $item_names ) ? '' : 's' ),
 				'summary'       => self::build_bulk_action_summary( 'pantry', $item_names, $data ),
 			];
 		}
@@ -2066,6 +3060,7 @@ RULES;
 				'created_count' => (int) ( $data['created_count'] ?? 0 ),
 				'merged_count'  => (int) ( $data['merged_count'] ?? 0 ),
 				'item_names'    => $item_names,
+				'coach_note'    => 'Those items are now queued in grocery gap so the next shopping pass is easier to execute.',
 				'summary'       => self::build_bulk_action_summary( 'grocery gap', $item_names, $data ),
 			];
 		}
@@ -2124,9 +3119,44 @@ RULES;
 				'session_exercise_id' => (int) ( $exercise['id'] ?? 0 ),
 				'previous_exercise'   => (string) ( $exercise['exercise_name'] ?? '' ),
 				'new_exercise'        => $new_name,
-				'summary'             => sprintf( 'Swapped %s for %s in the current workout.', (string) ( $exercise['exercise_name'] ?? 'that exercise' ), $new_name ),
+				'coach_note'          => sprintf( 'The current workout now points you to %s instead.', $new_name ),
+				'summary'             => sprintf( 'Swapped %s for %s in the current workout. The session is updated.', (string) ( $exercise['exercise_name'] ?? 'that exercise' ), $new_name ),
 			];
 		}
+
+	private static function tool_schedule_sms_reminder( int $user_id, array $arguments = [] ): array {
+		$message = sanitize_textarea_field( (string) ( $arguments['message'] ?? '' ) );
+		$send_at_local = sanitize_text_field( (string) ( $arguments['send_at_local'] ?? '' ) );
+
+		if ( '' === trim( $message ) ) {
+			return [ 'error' => 'A reminder message is required.' ];
+		}
+		if ( '' === trim( $send_at_local ) ) {
+			return [ 'error' => 'A future local date and time is required.' ];
+		}
+
+		$result = SmsService::schedule_user_reminder( $user_id, $send_at_local, $message );
+		if ( is_wp_error( $result ) ) {
+			return [ 'error' => $result->get_error_message() ];
+		}
+
+		$send_at_display = self::format_tool_display_datetime( $user_id, (string) ( $result['send_at_local'] ?? '' ) );
+		$timezone_display = self::format_tool_timezone_label( $user_id, (string) ( $result['timezone'] ?? '' ) );
+		$timing_phrase = self::build_tool_reminder_timing_phrase( $send_at_display, $timezone_display );
+
+		return [
+			'ok'            => true,
+			'action'        => 'schedule_sms_reminder',
+			'reminder_id'   => sanitize_text_field( (string) ( $result['id'] ?? '' ) ),
+			'message'       => sanitize_textarea_field( (string) ( $result['message'] ?? $message ) ),
+			'send_at_local' => sanitize_text_field( (string) ( $result['send_at_local'] ?? '' ) ),
+			'timezone'      => sanitize_text_field( (string) ( $result['timezone'] ?? '' ) ),
+			'send_at_display' => $send_at_display,
+			'timezone_display' => $timezone_display,
+			'coach_note'    => sprintf( 'SMS reminder locked for %s.', $timing_phrase ),
+			'summary'       => sprintf( 'Scheduled an SMS reminder for %s.', $timing_phrase ),
+		];
+	}
 
 		private static function get_current_workout_payload(): array {
 			$request = new \WP_REST_Request( 'GET', '/fit/v1/workout/current' );
@@ -2310,6 +3340,74 @@ RULES;
 			}
 
 			return $datetime->format( 'M j' );
+		}
+
+		private static function format_tool_display_datetime( int $user_id, string $raw_datetime ): string {
+			$datetime_value = trim( $raw_datetime );
+			if ( '' === $datetime_value ) {
+				return '';
+			}
+
+			$timezone = UserTime::timezone( $user_id );
+			$formats = [ 'Y-m-d H:i:s', 'Y-m-d H:i', \DateTimeInterface::ATOM ];
+			$datetime = false;
+
+			foreach ( $formats as $format ) {
+				$datetime = \DateTimeImmutable::createFromFormat( $format, $datetime_value, $timezone );
+				if ( false !== $datetime ) {
+					break;
+				}
+			}
+
+			if ( false === $datetime ) {
+				try {
+					$datetime = new \DateTimeImmutable( $datetime_value, $timezone );
+				} catch ( \Exception $e ) {
+					return $datetime_value;
+				}
+			}
+
+			return $datetime->setTimezone( $timezone )->format( 'l, F j \a\t g:i A' );
+		}
+
+		private static function format_tool_timezone_label( int $user_id, string $timezone_string = '' ): string {
+			$timezone_name = '' !== trim( $timezone_string ) ? trim( $timezone_string ) : UserTime::timezone_string( $user_id );
+			$named_zones = [
+				'America/New_York' => 'Eastern Time',
+				'America/Detroit' => 'Eastern Time',
+				'America/Indiana/Indianapolis' => 'Eastern Time',
+				'America/Chicago' => 'Central Time',
+				'America/Denver' => 'Mountain Time',
+				'America/Phoenix' => 'Mountain Time',
+				'America/Los_Angeles' => 'Pacific Time',
+				'America/Anchorage' => 'Alaska Time',
+				'Pacific/Honolulu' => 'Hawaii Time',
+			];
+
+			if ( isset( $named_zones[ $timezone_name ] ) ) {
+				return $named_zones[ $timezone_name ];
+			}
+
+			try {
+				$timezone = new \DateTimeZone( $timezone_name );
+				$now = new \DateTimeImmutable( 'now', $timezone );
+				$abbreviation = strtoupper( $now->format( 'T' ) );
+				if ( '' !== trim( $abbreviation ) ) {
+					return $abbreviation;
+				}
+			} catch ( \Exception $e ) {
+				// Fall through to a basic readable label.
+			}
+
+			return str_replace( '_', ' ', preg_replace( '#^.*/#', '', $timezone_name ) );
+		}
+
+		private static function build_tool_reminder_timing_phrase( string $send_at_display, string $timezone_display ): string {
+			if ( '' !== $send_at_display && '' !== $timezone_display ) {
+				return $send_at_display . ' ' . $timezone_display;
+			}
+
+			return '' !== $send_at_display ? $send_at_display : $timezone_display;
 		}
 
 	// ── OpenAI HTTP helper ────────────────────────────────────────────────────
@@ -2497,15 +3595,43 @@ RULES;
 		$actions = [];
 		$decoded = self::decode_json_reply( $raw_reply );
 
+		$why = '';
+		$context_used = [];
+		$confidence = '';
+
 		if ( is_array( $decoded ) && isset( $decoded['reply'] ) ) {
 			$reply   = sanitize_textarea_field( (string) $decoded['reply'] );
 			$actions = self::sanitize_structured_actions( is_array( $decoded['actions'] ?? null ) ? $decoded['actions'] : [] );
+			$why = sanitize_textarea_field( (string) ( $decoded['why'] ?? '' ) );
+			$context_used = self::sanitize_string_list( is_array( $decoded['context_used'] ?? null ) ? $decoded['context_used'] : [] );
+			$confidence = sanitize_key( (string) ( $decoded['confidence'] ?? '' ) );
+			if ( ! in_array( $confidence, [ 'high', 'medium', 'low' ], true ) ) {
+				$confidence = '';
+			}
 		}
 
+		$reply = self::clean_chat_reply_text( '' !== $reply ? $reply : trim( $raw_reply ) );
+
 		return [
-			'reply'   => '' !== $reply ? $reply : trim( $raw_reply ),
-			'actions' => $actions,
+			'reply'        => $reply,
+			'actions'      => $actions,
+			'why'          => $why,
+			'context_used' => $context_used,
+			'confidence'   => $confidence,
 		];
+	}
+
+	private static function clean_chat_reply_text( string $reply ): string {
+		$clean = trim( $reply );
+		if ( '' === $clean ) {
+			return '';
+		}
+
+		$clean = preg_replace( '/^\s*#{1,6}\s*/m', '', $clean );
+		$clean = preg_replace( '/^\s*(Next steps|Here\'s a plan based on today\'s data)\s*:?\s*$/im', '', $clean );
+		$clean = preg_replace( '/\n{3,}/', "\n\n", $clean );
+
+		return trim( $clean );
 	}
 
 	/**
@@ -2612,12 +3738,73 @@ RULES;
 				if ( '' !== $reason ) {
 					$result['reason'] = $reason;
 				}
+				$due_at = sanitize_text_field( (string) ( $payload['due_at'] ?? '' ) );
+				if ( '' !== $due_at ) {
+					$result['due_at'] = $due_at;
+				}
+				$next_step = sanitize_text_field( (string) ( $payload['next_step'] ?? '' ) );
+				if ( '' !== $next_step ) {
+					$result['next_step'] = $next_step;
+				}
+				$starter_prompt = sanitize_textarea_field( (string) ( $payload['starter_prompt'] ?? '' ) );
+				if ( '' !== $starter_prompt ) {
+					$result['starter_prompt'] = $starter_prompt;
+				}
+				$commitment_key = sanitize_key( (string) ( $payload['commitment_key'] ?? '' ) );
+				if ( '' !== $commitment_key ) {
+					$result['commitment_key'] = $commitment_key;
+				}
+
+				return $result;
+
+			case 'run_workflow':
+				$workflow = sanitize_key( (string) ( $payload['workflow'] ?? '' ) );
+				if ( ! in_array( $workflow, self::SUPPORTED_WORKFLOWS, true ) ) {
+					return null;
+				}
+
+				$result = [
+					'workflow' => $workflow,
+					'steps'    => self::sanitize_string_list( is_array( $payload['steps'] ?? null ) ? $payload['steps'] : [] ),
+				];
+				$title = sanitize_text_field( (string) ( $payload['title'] ?? '' ) );
+				if ( '' !== $title ) {
+					$result['title'] = $title;
+				}
+				$summary = sanitize_textarea_field( (string) ( $payload['summary'] ?? '' ) );
+				if ( '' !== $summary ) {
+					$result['summary'] = $summary;
+				}
+				$screen = sanitize_key( (string) ( $payload['screen'] ?? '' ) );
+				if ( in_array( $screen, self::SUPPORTED_ACTION_SCREENS, true ) ) {
+					$result['screen'] = $screen;
+				}
+				$meal_type = self::sanitize_meal_type_value( (string) ( $payload['meal_type'] ?? '' ), false );
+				if ( '' !== $meal_type ) {
+					$result['meal_type'] = $meal_type;
+				}
+				$items = self::sanitize_meal_draft_items( is_array( $payload['items'] ?? null ) ? $payload['items'] : [] );
+				if ( ! empty( $items ) ) {
+					$result['items'] = $items;
+				}
+				$starter_prompt = sanitize_textarea_field( (string) ( $payload['starter_prompt'] ?? '' ) );
+				if ( '' !== $starter_prompt ) {
+					$result['starter_prompt'] = $starter_prompt;
+				}
 
 				return $result;
 
 			default:
 				return null;
 		}
+	}
+
+	/**
+	 * @param array<int,mixed> $items
+	 * @return array<int,string>
+	 */
+	private static function sanitize_string_list( array $items ): array {
+		return array_values( array_filter( array_map( static fn( $item ) => sanitize_text_field( (string) $item ), $items ) ) );
 	}
 
 	private static function sanitize_meal_type_value( string $meal_type, bool $default_to_lunch = true ): string {
@@ -2828,5 +4015,87 @@ RULES;
 			'total_fat_g'      => round( (float) ( $parsed['total_fat_g'] ?? 0 ), 2 ),
 			'confidence'       => max( 0, min( 1, (float) ( $parsed['confidence'] ?? 0 ) ) ),
 		];
+	}
+
+	private static function normalise_exercise_library_item( array $exercise, string $fallback_name = '' ): array {
+		$allowed_difficulty = [ 'beginner', 'intermediate', 'advanced' ];
+		$allowed_progression = [ 'double_progression', 'load_progression', 'top_set_backoff' ];
+		$allowed_day_types = [ 'push', 'pull', 'legs', 'arms_shoulders', 'cardio', 'rest' ];
+		$allowed_slot_types = [ 'main', 'secondary', 'shoulders', 'accessory', 'abs', 'challenge' ];
+
+		$difficulty = sanitize_key( (string) ( $exercise['difficulty'] ?? 'beginner' ) );
+		if ( ! in_array( $difficulty, $allowed_difficulty, true ) ) {
+			$difficulty = 'beginner';
+		}
+
+		$progression = sanitize_key( (string) ( $exercise['default_progression_type'] ?? 'double_progression' ) );
+		if ( ! in_array( $progression, $allowed_progression, true ) ) {
+			$progression = 'double_progression';
+		}
+
+		$day_types = array_values( array_filter( array_map(
+			static function( $value ) use ( $allowed_day_types ): string {
+				$key = sanitize_key( (string) $value );
+				return in_array( $key, $allowed_day_types, true ) ? $key : '';
+			},
+			(array) ( $exercise['day_types'] ?? [] )
+		) ) );
+
+		$slot_types = array_values( array_filter( array_map(
+			static function( $value ) use ( $allowed_slot_types ): string {
+				$key = sanitize_key( (string) $value );
+				return in_array( $key, $allowed_slot_types, true ) ? $key : '';
+			},
+			(array) ( $exercise['slot_types'] ?? [] )
+		) ) );
+
+		return [
+			'name'                     => sanitize_text_field( (string) ( $exercise['name'] ?? $fallback_name ) ),
+			'description'              => sanitize_textarea_field( (string) ( $exercise['description'] ?? '' ) ),
+			'movement_pattern'         => sanitize_text_field( (string) ( $exercise['movement_pattern'] ?? '' ) ),
+			'primary_muscle'           => sanitize_text_field( (string) ( $exercise['primary_muscle'] ?? '' ) ),
+			'secondary_muscles'        => array_values( array_filter( array_map( 'sanitize_text_field', (array) ( $exercise['secondary_muscles'] ?? [] ) ) ) ),
+			'equipment'                => sanitize_text_field( (string) ( $exercise['equipment'] ?? 'other' ) ),
+			'difficulty'               => $difficulty,
+			'age_friendliness_score'   => max( 1, min( 10, (int) ( $exercise['age_friendliness_score'] ?? 5 ) ) ),
+			'joint_stress_score'       => max( 1, min( 10, (int) ( $exercise['joint_stress_score'] ?? 3 ) ) ),
+			'spinal_load_score'        => max( 1, min( 10, (int) ( $exercise['spinal_load_score'] ?? 3 ) ) ),
+			'default_rep_min'          => max( 1, (int) ( $exercise['default_rep_min'] ?? 8 ) ),
+			'default_rep_max'          => max( 1, (int) ( $exercise['default_rep_max'] ?? 12 ) ),
+			'default_sets'             => max( 1, (int) ( $exercise['default_sets'] ?? 3 ) ),
+			'default_progression_type' => $progression,
+			'coaching_cues'            => array_values( array_filter( array_map( 'sanitize_text_field', (array) ( $exercise['coaching_cues'] ?? [] ) ) ) ),
+			'day_types'                => $day_types,
+			'slot_types'               => $slot_types ?: [ 'accessory' ],
+		];
+	}
+
+	private static function build_fallback_exercise_description( array $exercise ): string {
+		$movement  = trim( str_replace( '_', ' ', (string) ( $exercise['movement_pattern'] ?? '' ) ) );
+		$primary   = trim( str_replace( '_', ' ', (string) ( $exercise['primary_muscle'] ?? '' ) ) );
+		$secondary = array_values( array_filter( array_map(
+			static fn( $item ): string => trim( str_replace( '_', ' ', (string) $item ) ),
+			(array) ( $exercise['secondary_muscles'] ?? [] )
+		) ) );
+		$equipment = trim( str_replace( '_', ' ', (string) ( $exercise['equipment'] ?? '' ) ) );
+
+		$parts = [];
+		if ( '' !== $movement && '' !== $primary ) {
+			$parts[] = sprintf( 'A %s exercise focused on %s.', strtolower( $movement ), strtolower( $primary ) );
+		} elseif ( '' !== $primary ) {
+			$parts[] = sprintf( 'An exercise used to train %s.', strtolower( $primary ) );
+		} else {
+			$parts[] = 'A repeatable gym exercise that fits a structured training plan.';
+		}
+
+		if ( ! empty( $secondary ) ) {
+			$parts[] = 'It also challenges ' . strtolower( implode( ', ', array_slice( $secondary, 0, 3 ) ) ) . '.';
+		}
+
+		if ( '' !== $equipment && 'other' !== strtolower( $equipment ) ) {
+			$parts[] = 'Typically performed with ' . strtolower( $equipment ) . '.';
+		}
+
+		return sanitize_textarea_field( implode( ' ', $parts ) );
 	}
 }

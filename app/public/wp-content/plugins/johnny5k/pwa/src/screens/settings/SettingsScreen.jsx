@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { bodyApi, onboardingApi } from '../../api/client'
+import { aiApi, bodyApi, onboardingApi } from '../../api/client'
 import { useDashboardStore } from '../../store/dashboardStore'
 import { useAuthStore } from '../../store/authStore'
+import { useJohnnyAssistantStore } from '../../store/johnnyAssistantStore'
 import { buildHeightCm, formatPhoneInput, formatReminderHour, formatMissingFields, getTimezoneRegion, getTimezoneRegions, getTimezonesForRegion, normalizePhoneNumber, normalizeTargets, reminderHourOptions, settingsFormFromState } from '../../lib/onboarding'
 import { formatUsShortDate } from '../../lib/dateFormat'
+import { applyColorScheme, getColorSchemeOptions, normalizeColorScheme, setAvailableColorSchemes } from '../../lib/theme'
 
 const DAY_TYPE_OPTIONS = [
   ['push', 'Push'],
@@ -16,6 +18,12 @@ const DAY_TYPE_OPTIONS = [
 ]
 const TIMEZONE_REGIONS = getTimezoneRegions()
 const REMINDER_HOUR_OPTIONS = reminderHourOptions()
+const GOAL_CALORIE_DELTAS = {
+  cut: { slow: -500, moderate: -750, aggressive: -1000 },
+  maintain: { slow: 0, moderate: 0, aggressive: 0 },
+  gain: { slow: 250, moderate: 400, aggressive: 500 },
+  recomp: { slow: -250, moderate: -250, aggressive: -250 },
+}
 
 export default function SettingsScreen() {
   const navigate = useNavigate()
@@ -23,6 +31,7 @@ export default function SettingsScreen() {
   const loadSnapshot = useDashboardStore(s => s.loadSnapshot)
   const snapshot = useDashboardStore(s => s.snapshot)
   const setAuth = useAuthStore(s => s.setAuth)
+  const openDrawer = useJohnnyAssistantStore(state => state.openDrawer)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState(settingsFormFromState())
@@ -32,6 +41,18 @@ export default function SettingsScreen() {
   const [missingFields, setMissingFields] = useState([])
   const [timezoneRegion, setTimezoneRegion] = useState(getTimezoneRegion(form.timezone))
   const [weeklyWeights, setWeeklyWeights] = useState([])
+  const [johnnyMemory, setJohnnyMemory] = useState([])
+  const [johnnyMemoryDraft, setJohnnyMemoryDraft] = useState([])
+  const [savingJohnnyMemory, setSavingJohnnyMemory] = useState(false)
+  const [johnnyOverview, setJohnnyOverview] = useState(null)
+  const [johnnyError, setJohnnyError] = useState('')
+  const [johnnyMessage, setJohnnyMessage] = useState('')
+  const [colorSchemeOptions, setColorSchemeOptions] = useState(getColorSchemeOptions())
+  const [smsReminders, setSmsReminders] = useState({ timezone: '', scheduled: [], history: [] })
+  const [smsReminderLoading, setSmsReminderLoading] = useState(true)
+  const [smsReminderError, setSmsReminderError] = useState('')
+  const [smsReminderMessage, setSmsReminderMessage] = useState('')
+  const [cancelingReminderId, setCancelingReminderId] = useState('')
 
   function update(field, value) {
     setForm(current => ({ ...current, [field]: value }))
@@ -54,9 +75,12 @@ export default function SettingsScreen() {
     onboardingApi.getState()
       .then(data => {
         if (!active) return
+        const nextColorSchemes = setAvailableColorSchemes(data?.color_schemes)
+        setColorSchemeOptions(nextColorSchemes)
         const nextForm = settingsFormFromState(data.profile, data.prefs, data.goal)
         setForm({
           ...nextForm,
+          color_scheme: normalizeColorScheme(nextForm.color_scheme),
           phone: formatPhoneInput(nextForm.phone),
         })
         setTimezoneRegion(getTimezoneRegion(nextForm.timezone))
@@ -68,6 +92,51 @@ export default function SettingsScreen() {
       })
       .finally(() => {
         if (active) setLoading(false)
+      })
+
+    return () => { active = false }
+  }, [])
+
+  useEffect(() => {
+    applyColorScheme(form.color_scheme)
+  }, [form.color_scheme])
+
+  useEffect(() => {
+    let active = true
+
+    aiApi.getMemory()
+      .then(data => {
+        if (!active) return
+        const bullets = Array.isArray(data.durable_memory?.bullets) ? data.durable_memory.bullets : []
+        setJohnnyMemory(bullets)
+        setJohnnyMemoryDraft(bullets.length ? bullets : [''])
+        setJohnnyOverview(data.follow_up_overview ?? null)
+      })
+      .catch(err => {
+        if (active) setJohnnyError(err.message)
+      })
+
+    return () => { active = false }
+  }, [])
+
+  useEffect(() => {
+    let active = true
+
+    onboardingApi.getSmsReminders()
+      .then(data => {
+        if (!active) return
+        setSmsReminders({
+          timezone: data?.timezone ?? '',
+          scheduled: Array.isArray(data?.scheduled) ? data.scheduled : [],
+          history: Array.isArray(data?.history) ? data.history : [],
+        })
+        setSmsReminderError('')
+      })
+      .catch(err => {
+        if (active) setSmsReminderError(err.message)
+      })
+      .finally(() => {
+        if (active) setSmsReminderLoading(false)
       })
 
     return () => { active = false }
@@ -108,6 +177,7 @@ export default function SettingsScreen() {
         notifications_enabled: form.notifications_enabled,
         exercise_preferences_json: {
           ...(form.preference_meta ?? {}),
+          color_scheme: form.color_scheme,
           workout_reminder_enabled: form.workout_reminder_enabled,
           workout_reminder_hour: Number(form.workout_reminder_hour),
           meal_reminder_enabled: form.meal_reminder_enabled,
@@ -169,6 +239,64 @@ export default function SettingsScreen() {
     }
   }
 
+  async function saveJohnnyMemory() {
+    if (savingJohnnyMemory) return
+
+    setSavingJohnnyMemory(true)
+    setJohnnyError('')
+    setJohnnyMessage('')
+
+    try {
+      const bullets = johnnyMemoryDraft.map(item => item.trim()).filter(Boolean)
+      const data = await aiApi.updateMemory(bullets)
+      const nextBullets = Array.isArray(data.durable_memory?.bullets) ? data.durable_memory.bullets : bullets
+      setJohnnyMemory(nextBullets)
+      setJohnnyMemoryDraft(nextBullets.length ? nextBullets : [''])
+      setJohnnyOverview(data.follow_up_overview ?? johnnyOverview)
+      setJohnnyMessage('Johnny memory updated.')
+    } catch (err) {
+      setJohnnyError(err.message)
+    } finally {
+      setSavingJohnnyMemory(false)
+    }
+  }
+
+  async function cancelSmsReminder(reminderId) {
+    if (!reminderId || cancelingReminderId) return
+
+    const confirmed = window.confirm('Cancel this scheduled SMS reminder?')
+    if (!confirmed) return
+
+    setCancelingReminderId(reminderId)
+    setSmsReminderError('')
+    setSmsReminderMessage('')
+
+    try {
+      const data = await onboardingApi.cancelSmsReminder(reminderId)
+      const canceledReminder = data?.reminder ?? null
+
+      setSmsReminders(current => {
+        const nextScheduled = Array.isArray(current.scheduled)
+          ? current.scheduled.filter(item => item.id !== reminderId)
+          : []
+        const nextHistory = canceledReminder
+          ? [canceledReminder, ...(Array.isArray(current.history) ? current.history : []).filter(item => item.id !== reminderId)].slice(0, 8)
+          : (Array.isArray(current.history) ? current.history : [])
+
+        return {
+          ...current,
+          scheduled: nextScheduled,
+          history: nextHistory,
+        }
+      })
+      setSmsReminderMessage('Scheduled SMS reminder canceled.')
+    } catch (err) {
+      setSmsReminderError(err.message)
+    } finally {
+      setCancelingReminderId('')
+    }
+  }
+
   const regionTimezones = useMemo(() => getTimezonesForRegion(timezoneRegion), [timezoneRegion])
   const latestWeight = Number(snapshot?.latest_weight?.weight_lb ?? weeklyWeights[weeklyWeights.length - 1]?.weight_lb ?? form.starting_weight_lb ?? 0) || null
   const weeklyWeightDelta = useMemo(() => {
@@ -178,6 +306,14 @@ export default function SettingsScreen() {
     if (!first || !last) return null
     return Math.round((last - first) * 10) / 10
   }, [weeklyWeights])
+  const thirtyDayPrediction = useMemo(() => buildThirtyDayPrediction({
+    latestWeight,
+    targetCalories: targets?.target_calories,
+    loggedCalories: snapshot?.nutrition_totals?.calories,
+    goal: form.current_goal,
+    pace: form.goal_rate,
+    timezone: form.timezone,
+  }), [form.current_goal, form.goal_rate, form.timezone, latestWeight, snapshot?.nutrition_totals?.calories, targets?.target_calories])
 
   if (loading) return <div className="screen-loading">Loading…</div>
 
@@ -236,6 +372,135 @@ export default function SettingsScreen() {
               <p className="settings-subtitle">Log a few weigh-ins on Progress to see your weekly trajectory here.</p>
             )}
           </div>
+        </div>
+      </section>
+
+      <section className="dash-card settings-prediction-card">
+        <div className="settings-prediction-head">
+          <div>
+            <span className="dashboard-chip awards">30-day prediction</span>
+            <h3>If every day looked like today</h3>
+          </div>
+          <button type="button" className="btn-outline small" onClick={() => navigate('/nutrition')}>
+            Open nutrition
+          </button>
+        </div>
+        {thirtyDayPrediction ? (
+          <>
+            <p className="settings-prediction-summary">{thirtyDayPrediction.summary}</p>
+            <div className="settings-prediction-stats">
+              <div className="settings-prediction-stat">
+                <span>Projected weight</span>
+                <strong>{thirtyDayPrediction.projectedWeightLabel}</strong>
+              </div>
+              <div className="settings-prediction-stat">
+                <span>30-day change</span>
+                <strong>{thirtyDayPrediction.changeLabel}</strong>
+              </div>
+              <div className="settings-prediction-stat">
+                <span>Daily pace</span>
+                <strong>{thirtyDayPrediction.dailyDeltaLabel}</strong>
+              </div>
+            </div>
+            <p className="settings-subtitle">{thirtyDayPrediction.note}</p>
+          </>
+        ) : (
+          <p className="settings-subtitle">Log at least one meal today to unlock a 30-day pace projection. This card uses today&apos;s calorie pace against your current maintenance estimate.</p>
+        )}
+      </section>
+
+      <section className="settings-ai-grid">
+        <div className="dash-card settings-ai-card">
+          <div className="settings-ai-head">
+            <div>
+              <span className="dashboard-chip ai">Johnny memory</span>
+              <h3>What Johnny should keep in mind</h3>
+            </div>
+            <button type="button" className="btn-outline small" onClick={() => openDrawer('Review my coaching memory and tell me what should change.')}>Ask Johnny</button>
+          </div>
+          <p className="settings-subtitle">Keep this to durable preferences, recurring obstacles, and how you like to be coached.</p>
+          <div className="settings-ai-memory-list">
+            {(johnnyMemoryDraft.length ? johnnyMemoryDraft : ['']).map((bullet, index) => (
+              <div key={`johnny-memory-${index}`} className="settings-ai-memory-row">
+                <input
+                  type="text"
+                  value={bullet}
+                  onChange={event => setJohnnyMemoryDraft(current => current.map((item, itemIndex) => (itemIndex === index ? event.target.value : item)))}
+                  placeholder="Example: I do better with blunt accountability than vague encouragement"
+                />
+                <button
+                  type="button"
+                  className="btn-outline small"
+                  onClick={() => setJohnnyMemoryDraft(current => current.filter((_, itemIndex) => itemIndex !== index))}
+                  disabled={johnnyMemoryDraft.length <= 1}
+                >
+                  Remove
+                </button>
+              </div>
+            ))}
+          </div>
+          <div className="settings-ai-actions">
+            <button type="button" className="btn-secondary small" onClick={() => setJohnnyMemoryDraft(current => [...current, ''])}>Add memory</button>
+            <button type="button" className="btn-primary small" onClick={saveJohnnyMemory} disabled={savingJohnnyMemory}>{savingJohnnyMemory ? 'Saving…' : 'Save memory'}</button>
+          </div>
+          {johnnyError ? <p className="error">{johnnyError}</p> : null}
+          {johnnyMessage ? <p className="success-message">{johnnyMessage}</p> : null}
+          {!johnnyError && johnnyMemory.length > 0 ? <p className="settings-ai-note">Saved {johnnyMemory.length} long-term coaching notes.</p> : null}
+        </div>
+
+        <div className="dash-card settings-ai-card">
+          <div className="settings-ai-head">
+            <div>
+              <span className="dashboard-chip subtle">Johnny follow-through</span>
+              <h3>Coaching loop health</h3>
+            </div>
+            <button type="button" className="btn-outline small" onClick={() => openDrawer('Show me my current Johnny follow-ups and what I have been ignoring lately.')}>Open Johnny</button>
+          </div>
+          <p className="settings-subtitle">This gives Johnny a memory of what you finish, punt, or let slide.</p>
+          <div className="settings-ai-stats">
+            <div className="settings-ai-stat"><span>Pending</span><strong>{johnnyOverview?.pending_count ?? 0}</strong></div>
+            <div className="settings-ai-stat"><span>Missed</span><strong>{johnnyOverview?.missed_count ?? 0}</strong></div>
+            <div className="settings-ai-stat"><span>Overdue</span><strong>{johnnyOverview?.overdue_count ?? 0}</strong></div>
+            <div className="settings-ai-stat"><span>Completed 14d</span><strong>{johnnyOverview?.completed_last_14_days ?? 0}</strong></div>
+            <div className="settings-ai-stat"><span>Dismissed 14d</span><strong>{johnnyOverview?.dismissed_last_14_days ?? 0}</strong></div>
+          </div>
+          {johnnyOverview?.recent_summary ? <p className="settings-ai-note">Recent pattern: {johnnyOverview.recent_summary}.</p> : null}
+          {Array.isArray(johnnyOverview?.missed_items) && johnnyOverview.missed_items.length > 0 ? (
+            <div className="settings-ai-history-block">
+              <strong>Missed commitments</strong>
+              <ul className="settings-ai-history-list">
+                {johnnyOverview.missed_items.slice(0, 3).map(item => (
+                  <li key={item.id}>{item.prompt}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+          {Array.isArray(johnnyOverview?.overdue_items) && johnnyOverview.overdue_items.length > 0 ? (
+            <div className="settings-ai-history-block">
+              <strong>Overdue</strong>
+              <ul className="settings-ai-history-list">
+                {johnnyOverview.overdue_items.slice(0, 3).map(item => (
+                  <li key={item.id}>{item.prompt}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+          {Array.isArray(johnnyOverview?.history) && johnnyOverview.history.length > 0 ? (
+            <div className="settings-ai-history-block">
+              <strong>Recent outcomes</strong>
+              <ul className="settings-ai-history-list">
+                {johnnyOverview.history.slice(0, 5).map(item => (
+                  <li key={`${item.id}-${item.changed_at}`}>
+                    <span className={`settings-ai-history-state ${item.state}`}>{formatFollowUpState(item.state)}</span>
+                    <span>{item.prompt}</span>
+                    <small>{formatUsShortDate(item.changed_at, item.changed_at)}</small>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : (
+            <p className="settings-subtitle">Johnny will start building a visible history here as you complete or dismiss follow-ups.</p>
+          )}
         </div>
       </section>
 
@@ -424,8 +689,102 @@ export default function SettingsScreen() {
                 </label>
               </div>
             </div>
+            <div className="settings-scheduled-reminders-card">
+              <div className="settings-scheduled-reminders-head">
+                <div>
+                  <strong>Scheduled by Johnny</strong>
+                  <p>One-off SMS reminders Johnny creates for you appear here. Cancel anything that has not fired yet.</p>
+                </div>
+                <button type="button" className="btn-outline small" onClick={() => openDrawer('Show me my scheduled SMS reminders and help me manage them.')}>Ask Johnny</button>
+              </div>
+
+              {smsReminderLoading ? <p className="settings-subtitle">Loading scheduled reminders…</p> : null}
+              {smsReminderError ? <p className="error">{smsReminderError}</p> : null}
+              {smsReminderMessage ? <p className="success-message">{smsReminderMessage}</p> : null}
+
+              {!smsReminderLoading && !smsReminderError ? (
+                <>
+                  <div className="settings-reminder-collection">
+                    <div className="settings-reminder-collection-head">
+                      <strong>Upcoming</strong>
+                      <span>{smsReminders.scheduled?.length ?? 0}</span>
+                    </div>
+                    {Array.isArray(smsReminders.scheduled) && smsReminders.scheduled.length > 0 ? (
+                      <div className="settings-scheduled-reminder-list">
+                        {smsReminders.scheduled.map(reminder => (
+                          <div key={reminder.id} className="settings-scheduled-reminder-row">
+                            <div className="settings-scheduled-reminder-copy">
+                              <strong>{formatReminderDateTime(reminder.send_at_local)}</strong>
+                              <p>{reminder.message}</p>
+                              <span>{smsReminders.timezone || reminder.timezone || form.timezone}</span>
+                            </div>
+                            <button
+                              type="button"
+                              className="btn-outline small"
+                              onClick={() => cancelSmsReminder(reminder.id)}
+                              disabled={cancelingReminderId === reminder.id}
+                            >
+                              {cancelingReminderId === reminder.id ? 'Canceling…' : 'Cancel'}
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="settings-subtitle">No one-off SMS reminders are queued right now.</p>
+                    )}
+                  </div>
+
+                  <div className="settings-reminder-collection">
+                    <div className="settings-reminder-collection-head">
+                      <strong>Recent activity</strong>
+                      <span>{smsReminders.history?.length ?? 0}</span>
+                    </div>
+                    {Array.isArray(smsReminders.history) && smsReminders.history.length > 0 ? (
+                      <div className="settings-scheduled-reminder-list history">
+                        {smsReminders.history.map(reminder => (
+                          <div key={reminder.id} className="settings-scheduled-reminder-row history">
+                            <div className="settings-scheduled-reminder-copy">
+                              <strong>{formatReminderDateTime(reminder.send_at_local)}</strong>
+                              <p>{reminder.message}</p>
+                              <span>{formatReminderHistoryMeta(reminder, smsReminders.timezone || reminder.timezone || form.timezone)}</span>
+                            </div>
+                            <span className={`settings-reminder-status ${reminder.status}`}>{formatReminderStatus(reminder.status)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="settings-subtitle">Sent, failed, or canceled reminder history will appear here.</p>
+                    )}
+                  </div>
+                </>
+              ) : null}
+            </div>
           </div>
         ) : null}
+      </section>
+
+      <section className="settings-section dash-card">
+        <h3>Color Scheme</h3>
+        <p className="settings-subtitle">Pick the app palette you want to use everywhere. The current colors stay as the first option.</p>
+        <div className="settings-theme-grid">
+          {colorSchemeOptions.map(option => (
+            <button
+              key={option.id}
+              type="button"
+              className={`settings-theme-option${form.color_scheme === option.id ? ' active' : ''}`}
+              onClick={() => update('color_scheme', option.id)}
+            >
+              <span className="settings-theme-swatches" aria-hidden="true">
+                <span style={{ background: option.colors.bg }} />
+                <span style={{ background: option.colors.accent }} />
+                <span style={{ background: option.colors.accent2 }} />
+                <span style={{ background: option.colors.accent3 }} />
+              </span>
+              <strong>{option.label}</strong>
+              <span>{option.description}</span>
+            </button>
+          ))}
+        </div>
       </section>
 
       <section className="settings-section dash-card">
@@ -488,6 +847,61 @@ export default function SettingsScreen() {
   )
 }
 
+function formatFollowUpState(state) {
+  switch (state) {
+    case 'missed':
+      return 'Missed'
+    case 'completed':
+      return 'Done'
+    case 'dismissed':
+      return 'Dismissed'
+    case 'snoozed':
+      return 'Snoozed'
+    default:
+      return 'Open'
+  }
+}
+
+function formatReminderDateTime(value) {
+  if (!value) return 'Scheduled time unavailable'
+
+  const parsed = new Date(String(value).replace(' ', 'T'))
+  if (Number.isNaN(parsed.getTime())) return String(value)
+
+  return parsed.toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  })
+}
+
+function formatReminderStatus(status) {
+  switch (status) {
+    case 'sent':
+      return 'Sent'
+    case 'failed':
+      return 'Failed'
+    case 'canceled':
+      return 'Canceled'
+    default:
+      return 'Scheduled'
+  }
+}
+
+function formatReminderHistoryMeta(reminder, timezoneLabel) {
+  const statusLabel = formatReminderStatus(reminder?.status).toLowerCase()
+
+  if (reminder?.status === 'sent' && reminder?.sent_at) {
+    return `${statusLabel} • ${formatUsShortDate(reminder.sent_at, reminder.sent_at)} • ${timezoneLabel}`
+  }
+  if (reminder?.status === 'canceled' && reminder?.canceled_at) {
+    return `${statusLabel} • ${formatUsShortDate(reminder.canceled_at, reminder.canceled_at)} • ${timezoneLabel}`
+  }
+
+  return `${statusLabel} • ${timezoneLabel}`
+}
+
 function buildProfileGoalHeadline(goal, pace) {
   const goalLabel = goal === 'cut'
     ? 'Cut phase'
@@ -505,7 +919,7 @@ function buildProfileGoalSummary(form, latestWeight, targets) {
   const weightLabel = latestWeight ? `${latestWeight} lbs current weight` : 'Current weight still being established'
   const calories = targets?.target_calories ? `${targets.target_calories} daily calories` : 'daily calories pending'
   const protein = targets?.target_protein_g != null ? `${targets.target_protein_g}g protein target` : 'protein target pending'
-  return `${weightLabel}. ${calories} with ${protein}. This page should feel like your direction of travel, not just a form.`
+  return `${weightLabel}. ${calories} with ${protein}.`
 }
 
 function formatWeightDelta(delta) {
@@ -533,4 +947,54 @@ function buildProfileTrendBars(weights) {
     label: formatUsShortDate(point.date, point.date).replace(/^\w+\s/, ''),
     valueLabel: point.value % 1 === 0 ? `${point.value}` : point.value.toFixed(1),
   }))
+}
+
+function buildThirtyDayPrediction({ latestWeight, targetCalories, loggedCalories, goal, pace, timezone }) {
+  const currentWeight = Number(latestWeight ?? 0)
+  const calorieTarget = Number(targetCalories ?? 0)
+  const caloriesLogged = Number(loggedCalories ?? 0)
+
+  if (!currentWeight || !calorieTarget || caloriesLogged <= 0) return null
+
+  const goalDelta = GOAL_CALORIE_DELTAS[goal]?.[pace] ?? 0
+  const maintenanceCalories = calorieTarget - goalDelta
+
+  if (!maintenanceCalories) return null
+
+  const elapsedDay = getElapsedDayFraction(timezone)
+  const projectedIntake = Math.round(caloriesLogged / elapsedDay)
+  const dailyDelta = Math.round(projectedIntake - maintenanceCalories)
+  const projectedChange = roundToTenth((dailyDelta * 30) / 3500)
+  const projectedWeight = roundToTenth(currentWeight + projectedChange)
+  const direction = dailyDelta === 0 ? 'right at' : dailyDelta > 0 ? `${Math.abs(dailyDelta)} calories above` : `${Math.abs(dailyDelta)} calories below`
+
+  return {
+    projectedWeightLabel: `${projectedWeight.toFixed(1)} lbs`,
+    changeLabel: `${projectedChange > 0 ? '+' : ''}${projectedChange.toFixed(1)} lbs`,
+    dailyDeltaLabel: `${dailyDelta > 0 ? '+' : ''}${dailyDelta} cal/day`,
+    summary: `At today’s current pace, you would land around ${projectedIntake.toLocaleString()} calories. That is ${direction} your estimated maintenance of ${maintenanceCalories.toLocaleString()}, which points to about ${projectedWeight.toFixed(1)} lbs in 30 days.`,
+    note: `This is a directional estimate, not a promise. It extrapolates today’s logged intake pace in ${timezone || 'your local timezone'} against your current target setup.`,
+  }
+}
+
+function getElapsedDayFraction(timezone) {
+  try {
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone || undefined,
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    })
+    const parts = formatter.formatToParts(new Date())
+    const hour = Number(parts.find(part => part.type === 'hour')?.value ?? 0)
+    const minute = Number(parts.find(part => part.type === 'minute')?.value ?? 0)
+    return Math.min(1, Math.max(0.2, ((hour * 60) + minute) / 1440))
+  } catch {
+    const now = new Date()
+    return Math.min(1, Math.max(0.2, ((now.getHours() * 60) + now.getMinutes()) / 1440))
+  }
+}
+
+function roundToTenth(value) {
+  return Math.round(Number(value ?? 0) * 10) / 10
 }

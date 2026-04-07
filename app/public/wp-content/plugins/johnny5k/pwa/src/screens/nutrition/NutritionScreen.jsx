@@ -17,6 +17,11 @@ const PANTRY_CATEGORY_CONFIG = [
   { key: 'snacks', label: 'Snacks', keywords: ['chips', 'cracker', 'bar', 'trail mix', 'popcorn', 'nuts', 'cookie'] },
   { key: 'drinks', label: 'Drinks', keywords: ['water', 'juice', 'coffee', 'tea', 'soda', 'drink', 'electrolyte'] },
 ]
+const PANTRY_SORT_OPTIONS = [
+  { value: 'name', label: 'A-Z' },
+  { value: 'updated', label: 'Recently updated' },
+  { value: 'expires', label: 'Expiring first' },
+]
 const FOOD_SEARCH_CACHE = new Map()
 const GROCERY_GAP_CHECKLIST_STORAGE_KEY = 'johnny5k:nutrition:grocery-gap-checked'
 const MICRO_TARGETS = {
@@ -66,6 +71,12 @@ function useAutoScrollWhenActive(active) {
   return ref
 }
 
+function scrollNodeIntoView(node) {
+  window.requestAnimationFrame(() => {
+    node?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  })
+}
+
 export default function NutritionScreen() {
   const location = useLocation()
   const navigate = useNavigate()
@@ -88,6 +99,7 @@ export default function NutritionScreen() {
   const [analysing, setAnalysing] = useState(false)
   const [aiMealDraft, setAiMealDraft] = useState(null)
   const [labelReview, setLabelReview] = useState(null)
+  const [labelReviewAction, setLabelReviewAction] = useState('')
   const [loadingExtras, setLoadingExtras] = useState(false)
   const [syncingGapToPantry, setSyncingGapToPantry] = useState(false)
   const [checkedGapItems, setCheckedGapItems] = useState(() => loadStoredCheckedGapItems())
@@ -97,6 +109,11 @@ export default function NutritionScreen() {
   const [showMicros, setShowMicros] = useState(false)
   const [selectedRecipeKeys, setSelectedRecipeKeys] = useState([])
   const [recipeMealFilter, setRecipeMealFilter] = useState('all')
+  const [recipeCollectionFilter, setRecipeCollectionFilter] = useState('all')
+  const [pantrySearchQuery, setPantrySearchQuery] = useState('')
+  const [pantryCategoryFilter, setPantryCategoryFilter] = useState('all')
+  const [pantrySortMode, setPantrySortMode] = useState('name')
+  const [collapsedPantryCategories, setCollapsedPantryCategories] = useState({})
   const [expandedSections, setExpandedSections] = useState({
     meals: false,
     savedFoods: false,
@@ -142,19 +159,38 @@ export default function NutritionScreen() {
     () => buildRecipeAwareGroceryGap(groceryGap, recipes, pantry, selectedRecipeKeys),
     [groceryGap, pantry, recipes, selectedRecipeKeys],
   )
+  const checkedGapItemSet = useMemo(() => new Set(uniqueGapItems(checkedGapItems)), [checkedGapItems])
   const orderedGapItems = useMemo(
-    () => sortGroceryGapItems(displayedGroceryGap.missing_items, checkedGapItems),
-    [checkedGapItems, displayedGroceryGap.missing_items],
+    () => sortGroceryGapItems(displayedGroceryGap.missing_items, checkedGapItemSet),
+    [checkedGapItemSet, displayedGroceryGap.missing_items],
   )
-  const visibleMeals = useMemo(() => getVisibleItems(meals, expandedSections.meals, 4), [expandedSections.meals, meals])
+  const mergedMeals = useMemo(() => mergeDailyMealsByType(meals), [meals])
+  const visibleMeals = useMemo(() => getVisibleItems(mergedMeals, expandedSections.meals, 4), [expandedSections.meals, mergedMeals])
   const visibleSavedFoods = useMemo(() => getVisibleItems(savedFoods, expandedSections.savedFoods, 4), [expandedSections.savedFoods, savedFoods])
   const visibleSavedMeals = useMemo(() => getVisibleItems(savedMeals, expandedSections.savedMeals, 4), [expandedSections.savedMeals, savedMeals])
   const pantryCategories = useMemo(() => groupPantryItemsByCategory(pantry), [pantry])
+  const pantryCategoryOptions = useMemo(() => buildPantryCategoryOptions(pantry), [pantry])
+  const filteredPantryItems = useMemo(
+    () => filterPantryItems(pantry, pantrySearchQuery, pantryCategoryFilter, pantrySortMode),
+    [pantry, pantrySearchQuery, pantryCategoryFilter, pantrySortMode],
+  )
+  const filteredPantryCategories = useMemo(
+    () => groupPantryItemsByCategory(filteredPantryItems, pantrySortMode),
+    [filteredPantryItems, pantrySortMode],
+  )
   const filteredRecipes = useMemo(
-    () => (recipeMealFilter === 'all'
-      ? recipes
-      : recipes.filter(recipe => String(recipe?.meal_type || '').trim() === recipeMealFilter)),
-    [recipeMealFilter, recipes],
+    () => {
+      const mealFilteredRecipes = recipeMealFilter === 'all'
+        ? recipes
+        : recipes.filter(recipe => String(recipe?.meal_type || '').trim() === recipeMealFilter)
+
+      if (recipeCollectionFilter !== 'cookbook') {
+        return mealFilteredRecipes
+      }
+
+      return mealFilteredRecipes.filter(recipe => selectedRecipeKeys.includes(getRecipeKey(recipe)))
+    },
+    [recipeCollectionFilter, recipeMealFilter, recipes, selectedRecipeKeys],
   )
   const visibleRecipes = useMemo(
     () => filteredRecipes.slice(0, RECIPE_CARD_VISIBLE_LIMIT),
@@ -178,6 +214,20 @@ export default function NutritionScreen() {
     () => buildNutritionCoachPrompts(summary),
     [summary],
   )
+
+  useEffect(() => {
+    setCollapsedPantryCategories(current => {
+      const next = buildCollapsedPantryCategoryState(filteredPantryCategories, pantryCategoryFilter)
+      const currentKeys = Object.keys(current)
+      const nextKeys = Object.keys(next)
+
+      if (currentKeys.length === nextKeys.length && nextKeys.every(key => current[key] === next[key])) {
+        return current
+      }
+
+      return next
+    })
+  }, [filteredPantryCategories, pantryCategoryFilter])
 
   function showToast(message, tone = 'success') {
     setToastQueue(current => [...current, { id: Date.now() + Math.random(), message, tone }])
@@ -275,7 +325,7 @@ export default function NutritionScreen() {
       setExpandedSections(current => ({ ...current, [focusSection]: true }))
     }
 
-    if (location.state?.openSavedMealForm) {
+    if (location.state?.openSavedMealForm || location.state?.savedMealDraft) {
       setShowSavedMealForm(true)
     }
 
@@ -297,7 +347,7 @@ export default function NutritionScreen() {
     })
 
     return () => window.cancelAnimationFrame(frameId)
-  }, [isPantryPage, location.state?.focusSection, location.state?.openSavedMealForm, location.state?.recipeMealFilter])
+  }, [isPantryPage, location.state?.focusSection, location.state?.openSavedMealForm, location.state?.recipeMealFilter, location.state?.savedMealDraft])
 
   useEffect(() => {
     const notice = location.state?.johnnyActionNotice
@@ -368,6 +418,7 @@ export default function NutritionScreen() {
           mealType: 'lunch',
           items: normaliseMealItems(result?.items ?? []),
         })
+        showToast('Meal draft ready. Review it before logging.')
       } catch (err) {
         setError(err.message)
         showErrorToast(err, 'Photo analysis failed.')
@@ -390,6 +441,7 @@ export default function NutritionScreen() {
       try {
         const result = await aiApi.analyseLabel(reader.result)
         setLabelReview(buildLabelReview(result, summary?.targets))
+        showToast('Label draft ready. Review it before saving or logging.')
       } catch (err) {
         setError(err.message)
         showErrorToast(err, 'Label analysis failed.')
@@ -410,6 +462,7 @@ export default function NutritionScreen() {
           setAiMealDraft(null)
           invalidate()
           await loadData()
+          scrollNodeIntoView(mealsSectionRef.current)
         },
       },
     )
@@ -431,12 +484,19 @@ export default function NutritionScreen() {
         source: 'ai_photo',
       }),
       'Saved food added.',
-      { onSuccess: refreshPlanning },
+      {
+        onSuccess: async () => {
+          await refreshPlanning()
+          scrollNodeIntoView(savedFoodsSectionRef.current)
+        },
+      },
     )
   }
 
   async function handleSaveLabelFood() {
     if (!labelReview) return
+    if (labelReviewAction) return
+    setLabelReviewAction('save')
     await runAction(
       () => nutritionApi.createSavedFood({
         canonical_name: labelReview.foodName,
@@ -457,12 +517,20 @@ export default function NutritionScreen() {
         },
       }),
       'Label food saved.',
-      { onSuccess: refreshPlanning },
+      {
+        onSuccess: async () => {
+          await refreshPlanning()
+          scrollNodeIntoView(savedFoodsSectionRef.current)
+        },
+      },
     )
+    setLabelReviewAction('')
   }
 
   async function handleQuickLogLabelFood() {
     if (!labelReview) return
+    if (labelReviewAction) return
+    setLabelReviewAction('log')
     await runAction(
       async () => {
         const created = await nutritionApi.createSavedFood({
@@ -487,9 +555,11 @@ export default function NutritionScreen() {
           setLabelReview(null)
           invalidate()
           await loadData()
+          scrollNodeIntoView(mealsSectionRef.current)
         },
       },
     )
+    setLabelReviewAction('')
   }
 
   async function handleLogSavedMeal(id, servingMultiplier = 1) {
@@ -645,6 +715,7 @@ export default function NutritionScreen() {
     const payload = (Array.isArray(items) ? items : [])
       .map(item => ({
         item_name: item.item_name,
+        category_override: item.category_override || null,
         quantity: item.quantity || null,
         unit: item.unit || '',
       }))
@@ -698,6 +769,18 @@ export default function NutritionScreen() {
     if (result) {
       showToast(buildPantryWriteMessage(result, 'Pantry item updated.'))
     }
+  }
+
+  async function handleDeletePantryItem(item) {
+    if (!item?.id) {
+      return
+    }
+
+    await runAction(
+      () => nutritionApi.deletePantry(item.id),
+      'Pantry item deleted.',
+      { onSuccess: refreshPlanning },
+    )
   }
 
   async function handleMoveGapToPantry() {
@@ -782,13 +865,54 @@ export default function NutritionScreen() {
         <div className="nutrition-pantry-summary-grid">
           <div className="dash-card nutrition-planning-card nutrition-pantry-stat-card">
             <span className="dashboard-chip workout">Pantry items</span>
-            <strong>{pantry.length}</strong>
-            <p>Total ingredients and staples currently on hand.</p>
+            <strong>{filteredPantryItems.length}</strong>
+            <p>{filteredPantryItems.length === pantry.length ? 'Total ingredients and staples currently on hand.' : `${pantry.length} total items before filters.`}</p>
           </div>
           <div className="dash-card nutrition-planning-card nutrition-pantry-stat-card">
             <span className="dashboard-chip nutrition">Food types</span>
-            <strong>{pantryCategories.length}</strong>
-            <p>Auto-grouped so you can scan proteins, produce, grains, and more.</p>
+            <strong>{filteredPantryCategories.length}</strong>
+            <p>{filteredPantryCategories.length === pantryCategories.length ? 'Auto-grouped so you can scan proteins, produce, grains, and more.' : `${pantryCategories.length} total categories available.`}</p>
+          </div>
+        </div>
+
+        <div className="dash-card nutrition-planning-card nutrition-pantry-toolbar-card">
+          <div className="nutrition-pantry-toolbar">
+            <label className="field-label nutrition-pantry-search">
+              <span>Search pantry</span>
+              <input
+                type="search"
+                placeholder="Search items, units, notes, or category"
+                value={pantrySearchQuery}
+                onChange={event => setPantrySearchQuery(event.target.value)}
+              />
+            </label>
+            <label className="field-label nutrition-pantry-sort-field">
+              <span>Sort</span>
+              <select value={pantrySortMode} onChange={event => setPantrySortMode(event.target.value)}>
+                {PANTRY_SORT_OPTIONS.map(option => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <div className="nutrition-pantry-filter-chips">
+            <button
+              type="button"
+              className={`onboarding-chip${pantryCategoryFilter === 'all' ? ' active' : ''}`}
+              onClick={() => setPantryCategoryFilter('all')}
+            >
+              All categories ({pantry.length})
+            </button>
+            {pantryCategoryOptions.map(option => (
+              <button
+                key={option.key}
+                type="button"
+                className={`onboarding-chip${pantryCategoryFilter === option.key ? ' active' : ''}`}
+                onClick={() => setPantryCategoryFilter(option.key)}
+              >
+                {option.label} ({option.count})
+              </button>
+            ))}
           </div>
         </div>
 
@@ -812,16 +936,27 @@ export default function NutritionScreen() {
           </div>
         ) : null}
 
-        {pantryCategories.length ? (
+        {filteredPantryCategories.length ? (
           <div className="nutrition-pantry-category-list">
-            {pantryCategories.map(category => (
+            {filteredPantryCategories.map(category => (
               <PantryCategorySection
                 key={category.key}
                 category={category}
-                onDeleteItem={item => runAction(() => nutritionApi.deletePantry(item.id), 'Pantry item deleted.', { onSuccess: refreshPlanning })}
+                collapsed={Boolean(collapsedPantryCategories[category.key])}
+                onToggle={() => setCollapsedPantryCategories(current => ({ ...current, [category.key]: !current[category.key] }))}
+                onDeleteItem={handleDeletePantryItem}
                 onSaveItem={(item, data) => handleUpdatePantryItem(item.id, data)}
               />
             ))}
+          </div>
+        ) : pantry.length ? (
+          <div className="dash-card nutrition-planning-card nutrition-pantry-empty-state-card">
+            <h3>No pantry items match these filters</h3>
+            <p className="empty-state">Try a broader search or reset the category filter to see everything again.</p>
+            <div className="nutrition-card-actions">
+              <button type="button" className="btn-secondary small" onClick={() => setPantrySearchQuery('')}>Clear search</button>
+              <button type="button" className="btn-secondary small" onClick={() => setPantryCategoryFilter('all')}>Show all categories</button>
+            </div>
           </div>
         ) : (
           <div className="dash-card nutrition-planning-card">
@@ -935,10 +1070,11 @@ export default function NutritionScreen() {
             ))}
           </div>
           <div className="ai-result-actions">
-            <button className="btn-primary" onClick={handleSaveLabelFood}>Save to foods</button>
-            <button className="btn-secondary" onClick={handleQuickLogLabelFood}>Save and log</button>
-            <button className="btn-secondary" onClick={() => setLabelReview(null)}>Close review</button>
+            <button className="btn-primary" onClick={handleSaveLabelFood} disabled={Boolean(labelReviewAction)}>{labelReviewAction === 'save' ? 'Saving…' : 'Save to foods'}</button>
+            <button className="btn-secondary" onClick={handleQuickLogLabelFood} disabled={Boolean(labelReviewAction)}>{labelReviewAction === 'log' ? 'Saving…' : 'Save and log'}</button>
+            <button className="btn-secondary" onClick={() => setLabelReview(null)} disabled={Boolean(labelReviewAction)}>Close review</button>
           </div>
+          {labelReviewAction ? <p className="empty-state">Working on your label review…</p> : null}
         </div>
       ) : null}
 
@@ -1064,12 +1200,14 @@ export default function NutritionScreen() {
                 <AddMealForm
                   savedFoods={savedFoods}
                   onError={showErrorToast}
+                  onToast={showToast}
                   onSave={async data => {
                     await runAction(() => nutritionApi.logMeal(data), 'Meal logged.', {
                       onSuccess: async () => {
                         invalidate()
                         setShowAddForm(false)
                         await loadData()
+                        scrollNodeIntoView(mealsSectionRef.current)
                       },
                     })
                   }}
@@ -1078,6 +1216,7 @@ export default function NutritionScreen() {
                       onSuccess: async () => {
                         setShowAddForm(false)
                         await refreshPlanning()
+                        scrollNodeIntoView(mealsSectionRef.current)
                       },
                     })
                   }}
@@ -1093,8 +1232,18 @@ export default function NutritionScreen() {
                   savedFoods={savedFoods}
                   onError={showErrorToast}
                   onSave={async data => {
+                    const mealIds = Array.isArray(meal.meal_ids) && meal.meal_ids.length ? meal.meal_ids : [meal.id]
+                    const primaryMealId = mealIds[0]
+                    const duplicateMealIds = mealIds.slice(1)
+
                     await runAction(
-                      () => nutritionApi.updateMeal(meal.id, { meal_datetime: data.meal_datetime, meal_type: data.meal_type, source: meal.source, items: data.items }),
+                      async () => {
+                        await nutritionApi.updateMeal(primaryMealId, { meal_datetime: data.meal_datetime, meal_type: data.meal_type, source: meal.source, items: data.items })
+
+                        if (duplicateMealIds.length) {
+                          await Promise.all(duplicateMealIds.map(id => nutritionApi.deleteMeal(id)))
+                        }
+                      },
                       'Logged meal updated.',
                       {
                         onSuccess: async () => {
@@ -1105,7 +1254,9 @@ export default function NutritionScreen() {
                     )
                   }}
                   onDelete={async () => {
-                    await runAction(() => nutritionApi.deleteMeal(meal.id), 'Logged meal deleted.', {
+                    const mealIds = Array.isArray(meal.meal_ids) && meal.meal_ids.length ? meal.meal_ids : [meal.id]
+
+                    await runAction(() => Promise.all(mealIds.map(id => nutritionApi.deleteMeal(id))), 'Logged meal deleted.', {
                       onSuccess: async () => {
                         invalidate()
                         await loadData()
@@ -1114,7 +1265,7 @@ export default function NutritionScreen() {
                   }}
                 />
               ))}
-              {!meals.length && !showAddForm ? <p className="empty-state">No meals logged yet today. Scan one or add one manually.</p> : null}
+              {!mergedMeals.length && !showAddForm ? <p className="empty-state">No meals logged yet today. Scan one or add one manually.</p> : null}
             </div>
             <SectionClampToggle
               count={meals.length}
@@ -1176,9 +1327,11 @@ export default function NutritionScreen() {
                   onSuccess: async () => {
                     setShowSavedFoodForm(false)
                     await refreshPlanning()
+                    scrollNodeIntoView(savedFoodsSectionRef.current)
                   },
                 })}
                 onCancel={() => setShowSavedFoodForm(false)}
+                onToast={showToast}
               />
             </div>
           ) : null}
@@ -1218,10 +1371,12 @@ export default function NutritionScreen() {
                 initialValues={location.state?.savedMealDraft || null}
                 savedFoods={savedFoods}
                 onError={showErrorToast}
+                onToast={showToast}
                 onSave={async data => runAction(() => nutritionApi.createSavedMeal(data), 'Saved meal created.', {
                   onSuccess: async () => {
                     setShowSavedMealForm(false)
                     await refreshPlanning()
+                    scrollNodeIntoView(savedMealsSectionRef.current)
                   },
                 })}
                 onCancel={() => setShowSavedMealForm(false)}
@@ -1241,8 +1396,8 @@ export default function NutritionScreen() {
             <p>Use this after logging to decide what to cook next, what you already have, and what still needs to be picked up.</p>
           </div>
 
-      <section ref={groceryGapSectionRef} className="dashboard-section dashboard-two-col nutrition-planning-grid">
-        <div ref={recipesSectionRef} className="dash-card nutrition-planning-card">
+      <section className="dashboard-section dashboard-two-col nutrition-planning-grid">
+        <div className="dash-card nutrition-planning-card">
           <div className="dashboard-card-head">
             <span className="dashboard-chip workout">Pantry</span>
             <div className="nutrition-card-actions">
@@ -1250,69 +1405,23 @@ export default function NutritionScreen() {
             </div>
           </div>
           <h3>Pantry on hand</h3>
-          <p>Use what you already have before creating shopping friction. The full pantry page handles editing, voice capture, and category cleanup.</p>
+          <p>Use what you already have before creating shopping friction. You can remove pantry items here fast, or open the pantry page for editing and category cleanup.</p>
           <div className="nutrition-pantry-preview-list">
-            {pantryCategories.map(category => (
-              <div key={category.key} className="nutrition-item-row nutrition-pantry-preview-row">
+            {pantry.map(item => (
+              <div key={item.id} className="nutrition-item-row nutrition-pantry-preview-row">
                 <div>
-                  <strong>{category.label}</strong>
-                  <p>{category.items.slice(0, 3).map(item => item.item_name).join(', ')}{category.items.length > 3 ? ` + ${category.items.length - 3} more` : ''}</p>
+                  <strong>{item.item_name}</strong>
+                  <p>{getPantryCategoryLabel(item)}{item.quantity != null || item.unit ? ` · ${formatGroceryGapAmount(item.quantity, item.unit)}` : ''}{item.notes ? ` · ${item.notes}` : ''}</p>
                 </div>
-                <span className="nutrition-inline-badge pantry-category">{category.items.length} item{category.items.length === 1 ? '' : 's'}</span>
+                <div className="nutrition-row-actions">
+                  <span className="nutrition-inline-badge pantry-category">{getPantryCategoryLabel(item)}</span>
+                  <button type="button" className="btn-ghost small" onClick={() => handleDeletePantryItem(item)}>Remove</button>
+                </div>
               </div>
             ))}
             {!pantry.length ? <p className="empty-state">No pantry items yet. Add your staples and Johnny5k can suggest meals around them.</p> : null}
           </div>
           {pantry.length ? <p className="nutrition-list-note">Grouped into {pantryCategories.length} food type {pantryCategories.length === 1 ? 'category' : 'categories'} so planning stays readable on mobile.</p> : null}
-        </div>
-
-        <div className="dash-card nutrition-planning-card">
-          <div className="dashboard-card-head">
-            <span className="dashboard-chip coach">Recipe ideas</span>
-            <div className="nutrition-card-actions">
-              <span className="dashboard-chip subtle">{selectedRecipeKeys.length} selected</span>
-              {selectedRecipeKeys.length ? <button type="button" className="btn-ghost small" onClick={handleClearSelectedRecipes}>Clear</button> : null}
-              <button className="btn-secondary small" onClick={async () => {
-                const refreshed = await refreshPlanning({ recipeRefreshToken: String(Date.now()) })
-                if (refreshed) {
-                  showToast('Recipe ideas refreshed.')
-                }
-              }} disabled={loadingExtras}>{loadingExtras ? 'Refreshing…' : 'Refresh'}</button>
-            </div>
-          </div>
-          <h3>What you can make next</h3>
-          <p>Select recipes to feed the grocery gap below. Keep details collapsed until you need to inspect ingredients or steps.</p>
-          <div className="nutrition-gap-list nutrition-quick-picks">
-            <button type="button" className={`onboarding-chip${recipeMealFilter === 'all' ? ' active' : ''}`} onClick={() => setRecipeMealFilter('all')}>
-              All ({recipes.length})
-            </button>
-            {MEAL_TYPES.map(mealType => {
-              const count = recipes.filter(recipe => recipe?.meal_type === mealType).length
-              return (
-                <button
-                  key={mealType}
-                  type="button"
-                  className={`onboarding-chip${recipeMealFilter === mealType ? ' active' : ''}`}
-                  onClick={() => setRecipeMealFilter(mealType)}
-                >
-                  {formatMealTypeLabel(mealType)} ({count})
-                </button>
-              )
-            })}
-          </div>
-          <div className="nutrition-stack-list">
-            {visibleRecipes.map(recipe => (
-              <RecipeIdeaCard
-                key={getRecipeKey(recipe)}
-                recipe={recipe}
-                selected={selectedRecipeKeys.includes(getRecipeKey(recipe))}
-                onToggle={() => toggleRecipeSelection(recipe)}
-              />
-            ))}
-            {!recipes.length ? <p className="empty-state">No suggestions yet. Add pantry items or refresh recipe ideas.</p> : null}
-            {recipes.length > 0 && !filteredRecipes.length ? <p className="empty-state">No {formatMealTypeLabel(recipeMealFilter).toLowerCase()} ideas are loaded right now. Refresh and try again.</p> : null}
-          </div>
-          {filteredRecipes.length > RECIPE_CARD_VISIBLE_LIMIT ? <p className="nutrition-list-note">Showing 5 of {filteredRecipes.length} recipe ideas on the dashboard.</p> : null}
         </div>
       </section>
 
@@ -1378,7 +1487,7 @@ export default function NutritionScreen() {
           ) : null}
           <div className="nutrition-gap-list nutrition-gap-checklist">
             {visibleGapItems.map(item => {
-              const checked = checkedGapItems.includes(item.key)
+              const checked = checkedGapItemSet.has(item.key)
               const canDelete = Array.isArray(item.sources) && item.sources.includes('manual')
 
               return (
@@ -1432,6 +1541,74 @@ export default function NutritionScreen() {
             label="items"
             onToggle={() => toggleSection('groceryGap')}
           />
+        </div>
+      </section>
+
+      <section className="dashboard-section nutrition-planning-grid">
+        <div ref={recipesSectionRef} className="dash-card nutrition-planning-card">
+          <div className="dashboard-card-head">
+            <span className="dashboard-chip coach">Recipe ideas</span>
+            <div className="nutrition-card-actions">
+              <span className="dashboard-chip subtle">{selectedRecipeKeys.length} selected</span>
+              {selectedRecipeKeys.length ? <button type="button" className="btn-ghost small" onClick={handleClearSelectedRecipes}>Clear</button> : null}
+              <button className="btn-secondary small" onClick={async () => {
+                const refreshed = await refreshPlanning({ recipeRefreshToken: String(Date.now()) })
+                if (refreshed) {
+                  showToast('Recipe ideas refreshed.')
+                }
+              }} disabled={loadingExtras}>{loadingExtras ? 'Refreshing…' : 'Refresh'}</button>
+            </div>
+          </div>
+          <h3>What you can make next</h3>
+          <p>Select recipes to feed the grocery gap above. Use My cook book to focus only on the recipes you already picked.</p>
+          <div className="nutrition-gap-list nutrition-quick-picks">
+            <button
+              type="button"
+              className={`onboarding-chip${recipeCollectionFilter === 'all' ? ' active' : ''}`}
+              onClick={() => setRecipeCollectionFilter('all')}
+            >
+              All recipes
+            </button>
+            <button
+              type="button"
+              className={`onboarding-chip${recipeCollectionFilter === 'cookbook' ? ' active' : ''}`}
+              onClick={() => setRecipeCollectionFilter('cookbook')}
+            >
+              My cook book ({selectedRecipeKeys.length})
+            </button>
+          </div>
+          <div className="nutrition-gap-list nutrition-quick-picks">
+            <button type="button" className={`onboarding-chip${recipeMealFilter === 'all' ? ' active' : ''}`} onClick={() => setRecipeMealFilter('all')}>
+              All ({recipes.length})
+            </button>
+            {MEAL_TYPES.map(mealType => {
+              const count = recipes.filter(recipe => recipe?.meal_type === mealType).length
+              return (
+                <button
+                  key={mealType}
+                  type="button"
+                  className={`onboarding-chip${recipeMealFilter === mealType ? ' active' : ''}`}
+                  onClick={() => setRecipeMealFilter(mealType)}
+                >
+                  {formatMealTypeLabel(mealType)} ({count})
+                </button>
+              )
+            })}
+          </div>
+          <div className="nutrition-stack-list">
+            {visibleRecipes.map(recipe => (
+              <RecipeIdeaCard
+                key={getRecipeKey(recipe)}
+                recipe={recipe}
+                selected={selectedRecipeKeys.includes(getRecipeKey(recipe))}
+                onToggle={() => toggleRecipeSelection(recipe)}
+              />
+            ))}
+            {!recipes.length ? <p className="empty-state">No suggestions yet. Add pantry items or refresh recipe ideas.</p> : null}
+            {recipeCollectionFilter === 'cookbook' && !selectedRecipeKeys.length ? <p className="empty-state">Choose a few recipes first, then use My cook book to narrow the list.</p> : null}
+            {recipes.length > 0 && filteredRecipes.length === 0 && !(recipeCollectionFilter === 'cookbook' && !selectedRecipeKeys.length) ? <p className="empty-state">No {formatMealTypeLabel(recipeMealFilter).toLowerCase()} ideas match this filter right now. Refresh and try again.</p> : null}
+          </div>
+          {filteredRecipes.length > RECIPE_CARD_VISIBLE_LIMIT ? <p className="nutrition-list-note">Showing 5 of {filteredRecipes.length} recipe ideas on the dashboard.</p> : null}
         </div>
       </section>
         </section>
@@ -1496,9 +1673,11 @@ function MealCard({ meal, savedFoods, onSave, onDelete, onError }) {
   const [editing, setEditing] = useState(false)
   const [expandedItems, setExpandedItems] = useState(false)
   const editRef = useAutoScrollWhenActive(editing)
+  const cardRef = useRef(null)
   const total = meal.items?.reduce((acc, item) => acc + (+item.calories || 0), 0) ?? 0
   const visibleItems = expandedItems ? meal.items : (meal.items || []).slice(0, 3)
   const mealCount = meal.items?.length ?? 0
+  const entryCount = Array.isArray(meal.meal_ids) ? meal.meal_ids.length : 1
 
   if (editing) {
     return (
@@ -1517,6 +1696,7 @@ function MealCard({ meal, savedFoods, onSave, onDelete, onError }) {
           onSubmit={async payload => {
             await onSave(payload)
             setEditing(false)
+            scrollNodeIntoView(cardRef.current)
           }}
           onCancel={() => setEditing(false)}
         />
@@ -1525,11 +1705,11 @@ function MealCard({ meal, savedFoods, onSave, onDelete, onError }) {
   }
 
   return (
-    <div className="meal-card">
+    <div ref={cardRef} className="meal-card">
       <div className="meal-card-header">
         <div className="meal-card-header-main">
           <span className="meal-type">{meal.meal_type}</span>
-          <span className="meal-cals">{Math.round(total)} kcal</span>
+          <span className="meal-cals">{Math.round(total)} Calories</span>
         </div>
         <div className="meal-card-header-actions">
           <button className="btn-secondary small" onClick={() => setEditing(true)}>Edit</button>
@@ -1539,7 +1719,7 @@ function MealCard({ meal, savedFoods, onSave, onDelete, onError }) {
           </button>
         </div>
       </div>
-      <p className="meal-card-meta">{mealCount} item{mealCount === 1 ? '' : 's'} logged</p>
+      <p className="meal-card-meta">{entryCount > 1 ? `${entryCount} entries merged • ` : ''}{mealCount} item{mealCount === 1 ? '' : 's'} logged</p>
       {visibleItems?.map((item, index) => (
         <p key={index} className="meal-item">{item.food_name} — {item.serving_amount} {item.serving_unit}</p>
       ))}
@@ -1564,7 +1744,7 @@ function RecipeIdeaCard({ recipe, selected, onToggle }) {
       <div className="nutrition-recipe-head">
         <div>
           <strong>{recipe.recipe_name}</strong>
-          <p>{formatMealTypeLabel(recipe.meal_type || 'lunch')} · {Math.round(recipe.estimated_calories)} kcal · {Math.round(recipe.estimated_protein_g)}g protein · {Math.round(recipe.estimated_carbs_g)}g carbs · {Math.round(recipe.estimated_fat_g)}g fat</p>
+          <p>{formatMealTypeLabel(recipe.meal_type || 'lunch')} · {Math.round(recipe.estimated_calories)} Calories · {Math.round(recipe.estimated_protein_g)}g protein · {Math.round(recipe.estimated_carbs_g)}g carbs · {Math.round(recipe.estimated_fat_g)}g fat</p>
         </div>
         <button type="button" className={`btn-secondary small${selected ? ' active-toggle' : ''}`} onClick={onToggle}>
           {selected ? 'Selected' : 'Select'}
@@ -1592,6 +1772,8 @@ function RecipeIdeaCard({ recipe, selected, onToggle }) {
 }
 
 function AiMealReviewCard({ draft, caloriesRemaining, onChange, onConfirm, onCancel, onSaveFood }) {
+  const [pendingAction, setPendingAction] = useState('')
+
   function updateItem(index, field, value) {
     onChange(current => ({
       ...current,
@@ -1599,44 +1781,64 @@ function AiMealReviewCard({ draft, caloriesRemaining, onChange, onConfirm, onCan
     }))
   }
 
+  async function handleConfirm() {
+    if (pendingAction) return
+    setPendingAction('confirm')
+    try {
+      await onConfirm()
+    } finally {
+      setPendingAction('')
+    }
+  }
+
+  async function handleSaveFood(item, index) {
+    if (pendingAction) return
+    setPendingAction(`food-${index}`)
+    try {
+      await onSaveFood(item)
+    } finally {
+      setPendingAction('')
+    }
+  }
+
   return (
     <div className="dash-card ai-result-card">
       <div className="dashboard-card-head">
         <span className="dashboard-chip ai">Meal review required</span>
-        {caloriesRemaining != null ? <span className="dashboard-chip subtle">{Math.round(caloriesRemaining)} kcal remaining</span> : null}
+        {caloriesRemaining != null ? <span className="dashboard-chip subtle">{Math.round(caloriesRemaining)} Calories remaining</span> : null}
       </div>
       <h3>Confirm the meal before it logs</h3>
-      <label>
-        Meal type
+      <FieldLabel label="Meal type">
         <select value={draft.mealType} onChange={event => onChange(current => ({ ...current, mealType: event.target.value }))}>
           {MEAL_TYPES.map(value => <option key={value} value={value}>{value}</option>)}
         </select>
-      </label>
+      </FieldLabel>
       <div className="nutrition-stack-list">
         {draft.items.map((item, index) => (
           <div key={index} className="nutrition-item-row editing">
             <div className="macro-inputs nutrition-item-editor">
-              <input value={item.food_name} onChange={event => updateItem(index, 'food_name', event.target.value)} />
-              <input type="number" value={item.calories} onChange={event => updateItem(index, 'calories', event.target.value)} placeholder="Cals" />
-              <input type="number" value={item.protein_g} onChange={event => updateItem(index, 'protein_g', event.target.value)} placeholder="P" />
-              <input type="number" value={item.carbs_g} onChange={event => updateItem(index, 'carbs_g', event.target.value)} placeholder="C" />
-              <input type="number" value={item.fat_g} onChange={event => updateItem(index, 'fat_g', event.target.value)} placeholder="F" />
+              <FieldLabel label="Food name"><input value={item.food_name} onChange={event => updateItem(index, 'food_name', event.target.value)} /></FieldLabel>
+              <FieldLabel label="Calories"><input type="number" value={item.calories} onChange={event => updateItem(index, 'calories', event.target.value)} placeholder="0" /></FieldLabel>
+              <FieldLabel label="Protein"><input type="number" step="0.1" value={item.protein_g} onChange={event => updateItem(index, 'protein_g', event.target.value)} placeholder="0" /></FieldLabel>
+              <FieldLabel label="Carbs"><input type="number" step="0.1" value={item.carbs_g} onChange={event => updateItem(index, 'carbs_g', event.target.value)} placeholder="0" /></FieldLabel>
+              <FieldLabel label="Fat"><input type="number" step="0.1" value={item.fat_g} onChange={event => updateItem(index, 'fat_g', event.target.value)} placeholder="0" /></FieldLabel>
             </div>
             <div className="nutrition-row-actions">
-              <button className="btn-secondary small" type="button" onClick={() => onSaveFood(item)}>Save food</button>
+              <button className="btn-secondary small" type="button" onClick={() => handleSaveFood(item, index)} disabled={Boolean(pendingAction)}>{pendingAction === `food-${index}` ? 'Saving…' : 'Save food'}</button>
             </div>
           </div>
         ))}
       </div>
+      {pendingAction ? <p className="empty-state">Working on your request…</p> : null}
       <div className="ai-result-actions">
-        <button className="btn-primary" onClick={onConfirm}>Confirm and log</button>
-        <button className="btn-secondary" onClick={onCancel}>Cancel</button>
+        <button className="btn-primary" onClick={handleConfirm} disabled={Boolean(pendingAction)}>{pendingAction === 'confirm' ? 'Logging…' : 'Confirm and log'}</button>
+        <button className="btn-secondary" onClick={onCancel} disabled={Boolean(pendingAction)}>Cancel</button>
       </div>
     </div>
   )
 }
 
-function AddMealForm({ savedFoods, onSave, onSaveAsTemplate, onCancel, onError }) {
+function AddMealForm({ savedFoods, onSave, onSaveAsTemplate, onCancel, onError, onToast }) {
   return (
     <MealComposerForm
       title="Log meal"
@@ -1644,6 +1846,7 @@ function AddMealForm({ savedFoods, onSave, onSaveAsTemplate, onCancel, onError }
       savedFoods={savedFoods}
       includeMealDateTime
       onError={onError}
+      onToast={onToast}
       onSubmit={payload => onSave({ meal_datetime: payload.meal_datetime, meal_type: payload.meal_type, source: 'manual', items: payload.items })}
       onSecondaryAction={payload => onSaveAsTemplate(payload)}
       secondaryLabel="Save as template"
@@ -1652,7 +1855,7 @@ function AddMealForm({ savedFoods, onSave, onSaveAsTemplate, onCancel, onError }
   )
 }
 
-function SavedMealForm({ initialValues = null, savedFoods, onSave, onCancel, onError }) {
+function SavedMealForm({ initialValues = null, savedFoods, onSave, onCancel, onError, onToast }) {
   return (
     <MealComposerForm
       title="Create saved meal"
@@ -1661,16 +1864,18 @@ function SavedMealForm({ initialValues = null, savedFoods, onSave, onCancel, onE
       savedFoods={savedFoods}
       initialValues={initialValues}
       onError={onError}
+      onToast={onToast}
       onSubmit={onSave}
       onCancel={onCancel}
     />
   )
 }
 
-function SavedFoodForm({ initialValues = null, savedFoods = [], submitLabel = 'Save food', onLogExisting, onSave, onCancel, onError }) {
+function SavedFoodForm({ initialValues = null, savedFoods = [], submitLabel = 'Save food', onLogExisting, onSave, onCancel, onError, onToast }) {
   const [form, setForm] = useState(() => buildSavedFoodFormState(initialValues))
   const [description, setDescription] = useState('')
   const [aiBusy, setAiBusy] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
   const [aiError, setAiError] = useState('')
   const [aiNote, setAiNote] = useState('')
   const formRef = useAutoScrollWhenActive(true)
@@ -1711,6 +1916,7 @@ function SavedFoodForm({ initialValues = null, savedFoods = [], submitLabel = 'S
         micros: Array.isArray(result?.micros) ? result.micros : current.micros,
       }))
       setAiNote(result?.notes || 'AI draft ready. Check the name and macros before saving.')
+      onToast?.('AI food draft ready. Review and save it.')
     } catch (err) {
       setAiError(err.message)
       onError?.(err)
@@ -1720,19 +1926,25 @@ function SavedFoodForm({ initialValues = null, savedFoods = [], submitLabel = 'S
   }
 
   return (
-    <form ref={formRef} className="add-meal-form saved-food-form" onSubmit={event => {
+    <form ref={formRef} className="add-meal-form saved-food-form" onSubmit={async event => {
       event.preventDefault()
-      onSave({
-        ...form,
-        source: 'manual',
-        calories: +form.calories || 0,
-        protein_g: +form.protein_g || 0,
-        carbs_g: +form.carbs_g || 0,
-        fat_g: +form.fat_g || 0,
-        fiber_g: +form.fiber_g || 0,
-        sugar_g: +form.sugar_g || 0,
-        sodium_mg: +form.sodium_mg || 0,
-      })
+      if (submitting) return
+      setSubmitting(true)
+      try {
+        await onSave({
+          ...form,
+          source: 'manual',
+          calories: +form.calories || 0,
+          protein_g: +form.protein_g || 0,
+          carbs_g: +form.carbs_g || 0,
+          fat_g: +form.fat_g || 0,
+          fiber_g: +form.fiber_g || 0,
+          sugar_g: +form.sugar_g || 0,
+          sodium_mg: +form.sodium_mg || 0,
+        })
+      } finally {
+        setSubmitting(false)
+      }
     }}>
       <h3>{initialValues ? 'Edit saved food' : 'Create saved food'}</h3>
       <p className="settings-subtitle">Use a clear food name here. This becomes the label shown everywhere in saved foods and meal suggestions.</p>
@@ -1744,7 +1956,7 @@ function SavedFoodForm({ initialValues = null, savedFoods = [], submitLabel = 'S
           </label>
           {aiError ? <p className="error">{aiError}</p> : null}
           {aiNote ? <p className="empty-state">{aiNote}</p> : null}
-          <button type="button" className="btn-secondary" onClick={handleAnalyseDescription} disabled={aiBusy}>{aiBusy ? 'Analysing…' : 'Analyze with AI'}</button>
+          <button type="button" className="btn-secondary" onClick={handleAnalyseDescription} disabled={aiBusy || submitting}>{aiBusy ? 'Analysing…' : 'Analyze with AI'}</button>
         </div>
       ) : null}
       {duplicateMatches.length ? (
@@ -1755,7 +1967,7 @@ function SavedFoodForm({ initialValues = null, savedFoods = [], submitLabel = 'S
               <div key={food.id} className="nutrition-item-row saved-food-duplicate-row">
                 <div>
                   <strong>{formatFoodDisplayName(food)}</strong>
-                  <p>{food.brand && formatFoodDisplayName(food) !== food.brand ? `${food.brand} · ` : ''}{food.serving_size} · {Math.round(food.calories)} kcal</p>
+                  <p>{food.brand && formatFoodDisplayName(food) !== food.brand ? `${food.brand} · ` : ''}{food.serving_size} · {Math.round(food.calories)} Calories</p>
                 </div>
                 <div className="nutrition-row-actions">
                   <button type="button" className="btn-secondary small" onClick={() => setForm(buildSavedFoodFormState(food))}>Load existing</button>
@@ -1787,9 +1999,10 @@ function SavedFoodForm({ initialValues = null, savedFoods = [], submitLabel = 'S
         <FieldLabel label="Sodium mg"><input type="number" placeholder="0" value={form.sodium_mg} onChange={event => update('sodium_mg', event.target.value)} /></FieldLabel>
       </div>
       {form.micros?.length ? <p className="empty-state">{formatMicroList(form.micros, 4)}</p> : null}
+      {submitting ? <p className="empty-state">Saving food…</p> : null}
       <div className="form-actions">
-        <button type="submit" className="btn-primary">{submitLabel}</button>
-        <button type="button" className="btn-secondary" onClick={onCancel}>Cancel</button>
+        <button type="submit" className="btn-primary" disabled={submitting || aiBusy}>{submitting ? 'Saving…' : submitLabel}</button>
+        <button type="button" className="btn-secondary" onClick={onCancel} disabled={submitting}>Cancel</button>
       </div>
     </form>
   )
@@ -1798,6 +2011,7 @@ function SavedFoodForm({ initialValues = null, savedFoods = [], submitLabel = 'S
 function SavedFoodRow({ food, onLog, onSave, onDelete, onError }) {
   const [editing, setEditing] = useState(false)
   const editRef = useAutoScrollWhenActive(editing)
+  const rowRef = useRef(null)
   const displayName = formatFoodDisplayName(food)
 
   if (editing) {
@@ -1811,6 +2025,7 @@ function SavedFoodRow({ food, onLog, onSave, onDelete, onError }) {
           onSave={async data => {
             await onSave(data)
             setEditing(false)
+            scrollNodeIntoView(rowRef.current)
           }}
           onCancel={() => setEditing(false)}
         />
@@ -1819,10 +2034,10 @@ function SavedFoodRow({ food, onLog, onSave, onDelete, onError }) {
   }
 
   return (
-    <div className="nutrition-item-row saved-food-row">
+    <div ref={rowRef} className="nutrition-item-row saved-food-row">
       <div>
         <strong>{displayName}</strong>
-        <p>{food.brand && displayName !== food.brand ? `${food.brand} · ` : ''}{food.serving_size} · {Math.round(food.calories)} kcal · {Math.round(food.protein_g)}g protein</p>
+        <p>{food.brand && displayName !== food.brand ? `${food.brand} · ` : ''}{food.serving_size} · {Math.round(food.calories)} Calories · {Math.round(food.protein_g)}g protein</p>
         {food.micros?.length ? <p>{formatMicroList(food.micros, 3)}</p> : null}
       </div>
       <div className="nutrition-row-actions saved-food-actions-stack">
@@ -1838,6 +2053,7 @@ function SavedMealRow({ meal, savedFoods, onLog, onSave, onDelete, onError }) {
   const [editing, setEditing] = useState(false)
   const [servingMultiplier, setServingMultiplier] = useState('1')
   const editRef = useAutoScrollWhenActive(editing)
+  const rowRef = useRef(null)
   const multiplier = Math.max(0.1, Number(servingMultiplier) || 1)
 
   if (editing) {
@@ -1857,6 +2073,7 @@ function SavedMealRow({ meal, savedFoods, onLog, onSave, onDelete, onError }) {
           onSubmit={async data => {
             await onSave(data)
             setEditing(false)
+            scrollNodeIntoView(rowRef.current)
           }}
           onCancel={() => setEditing(false)}
         />
@@ -1865,10 +2082,10 @@ function SavedMealRow({ meal, savedFoods, onLog, onSave, onDelete, onError }) {
   }
 
   return (
-    <div className="nutrition-item-row editing saved-meal-row">
+    <div ref={rowRef} className="nutrition-item-row editing saved-meal-row">
       <div>
         <strong>{meal.name}</strong>
-        <p>{meal.meal_type} · {Math.round(Number(meal.calories || 0) * multiplier)} kcal · {Math.round(Number(meal.protein_g || 0) * multiplier)}g protein</p>
+        <p>{meal.meal_type} · {Math.round(Number(meal.calories || 0) * multiplier)} Calories · {Math.round(Number(meal.protein_g || 0) * multiplier)}g protein</p>
         {meal.micros?.length ? <p>{formatMicroList(scaleMicrosClient(meal.micros, multiplier), 3)}</p> : null}
       </div>
       <div className="nutrition-row-actions saved-meal-controls">
@@ -1889,25 +2106,41 @@ function ItemEntryForm({
   submitLabel,
   itemLabel,
   itemPlaceholder,
+  includeCategory = false,
   includeExpiry = false,
   onSave,
   onCancel,
   onError,
 }) {
   const [itemName, setItemName] = useState('')
+  const [categoryOverride, setCategoryOverride] = useState('')
   const [quantity, setQuantity] = useState('')
   const [unit, setUnit] = useState('')
   const [notes, setNotes] = useState('')
   const [expiresOn, setExpiresOn] = useState('')
+  const [submitting, setSubmitting] = useState(false)
   const formRef = useAutoScrollWhenActive(true)
 
-  function submit(event) {
+  async function submit(event) {
     event.preventDefault()
+    if (submitting) return
     if (!itemName.trim()) {
       onError?.('Item name is required.')
       return
     }
-    onSave({ item_name: itemName, quantity: quantity || null, unit, notes, expires_on: includeExpiry ? expiresOn || null : null })
+    setSubmitting(true)
+    try {
+      await onSave({
+        item_name: itemName,
+        category_override: includeCategory ? categoryOverride || null : null,
+        quantity: quantity || null,
+        unit,
+        notes,
+        expires_on: includeExpiry ? expiresOn || null : null,
+      })
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   return (
@@ -1916,6 +2149,19 @@ function ItemEntryForm({
       <FieldLabel label={itemLabel}>
         <input placeholder={itemPlaceholder} value={itemName} onChange={event => setItemName(event.target.value)} required />
       </FieldLabel>
+      {includeCategory ? (
+        <div className="nutrition-meta-inputs">
+          <FieldLabel label="Category">
+            <select value={categoryOverride} onChange={event => setCategoryOverride(event.target.value)}>
+              <option value="">Auto-detect</option>
+              {PANTRY_CATEGORY_CONFIG.map(category => (
+                <option key={category.key} value={category.key}>{category.label}</option>
+              ))}
+              <option value="other">Other</option>
+            </select>
+          </FieldLabel>
+        </div>
+      ) : null}
       <div className="macro-inputs">
         <FieldLabel label="Quantity"><input type="number" placeholder="12" value={quantity} onChange={event => setQuantity(event.target.value)} /></FieldLabel>
         <FieldLabel label="Unit"><input placeholder="items" value={unit} onChange={event => setUnit(event.target.value)} /></FieldLabel>
@@ -1924,9 +2170,10 @@ function ItemEntryForm({
       {includeExpiry ? (
         <FieldLabel label="Expires on"><input type="date" value={expiresOn} onChange={event => setExpiresOn(event.target.value)} /></FieldLabel>
       ) : null}
+      {submitting ? <p className="empty-state">Saving…</p> : null}
       <div className="form-actions">
-        <button type="submit" className="btn-primary">{submitLabel}</button>
-        <button type="button" className="btn-secondary" onClick={onCancel}>Cancel</button>
+        <button type="submit" className="btn-primary" disabled={submitting}>{submitting ? 'Saving…' : submitLabel}</button>
+        <button type="button" className="btn-secondary" onClick={onCancel} disabled={submitting}>Cancel</button>
       </div>
     </form>
   )
@@ -1939,6 +2186,7 @@ function PantryForm({ onSave, onCancel, onError }) {
       submitLabel="Save"
       itemLabel="Item name"
       itemPlaceholder="Eggs"
+      includeCategory
       includeExpiry
       onSave={onSave}
       onCancel={onCancel}
@@ -1968,6 +2216,7 @@ function ParsedItemVoiceCapture({
   noItemsError,
   successNote,
   addLabel,
+  includeCategoryReview = false,
   onAddItems,
   onCancel,
   onError,
@@ -1975,6 +2224,7 @@ function ParsedItemVoiceCapture({
   const [transcript, setTranscript] = useState('')
   const [listening, setListening] = useState(false)
   const [parsing, setParsing] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
   const [notes, setNotes] = useState('')
   const [parsedItems, setParsedItems] = useState([])
   const recognitionRef = useRef(null)
@@ -2063,8 +2313,8 @@ function ParsedItemVoiceCapture({
             {listening ? 'Stop listening' : 'Start listening'}
           </button>
         ) : null}
-        <button type="button" className="btn-secondary" onClick={handleAnalyse} disabled={parsing}>{parsing ? 'Analyzing…' : 'Analyze list'}</button>
-        <button type="button" className="btn-ghost" onClick={onCancel}>Close</button>
+        <button type="button" className="btn-secondary" onClick={handleAnalyse} disabled={parsing || submitting}>{parsing ? 'Analyzing…' : 'Analyze list'}</button>
+        <button type="button" className="btn-ghost" onClick={onCancel} disabled={submitting}>Close</button>
       </div>
       {notes ? <p className="empty-state">{notes}</p> : null}
       {parsedItems.length ? (
@@ -2072,7 +2322,20 @@ function ParsedItemVoiceCapture({
           <div className="nutrition-stack-list">
             {parsedItems.map((item, index) => (
               <div key={`${item.item_name}-${index}`} className="nutrition-item-row editing pantry-voice-row">
-                <FieldLabel label="Item name"><input value={item.item_name} onChange={event => setParsedItems(current => current.map((entry, entryIndex) => entryIndex === index ? { ...entry, item_name: event.target.value } : entry))} /></FieldLabel>
+                <div className="nutrition-item-editor-primary">
+                  <FieldLabel label="Item name"><input value={item.item_name} onChange={event => setParsedItems(current => current.map((entry, entryIndex) => entryIndex === index ? { ...entry, item_name: event.target.value } : entry))} /></FieldLabel>
+                  {includeCategoryReview ? (
+                    <FieldLabel label="Category">
+                      <select value={item.category_override || ''} onChange={event => setParsedItems(current => current.map((entry, entryIndex) => entryIndex === index ? { ...entry, category_override: event.target.value } : entry))}>
+                        <option value="">Auto-detect</option>
+                        {PANTRY_CATEGORY_CONFIG.map(category => (
+                          <option key={category.key} value={category.key}>{category.label}</option>
+                        ))}
+                        <option value="other">Other</option>
+                      </select>
+                    </FieldLabel>
+                  ) : null}
+                </div>
                 <div className="macro-inputs nutrition-item-editor-secondary">
                   <FieldLabel label="Quantity"><input type="number" value={item.quantity ?? ''} onChange={event => setParsedItems(current => current.map((entry, entryIndex) => entryIndex === index ? { ...entry, quantity: event.target.value } : entry))} /></FieldLabel>
                   <FieldLabel label="Unit"><input value={item.unit || ''} onChange={event => setParsedItems(current => current.map((entry, entryIndex) => entryIndex === index ? { ...entry, unit: event.target.value } : entry))} /></FieldLabel>
@@ -2082,7 +2345,15 @@ function ParsedItemVoiceCapture({
             ))}
           </div>
           <div className="form-actions">
-            <button type="button" className="btn-primary" onClick={() => onAddItems(parsedItems)}>{addLabel}</button>
+            <button type="button" className="btn-primary" onClick={async () => {
+              if (submitting) return
+              setSubmitting(true)
+              try {
+                await onAddItems(parsedItems)
+              } finally {
+                setSubmitting(false)
+              }
+            }} disabled={submitting}>{submitting ? 'Saving…' : addLabel}</button>
           </div>
         </>
       ) : null}
@@ -2099,6 +2370,7 @@ function PantryVoiceCapture({ onAddItems, onCancel, onError }) {
       noItemsError="No pantry items were detected from that list."
       successNote="Review the parsed items and add them to your pantry."
       addLabel="Add all to pantry"
+      includeCategoryReview
       onAddItems={onAddItems}
       onCancel={onCancel}
       onError={onError}
@@ -2127,6 +2399,7 @@ function PantryRow({ item, onSave, onDelete }) {
   const editRef = useAutoScrollWhenActive(editing)
   const [form, setForm] = useState({
     item_name: item.item_name,
+    category_override: item.category_override ?? '',
     quantity: item.quantity ?? '',
     unit: item.unit ?? '',
     notes: item.notes ?? '',
@@ -2141,10 +2414,21 @@ function PantryRow({ item, onSave, onDelete }) {
         await onSave(form)
         setEditing(false)
       }}>
-        <FieldLabel label="Item name">
-          <input value={form.item_name} onChange={event => setForm(current => ({ ...current, item_name: event.target.value }))} />
-        </FieldLabel>
-        <div className="macro-inputs">
+        <div className="nutrition-item-editor-primary">
+          <FieldLabel label="Item name">
+            <input value={form.item_name} onChange={event => setForm(current => ({ ...current, item_name: event.target.value }))} />
+          </FieldLabel>
+          <FieldLabel label="Category">
+            <select value={form.category_override} onChange={event => setForm(current => ({ ...current, category_override: event.target.value }))}>
+              <option value="">Auto-detect</option>
+              {PANTRY_CATEGORY_CONFIG.map(category => (
+                <option key={category.key} value={category.key}>{category.label}</option>
+              ))}
+              <option value="other">Other</option>
+            </select>
+          </FieldLabel>
+        </div>
+        <div className="nutrition-item-editor-secondary">
           <FieldLabel label="Quantity"><input type="number" value={form.quantity} onChange={event => setForm(current => ({ ...current, quantity: event.target.value }))} /></FieldLabel>
           <FieldLabel label="Unit"><input value={form.unit} onChange={event => setForm(current => ({ ...current, unit: event.target.value }))} /></FieldLabel>
           <FieldLabel label="Notes"><input value={form.notes} onChange={event => setForm(current => ({ ...current, notes: event.target.value }))} /></FieldLabel>
@@ -2159,12 +2443,12 @@ function PantryRow({ item, onSave, onDelete }) {
   }
 
   return (
-    <div className="nutrition-item-row">
-      <div>
+    <div className="nutrition-item-row pantry-row">
+      <div className="pantry-row-copy">
         <strong>{item.item_name}</strong>
         <p>{item.quantity ? `${item.quantity} ${item.unit || ''}` : 'No quantity set'}{item.expires_on ? ` · expires ${item.expires_on}` : ''}{item.notes ? ` · ${item.notes}` : ''}</p>
       </div>
-      <div className="nutrition-row-actions">
+      <div className="nutrition-row-actions pantry-row-actions">
         <span className="nutrition-inline-badge pantry-category">{categoryLabel}</span>
         <button className="btn-secondary small" onClick={() => setEditing(true)}>Edit</button>
         <button className="btn-ghost small" onClick={onDelete}>Delete</button>
@@ -2173,7 +2457,7 @@ function PantryRow({ item, onSave, onDelete }) {
   )
 }
 
-function PantryCategorySection({ category, onSaveItem, onDeleteItem }) {
+function PantryCategorySection({ category, collapsed = false, onToggle, onSaveItem, onDeleteItem }) {
   return (
     <section className="dash-card nutrition-planning-card nutrition-pantry-category-card">
       <div className="nutrition-pantry-category-head">
@@ -2182,29 +2466,35 @@ function PantryCategorySection({ category, onSaveItem, onDeleteItem }) {
           <h3>{category.label}</h3>
           <p>{category.items.length} item{category.items.length === 1 ? '' : 's'} on hand.</p>
         </div>
-        <span className="nutrition-inline-badge pantry-category">{category.items.length}</span>
+        <div className="nutrition-pantry-category-actions">
+          <span className="nutrition-inline-badge pantry-category">{category.items.length}</span>
+          <button type="button" className="btn-ghost small" onClick={onToggle}>{collapsed ? 'Expand' : 'Collapse'}</button>
+        </div>
       </div>
-      <div className="nutrition-stack-list">
-        {category.items.map(item => (
-          <PantryRow
-            key={item.id}
-            item={item}
-            onSave={data => onSaveItem(item, data)}
-            onDelete={() => onDeleteItem(item)}
-          />
-        ))}
-      </div>
+      {collapsed ? null : (
+        <div className="nutrition-stack-list">
+          {category.items.map(item => (
+            <PantryRow
+              key={item.id}
+              item={item}
+              onSave={data => onSaveItem(item, data)}
+              onDelete={() => onDeleteItem(item)}
+            />
+          ))}
+        </div>
+      )}
     </section>
   )
 }
 
-function MealComposerForm({ title, savedFoods, requireName = false, submitLabel, secondaryLabel = '', initialValues = null, includeMealDateTime = false, onSubmit, onSecondaryAction, onCancel, onError }) {
+function MealComposerForm({ title, savedFoods, requireName = false, submitLabel, secondaryLabel = '', initialValues = null, includeMealDateTime = false, onSubmit, onSecondaryAction, onCancel, onError, onToast }) {
   const [mealType, setMealType] = useState(initialValues?.meal_type || 'lunch')
   const [name, setName] = useState(initialValues?.name || '')
   const [mealDate, setMealDate] = useState(() => getMealDateInputValue(initialValues?.meal_datetime))
   const [mealTime, setMealTime] = useState(() => getMealTimeInputValue(initialValues?.meal_datetime))
   const [items, setItems] = useState(() => initialValues?.items?.length ? normaliseMealItems(initialValues.items) : [createEmptyMealItem()])
   const [busyIndex, setBusyIndex] = useState(null)
+  const [submitAction, setSubmitAction] = useState('')
   const [error, setError] = useState('')
   const formRef = useAutoScrollWhenActive(true)
   const showNameField = requireName || Boolean(secondaryLabel)
@@ -2241,6 +2531,7 @@ function MealComposerForm({ title, savedFoods, requireName = false, submitLabel,
     try {
       const result = await aiApi.analyseFoodText(query)
       updateItem(index, applyFoodSuggestion(items[index], result))
+      onToast?.('AI fill applied. Review the numbers before saving.')
     } catch (err) {
       setError(err.message)
       onError?.(err)
@@ -2266,8 +2557,9 @@ function MealComposerForm({ title, savedFoods, requireName = false, submitLabel,
     }
   }
 
-  function handleSubmit(event) {
+  async function handleSubmit(event) {
     event.preventDefault()
+    if (submitAction) return
     setError('')
     const payload = buildPayload()
     if (!payload) {
@@ -2280,10 +2572,16 @@ function MealComposerForm({ title, savedFoods, requireName = false, submitLabel,
       onError?.('Name the saved meal before saving it.')
       return
     }
-    onSubmit(payload)
+    setSubmitAction('primary')
+    try {
+      await onSubmit(payload)
+    } finally {
+      setSubmitAction('')
+    }
   }
 
-  function handleSecondaryAction() {
+  async function handleSecondaryAction() {
+    if (submitAction) return
     setError('')
     const payload = buildPayload()
     if (!payload) {
@@ -2291,7 +2589,12 @@ function MealComposerForm({ title, savedFoods, requireName = false, submitLabel,
       onError?.('Add at least one food before saving.')
       return
     }
-    onSecondaryAction?.(payload)
+    setSubmitAction('secondary')
+    try {
+      await onSecondaryAction?.(payload)
+    } finally {
+      setSubmitAction('')
+    }
   }
 
   return (
@@ -2346,16 +2649,18 @@ function MealComposerForm({ title, savedFoods, requireName = false, submitLabel,
 
       <div className="nutrition-item-row nutrition-composer-totals">
         <div>
-          <strong>{Math.round(totals.calories)} kcal</strong>
+          <strong>{Math.round(totals.calories)} Calories</strong>
           <p>{Math.round(totals.protein_g)}g protein · {Math.round(totals.carbs_g)}g carbs · {Math.round(totals.fat_g)}g fat</p>
         </div>
       </div>
 
+      {submitAction ? <p className="empty-state">Saving changes…</p> : null}
+
       <div className="form-actions">
-        <button type="button" className="btn-secondary" onClick={() => addItem()}>Add food</button>
-        <button type="submit" className="btn-primary">{submitLabel}</button>
-        {secondaryLabel ? <button type="button" className="btn-secondary" onClick={handleSecondaryAction}>{secondaryLabel}</button> : null}
-        <button type="button" className="btn-secondary" onClick={onCancel}>Cancel</button>
+        <button type="button" className="btn-secondary" onClick={() => addItem()} disabled={Boolean(submitAction)}>Add food</button>
+        <button type="submit" className="btn-primary" disabled={Boolean(submitAction)}>{submitAction === 'primary' ? 'Saving…' : submitLabel}</button>
+        {secondaryLabel ? <button type="button" className="btn-secondary" onClick={handleSecondaryAction} disabled={Boolean(submitAction)}>{submitAction === 'secondary' ? 'Saving…' : secondaryLabel}</button> : null}
+        <button type="button" className="btn-secondary" onClick={onCancel} disabled={Boolean(submitAction)}>Cancel</button>
       </div>
     </form>
   )
@@ -2510,7 +2815,7 @@ function MealComposerItemRow({ item, busy, onChange, onSelectSuggestion, onAutof
                 onClick={() => onSelectSuggestion(suggestion)}>
                 <div>
                   <strong>{formatFoodDisplayName(suggestion)}</strong>
-                  <p>{suggestion.match_type === 'saved_food' ? 'Saved food' : 'Recent food'} · {suggestion.serving_size} · {Math.round(suggestion.calories)} kcal</p>
+                  <p>{suggestion.match_type === 'saved_food' ? 'Saved food' : 'Recent food'} · {suggestion.serving_size} · {Math.round(suggestion.calories)} Calories</p>
                 </div>
               </button>
             ))}
@@ -2904,7 +3209,45 @@ function getVisibleItems(items, expanded, limit = 4) {
   return expanded ? list : list.slice(0, limit)
 }
 
-function groupPantryItemsByCategory(items) {
+function mergeDailyMealsByType(meals) {
+  const groupedMeals = new Map()
+
+  ;(Array.isArray(meals) ? meals : []).forEach(meal => {
+    const mealType = String(meal?.meal_type || 'meal').trim().toLowerCase() || 'meal'
+    const normalizedItems = Array.isArray(meal?.items) ? meal.items.map(item => ({ ...item })) : []
+    const mealId = Number(meal?.id || 0)
+    const existingMeal = groupedMeals.get(mealType)
+
+    if (!existingMeal) {
+      groupedMeals.set(mealType, {
+        ...meal,
+        meal_type: mealType,
+        items: normalizedItems,
+        meal_ids: mealId ? [mealId] : [],
+      })
+      return
+    }
+
+    const currentTimestamp = Date.parse(existingMeal.meal_datetime || '') || 0
+    const nextTimestamp = Date.parse(meal?.meal_datetime || '') || 0
+
+    groupedMeals.set(mealType, {
+      ...existingMeal,
+      meal_datetime: nextTimestamp > currentTimestamp ? meal.meal_datetime : existingMeal.meal_datetime,
+      source: nextTimestamp > currentTimestamp ? meal.source : existingMeal.source,
+      items: [...(existingMeal.items || []), ...normalizedItems],
+      meal_ids: mealId ? [...existingMeal.meal_ids, mealId] : existingMeal.meal_ids,
+    })
+  })
+
+  return Array.from(groupedMeals.values()).sort((left, right) => {
+    const leftTime = Date.parse(left?.meal_datetime || '') || 0
+    const rightTime = Date.parse(right?.meal_datetime || '') || 0
+    return rightTime - leftTime
+  })
+}
+
+function groupPantryItemsByCategory(items, sortMode = 'name') {
   const grouped = new Map()
 
   ;(Array.isArray(items) ? items : []).forEach(item => {
@@ -2919,11 +3262,92 @@ function groupPantryItemsByCategory(items) {
     grouped.get('other'),
   ].filter(Boolean).map(category => ({
     ...category,
-    items: [...category.items].sort((left, right) => String(left?.item_name || '').localeCompare(String(right?.item_name || ''))),
+    items: sortPantryItems(category.items, sortMode),
   }))
 }
 
+function buildPantryCategoryOptions(items) {
+  return groupPantryItemsByCategory(items).map(category => ({
+    key: category.key,
+    label: category.label,
+    count: category.items.length,
+  }))
+}
+
+function buildCollapsedPantryCategoryState(categories, activeCategoryKey = 'all') {
+  const list = Array.isArray(categories) ? categories : []
+
+  if (!list.length) {
+    return {}
+  }
+
+  const expandedKey = activeCategoryKey !== 'all' && list.some(category => category.key === activeCategoryKey)
+    ? activeCategoryKey
+    : list[0].key
+
+  return list.reduce((state, category) => {
+    state[category.key] = category.key !== expandedKey
+    return state
+  }, {})
+}
+
+function filterPantryItems(items, searchQuery = '', categoryFilter = 'all', sortMode = 'name') {
+  const normalisedQuery = normalisePantryMatchText(searchQuery)
+  const filtered = (Array.isArray(items) ? items : []).filter(item => {
+    const category = getPantryCategory(item)
+
+    if (categoryFilter !== 'all' && category.key !== categoryFilter) {
+      return false
+    }
+
+    if (!normalisedQuery) {
+      return true
+    }
+
+    const haystack = normalisePantryMatchText([
+      item?.item_name,
+      item?.unit,
+      item?.notes,
+      category.label,
+    ].filter(Boolean).join(' '))
+
+    return haystack.includes(normalisedQuery)
+  })
+
+  return sortPantryItems(filtered, sortMode)
+}
+
+function sortPantryItems(items, sortMode = 'name') {
+  return [...(Array.isArray(items) ? items : [])].sort((left, right) => {
+    if (sortMode === 'updated') {
+      const leftTime = Date.parse(left?.updated_at || left?.created_at || '') || 0
+      const rightTime = Date.parse(right?.updated_at || right?.created_at || '') || 0
+      return rightTime - leftTime || String(left?.item_name || '').localeCompare(String(right?.item_name || ''))
+    }
+
+    if (sortMode === 'expires') {
+      const leftExpiry = left?.expires_on ? Date.parse(left.expires_on) || Number.MAX_SAFE_INTEGER : Number.MAX_SAFE_INTEGER
+      const rightExpiry = right?.expires_on ? Date.parse(right.expires_on) || Number.MAX_SAFE_INTEGER : Number.MAX_SAFE_INTEGER
+      return leftExpiry - rightExpiry || String(left?.item_name || '').localeCompare(String(right?.item_name || ''))
+    }
+
+    return String(left?.item_name || '').localeCompare(String(right?.item_name || ''))
+  })
+}
+
+function getPantryCategoryConfigByKey(key) {
+  return [...PANTRY_CATEGORY_CONFIG, { key: 'other', label: 'Other' }].find(category => category.key === key) || null
+}
+
 function getPantryCategory(item) {
+  const overrideKey = sanitisePantryCategoryKey(item?.category_override)
+  if (overrideKey) {
+    const overrideCategory = getPantryCategoryConfigByKey(overrideKey)
+    if (overrideCategory) {
+      return { key: overrideCategory.key, label: overrideCategory.label }
+    }
+  }
+
   const haystack = normalisePantryMatchText(`${item?.item_name || ''} ${item?.notes || ''} ${item?.unit || ''}`)
   const match = PANTRY_CATEGORY_CONFIG.find(category => category.keywords.some(keyword => haystack.includes(normalisePantryMatchText(keyword))))
 
@@ -2938,12 +3362,17 @@ function getPantryCategoryLabel(item) {
   return getPantryCategory(item).label
 }
 
+function sanitisePantryCategoryKey(value) {
+  const key = String(value || '').trim()
+  return getPantryCategoryConfigByKey(key) ? key : ''
+}
+
 function uniqueGapItems(items) {
   return Array.from(new Set((Array.isArray(items) ? items : []).map(item => String(item?.key || item || '').trim()).filter(Boolean)))
 }
 
 function sortGroceryGapItems(items, checkedItems) {
-  const checkedSet = new Set(uniqueGapItems(checkedItems))
+  const checkedSet = checkedItems instanceof Set ? checkedItems : new Set(uniqueGapItems(checkedItems))
   const unchecked = []
   const checked = []
 
@@ -3288,6 +3717,7 @@ function buildGroceryGapBulkMessage(result, fallbackCount = 0) {
 function normalisePantryAiItem(item) {
   return {
     item_name: String(item?.item_name || item?.name || '').trim(),
+    category_override: sanitisePantryCategoryKey(item?.category_override),
     quantity: item?.quantity === '' || item?.quantity == null ? null : Number(item.quantity),
     unit: String(item?.unit || '').trim(),
     notes: String(item?.notes || '').trim(),
@@ -3304,7 +3734,7 @@ function formatFoodDisplayName(food) {
 
 function formatMicroAmount(micro) {
   const amount = Number(micro?.amount ?? 0)
-  const rounded = amount >= 100 ? Math.round(amount) : Math.round(amount * 10) / 10
+  const rounded = amount >= 100 ? Math.round(amount) : amount >= 1 ? Math.round(amount * 10) / 10 : Math.round(amount * 100) / 100
   return `${rounded}${micro?.unit || ''}`
 }
 
@@ -3324,8 +3754,12 @@ function prioritiseMicros(micros) {
 function scaleMicrosClient(micros, multiplier) {
   return (Array.isArray(micros) ? micros : []).map(micro => ({
     ...micro,
-    amount: Math.round(Number(micro?.amount ?? 0) * multiplier * 100) / 100,
+    amount: roundMicroAmount(Number(micro?.amount ?? 0) * multiplier),
   }))
+}
+
+function roundMicroAmount(value) {
+  return Math.round(Number(value ?? 0) * 100) / 100
 }
 
 function enrichMicroWithTarget(micro) {
@@ -3365,7 +3799,7 @@ function buildSavedFoodFormState(food) {
     fiber_g: food?.fiber_g ?? '',
     sugar_g: food?.sugar_g ?? '',
     sodium_mg: food?.sodium_mg ?? '',
-    micros: Array.isArray(food?.micros) ? food.micros : [],
+    micros: Array.isArray(food?.micros) ? food.micros.map(micro => ({ ...micro, amount: roundMicroAmount(micro?.amount) })) : [],
   }
 }
 

@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { authApi } from '../api/client'
+import { applyColorScheme, clearStoredColorScheme, DEFAULT_COLOR_SCHEME } from '../lib/theme'
 
 const NONCE_KEY = 'jf_rest_nonce'
 
@@ -36,6 +37,8 @@ export const useAuthStore = create(
 
       clearAuth: () => {
         localStorage.removeItem(NONCE_KEY)
+        clearStoredColorScheme()
+        applyColorScheme(DEFAULT_COLOR_SCHEME)
         set({ nonce: null, userId: null, email: null, isAuthenticated: false, onboardingComplete: false, isAdmin: false })
       },
 

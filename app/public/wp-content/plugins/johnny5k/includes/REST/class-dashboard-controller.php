@@ -200,12 +200,8 @@ class DashboardController {
 			$user_id
 		) );
 
-		$score_7d = (int) $wpdb->get_var( $wpdb->prepare(
-			"SELECT SUM(total_score) FROM {$p}fit_daily_scores
-			 WHERE user_id = %d AND score_date >= %s",
-			$user_id,
-			UserTime::days_ago( $user_id, 6 )
-		) );
+		$score_7d_data = self::calculate_weekly_rhythm_score( $user_id, $goal );
+		$score_7d = (int) ( $score_7d_data['score'] ?? 0 );
 
 		$skip_count = \Johnny5k\Services\TrainingEngine::rolling_skip_count( $user_id );
 		$streaks = [
@@ -231,6 +227,7 @@ class DashboardController {
 			'calorie_adjustment_preview' => $calorie_adjustment_preview,
 			'latest_weight'    => $latest_weight,
 			'score_7d'         => $score_7d,
+			'score_7d_breakdown' => $score_7d_data['breakdown'] ?? [],
 			'streaks'          => $streaks,
 			'skip_count_30d'   => $skip_count,
 			'skip_warning'     => $skip_count >= 3,
@@ -242,6 +239,7 @@ class DashboardController {
 	public static function get_awards( \WP_REST_Request $req ): \WP_REST_Response {
 		global $wpdb;
 		$user_id = get_current_user_id();
+		\Johnny5k\Services\AwardEngine::sync_user_awards( $user_id );
 
 		$earned = $wpdb->get_results( $wpdb->prepare(
 			"SELECT a.code, a.name, a.description, a.icon, a.points, ua.awarded_at
@@ -255,10 +253,251 @@ class DashboardController {
 			"SELECT code, name, description, icon, points FROM {$wpdb->prefix}fit_awards WHERE active = 1"
 		);
 
+		$all_awards = array_map( static function( $award ) use ( $user_id ) {
+			$progress = self::get_award_progress_data( $user_id, (string) ( $award->code ?? '' ) );
+			foreach ( $progress as $key => $value ) {
+				$award->{$key} = $value;
+			}
+			return $award;
+		}, is_array( $all_awards ) ? $all_awards : [] );
+
 		return new \WP_REST_Response( [
 			'earned'     => $earned,
 			'all_awards' => $all_awards,
 		] );
+	}
+
+	private static function get_award_progress_data( int $user_id, string $code ): array {
+		$context = self::get_award_progress_context( $user_id );
+
+		switch ( $code ) {
+			case 'first_login':
+				return [
+					'unlock_requirement' => 'Sign in to the app once.',
+					'progress_current'   => $context['first_login'] ? 1 : 0,
+					'progress_target'    => 1,
+					'progress_text'      => $context['first_login'] ? 'First login has already been recorded.' : 'No first-login flag is recorded yet.',
+				];
+			case 'onboarding_complete':
+				return [
+					'unlock_requirement' => 'Finish onboarding and save your profile setup.',
+					'progress_current'   => $context['onboarding_complete'] ? 1 : 0,
+					'progress_target'    => 1,
+					'progress_text'      => $context['onboarding_complete'] ? 'Onboarding is complete.' : 'Onboarding is still incomplete.',
+				];
+			case 'first_workout':
+				return [
+					'unlock_requirement' => 'Complete your first workout session.',
+					'progress_current'   => min( 1, $context['completed_workouts_total'] ),
+					'progress_target'    => 1,
+					'progress_text'      => sprintf( '%d completed workout%s recorded.', $context['completed_workouts_total'], 1 === $context['completed_workouts_total'] ? '' : 's' ),
+				];
+			case 'first_meal_logged':
+				return [
+					'unlock_requirement' => 'Log and confirm your first meal.',
+					'progress_current'   => min( 1, $context['confirmed_meals_total'] ),
+					'progress_target'    => 1,
+					'progress_text'      => sprintf( '%d confirmed meal%s recorded.', $context['confirmed_meals_total'], 1 === $context['confirmed_meals_total'] ? '' : 's' ),
+				];
+			case 'first_progress_photo':
+				return [
+					'unlock_requirement' => 'Upload your first progress photo.',
+					'progress_current'   => min( 1, $context['progress_photos_total'] ),
+					'progress_target'    => 1,
+					'progress_text'      => sprintf( '%d progress photo%s uploaded.', $context['progress_photos_total'], 1 === $context['progress_photos_total'] ? '' : 's' ),
+				];
+			case 'logging_streak_7':
+				return [
+					'unlock_requirement' => 'Log at least one confirmed meal for 7 days in a row.',
+					'progress_current'   => $context['meal_streak'],
+					'progress_target'    => 7,
+					'progress_text'      => sprintf( '%d of 7 consecutive meal-logging days currently live.', $context['meal_streak'] ),
+				];
+			case 'logging_streak_30':
+				return [
+					'unlock_requirement' => 'Log at least one confirmed meal for 30 days in a row.',
+					'progress_current'   => $context['meal_streak'],
+					'progress_target'    => 30,
+					'progress_text'      => sprintf( '%d of 30 consecutive meal-logging days currently live.', $context['meal_streak'] ),
+				];
+			case 'workouts_week_complete':
+				return [
+					'unlock_requirement' => 'Complete all planned workouts in a 7-day stretch.',
+					'progress_current'   => $context['workout_days_7d'],
+					'progress_target'    => $context['planned_workout_days_7d'],
+					'progress_text'      => sprintf( '%d of %d planned workout days completed in the last 7 days.', $context['workout_days_7d'], $context['planned_workout_days_7d'] ),
+				];
+			case 'protein_streak_5':
+				return [
+					'unlock_requirement' => $context['target_protein'] > 0 ? sprintf( 'Hit %.0fg protein for 5 straight days.', $context['target_protein'] ) : 'Hit your protein target for 5 straight days.',
+					'progress_current'   => $context['protein_streak'],
+					'progress_target'    => 5,
+					'progress_text'      => sprintf( '%d of 5 qualifying protein days currently live.', $context['protein_streak'] ),
+				];
+			case 'steps_10k_3days':
+				return [
+					'unlock_requirement' => 'Reach 10,000 steps for 3 days in a row.',
+					'progress_current'   => $context['steps_10k_streak'],
+					'progress_target'    => 3,
+					'progress_text'      => sprintf( '%d of 3 consecutive 10k-step days currently live.', $context['steps_10k_streak'] ),
+				];
+			case 'weight_loss_5lb':
+				return [
+					'unlock_requirement' => 'Get 5 lb below your starting weight.',
+					'progress_current'   => max( 0, round( $context['weight_lost_lb'], 1 ) ),
+					'progress_target'    => 5,
+					'progress_text'      => $context['starting_weight_known'] ? sprintf( 'Current loss from starting weight: %.1f lb.', $context['weight_lost_lb'] ) : 'Starting weight is not set yet.',
+				];
+			case 'weight_loss_10lb':
+				return [
+					'unlock_requirement' => 'Get 10 lb below your starting weight.',
+					'progress_current'   => max( 0, round( $context['weight_lost_lb'], 1 ) ),
+					'progress_target'    => 10,
+					'progress_text'      => $context['starting_weight_known'] ? sprintf( 'Current loss from starting weight: %.1f lb.', $context['weight_lost_lb'] ) : 'Starting weight is not set yet.',
+				];
+			case 'consistency_comeback':
+				return [
+					'unlock_requirement' => 'Return after a gap of 5 or more days and then log 3 straight days.',
+					'progress_current'   => $context['meal_streak'],
+					'progress_target'    => 3,
+					'progress_text'      => $context['has_comeback_window'] ? 'A qualifying comeback window is already visible in the last 30 days.' : sprintf( '%d consecutive meal days are live after your latest gap check.', min( 3, $context['meal_streak'] ) ),
+				];
+			case 'first_pr':
+				return [
+					'unlock_requirement' => 'Set a new personal record in any exercise.',
+					'progress_current'   => min( 1, $context['pr_total'] ),
+					'progress_target'    => 1,
+					'progress_text'      => sprintf( '%d personal record snapshot%s recorded.', $context['pr_total'], 1 === $context['pr_total'] ? '' : 's' ),
+				];
+			case 'sleep_streak_5':
+				return [
+					'unlock_requirement' => 'Log at least 7 hours of sleep for 5 nights in a row.',
+					'progress_current'   => $context['sleep_streak'],
+					'progress_target'    => 5,
+					'progress_text'      => sprintf( '%d of 5 qualifying sleep nights currently live.', $context['sleep_streak'] ),
+				];
+			case 'cardio_streak_3':
+				return [
+					'unlock_requirement' => 'Log cardio for 3 days in a row.',
+					'progress_current'   => $context['cardio_streak'],
+					'progress_target'    => 3,
+					'progress_text'      => sprintf( '%d of 3 consecutive cardio days currently live.', $context['cardio_streak'] ),
+				];
+			case 'meals_logged_week':
+				return [
+					'unlock_requirement' => 'Log meals across all 7 days in the week.',
+					'progress_current'   => $context['meal_days_7d'],
+					'progress_target'    => 7,
+					'progress_text'      => sprintf( '%d of 7 days with meals logged in the last week.', $context['meal_days_7d'] ),
+				];
+			case 'calorie_target_week':
+				return [
+					'unlock_requirement' => $context['target_calories'] > 0 ? sprintf( 'Land within %d-%d calories on 5 days in a week.', (int) round( $context['target_calories'] * 0.85 ), (int) round( $context['target_calories'] * 1.15 ) ) : 'Land near your calorie target on 5 days in a week.',
+					'progress_current'   => $context['calorie_days_7d'],
+					'progress_target'    => 5,
+					'progress_text'      => sprintf( '%d of 5 qualifying calorie-range days in the last week.', $context['calorie_days_7d'] ),
+				];
+			default:
+				return [
+					'unlock_requirement' => 'Keep logging consistently to unlock this award.',
+					'progress_current'   => 0,
+					'progress_target'    => 0,
+					'progress_text'      => '',
+				];
+		}
+	}
+
+	private static function get_award_progress_context( int $user_id ): array {
+		global $wpdb;
+		$p = $wpdb->prefix;
+		$goal = $wpdb->get_row( $wpdb->prepare(
+			"SELECT target_calories, target_protein_g, target_steps, target_sleep_hours
+			 FROM {$p}fit_user_goals WHERE user_id = %d AND active = 1 ORDER BY created_at DESC LIMIT 1",
+			$user_id
+		) );
+
+		$starting_weight = (float) $wpdb->get_var( $wpdb->prepare(
+			"SELECT starting_weight_lb FROM {$p}fit_user_profiles WHERE user_id = %d",
+			$user_id
+		) );
+		$current_weight = (float) $wpdb->get_var( $wpdb->prepare(
+			"SELECT weight_lb FROM {$p}fit_body_metrics WHERE user_id = %d ORDER BY metric_date DESC LIMIT 1",
+			$user_id
+		) );
+
+		$completed_workouts_total = (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT COUNT(*) FROM {$p}fit_workout_sessions WHERE user_id = %d AND completed = 1",
+			$user_id
+		) );
+		$confirmed_meals_total = (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT COUNT(*) FROM {$p}fit_meals WHERE user_id = %d AND confirmed = 1",
+			$user_id
+		) );
+		$progress_photos_total = (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT COUNT(*) FROM {$p}fit_progress_photos WHERE user_id = %d",
+			$user_id
+		) );
+		$pr_total = (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT COUNT(*) FROM {$p}fit_exercise_performance_snapshots WHERE user_id = %d",
+			$user_id
+		) );
+
+		$start_date = UserTime::days_ago( $user_id, 6 );
+		$workout_days_7d = (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT COUNT(DISTINCT session_date) FROM {$p}fit_workout_sessions
+			 WHERE user_id = %d AND completed = 1 AND session_date >= %s",
+			$user_id,
+			$start_date
+		) );
+		$planned_workout_days_7d = max( 1, self::count_planned_training_days_in_range( $user_id, $start_date, UserTime::today( $user_id ) ) );
+
+		$meal_days_7d = (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT COUNT(DISTINCT DATE(meal_datetime)) FROM {$p}fit_meals
+			 WHERE user_id = %d AND confirmed = 1 AND DATE(meal_datetime) >= %s",
+			$user_id,
+			$start_date
+		) );
+
+		$target_calories = (int) ( $goal->target_calories ?? 0 );
+		$calorie_days_7d = $target_calories > 0
+			? (int) $wpdb->get_var( $wpdb->prepare(
+				"SELECT COUNT(*) FROM (
+					SELECT DATE(m.meal_datetime) AS meal_date
+					FROM {$p}fit_meal_items mi
+					JOIN {$p}fit_meals m ON m.id = mi.meal_id
+					WHERE m.user_id = %d AND m.confirmed = 1 AND DATE(m.meal_datetime) >= %s
+					GROUP BY DATE(m.meal_datetime)
+					HAVING SUM(mi.calories) BETWEEN %d AND %d
+				) calorie_days",
+				$user_id,
+				$start_date,
+				(int) round( $target_calories * 0.85 ),
+				(int) round( $target_calories * 1.15 )
+			) )
+			: 0;
+
+		return [
+			'first_login'            => (bool) get_user_meta( $user_id, 'jf_first_login_done', true ),
+			'onboarding_complete'    => (bool) $wpdb->get_var( $wpdb->prepare( "SELECT onboarding_complete FROM {$p}fit_user_profiles WHERE user_id = %d", $user_id ) ),
+			'completed_workouts_total' => $completed_workouts_total,
+			'confirmed_meals_total'  => $confirmed_meals_total,
+			'progress_photos_total'  => $progress_photos_total,
+			'pr_total'               => $pr_total,
+			'planned_workout_days_7d' => $planned_workout_days_7d,
+			'workout_days_7d'        => $workout_days_7d,
+			'meal_streak'            => self::count_meal_streak( $user_id ),
+			'protein_streak'         => self::count_protein_streak( $user_id, (float) ( $goal->target_protein_g ?? 0 ) ),
+			'steps_10k_streak'       => self::count_steps_streak( $user_id, 10000 ),
+			'sleep_streak'           => self::count_sleep_streak( $user_id ),
+			'cardio_streak'          => self::count_cardio_streak( $user_id ),
+			'meal_days_7d'           => $meal_days_7d,
+			'calorie_days_7d'        => $calorie_days_7d,
+			'target_protein'         => (float) ( $goal->target_protein_g ?? 0 ),
+			'target_calories'        => $target_calories,
+			'weight_lost_lb'         => $starting_weight > 0 && $current_weight > 0 ? max( 0, $starting_weight - $current_weight ) : 0,
+			'starting_weight_known'  => $starting_weight > 0,
+			'has_comeback_window'    => self::has_consistency_comeback_window( $user_id ),
+		];
 	}
 
 	// ── POST /dashboard/photo ─────────────────────────────────────────────────
@@ -305,8 +544,7 @@ class DashboardController {
 			update_user_meta( $user_id, 'jf_progress_photo_baselines', $baselines );
 		}
 
-		// Grant award
-		\Johnny5k\Services\AwardEngine::grant( $user_id, 'first_progress_photo' );
+		\Johnny5k\Services\AwardEngine::sync_user_awards( $user_id );
 
 		return new \WP_REST_Response( [
 			'photo_id'      => $photo_id,
@@ -460,6 +698,8 @@ class DashboardController {
 			unset( $baselines[ $photo->angle ] );
 			update_user_meta( $user_id, 'jf_progress_photo_baselines', $baselines );
 		}
+
+		\Johnny5k\Services\AwardEngine::sync_user_awards( $user_id );
 
 		return new \WP_REST_Response( [ 'deleted' => true, 'photo_id' => $photo_id ], 200 );
 	}
@@ -637,13 +877,16 @@ class DashboardController {
 
 		$target_sleep = (float) ( $goal->target_sleep_hours ?? 8 );
 		$target_steps = (int) ( $goal->target_steps ?? 8000 );
-		$last_sleep = (float) ( $sleep->hours_sleep ?? 0 );
+		$last_sleep_date = (string) ( $sleep->sleep_date ?? '' );
+		$recent_sleep_cutoff = UserTime::days_ago( $user_id, 1 );
+		$has_recent_sleep = '' !== $last_sleep_date && $last_sleep_date >= $recent_sleep_cutoff;
+		$last_sleep = $has_recent_sleep ? (float) ( $sleep->hours_sleep ?? 0 ) : 0;
 		$steps_pct = $target_steps > 0 ? ( $steps_today / $target_steps ) : 0;
 
 		$mode = 'normal';
 		$headline = 'Recovery is supporting normal training.';
 
-		if ( $active_flags > 0 || $last_sleep < max( 5.5, $target_sleep - 2 ) ) {
+		if ( $active_flags > 0 || ( $has_recent_sleep && $last_sleep < max( 5.5, $target_sleep - 2 ) ) ) {
 			$mode = 'maintenance';
 			$headline = 'Recovery is compromised. Keep training lighter and cleaner today.';
 		} elseif ( $avg_sleep < max( 6.5, $target_sleep - 1 ) || $cardio_minutes >= 150 || $steps_pct >= 1.25 ) {
@@ -655,6 +898,8 @@ class DashboardController {
 			'mode'              => $mode,
 			'headline'          => $headline,
 			'last_sleep_hours'  => $last_sleep,
+			'last_sleep_date'   => $last_sleep_date,
+			'last_sleep_is_recent' => $has_recent_sleep,
 			'avg_sleep_3d'      => round( $avg_sleep, 1 ),
 			'steps_today'       => $steps_today,
 			'steps_target'      => $target_steps,
@@ -662,6 +907,170 @@ class DashboardController {
 			'active_flags'      => $active_flags,
 			'active_flag_items' => $active_flag_items,
 			'recommended_time_tier' => 'maintenance' === $mode ? 'short' : ( 'caution' === $mode ? 'medium' : 'full' ),
+		];
+	}
+
+	private static function calculate_weekly_rhythm_score( int $user_id, ?object $goal ): array {
+		global $wpdb;
+		$p = $wpdb->prefix;
+		$start_date = UserTime::days_ago( $user_id, 6 );
+		$end_date = UserTime::today( $user_id );
+
+		$meal_days = (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT COUNT(DISTINCT DATE(meal_datetime))
+			 FROM {$p}fit_meals
+			 WHERE user_id = %d AND confirmed = 1
+			   AND DATE(meal_datetime) >= %s",
+			$user_id,
+			$start_date
+		) );
+
+		$target_protein = (float) ( $goal->target_protein_g ?? 0 );
+		$protein_days = $target_protein > 0
+			? (int) $wpdb->get_var( $wpdb->prepare(
+				"SELECT COUNT(*) FROM (
+					SELECT DATE(m.meal_datetime) AS meal_date
+					FROM {$p}fit_meal_items mi
+					JOIN {$p}fit_meals m ON m.id = mi.meal_id
+					WHERE m.user_id = %d AND m.confirmed = 1
+					  AND DATE(m.meal_datetime) >= %s
+					GROUP BY DATE(m.meal_datetime)
+					HAVING SUM(mi.protein_g) >= %f
+				) protein_days",
+				$user_id,
+				$start_date,
+				$target_protein
+			) )
+			: $meal_days;
+
+		$target_calories = (int) ( $goal->target_calories ?? 0 );
+		$calorie_days = $target_calories > 0
+			? (int) $wpdb->get_var( $wpdb->prepare(
+				"SELECT COUNT(*) FROM (
+					SELECT DATE(m.meal_datetime) AS meal_date
+					FROM {$p}fit_meal_items mi
+					JOIN {$p}fit_meals m ON m.id = mi.meal_id
+					WHERE m.user_id = %d AND m.confirmed = 1
+					  AND DATE(m.meal_datetime) >= %s
+					GROUP BY DATE(m.meal_datetime)
+					HAVING SUM(mi.calories) BETWEEN %d AND %d
+				) calorie_days",
+				$user_id,
+				$start_date,
+				(int) round( $target_calories * 0.85 ),
+				(int) round( $target_calories * 1.15 )
+			) )
+			: $meal_days;
+
+		$target_sleep = (float) ( $goal->target_sleep_hours ?? 7 );
+		$sleep_threshold = max( 6.5, round( $target_sleep - 0.5, 1 ) );
+		$sleep_days = (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT COUNT(*) FROM {$p}fit_sleep_logs
+			 WHERE user_id = %d AND sleep_date >= %s AND hours_sleep >= %f",
+			$user_id,
+			$start_date,
+			$sleep_threshold
+		) );
+
+		$target_steps = (int) ( $goal->target_steps ?? 8000 );
+		$steps_threshold = max( 6000, (int) round( $target_steps * 0.8 ) );
+		$steps_days = (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT COUNT(*) FROM {$p}fit_step_logs
+			 WHERE user_id = %d AND step_date >= %s AND steps >= %d",
+			$user_id,
+			$start_date,
+			$steps_threshold
+		) );
+
+		$movement_days = (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT COUNT(*) FROM (
+				SELECT DISTINCT session_date AS activity_date
+				FROM {$p}fit_workout_sessions
+				WHERE user_id = %d AND completed = 1 AND session_date >= %s
+				UNION
+				SELECT DISTINCT cardio_date AS activity_date
+				FROM {$p}fit_cardio_logs
+				WHERE user_id = %d AND cardio_date >= %s
+			) movement_days",
+			$user_id,
+			$start_date,
+			$user_id,
+			$start_date
+		) );
+
+		$planned_training_days = self::count_planned_training_days_in_range( $user_id, $start_date, $end_date );
+		$movement_target = max( 2, $planned_training_days );
+
+		$weights = [
+			'meal_days'     => 20,
+			'protein_days'  => 20,
+			'calorie_days'  => 15,
+			'sleep_days'    => 20,
+			'steps_days'    => 10,
+			'movement_days' => 15,
+		];
+
+		$ratios = [
+			'meal_days'     => min( 1, $meal_days / 7 ),
+			'protein_days'  => min( 1, $protein_days / 7 ),
+			'calorie_days'  => min( 1, $calorie_days / 7 ),
+			'sleep_days'    => min( 1, $sleep_days / 7 ),
+			'steps_days'    => min( 1, $steps_days / 7 ),
+			'movement_days' => min( 1, $movement_days / max( 1, $movement_target ) ),
+		];
+
+		$score = 0;
+		foreach ( $weights as $key => $weight ) {
+			$score += $weight * $ratios[ $key ];
+		}
+
+		return [
+			'score' => (int) round( $score ),
+			'breakdown' => [
+				'meal_days' => [
+					'label' => 'Meals logged',
+					'value' => $meal_days,
+					'target' => 7,
+					'weight' => $weights['meal_days'],
+				],
+				'protein_days' => [
+					'label' => 'Protein days',
+					'value' => $protein_days,
+					'target' => 7,
+					'weight' => $weights['protein_days'],
+					'helper' => $target_protein > 0 ? sprintf( 'Hit %.0fg protein.', $target_protein ) : 'Hit your protein target.',
+				],
+				'calorie_days' => [
+					'label' => 'Calorie range days',
+					'value' => $calorie_days,
+					'target' => 7,
+					'weight' => $weights['calorie_days'],
+					'helper' => $target_calories > 0 ? sprintf( 'Land within %d-%d calories.', (int) round( $target_calories * 0.85 ), (int) round( $target_calories * 1.15 ) ) : 'Stay near your calorie target.',
+				],
+				'sleep_days' => [
+					'label' => 'Sleep target days',
+					'value' => $sleep_days,
+					'target' => 7,
+					'weight' => $weights['sleep_days'],
+					'threshold' => $sleep_threshold,
+					'helper' => sprintf( 'Log at least %.1fh sleep.', $sleep_threshold ),
+				],
+				'steps_days' => [
+					'label' => 'Step target days',
+					'value' => $steps_days,
+					'target' => 7,
+					'weight' => $weights['steps_days'],
+					'threshold' => $steps_threshold,
+					'helper' => sprintf( 'Reach %d+ steps.', $steps_threshold ),
+				],
+				'movement_days' => [
+					'label' => 'Training or cardio days',
+					'value' => $movement_days,
+					'target' => $movement_target,
+					'weight' => $weights['movement_days'],
+					'helper' => 'Complete a workout or log cardio.',
+				],
+			],
 		];
 	}
 
@@ -738,6 +1147,28 @@ class DashboardController {
 		return UserTime::weekday_order_for_date( $user_id, $date );
 	}
 
+	private static function count_planned_training_days_in_range( int $user_id, string $start_date, string $end_date ): int {
+		$timezone = UserTime::timezone( $user_id );
+		$start = \DateTimeImmutable::createFromFormat( 'Y-m-d H:i:s', $start_date . ' 12:00:00', $timezone );
+		$end = \DateTimeImmutable::createFromFormat( 'Y-m-d H:i:s', $end_date . ' 12:00:00', $timezone );
+
+		if ( false === $start || false === $end ) {
+			return 0;
+		}
+
+		$count = 0;
+		$current = $start;
+		while ( $current <= $end ) {
+			$day = self::get_plan_day_for_date( $user_id, $current->format( 'Y-m-d' ) );
+			if ( $day && 'rest' !== ( $day->day_type ?? 'rest' ) ) {
+				$count++;
+			}
+			$current = $current->modify( '+1 day' );
+		}
+
+		return $count;
+	}
+
 	private static function weekday_label_for_date( int $user_id, string $date ): string {
 		return UserTime::weekday_label_for_date( $user_id, $date );
 	}
@@ -766,6 +1197,25 @@ class DashboardController {
 		} );
 	}
 
+	private static function count_protein_streak( int $user_id, float $target_protein ): int {
+		if ( $target_protein <= 0 ) {
+			return 0;
+		}
+
+		global $wpdb;
+		return self::count_consecutive_days( $user_id, function( string $date ) use ( $wpdb, $user_id, $target_protein ): bool {
+			$protein = (float) $wpdb->get_var( $wpdb->prepare(
+				"SELECT SUM(mi.protein_g)
+				 FROM {$wpdb->prefix}fit_meal_items mi
+				 JOIN {$wpdb->prefix}fit_meals m ON m.id = mi.meal_id
+				 WHERE m.user_id = %d AND DATE(m.meal_datetime) = %s AND m.confirmed = 1",
+				$user_id,
+				$date
+			) );
+			return $protein >= $target_protein;
+		} );
+	}
+
 	private static function count_sleep_streak( int $user_id ): int {
 		global $wpdb;
 		return self::count_consecutive_days( $user_id, function( string $date ) use ( $wpdb, $user_id ): bool {
@@ -788,6 +1238,18 @@ class DashboardController {
 		} );
 	}
 
+	private static function count_steps_streak( int $user_id, int $threshold ): int {
+		global $wpdb;
+		return self::count_consecutive_days( $user_id, function( string $date ) use ( $wpdb, $user_id, $threshold ): bool {
+			$steps = (int) $wpdb->get_var( $wpdb->prepare(
+				"SELECT steps FROM {$wpdb->prefix}fit_step_logs WHERE user_id = %d AND step_date = %s",
+				$user_id,
+				$date
+			) );
+			return $steps >= $threshold;
+		} );
+	}
+
 	private static function count_consecutive_days( int $user_id, callable $has_activity, ?string $start_date = null ): int {
 		$streak = 0;
 		$current = UserTime::now( $user_id )->setTime( 12, 0 );
@@ -806,9 +1268,42 @@ class DashboardController {
 			} else {
 				break;
 			}
-			$current->modify( '-1 day' );
+			$current = $current->modify( '-1 day' );
 		}
 
 		return $streak;
+	}
+
+	private static function has_consistency_comeback_window( int $user_id ): bool {
+		global $wpdb;
+		$dates = $wpdb->get_col( $wpdb->prepare(
+			"SELECT DISTINCT DATE(meal_datetime) AS d
+			 FROM {$wpdb->prefix}fit_meals
+			 WHERE user_id = %d AND DATE(meal_datetime) >= %s
+			   AND confirmed = 1
+			 ORDER BY d ASC",
+			$user_id,
+			UserTime::days_ago( $user_id, 29 )
+		) );
+
+		if ( count( $dates ) < 4 ) {
+			return false;
+		}
+
+		for ( $i = 1; $i < count( $dates ) - 2; $i++ ) {
+			$gap = ( new \DateTime( $dates[ $i ] ) )->diff( new \DateTime( $dates[ $i - 1 ] ) )->days;
+			if ( $gap < 5 ) {
+				continue;
+			}
+
+			$d1 = new \DateTime( $dates[ $i ] );
+			$d2 = new \DateTime( $dates[ $i + 1 ] ?? '' );
+			$d3 = new \DateTime( $dates[ $i + 2 ] ?? '' );
+			if ( 1 === $d1->diff( $d2 )->days && 1 === $d2->diff( $d3 )->days ) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 }

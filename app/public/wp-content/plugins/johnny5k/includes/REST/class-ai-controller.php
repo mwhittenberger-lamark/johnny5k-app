@@ -26,6 +26,7 @@ use Johnny5k\Services\UserTime;
  */
 class AiController {
 	private const GROCERY_GAP_ITEMS_META_KEY = 'jf_nutrition_grocery_gap_items';
+	private const PANTRY_CATEGORY_OVERRIDES_META_KEY = 'johnny5k_pantry_category_overrides';
 
 	public static function register_routes(): void {
 		$ns   = JF_REST_NAMESPACE;
@@ -71,6 +72,32 @@ class AiController {
 			[
 				'methods'             => 'DELETE',
 				'callback'            => [ __CLASS__, 'clear_thread' ],
+				'permission_callback' => $auth,
+			],
+		] );
+
+		register_rest_route( $ns, '/ai/follow-up/(?P<id>[a-z0-9\-]+)', [
+			[
+				'methods'             => 'POST',
+				'callback'            => [ __CLASS__, 'update_follow_up' ],
+				'permission_callback' => $auth,
+			],
+			[
+				'methods'             => 'DELETE',
+				'callback'            => [ __CLASS__, 'dismiss_follow_up' ],
+				'permission_callback' => $auth,
+			],
+		] );
+
+		register_rest_route( $ns, '/ai/memory', [
+			[
+				'methods'             => 'GET',
+				'callback'            => [ __CLASS__, 'get_memory' ],
+				'permission_callback' => $auth,
+			],
+			[
+				'methods'             => 'POST',
+				'callback'            => [ __CLASS__, 'update_memory' ],
 				'permission_callback' => $auth,
 			],
 		] );
@@ -220,13 +247,14 @@ class AiController {
 		$message    = sanitize_textarea_field( $req->get_param( 'message' ) ?: '' );
 		$thread_key = sanitize_text_field( $req->get_param( 'thread_key' ) ?: 'main' );
 		$mode       = sanitize_text_field( $req->get_param( 'mode' ) ?: 'general' );
+		$context    = self::sanitize_ai_context_overrides( $req->get_param( 'context' ) );
 
 		if ( ! $message ) {
 			return new \WP_REST_Response( [ 'message' => 'No message provided.' ], 400 );
 		}
 
 		$thread_key = 'u' . $user_id . '_' . $thread_key;
-		$result     = AiService::chat( $user_id, $thread_key, $message, $mode );
+		$result     = AiService::chat( $user_id, $thread_key, $message, $mode, $context );
 
 		if ( is_wp_error( $result ) ) {
 			return new \WP_REST_Response( [ 'message' => $result->get_error_message() ], 500 );
@@ -239,6 +267,10 @@ class AiController {
 			'used_web_search' => (bool) ( $result['used_web_search'] ?? false ),
 			'used_tools'      => $result['used_tools'] ?? [],
 			'action_results'  => $result['action_results'] ?? [],
+			'queued_follow_ups' => $result['queued_follow_ups'] ?? [],
+			'why'             => $result['why'] ?? '',
+			'context_used'    => $result['context_used'] ?? [],
+			'confidence'      => $result['confidence'] ?? '',
 		] );
 	}
 
@@ -323,16 +355,60 @@ class AiController {
 		) );
 
 		if ( ! $thread ) {
-			return new \WP_REST_Response( [ 'messages' => [] ] );
+			return new \WP_REST_Response( [
+				'messages' => [],
+				'follow_ups' => AiService::get_pending_follow_ups( $user_id ),
+				'follow_up_overview' => AiService::get_follow_up_overview( $user_id ),
+				'durable_memory' => AiService::get_durable_memory( $user_id ),
+			] );
 		}
 
 		$messages = $wpdb->get_results( $wpdb->prepare(
-			"SELECT role, message_text, created_at FROM {$wpdb->prefix}fit_ai_messages
+			"SELECT role, message_text, tool_payload_json, created_at FROM {$wpdb->prefix}fit_ai_messages
 			 WHERE thread_id = %d AND role IN ('user','assistant') ORDER BY id ASC",
 			$thread->id
 		) );
+		$messages = array_map( static function( $message ): array {
+			$row = [
+				'role'         => $message->role,
+				'message_text' => $message->message_text,
+				'created_at'   => $message->created_at,
+			];
 
-		return new \WP_REST_Response( [ 'messages' => $messages ] );
+			$meta = json_decode( (string) ( $message->tool_payload_json ?? '' ), true );
+			if ( is_array( $meta ) ) {
+				if ( isset( $meta['sources'] ) ) {
+					$row['sources'] = is_array( $meta['sources'] ) ? $meta['sources'] : [];
+				}
+				if ( isset( $meta['actions'] ) ) {
+					$row['actions'] = is_array( $meta['actions'] ) ? $meta['actions'] : [];
+				}
+				if ( isset( $meta['used_tools'] ) ) {
+					$row['used_tools'] = is_array( $meta['used_tools'] ) ? $meta['used_tools'] : [];
+				}
+				if ( isset( $meta['action_results'] ) ) {
+					$row['action_results'] = is_array( $meta['action_results'] ) ? $meta['action_results'] : [];
+				}
+				if ( isset( $meta['why'] ) ) {
+					$row['why'] = sanitize_textarea_field( (string) $meta['why'] );
+				}
+				if ( isset( $meta['context_used'] ) ) {
+					$row['context_used'] = is_array( $meta['context_used'] ) ? array_values( array_filter( array_map( 'sanitize_text_field', $meta['context_used'] ) ) ) : [];
+				}
+				if ( isset( $meta['confidence'] ) ) {
+					$row['confidence'] = sanitize_key( (string) $meta['confidence'] );
+				}
+			}
+
+			return $row;
+		}, $messages );
+
+		return new \WP_REST_Response( [
+			'messages' => $messages,
+			'follow_ups' => AiService::get_pending_follow_ups( $user_id ),
+			'follow_up_overview' => AiService::get_follow_up_overview( $user_id ),
+			'durable_memory' => AiService::get_durable_memory( $user_id ),
+		] );
 	}
 
 	// ── DELETE /ai/thread/{key} ───────────────────────────────────────────────
@@ -356,6 +432,75 @@ class AiController {
 		return new \WP_REST_Response( [ 'cleared' => true ] );
 	}
 
+	public static function dismiss_follow_up( \WP_REST_Request $req ): \WP_REST_Response {
+		$user_id = get_current_user_id();
+		$follow_up_id = sanitize_text_field( (string) $req->get_param( 'id' ) );
+
+		return new \WP_REST_Response( [
+			'dismissed' => AiService::dismiss_follow_up( $user_id, $follow_up_id ),
+		] );
+	}
+
+	public static function update_follow_up( \WP_REST_Request $req ): \WP_REST_Response {
+		$user_id = get_current_user_id();
+		$follow_up_id = sanitize_text_field( (string) $req->get_param( 'id' ) );
+		$state = sanitize_key( (string) ( $req->get_param( 'state' ) ?: 'pending' ) );
+		$due_at = sanitize_text_field( (string) ( $req->get_param( 'due_at' ) ?: '' ) );
+
+		$updated = AiService::update_follow_up_state( $user_id, $follow_up_id, $state, $due_at );
+		if ( null === $updated ) {
+			return new \WP_REST_Response( [ 'message' => 'Could not update follow-up.' ], 400 );
+		}
+
+		return new \WP_REST_Response( [
+			'updated' => $updated,
+			'follow_ups' => AiService::get_pending_follow_ups( $user_id ),
+			'follow_up_overview' => AiService::get_follow_up_overview( $user_id ),
+		] );
+	}
+
+	public static function get_memory( \WP_REST_Request $req ): \WP_REST_Response {
+		$user_id = get_current_user_id();
+		return new \WP_REST_Response( [
+			'durable_memory' => AiService::get_durable_memory( $user_id ),
+			'follow_up_overview' => AiService::get_follow_up_overview( $user_id ),
+		] );
+	}
+
+	public static function update_memory( \WP_REST_Request $req ): \WP_REST_Response {
+		$user_id = get_current_user_id();
+		$bullets = $req->get_param( 'bullets' );
+		$updated = AiService::update_durable_memory( $user_id, is_array( $bullets ) ? $bullets : [] );
+
+		return new \WP_REST_Response( [
+			'durable_memory' => $updated,
+			'follow_up_overview' => AiService::get_follow_up_overview( $user_id ),
+		] );
+	}
+
+	private static function sanitize_ai_context_overrides( $context ): array {
+		if ( ! is_array( $context ) ) {
+			return [];
+		}
+
+		$clean = [];
+		foreach ( $context as $key => $value ) {
+			$sanitized_key = sanitize_key( (string) $key );
+			if ( '' === $sanitized_key ) {
+				continue;
+			}
+
+			if ( is_array( $value ) ) {
+				$clean[ $sanitized_key ] = array_values( array_filter( array_map( static fn( $item ) => sanitize_text_field( (string) $item ), $value ) ) );
+				continue;
+			}
+
+			$clean[ $sanitized_key ] = sanitize_text_field( (string) $value );
+		}
+
+		return $clean;
+	}
+
 	// ── POST /nutrition/meal ──────────────────────────────────────────────────
 
 	public static function log_meal( \WP_REST_Request $req ): \WP_REST_Response {
@@ -368,6 +513,24 @@ class AiController {
 		$source  = sanitize_text_field( $req->get_param( 'source' )       ?: 'manual' );
 		$items   = $req->get_param( 'items' ); // array of item objects
 		$items   = self::enrich_meal_items_with_micros( $user_id, is_array( $items ) ? $items : [] );
+		$existing_meal = self::find_existing_daily_meal_by_type( $user_id, $meal_dt, $type );
+
+		if ( $existing_meal ) {
+			$meal_id      = (int) $existing_meal->id;
+			$merged_items = array_merge( self::get_meal_items_payload( $meal_id ), $items );
+
+			$wpdb->update( $p . 'fit_meals', [
+				'meal_datetime' => $meal_dt,
+				'meal_type'     => $type,
+				'source'        => $source,
+				'confirmed'     => 1,
+			], [ 'id' => $meal_id ] );
+
+			self::replace_meal_items( $meal_id, $merged_items );
+			\Johnny5k\Services\AwardEngine::sync_user_awards( $user_id );
+
+			return new \WP_REST_Response( [ 'meal_id' => $meal_id, 'merged' => true ], 200 );
+		}
 
 		$wpdb->insert( $p . 'fit_meals', [
 			'user_id'       => $user_id,
@@ -379,8 +542,7 @@ class AiController {
 		$meal_id = (int) $wpdb->insert_id;
 
 		self::replace_meal_items( $meal_id, $items );
-
-		\Johnny5k\Services\AwardEngine::grant( $user_id, 'first_meal_logged' );
+		\Johnny5k\Services\AwardEngine::sync_user_awards( $user_id );
 
 		return new \WP_REST_Response( [ 'meal_id' => $meal_id ], 201 );
 	}
@@ -414,6 +576,7 @@ class AiController {
 		], [ 'id' => $meal_id ] );
 
 		self::replace_meal_items( $meal_id, $items );
+		\Johnny5k\Services\AwardEngine::sync_user_awards( $user_id );
 
 		return new \WP_REST_Response( [ 'updated' => true ] );
 	}
@@ -470,6 +633,7 @@ class AiController {
 
 		$wpdb->delete( $p . 'fit_meal_items', [ 'meal_id' => $meal_id ] );
 		$wpdb->delete( $p . 'fit_meals',      [ 'id'      => $meal_id ] );
+		\Johnny5k\Services\AwardEngine::sync_user_awards( $user_id );
 
 		return new \WP_REST_Response( [ 'deleted' => true ] );
 	}
@@ -705,6 +869,7 @@ class AiController {
 		$user_id = get_current_user_id();
 		$payload = self::sanitise_pantry_payload( [
 			'item_name'  => $req->get_param( 'item_name' ),
+			'category_override' => $req->get_param( 'category_override' ),
 			'quantity'   => $req->get_param( 'quantity' ),
 			'unit'       => $req->get_param( 'unit' ),
 			'expires_on' => $req->get_param( 'expires_on' ),
@@ -774,6 +939,13 @@ class AiController {
 			"SELECT * FROM {$wpdb->prefix}fit_pantry_items WHERE user_id = %d ORDER BY item_name",
 			$user_id
 		) );
+        
+		$items = array_map(
+			static function ( $item ) use ( $user_id ) {
+				return (object) self::apply_pantry_category_override_to_item( (array) $item, $user_id );
+			},
+			is_array( $items ) ? $items : []
+		);
 
 		return new \WP_REST_Response( $items );
 	}
@@ -798,6 +970,7 @@ class AiController {
 
 		$payload = self::sanitise_pantry_payload( [
 			'item_name'  => $req->get_param( 'item_name' ) !== null ? $req->get_param( 'item_name' ) : $current['item_name'],
+			'category_override' => $req->get_param( 'category_override' ) !== null ? $req->get_param( 'category_override' ) : ( $current['category_override'] ?? null ),
 			'quantity'   => $req->get_param( 'quantity' ) !== null ? $req->get_param( 'quantity' ) : $current['quantity'],
 			'unit'       => $req->get_param( 'unit' ) !== null ? $req->get_param( 'unit' ) : $current['unit'],
 			'expires_on' => $req->get_param( 'expires_on' ) !== null ? $req->get_param( 'expires_on' ) : $current['expires_on'],
@@ -822,6 +995,7 @@ class AiController {
 		}
 
 		$wpdb->delete( $wpdb->prefix . 'fit_pantry_items', [ 'id' => $item_id ] );
+		self::set_pantry_category_override( $user_id, $item_id, null );
 
 		return new \WP_REST_Response( [ 'deleted' => true ] );
 	}
@@ -1201,6 +1375,44 @@ class AiController {
 
 		$decoded = json_decode( (string) $value, true );
 		return is_array( $decoded ) ? $decoded : [];
+	}
+
+	private static function find_existing_daily_meal_by_type( int $user_id, string $meal_datetime, string $meal_type ) {
+		global $wpdb;
+		$p = $wpdb->prefix;
+
+		$meal_date = preg_match( '/^\d{4}-\d{2}-\d{2}/', $meal_datetime, $matches )
+			? $matches[0]
+			: UserTime::today( $user_id );
+
+		return $wpdb->get_row( $wpdb->prepare(
+			"SELECT id, meal_datetime, source
+			 FROM {$p}fit_meals
+			 WHERE user_id = %d AND meal_type = %s AND DATE(meal_datetime) = %s AND confirmed = 1
+			 ORDER BY meal_datetime DESC, id DESC
+			 LIMIT 1",
+			$user_id,
+			$meal_type,
+			$meal_date
+		) );
+	}
+
+	private static function get_meal_items_payload( int $meal_id ): array {
+		global $wpdb;
+		$p = $wpdb->prefix;
+
+		$items = $wpdb->get_results( $wpdb->prepare(
+			"SELECT food_id, food_name, serving_amount, serving_unit, calories, protein_g, carbs_g, fat_g, fiber_g, sugar_g, sodium_mg, micros_json, source_json
+			 FROM {$p}fit_meal_items WHERE meal_id = %d",
+			$meal_id
+		), ARRAY_A );
+
+		return array_map( static function( array $item ): array {
+			$item['micros'] = ! empty( $item['micros_json'] ) ? self::decode_json_list( $item['micros_json'] ) : [];
+			$item['source'] = ! empty( $item['source_json'] ) ? json_decode( (string) $item['source_json'], true ) : null;
+			unset( $item['micros_json'], $item['source_json'] );
+			return $item;
+		}, $items );
 	}
 
 	private static function replace_meal_items( int $meal_id, array $items ): void {
@@ -1751,6 +1963,7 @@ class AiController {
 
 	private static function sanitise_pantry_payload( array $input ): array {
 		$item_name = sanitize_text_field( (string) ( $input['item_name'] ?? '' ) );
+		$category_override = self::sanitise_pantry_category_override( $input['category_override'] ?? null );
 		$unit = sanitize_text_field( (string) ( $input['unit'] ?? '' ) );
 		$expires_on = sanitize_text_field( (string) ( $input['expires_on'] ?? '' ) );
 		$quantity = null;
@@ -1761,10 +1974,22 @@ class AiController {
 
 		return [
 			'item_name'  => trim( $item_name ),
+			'category_override' => $category_override,
 			'quantity'   => $quantity,
 			'unit'       => '' !== trim( $unit ) ? trim( $unit ) : null,
 			'expires_on' => '' !== trim( $expires_on ) ? trim( $expires_on ) : null,
 		];
+	}
+
+	private static function sanitise_pantry_category_override( $value ): ?string {
+		$category = sanitize_key( (string) ( $value ?? '' ) );
+		$allowed = [ 'proteins', 'produce', 'dairy-eggs', 'grains', 'staples', 'frozen', 'snacks', 'drinks', 'other' ];
+
+		if ( '' === $category ) {
+			return null;
+		}
+
+		return in_array( $category, $allowed, true ) ? $category : null;
 	}
 
 	private static function sanitise_grocery_gap_payload( array $input ): array {
@@ -1779,15 +2004,18 @@ class AiController {
 	private static function upsert_pantry_item( int $user_id, array $payload, int $existing_item_id = 0 ): array {
 		global $wpdb;
 		$table = $wpdb->prefix . 'fit_pantry_items';
+		$db_payload = self::build_pantry_db_payload( $payload );
 
 		$matching_item = self::find_matching_pantry_item( $user_id, (string) $payload['item_name'], $existing_item_id );
 
 		if ( $matching_item ) {
 			$merged_payload = self::merge_pantry_values( (array) $matching_item, $payload );
-			$wpdb->update( $table, $merged_payload, [ 'id' => (int) $matching_item['id'] ] );
+			$wpdb->update( $table, self::build_pantry_db_payload( $merged_payload ), [ 'id' => (int) $matching_item['id'] ] );
+			self::set_pantry_category_override( $user_id, (int) $matching_item['id'], $merged_payload['category_override'] ?? null );
 
 			if ( $existing_item_id > 0 ) {
 				$wpdb->delete( $table, [ 'id' => $existing_item_id ] );
+				self::set_pantry_category_override( $user_id, $existing_item_id, null );
 			}
 
 			$item = self::get_pantry_item_by_id( (int) $matching_item['id'] );
@@ -1803,7 +2031,8 @@ class AiController {
 		}
 
 		if ( $existing_item_id > 0 ) {
-			$wpdb->update( $table, $payload, [ 'id' => $existing_item_id ] );
+			$wpdb->update( $table, $db_payload, [ 'id' => $existing_item_id ] );
+			self::set_pantry_category_override( $user_id, $existing_item_id, $payload['category_override'] ?? null );
 			$item = self::get_pantry_item_by_id( $existing_item_id );
 
 			return [
@@ -1817,13 +2046,11 @@ class AiController {
 
 		$wpdb->insert( $table, array_filter( [
 			'user_id'    => $user_id,
-			'item_name'  => $payload['item_name'],
-			'quantity'   => $payload['quantity'],
-			'unit'       => $payload['unit'],
-			'expires_on' => $payload['expires_on'],
+			...$db_payload,
 		], static fn( $value ) => null !== $value ) );
 
 		$item_id = (int) $wpdb->insert_id;
+		self::set_pantry_category_override( $user_id, $item_id, $payload['category_override'] ?? null );
 
 		return [
 			'id'      => $item_id,
@@ -1870,6 +2097,7 @@ class AiController {
 
 		return [
 			'item_name'  => $incoming['item_name'] ?: (string) $existing['item_name'],
+			'category_override' => array_key_exists( 'category_override', $incoming ) ? $incoming['category_override'] : ( $existing['category_override'] ?? null ),
 			'quantity'   => $unit_pair['quantity'],
 			'unit'       => $unit_pair['unit'],
 			'expires_on' => self::merge_pantry_expiry( $existing['expires_on'] ?? null, $incoming['expires_on'] ?? null ),
@@ -1984,7 +2212,82 @@ class AiController {
 			$item_id
 		), ARRAY_A );
 
-		return $item ?: null;
+		if ( ! $item ) {
+			return null;
+		}
+
+		return self::apply_pantry_category_override_to_item( $item, (int) ( $item['user_id'] ?? 0 ) );
+	}
+
+	private static function pantry_category_column_exists(): bool {
+		static $exists = null;
+
+		if ( null !== $exists ) {
+			return $exists;
+		}
+
+		global $wpdb;
+		$table = $wpdb->prefix . 'fit_pantry_items';
+		$column = $wpdb->get_var( $wpdb->prepare( "SHOW COLUMNS FROM {$table} LIKE %s", 'category_override' ) );
+		$exists = ! empty( $column );
+
+		return $exists;
+	}
+
+	private static function build_pantry_db_payload( array $payload ): array {
+		if ( self::pantry_category_column_exists() ) {
+			return $payload;
+		}
+
+		unset( $payload['category_override'] );
+
+		return $payload;
+	}
+
+	private static function get_pantry_category_overrides( int $user_id ): array {
+		$stored = get_user_meta( $user_id, self::PANTRY_CATEGORY_OVERRIDES_META_KEY, true );
+		return is_array( $stored ) ? $stored : [];
+	}
+
+	private static function set_pantry_category_override( int $user_id, int $item_id, ?string $category_override ): void {
+		if ( $user_id <= 0 || $item_id <= 0 ) {
+			return;
+		}
+
+		$overrides = self::get_pantry_category_overrides( $user_id );
+		$key = (string) $item_id;
+
+		if ( null === $category_override || '' === trim( $category_override ) ) {
+			unset( $overrides[ $key ] );
+		} else {
+			$overrides[ $key ] = $category_override;
+		}
+
+		if ( empty( $overrides ) ) {
+			delete_user_meta( $user_id, self::PANTRY_CATEGORY_OVERRIDES_META_KEY );
+			return;
+		}
+
+		update_user_meta( $user_id, self::PANTRY_CATEGORY_OVERRIDES_META_KEY, $overrides );
+	}
+
+	private static function apply_pantry_category_override_to_item( array $item, int $user_id ): array {
+		if ( ! empty( $item['category_override'] ) ) {
+			return $item;
+		}
+
+		$item_id = (int) ( $item['id'] ?? 0 );
+		if ( $user_id <= 0 || $item_id <= 0 ) {
+			return $item;
+		}
+
+		$overrides = self::get_pantry_category_overrides( $user_id );
+		$key = (string) $item_id;
+		if ( isset( $overrides[ $key ] ) ) {
+			$item['category_override'] = $overrides[ $key ];
+		}
+
+		return $item;
 	}
 
 	private static function pantry_has_ingredient( array $pantry, string $ingredient ): bool {

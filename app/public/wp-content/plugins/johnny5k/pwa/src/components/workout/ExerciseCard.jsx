@@ -30,7 +30,10 @@ function ExerciseCard({
   const [aiSwapSuggestions, setAiSwapSuggestions] = useState([])
 
   const activeSetSignature = (exercise?.sets ?? []).map(set => `${set.id}:${set.weight}:${set.reps}:${set.rir ?? ''}:${set.completed}`).join('|')
-  const coachingCues = parseCoachingCues(exercise?.coaching_cues_json)
+  const coachingCues = parseCoachingCues(exercise?.coaching_cues ?? exercise?.coaching_cues_json)
+  const secondaryMuscles = parseStringList(exercise?.secondary_muscles ?? exercise?.secondary_muscles_json)
+  const splitTags = parseStringList(exercise?.day_types ?? exercise?.day_types_json)
+  const librarySlots = parseStringList(exercise?.slot_types ?? exercise?.slot_types_json)
   const nextRowKey = getNewRowKey(exercise)
 
   useEffect(() => {
@@ -167,7 +170,18 @@ function ExerciseCard({
     const message = `I am in a Johnny5k workout and want to swap out ${exercise.exercise_name}. Context: target ${formatTargetSummary(exercise)}, muscle focus ${exercise.primary_muscle || 'general'}, equipment ${exercise.equipment || 'mixed'}, movement pattern ${exercise.movement_pattern || 'unknown'}.${coachingHint} Available current swap suggestions: ${localOptions || 'none listed'}. User request: ${prompt}. Suggest 3 practical gym alternatives and respond using exactly 3 lines in this format only: Exercise Name | short reason. No numbering. No intro. No outro.`
 
     try {
-      const data = await aiApi.chat(message, `workout-swap-${exercise.id}`)
+      const data = await aiApi.chat(message, `workout-swap-${exercise.id}`, 'coach', {
+        context: {
+          surface: 'workout_swap',
+          current_screen: 'workout',
+          current_exercise: exercise.exercise_name,
+          target_summary: formatTargetSummary(exercise),
+          primary_muscle: exercise.primary_muscle || '',
+          equipment: exercise.equipment || '',
+          movement_pattern: exercise.movement_pattern || '',
+          available_swap_names: (exercise.swap_options ?? []).map(option => option.name),
+        },
+      })
       const reply = data.reply || ''
       const suggestions = parseAiSwapSuggestions(reply)
 
@@ -208,27 +222,34 @@ function ExerciseCard({
       <div className="exercise-card-accent" aria-hidden="true" />
 
       <div className="exercise-card-header">
-        <div>
+        <div className="exercise-card-header-copy">
           <h2>{exercise.exercise_name}</h2>
           <div className="exercise-card-header-meta">
-            <span className="exercise-card-tag">{exercise.primary_muscle} focus</span>
+            <span className="exercise-card-tag subtle">{humanizeToken(exercise.slot_type || librarySlots[0] || 'accessory')} slot</span>
             <span className="dashboard-chip subtle">{exercise.planned_sets} x {exercise.planned_rep_min}-{exercise.planned_rep_max}</span>
+            {exercise.equipment ? <span className="exercise-card-tag subtle">{humanizeToken(exercise.equipment)}</span> : null}
           </div>
         </div>
 
-        <div className="exercise-card-menu-wrap">
-          <button type="button" className="exercise-menu-button" onClick={() => setMenuOpen(open => !open)} aria-expanded={menuOpen} aria-label="Exercise actions">
-            ...
+        <div className="exercise-card-header-actions">
+          <button type="button" className="btn-secondary small exercise-demo-button" onClick={handleOpenDemo}>
+            Demo
           </button>
 
-          {menuOpen ? (
-            <div className="exercise-card-menu" role="menu">
-              <button type="button" onClick={() => { setShowSwapOptions(open => !open); setMenuOpen(false) }}>Swap exercise</button>
-              <button type="button" onClick={() => { setShowNoteEditor(open => !open); setMenuOpen(false) }}>Add note</button>
-              <button type="button" onClick={() => { setShowCuesDrawer(true); setMenuOpen(false) }} disabled={!coachingCues.length}>Coaching cues</button>
-              <button type="button" onClick={handleRemoveExercise} disabled={removingExercise}>{removingExercise ? 'Removing...' : 'Remove exercise'}</button>
-            </div>
-          ) : null}
+          <div className="exercise-card-menu-wrap">
+            <button type="button" className="exercise-menu-button" onClick={() => setMenuOpen(open => !open)} aria-expanded={menuOpen} aria-label="Exercise actions">
+              ...
+            </button>
+
+            {menuOpen ? (
+              <div className="exercise-card-menu" role="menu">
+                <button type="button" onClick={() => { setShowSwapOptions(open => !open); setMenuOpen(false) }}>Swap exercise</button>
+                <button type="button" onClick={() => { setShowNoteEditor(open => !open); setMenuOpen(false) }}>Add note</button>
+                <button type="button" onClick={() => { setShowCuesDrawer(true); setMenuOpen(false) }} disabled={!coachingCues.length}>Coaching cues</button>
+                <button type="button" onClick={handleRemoveExercise} disabled={removingExercise}>{removingExercise ? 'Removing...' : 'Remove exercise'}</button>
+              </div>
+            ) : null}
+          </div>
         </div>
       </div>
 
@@ -236,15 +257,41 @@ function ExerciseCard({
         <p className="workout-swap-note">Swapped in for {exercise.original_exercise_name}.</p>
       ) : null}
 
+      <div className="exercise-muscle-strip">
+        <div className="exercise-muscle-pill primary">
+          <span className="exercise-card-label">Target</span>
+          <strong>{humanizeToken(exercise.primary_muscle) || 'General'}</strong>
+        </div>
+        {secondaryMuscles.length ? (
+          <div className="exercise-muscle-pill">
+            <span className="exercise-card-label">Support</span>
+            <strong>{secondaryMuscles.slice(0, 3).map(humanizeToken).join(', ')}</strong>
+          </div>
+        ) : null}
+      </div>
+
       <div className="exercise-card-summary">
         <div className="exercise-card-summary-block">
           <span className="exercise-card-label">Last</span>
           <strong>{formatLastSessionSummary(exercise.recent_history)}</strong>
         </div>
-        <div className="exercise-card-summary-block exercise-card-summary-target">
-          <span className="exercise-card-label">Target</span>
+        <div className="exercise-card-summary-block exercise-card-summary-prescription">
+          <span className="exercise-card-label">Prescription</span>
           <strong>{formatTargetSummary(exercise)}</strong>
-          <span className="exercise-card-target-note">{exercise.suggestion_note || 'Move well and progress patiently.'}</span>
+          <span className="exercise-card-target-note">{exercise.planned_sets} planned sets in the {humanizeToken(exercise.slot_type || librarySlots[0] || 'accessory')} slot.</span>
+        </div>
+      </div>
+
+      <div className="exercise-library-strip">
+        {splitTags.length ? (
+          <div className="exercise-library-strip-block">
+            <span className="exercise-card-label">Split fit</span>
+            <strong>{splitTags.slice(0, 3).map(humanizeToken).join(' · ')}</strong>
+          </div>
+        ) : null}
+        <div className="exercise-library-strip-block">
+          <span className="exercise-card-label">Setup</span>
+          <strong>{[exercise.equipment, exercise.difficulty, exercise.movement_pattern].filter(Boolean).map(humanizeToken).join(' · ')}</strong>
         </div>
       </div>
 
@@ -259,14 +306,11 @@ function ExerciseCard({
         <div className="exercise-description-head">
           <div>
             <strong>How this works</strong>
-            <p>{exercise.exercise_summary || buildExerciseDescription(exercise, coachingCues)}</p>
+            <p>{exercise.exercise_description || exercise.exercise_summary || buildExerciseDescription(exercise, coachingCues)}</p>
           </div>
           <div className="exercise-description-actions">
             <button type="button" className="btn-outline small" onClick={() => setShowSwapOptions(open => !open)}>
               {showSwapOptions ? 'Hide swaps' : 'Swap exercise'}
-            </button>
-            <button type="button" className="btn-secondary small exercise-demo-button" onClick={handleOpenDemo}>
-              Search YouTube
             </button>
           </div>
         </div>
@@ -293,7 +337,23 @@ function ExerciseCard({
       <div className="workout-context-grid">
         <section className="workout-context-card">
           <div className="dashboard-card-head">
-            <span className="dashboard-chip subtle">Recent history</span>
+            <span className="dashboard-chip subtle">Workout context</span>
+          </div>
+          <div className="exercise-context-grid">
+            <div className="exercise-context-item">
+              <span className="exercise-card-label">Primary muscle</span>
+              <strong>{humanizeToken(exercise.primary_muscle) || 'General'}</strong>
+            </div>
+            {secondaryMuscles.length ? (
+              <div className="exercise-context-item">
+                <span className="exercise-card-label">Secondary muscles</span>
+                <strong>{secondaryMuscles.map(humanizeToken).join(', ')}</strong>
+              </div>
+            ) : null}
+            <div className="exercise-context-item">
+              <span className="exercise-card-label">Program slot</span>
+              <strong>{humanizeToken(exercise.slot_type || librarySlots[0] || '') || 'Accessory'}</strong>
+            </div>
           </div>
           {(exercise.recent_history ?? []).length ? (
             <div className="workout-history-list">
@@ -589,6 +649,21 @@ function parseCoachingCues(value) {
     return Array.isArray(parsed) ? parsed.filter(Boolean) : []
   } catch {
     return []
+  }
+}
+
+function parseStringList(value) {
+  if (!value) return []
+  if (Array.isArray(value)) return value.filter(Boolean)
+
+  try {
+    const parsed = JSON.parse(value)
+    return Array.isArray(parsed) ? parsed.filter(Boolean) : []
+  } catch {
+    return String(value)
+      .split(/[\r\n,]+/)
+      .map(item => item.trim())
+      .filter(Boolean)
   }
 }
 
