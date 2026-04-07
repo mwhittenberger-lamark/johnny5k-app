@@ -634,7 +634,15 @@ function RecipesTab() {
 }
 
 function SettingsTab() {
-  const [settings, setSettings] = useState({ ai_settings: { default_model: 'gpt-5.4-mini', web_search_enabled: 1, tool_calls_enabled: 1 }, feature_flags: {} })
+  const [settings, setSettings] = useState({
+    ai_settings: {
+      default_model: 'gpt-5.4-mini',
+      web_search_enabled: 1,
+      tool_calls_enabled: 1,
+      progress_photo_compare_debug_enabled: 0,
+    },
+    feature_flags: {},
+  })
   const [msg, setMsg] = useState('')
 
   useEffect(() => { adminApi.settings().then(setSettings).catch(() => {}) }, [])
@@ -659,6 +667,8 @@ function SettingsTab() {
       <input value={settings.ai_settings?.default_model ?? ''} onChange={e => updateAi('default_model', e.target.value)} placeholder="Default model" />
       <label className="toggle-row"><input type="checkbox" checked={!!settings.ai_settings?.web_search_enabled} onChange={e => updateAi('web_search_enabled', e.target.checked ? 1 : 0)} /> Web search enabled</label>
       <label className="toggle-row"><input type="checkbox" checked={!!settings.ai_settings?.tool_calls_enabled} onChange={e => updateAi('tool_calls_enabled', e.target.checked ? 1 : 0)} /> Tool calls enabled</label>
+      <label className="toggle-row"><input type="checkbox" checked={!!settings.ai_settings?.progress_photo_compare_debug_enabled} onChange={e => updateAi('progress_photo_compare_debug_enabled', e.target.checked ? 1 : 0)} /> Progress photo compare debug logging</label>
+      <p className="settings-subtitle">Writes raw and parsed compare responses to the PHP error log for admin debugging.</p>
       <h3>Feature flags</h3>
       {Object.keys(settings.feature_flags ?? {}).map(key => (
         <label key={key} className="toggle-row"><input type="checkbox" checked={!!settings.feature_flags[key]} onChange={e => updateFlag(key, e.target.checked)} /> {key}</label>
