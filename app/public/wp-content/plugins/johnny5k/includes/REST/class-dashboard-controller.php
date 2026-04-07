@@ -381,7 +381,23 @@ class DashboardController {
 			return new \WP_REST_Response( [ 'message' => $second_data_url->get_error_message() ], 500 );
 		}
 
-		$comparison = AiService::analyse_progress_photo( $user_id, $first_data_url, $second_data_url );
+		$comparison = AiService::analyse_progress_photo(
+			$user_id,
+			$first_data_url,
+			$second_data_url,
+			[
+				'first_photo' => [
+					'id'         => (int) $first_photo->id,
+					'photo_date' => sanitize_text_field( (string) $first_photo->photo_date ),
+					'angle'      => sanitize_key( (string) $first_photo->angle ),
+				],
+				'second_photo' => [
+					'id'         => (int) $second_photo->id,
+					'photo_date' => sanitize_text_field( (string) $second_photo->photo_date ),
+					'angle'      => sanitize_key( (string) $second_photo->angle ),
+				],
+			]
+		);
 		if ( is_wp_error( $comparison ) ) {
 			return new \WP_REST_Response( [ 'message' => $comparison->get_error_message() ], 500 );
 		}

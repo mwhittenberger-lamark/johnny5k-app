@@ -377,9 +377,10 @@ class AdminApiController {
 	public static function get_settings( \WP_REST_Request $req ): \WP_REST_Response {
 		return new \WP_REST_Response( [
 			'ai_settings'   => get_option( 'jf_ai_settings', [
-				'default_model'    => 'gpt-5.4-mini',
-				'web_search_enabled' => 1,
-				'tool_calls_enabled' => 1,
+				'default_model'                        => 'gpt-5.4-mini',
+				'web_search_enabled'                   => 1,
+				'tool_calls_enabled'                   => 1,
+				'progress_photo_compare_debug_enabled' => 0,
 			] ),
 			'feature_flags' => get_option( 'jf_feature_flags', [
 				'progress_photos' => 1,
@@ -394,9 +395,10 @@ class AdminApiController {
 		$feature_flags = (array) $req->get_param( 'feature_flags' );
 
 		update_option( 'jf_ai_settings', [
-			'default_model'      => sanitize_text_field( (string) ( $ai_settings['default_model'] ?? 'gpt-5.4-mini' ) ),
-			'web_search_enabled' => ! empty( $ai_settings['web_search_enabled'] ) ? 1 : 0,
-			'tool_calls_enabled' => ! empty( $ai_settings['tool_calls_enabled'] ) ? 1 : 0,
+			'default_model'                        => sanitize_text_field( (string) ( $ai_settings['default_model'] ?? 'gpt-5.4-mini' ) ),
+			'web_search_enabled'                   => ! empty( $ai_settings['web_search_enabled'] ) ? 1 : 0,
+			'tool_calls_enabled'                   => ! empty( $ai_settings['tool_calls_enabled'] ) ? 1 : 0,
+			'progress_photo_compare_debug_enabled' => ! empty( $ai_settings['progress_photo_compare_debug_enabled'] ) ? 1 : 0,
 		], false );
 
 		update_option( 'jf_feature_flags', array_map(

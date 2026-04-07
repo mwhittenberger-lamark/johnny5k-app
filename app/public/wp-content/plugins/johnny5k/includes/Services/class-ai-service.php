@@ -448,20 +448,24 @@ class AiService {
 	 * @param  int          $user_id
 	 * @param  string       $first_photo_url
 	 * @param  string       $latest_photo_url
+	 * @param  array<string,mixed> $comparison_context
 	 * @return string|WP_Error  Encouraging feedback text.
 	 */
-	public static function analyse_progress_photo( int $user_id, string $first_photo_url, string $latest_photo_url ) {
-		$profile = self::get_user_context( $user_id );
+	public static function analyse_progress_photo( int $user_id, string $first_photo_url, string $latest_photo_url, array $comparison_context = [] ) {
+		$profile          = self::get_user_context( $user_id );
+		$goal             = sanitize_text_field( (string) ( $profile['goal_type'] ?? 'maintain' ) );
+		$compare_context  = self::normalise_progress_photo_context( $comparison_context );
+		$compare_prompt   = self::build_progress_photo_compare_prompt( $goal, $compare_context );
 
 		$messages = [
 			[
 				'role'    => 'system',
-				'content' => self::build_system_prompt( $user_id ),
+				'content' => self::build_progress_photo_system_prompt(),
 			],
 			[
 				'role'    => 'user',
 				'content' => [
-					[ 'type' => 'input_text', 'text' => "Here are two progress photos of me — the first was taken when I started and the second is the most recent. My goal is {$profile['goal_type']}. Please compare them, acknowledge any visible changes, and give me your honest and motivating assessment. Keep it to 3–4 sentences max." ],
+					[ 'type' => 'input_text', 'text' => $compare_prompt ],
 					[ 'type' => 'input_image', 'image_url' => $first_photo_url ],
 					[ 'type' => 'input_image', 'image_url' => $latest_photo_url ],
 				],
@@ -472,8 +476,119 @@ class AiService {
 		if ( is_wp_error( $result ) ) return $result;
 
 		CostTracker::log_openai( $user_id, 'gpt-4o', '/v1/responses', $result['tokens_in'], $result['tokens_out'], [ 'context' => 'progress_photo' ] );
+		self::log_progress_photo_compare_debug( 'raw_reply', [
+			'user_id'    => $user_id,
+			'goal'       => $goal,
+			'context'    => $compare_context,
+			'raw_reply'  => (string) $result['reply'],
+			'model'      => (string) ( $result['model'] ?? 'gpt-4o' ),
+		] );
 
-		return $result['reply'];
+		$parsed = self::decode_json_reply( (string) $result['reply'] );
+		if ( is_array( $parsed ) ) {
+			$comparison = self::normalise_progress_photo_comparison( $parsed );
+			if ( '' !== $comparison ) {
+				self::log_progress_photo_compare_debug( 'parsed_reply', [
+					'user_id'     => $user_id,
+					'context'     => $compare_context,
+					'parsed_reply' => $parsed,
+					'comparison'  => $comparison,
+				] );
+				return $comparison;
+			}
+		}
+
+		$reply = sanitize_textarea_field( (string) $result['reply'] );
+		if ( self::contains_progress_photo_disclaimer( $reply ) ) {
+			self::log_progress_photo_compare_debug( 'disclaimer_reply', [
+				'user_id'   => $user_id,
+				'context'   => $compare_context,
+				'raw_reply' => $reply,
+			] );
+			return new \WP_Error( 'ai_parse_error', 'AI compare could not produce a usable progress-photo comparison.' );
+		}
+
+		self::log_progress_photo_compare_debug( 'plain_text_reply', [
+			'user_id'   => $user_id,
+			'context'   => $compare_context,
+			'raw_reply' => $reply,
+		] );
+
+		return $reply;
+	}
+
+	private static function build_progress_photo_system_prompt(): string {
+		return <<<PROMPT
+You are Johnny 5000 in progress-photo comparison mode.
+
+Two images are attached to the request and are available for visual inspection. Compare them directly.
+
+Rules:
+- Do not say you cannot see, view, access, inspect, or compare the photos.
+- Compare only visible changes. If something is subtle or uncertain, say that it is subtle or uncertain.
+- Be specific about visible physique or posture changes when they are present.
+- Use the provided angle and date metadata to orient the comparison, but never invent details beyond what is visible.
+- Stay concise, direct, honest, and supportive.
+- Do not make medical claims.
+- Do not estimate exact body-fat percentage.
+- Do not give generic coaching unless it is tied to what is visible.
+- Return only valid JSON with this exact shape: {comparison:string, visible_changes:[string], confidence:string}.
+PROMPT;
+	}
+
+	private static function build_progress_photo_compare_prompt( string $goal, array $comparison_context ): string {
+		$first_photo  = $comparison_context['first_photo'] ?? [];
+		$second_photo = $comparison_context['second_photo'] ?? [];
+
+		$first_angle  = sanitize_text_field( (string) ( $first_photo['angle'] ?? 'unknown' ) );
+		$first_date   = sanitize_text_field( (string) ( $first_photo['photo_date'] ?? 'unknown' ) );
+		$second_angle = sanitize_text_field( (string) ( $second_photo['angle'] ?? 'unknown' ) );
+		$second_date  = sanitize_text_field( (string) ( $second_photo['photo_date'] ?? 'unknown' ) );
+
+		return "These are two progress photos of the same person. The first image is the earlier photo taken on {$first_date} at the {$first_angle} angle. The second image is the more recent photo taken on {$second_date} at the {$second_angle} angle. The goal is {$goal}. Compare only what is visibly present between the two images. Use this rubric: 1) overall body shape and tightness, 2) waist or midsection changes, 3) upper-body definition or posture, 4) anything subtle that is visible but not conclusive. If the angles differ, say that the angle difference limits certainty, but still compare what can be seen. If the change is subtle, say that clearly instead of refusing to compare. Return only valid JSON with this exact shape: {comparison:string, visible_changes:[string], confidence:string}. The comparison must be 3 to 4 sentences, direct, honest, supportive, and free of generic filler.";
+	}
+
+	/**
+	 * @param array<string,mixed> $comparison_context
+	 * @return array<string,array<string,string|int>>
+	 */
+	private static function normalise_progress_photo_context( array $comparison_context ): array {
+		$normalised = [];
+
+		foreach ( [ 'first_photo', 'second_photo' ] as $key ) {
+			$photo = is_array( $comparison_context[ $key ] ?? null ) ? $comparison_context[ $key ] : [];
+			$normalised[ $key ] = [
+				'id'         => (int) ( $photo['id'] ?? 0 ),
+				'photo_date' => sanitize_text_field( (string) ( $photo['photo_date'] ?? '' ) ),
+				'angle'      => sanitize_key( (string) ( $photo['angle'] ?? '' ) ),
+			];
+		}
+
+		return $normalised;
+	}
+
+	/**
+	 * @param array<string,mixed> $payload
+	 */
+	private static function log_progress_photo_compare_debug( string $event, array $payload ): void {
+		$ai_settings     = get_option( 'jf_ai_settings', [] );
+		$admin_enabled   = ! empty( $ai_settings['progress_photo_compare_debug_enabled'] );
+		$filter_enabled  = (bool) apply_filters( 'jf_progress_photo_compare_debug', false, $event, $payload );
+		$enabled         = ( defined( 'WP_DEBUG' ) && WP_DEBUG ) || $admin_enabled || $filter_enabled;
+		if ( ! $enabled ) {
+			return;
+		}
+
+		$encoded = wp_json_encode( [
+			'event'   => $event,
+			'payload' => $payload,
+		] );
+
+		if ( false === $encoded ) {
+			return;
+		}
+
+		error_log( 'Johnny5k progress photo compare: ' . $encoded );
 	}
 
 	/**
@@ -2689,6 +2804,61 @@ RULES;
 		}
 
 		return null;
+	}
+
+	private static function normalise_progress_photo_comparison( array $parsed ): string {
+		$comparison = sanitize_textarea_field( (string) ( $parsed['comparison'] ?? '' ) );
+		$confidence = sanitize_text_field( (string) ( $parsed['confidence'] ?? '' ) );
+		$visible_changes = array_values( array_filter( array_map( static function( $item ): string {
+			return sanitize_text_field( (string) $item );
+		}, (array) ( $parsed['visible_changes'] ?? [] ) ) ) );
+
+		if ( self::contains_progress_photo_disclaimer( $comparison ) ) {
+			$comparison = '';
+		}
+
+		if ( '' === $comparison && $visible_changes ) {
+			$comparison = 'Visible changes: ' . implode( '; ', $visible_changes ) . '.';
+		}
+
+		if ( '' !== $comparison && $confidence && ! self::contains_progress_photo_disclaimer( $confidence ) ) {
+			$confidence = strtolower( $confidence );
+			if ( in_array( $confidence, [ 'high', 'medium', 'low' ], true ) ) {
+				$comparison .= ' Confidence: ' . $confidence . '.';
+			}
+		}
+
+		return trim( preg_replace( '/\s+/', ' ', $comparison ) ?? '' );
+	}
+
+	private static function contains_progress_photo_disclaimer( string $text ): bool {
+		$text = strtolower( trim( $text ) );
+		if ( '' === $text ) {
+			return false;
+		}
+
+		$patterns = [
+			"can't compare",
+			'cannot compare',
+			"can't see",
+			'cannot see',
+			"can't view",
+			'cannot view',
+			"can't inspect",
+			'cannot inspect',
+			"can't access the photos",
+			'cannot access the photos',
+			"can't analyze photos",
+			'cannot analyze photos',
+		];
+
+		foreach ( $patterns as $pattern ) {
+			if ( false !== strpos( $text, $pattern ) ) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	private static function normalise_label_analysis( array $parsed ): array {
