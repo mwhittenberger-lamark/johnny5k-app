@@ -25,6 +25,152 @@ use Johnny5k\Services\UserTime;
  */
 class AdminApiController {
 
+	public static function default_color_schemes(): array {
+		return [
+			[
+				'id' => 'classic',
+				'label' => 'Classic Launch',
+				'description' => 'The current Johnny5k palette.',
+				'colors' => [
+					'bg' => '#E6F3FD',
+					'bg2' => '#FFFFFF',
+					'bg3' => '#CCE6F8',
+					'border' => '#A8D4F0',
+					'text' => '#0F1F55',
+					'textMuted' => '#5878A0',
+					'accent' => '#FF5530',
+					'accent2' => '#00BCDE',
+					'accent3' => '#FF38A0',
+					'danger' => '#FF2E50',
+					'success' => '#22C47E',
+					'yellow' => '#FFD000',
+				],
+			],
+			[
+				'id' => 'batman',
+				'label' => 'Batman',
+				'description' => 'Black, steel grey, Gotham blue, and signal yellow.',
+				'colors' => [
+					'bg' => '#0A0B0F',
+					'bg2' => '#171A21',
+					'bg3' => '#242933',
+					'border' => '#445064',
+					'text' => '#E8EDF6',
+					'textMuted' => '#97A4BA',
+					'accent' => '#F5C400',
+					'accent2' => '#2D6CDF',
+					'accent3' => '#5A6475',
+					'danger' => '#FF5B6E',
+					'success' => '#35C57A',
+					'yellow' => '#FFD54A',
+				],
+			],
+			[
+				'id' => 'mint-drive',
+				'label' => 'Mint Drive',
+				'description' => 'Cool mint surfaces with navy and lime highlights.',
+				'colors' => [
+					'bg' => '#EAFBF4',
+					'bg2' => '#FFFFFF',
+					'bg3' => '#D0F3E5',
+					'border' => '#9EDBBC',
+					'text' => '#123B3A',
+					'textMuted' => '#507A73',
+					'accent' => '#0E7C66',
+					'accent2' => '#3BC9A3',
+					'accent3' => '#89E219',
+					'danger' => '#D1495B',
+					'success' => '#1E9E63',
+					'yellow' => '#E7D04A',
+				],
+			],
+			[
+				'id' => 'midnight-track',
+				'label' => 'Midnight Track',
+				'description' => 'Deep slate base with electric cyan and hot orange.',
+				'colors' => [
+					'bg' => '#0D1B2A',
+					'bg2' => '#132238',
+					'bg3' => '#1C3350',
+					'border' => '#315074',
+					'text' => '#EAF4FF',
+					'textMuted' => '#98B6D8',
+					'accent' => '#FF7A21',
+					'accent2' => '#4FD1FF',
+					'accent3' => '#FF4FA3',
+					'danger' => '#FF5C7A',
+					'success' => '#36D48C',
+					'yellow' => '#FFD95A',
+				],
+			],
+			[
+				'id' => 'gold-rush',
+				'label' => 'Gold Rush',
+				'description' => 'Cream, brass, and forest accents with a punchy red.',
+				'colors' => [
+					'bg' => '#F8F2E3',
+					'bg2' => '#FFF9ED',
+					'bg3' => '#E8D8B1',
+					'border' => '#CFB37A',
+					'text' => '#3B2A19',
+					'textMuted' => '#7A6243',
+					'accent' => '#B8572D',
+					'accent2' => '#5B8C5A',
+					'accent3' => '#C08B14',
+					'danger' => '#C64845',
+					'success' => '#478C4A',
+					'yellow' => '#E2B93B',
+				],
+			],
+		];
+	}
+
+	public static function get_color_schemes_config(): array {
+		return self::sanitize_color_schemes( get_option( 'jf_color_schemes', self::default_color_schemes() ) );
+	}
+
+	public static function sanitize_color_schemes( $schemes ): array {
+		$defaults = self::default_color_schemes();
+		$allowed_color_keys = [ 'bg', 'bg2', 'bg3', 'border', 'text', 'textMuted', 'accent', 'accent2', 'accent3', 'danger', 'success', 'yellow' ];
+		$clean = [];
+
+		if ( ! is_array( $schemes ) ) {
+			$schemes = [];
+		}
+
+		foreach ( $schemes as $index => $scheme ) {
+			if ( ! is_array( $scheme ) ) {
+				continue;
+			}
+
+			$fallback = $defaults[ $index ] ?? $defaults[0];
+			$id = sanitize_key( (string) ( $scheme['id'] ?? '' ) );
+			if ( '' === $id ) {
+				$id = sanitize_key( (string) $fallback['id'] );
+			}
+
+			$colors = [];
+			$raw_colors = is_array( $scheme['colors'] ?? null ) ? $scheme['colors'] : [];
+			foreach ( $allowed_color_keys as $color_key ) {
+				$color_value = sanitize_hex_color( (string) ( $raw_colors[ $color_key ] ?? '' ) );
+				$colors[ $color_key ] = $color_value ?: $fallback['colors'][ $color_key ];
+			}
+
+			$clean[] = [
+				'id' => $id,
+				'label' => sanitize_text_field( (string) ( $scheme['label'] ?? $fallback['label'] ) ),
+				'description' => sanitize_text_field( (string) ( $scheme['description'] ?? $fallback['description'] ) ),
+				'colors' => $colors,
+			];
+		}
+
+		if ( empty( $clean ) ) {
+			return $defaults;
+		}
+
+		return array_values( $clean );
+	}
+
 	public static function register_routes(): void {
 		$ns    = JF_REST_NAMESPACE;
 		$admin = [ 'Johnny5k\REST\AuthController', 'require_admin' ];
@@ -131,6 +277,12 @@ class AdminApiController {
 			'permission_callback' => $admin,
 		] );
 
+		register_rest_route( $ns, '/admin/persona/follow-ups', [
+			'methods'             => 'GET',
+			'callback'            => [ __CLASS__, 'get_persona_follow_ups' ],
+			'permission_callback' => $admin,
+		] );
+
 		register_rest_route( $ns, '/admin/sms/test', [
 			'methods'             => 'POST',
 			'callback'            => [ __CLASS__, 'test_sms' ],
@@ -200,10 +352,15 @@ class AdminApiController {
 		global $wpdb;
 
 		$rows = $wpdb->get_results(
-			"SELECT id, slug, name, movement_pattern, primary_muscle, equipment, difficulty, default_rep_min, default_rep_max, default_sets, active
+			"SELECT id, slug, name, description, movement_pattern, primary_muscle, secondary_muscles_json,
+			        equipment, difficulty, age_friendliness_score, joint_stress_score, spinal_load_score,
+			        default_rep_min, default_rep_max, default_sets, default_progression_type,
+			        coaching_cues_json, day_types_json, slot_types_json, active
 			 FROM {$wpdb->prefix}fit_exercises
 			 ORDER BY active DESC, name ASC"
 		);
+
+		$rows = array_map( [ __CLASS__, 'normalise_exercise_admin_row' ], $rows );
 
 		return new \WP_REST_Response( $rows );
 	}
@@ -212,16 +369,25 @@ class AdminApiController {
 		global $wpdb;
 		$id = (int) $req->get_param( 'id' );
 		$data = [
-			'slug'             => sanitize_title( (string) $req->get_param( 'slug' ) ?: (string) $req->get_param( 'name' ) ),
-			'name'             => sanitize_text_field( (string) $req->get_param( 'name' ) ),
-			'movement_pattern' => sanitize_text_field( (string) $req->get_param( 'movement_pattern' ) ),
-			'primary_muscle'   => sanitize_text_field( (string) $req->get_param( 'primary_muscle' ) ),
-			'equipment'        => sanitize_text_field( (string) $req->get_param( 'equipment' ) ?: 'other' ),
-			'difficulty'       => sanitize_text_field( (string) $req->get_param( 'difficulty' ) ?: 'beginner' ),
-			'default_rep_min'  => max( 1, (int) ( $req->get_param( 'default_rep_min' ) ?: 8 ) ),
-			'default_rep_max'  => max( 1, (int) ( $req->get_param( 'default_rep_max' ) ?: 12 ) ),
-			'default_sets'     => max( 1, (int) ( $req->get_param( 'default_sets' ) ?: 3 ) ),
-			'active'           => null !== $req->get_param( 'active' ) ? (int) (bool) $req->get_param( 'active' ) : 1,
+			'slug'                     => sanitize_title( (string) $req->get_param( 'slug' ) ?: (string) $req->get_param( 'name' ) ),
+			'name'                     => sanitize_text_field( (string) $req->get_param( 'name' ) ),
+			'description'              => sanitize_textarea_field( (string) $req->get_param( 'description' ) ),
+			'movement_pattern'         => sanitize_text_field( (string) $req->get_param( 'movement_pattern' ) ),
+			'primary_muscle'           => sanitize_text_field( (string) $req->get_param( 'primary_muscle' ) ),
+			'secondary_muscles_json'   => wp_json_encode( self::normalise_string_list( $req->get_param( 'secondary_muscles' ) ) ),
+			'equipment'                => sanitize_text_field( (string) $req->get_param( 'equipment' ) ?: 'other' ),
+			'difficulty'               => sanitize_text_field( (string) $req->get_param( 'difficulty' ) ?: 'beginner' ),
+			'age_friendliness_score'   => max( 1, min( 10, (int) ( $req->get_param( 'age_friendliness_score' ) ?: 5 ) ) ),
+			'joint_stress_score'       => max( 1, min( 10, (int) ( $req->get_param( 'joint_stress_score' ) ?: 3 ) ) ),
+			'spinal_load_score'        => max( 1, min( 10, (int) ( $req->get_param( 'spinal_load_score' ) ?: 3 ) ) ),
+			'default_rep_min'          => max( 1, (int) ( $req->get_param( 'default_rep_min' ) ?: 8 ) ),
+			'default_rep_max'          => max( 1, (int) ( $req->get_param( 'default_rep_max' ) ?: 12 ) ),
+			'default_sets'             => max( 1, (int) ( $req->get_param( 'default_sets' ) ?: 3 ) ),
+			'default_progression_type' => sanitize_text_field( (string) ( $req->get_param( 'default_progression_type' ) ?: 'double_progression' ) ),
+			'coaching_cues_json'       => wp_json_encode( self::normalise_string_list( $req->get_param( 'coaching_cues' ) ) ),
+			'day_types_json'           => wp_json_encode( self::normalise_string_list( $req->get_param( 'day_types' ) ) ),
+			'slot_types_json'          => wp_json_encode( self::normalise_string_list( $req->get_param( 'slot_types' ) ) ),
+			'active'                   => null !== $req->get_param( 'active' ) ? (int) (bool) $req->get_param( 'active' ) : 1,
 		];
 
 		if ( $id > 0 ) {
@@ -229,14 +395,7 @@ class AdminApiController {
 			return new \WP_REST_Response( [ 'updated' => true ] );
 		}
 
-		$wpdb->insert( $wpdb->prefix . 'fit_exercises', $data + [
-			'age_friendliness_score' => 8,
-			'joint_stress_score'     => 2,
-			'spinal_load_score'      => 2,
-			'default_progression_type' => 'double_progression',
-			'day_types_json'         => wp_json_encode( [] ),
-			'slot_types_json'        => wp_json_encode( [ 'accessory' ] ),
-		] );
+		$wpdb->insert( $wpdb->prefix . 'fit_exercises', $data );
 
 		return new \WP_REST_Response( [ 'id' => (int) $wpdb->insert_id ], 201 );
 	}
@@ -387,12 +546,14 @@ class AdminApiController {
 				'saved_foods'     => 1,
 				'recovery_summary'=> 1,
 			] ),
+			'color_schemes' => self::get_color_schemes_config(),
 		] );
 	}
 
 	public static function save_settings( \WP_REST_Request $req ): \WP_REST_Response {
 		$ai_settings = (array) $req->get_param( 'ai_settings' );
 		$feature_flags = (array) $req->get_param( 'feature_flags' );
+		$color_schemes = $req->get_param( 'color_schemes' );
 
 		update_option( 'jf_ai_settings', [
 			'default_model'                        => sanitize_text_field( (string) ( $ai_settings['default_model'] ?? 'gpt-5.4-mini' ) ),
@@ -406,6 +567,8 @@ class AdminApiController {
 			$feature_flags
 		), false );
 
+		update_option( 'jf_color_schemes', self::sanitize_color_schemes( $color_schemes ), false );
+
 		return new \WP_REST_Response( [ 'saved' => true ] );
 	}
 
@@ -418,6 +581,7 @@ class AdminApiController {
 		return new \WP_REST_Response( [
 			'persona'       => $persona,
 			'system_prompt' => get_option( 'jf_johnny_system_prompt', '' ),
+			'prompt_source' => get_option( 'jf_johnny_system_prompt', '' ) ? 'custom' : 'default',
 			'contract_checks' => AiService::admin_persona_contract_checks(),
 		] );
 	}
@@ -448,8 +612,7 @@ class AdminApiController {
 		$message    = sanitize_textarea_field( $req->get_param( 'message' ) ?: 'Hey, how are you?' );
 		$admin_id   = get_current_user_id();
 
-		// Route through AI service with admin user context
-		$result = \Johnny5k\Services\AiService::chat( $admin_id, 'admin_persona_test', $message );
+		$result = AiService::preview_chat( $admin_id, $message );
 
 		if ( is_wp_error( $result ) ) {
 			return new \WP_REST_Response( [ 'message' => $result->get_error_message() ], 500 );
@@ -459,7 +622,33 @@ class AdminApiController {
 			'reply'      => $result['reply'],
 			'reply_html' => self::render_reply_html( (string) $result['reply'] ),
 			'sources'    => $result['sources'] ?? [],
+			'why'        => $result['why'] ?? '',
+			'context_used' => $result['context_used'] ?? [],
+			'confidence' => $result['confidence'] ?? '',
 			'used_web_search' => (bool) ( $result['used_web_search'] ?? false ),
+			'system_prompt' => $result['system_prompt'] ?? '',
+		] );
+	}
+
+	public static function get_persona_follow_ups( \WP_REST_Request $req ): \WP_REST_Response {
+		$user_id = (int) $req->get_param( 'user_id' );
+		if ( $user_id <= 0 ) {
+			$user_id = get_current_user_id();
+		}
+
+		$user = get_userdata( $user_id );
+		if ( ! $user ) {
+			return new \WP_REST_Response( [ 'message' => 'User not found.' ], 404 );
+		}
+
+		return new \WP_REST_Response( [
+			'user' => [
+				'id' => $user_id,
+				'email' => (string) $user->user_email,
+				'display_name' => (string) $user->display_name,
+			],
+			'overview' => AiService::get_follow_up_overview( $user_id ),
+			'pending' => AiService::get_pending_follow_ups( $user_id ),
 		] );
 	}
 
@@ -498,6 +687,9 @@ class AdminApiController {
 				'label'            => $scenario['label'],
 				'preview_datetime' => $context_overrides['current_local_datetime'],
 				'reply'            => $preview['reply'],
+				'why'              => $preview['why'] ?? '',
+				'context_used'     => $preview['context_used'] ?? [],
+				'confidence'       => $preview['confidence'] ?? '',
 				'context'          => $preview['context'],
 			];
 		}
@@ -521,6 +713,9 @@ class AdminApiController {
 			'message'       => $message,
 			'reply'         => $preview['reply'],
 			'actions'       => $preview['actions'] ?? [],
+			'why'           => $preview['why'] ?? '',
+			'context_used'  => $preview['context_used'] ?? [],
+			'confidence'    => $preview['confidence'] ?? '',
 			'system_prompt' => $preview['system_prompt'] ?? '',
 			'context'       => $preview['context'] ?? [],
 		] );
@@ -594,5 +789,49 @@ class AdminApiController {
 			'source_title'        => sanitize_text_field( (string) ( $recipe['source_title'] ?? '' ) ),
 			'source_type'         => sanitize_key( (string) ( $recipe['source_type'] ?? 'manual' ) ) ?: 'manual',
 		];
+	}
+
+	private static function normalise_exercise_admin_row( $row ): array {
+		$data = (array) $row;
+
+		return [
+			'id'                       => (int) ( $data['id'] ?? 0 ),
+			'slug'                     => sanitize_title( (string) ( $data['slug'] ?? '' ) ),
+			'name'                     => sanitize_text_field( (string) ( $data['name'] ?? '' ) ),
+			'description'              => sanitize_textarea_field( (string) ( $data['description'] ?? '' ) ),
+			'movement_pattern'         => sanitize_text_field( (string) ( $data['movement_pattern'] ?? '' ) ),
+			'primary_muscle'           => sanitize_text_field( (string) ( $data['primary_muscle'] ?? '' ) ),
+			'secondary_muscles'        => self::normalise_string_list( $data['secondary_muscles_json'] ?? [] ),
+			'equipment'                => sanitize_text_field( (string) ( $data['equipment'] ?? '' ) ),
+			'difficulty'               => sanitize_text_field( (string) ( $data['difficulty'] ?? '' ) ),
+			'age_friendliness_score'   => (int) ( $data['age_friendliness_score'] ?? 0 ),
+			'joint_stress_score'       => (int) ( $data['joint_stress_score'] ?? 0 ),
+			'spinal_load_score'        => (int) ( $data['spinal_load_score'] ?? 0 ),
+			'default_rep_min'          => (int) ( $data['default_rep_min'] ?? 0 ),
+			'default_rep_max'          => (int) ( $data['default_rep_max'] ?? 0 ),
+			'default_sets'             => (int) ( $data['default_sets'] ?? 0 ),
+			'default_progression_type' => sanitize_text_field( (string) ( $data['default_progression_type'] ?? '' ) ),
+			'coaching_cues'            => self::normalise_string_list( $data['coaching_cues_json'] ?? [] ),
+			'day_types'                => self::normalise_string_list( $data['day_types_json'] ?? [] ),
+			'slot_types'               => self::normalise_string_list( $data['slot_types_json'] ?? [] ),
+			'active'                   => (int) ( $data['active'] ?? 0 ),
+		];
+	}
+
+	private static function normalise_string_list( $value ): array {
+		if ( is_string( $value ) ) {
+			$decoded = json_decode( $value, true );
+			if ( is_array( $decoded ) ) {
+				$value = $decoded;
+			} else {
+				$value = preg_split( '/[\r\n,]+/', $value ) ?: [];
+			}
+		}
+
+		if ( ! is_array( $value ) ) {
+			return [];
+		}
+
+		return array_values( array_filter( array_map( static fn( $item ): string => sanitize_text_field( (string) $item ), $value ) ) );
 	}
 }

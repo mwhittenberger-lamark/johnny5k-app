@@ -16,7 +16,7 @@ define( 'JF_VERSION',        '1.0.0' );
 define( 'JF_PLUGIN_DIR',     plugin_dir_path( __FILE__ ) );
 define( 'JF_PLUGIN_URL',     plugin_dir_url( __FILE__ ) );
 define( 'JF_REST_NAMESPACE', 'fit/v1' );
-define( 'JF_DB_VERSION',     '1.1.0' );
+define( 'JF_DB_VERSION',     '1.1.1' );
 
 // ── Autoloader ──────────────────────────────────────────────────────────────
 spl_autoload_register( function ( string $class ): void {
@@ -58,6 +58,7 @@ register_activation_hook( __FILE__, function (): void {
 // ── Deactivation ─────────────────────────────────────────────────────────────
 register_deactivation_hook( __FILE__, function (): void {
     wp_clear_scheduled_hook( 'jf_daily_sms_reminders' );
+    wp_clear_scheduled_hook( 'jf_send_scheduled_sms_reminder' );
     wp_clear_scheduled_hook( 'jf_weekly_calorie_adjust' );
     wp_clear_scheduled_hook( 'jf_evaluate_awards' );
 } );
@@ -113,6 +114,10 @@ add_action( 'wp_ajax_nopriv_jf_progress_photo', function (): void {
 add_action( 'jf_daily_sms_reminders', function (): void {
     Johnny5k\Services\SmsService::run_daily_reminders();
 } );
+
+add_action( 'jf_send_scheduled_sms_reminder', function ( int $user_id, string $reminder_id ): void {
+	Johnny5k\Services\SmsService::send_scheduled_reminder( $user_id, $reminder_id );
+}, 10, 2 );
 
 add_action( 'jf_weekly_calorie_adjust', function (): void {
     Johnny5k\Services\CalorieEngine::run_weekly_adjustments_all_users();

@@ -13,42 +13,156 @@ export const useWorkoutStore = create(persist((set, get) => ({
   readinessScore: 7,
   sessionMode: 'normal',
   activeExerciseIdx: 0,
+  previewDayType: '',
+  previewDrafts: {},
   wasResumed: false,
   undoToast: null,
+  discardedSessions: {},
 
   setTimeTier: (tier) => set({ timeTier: tier }),
   setReadinessScore: (score) => set({ readinessScore: score, sessionMode: score <= 3 ? 'maintenance' : 'normal' }),
   setActiveExerciseIdx: (index) => set({ activeExerciseIdx: Math.max(0, index) }),
+  setPreviewDayType: (dayType) => set({ previewDayType: dayType || '' }),
+  setPreviewExerciseOrder: (dayType, exerciseOrder) => set((state) => ({
+    previewDrafts: {
+      ...state.previewDrafts,
+      [dayType]: {
+        ...getPreviewDraft(state.previewDrafts, dayType),
+        exerciseOrder: Array.isArray(exerciseOrder) ? exerciseOrder.map(Number).filter(id => id > 0) : [],
+      },
+    },
+  })),
+  syncPreviewExerciseOrder: (dayType, nextIds) => set((state) => ({
+    previewDrafts: {
+      ...state.previewDrafts,
+      [dayType]: {
+        ...getPreviewDraft(state.previewDrafts, dayType),
+        exerciseOrder: syncDraftExerciseOrder(getPreviewDraft(state.previewDrafts, dayType).exerciseOrder, nextIds),
+      },
+    },
+  })),
+  applyPreviewSwap: (dayType, planExerciseId, exerciseId) => set((state) => ({
+    previewDrafts: {
+      ...state.previewDrafts,
+      [dayType]: {
+        ...getPreviewDraft(state.previewDrafts, dayType),
+        exerciseSwaps: {
+          ...getPreviewDraft(state.previewDrafts, dayType).exerciseSwaps,
+          [planExerciseId]: Number(exerciseId),
+        },
+      },
+    },
+  })),
+  clearPreviewSwap: (dayType, planExerciseId) => set((state) => {
+    const currentDraft = getPreviewDraft(state.previewDrafts, dayType)
+    const nextSwaps = { ...currentDraft.exerciseSwaps }
+    delete nextSwaps[planExerciseId]
+
+    return {
+      previewDrafts: {
+        ...state.previewDrafts,
+        [dayType]: {
+          ...currentDraft,
+          exerciseSwaps: nextSwaps,
+        },
+      },
+    }
+  }),
+  clearPreviewDrafts: () => set({ previewDayType: '', previewDrafts: {} }),
   dismissUndoToast: () => set({ undoToast: null }),
+
+  markSessionDiscarded: (sessionRecord) => set((state) => {
+    const sessionId = Number(sessionRecord?.id || sessionRecord?.session_id || 0)
+    if (!sessionId) return state
+
+    return {
+      discardedSessions: {
+        ...state.discardedSessions,
+        [sessionId]: {
+          sessionDate: String(sessionRecord?.session_date || ''),
+          discardedAt: Date.now(),
+        },
+      },
+    }
+  }),
+
+  pruneDiscardedSessions: () => set((state) => {
+    const now = Date.now()
+    const nextEntries = Object.entries(state.discardedSessions || {}).filter(([, value]) => {
+      const discardedAt = Number(value?.discardedAt || 0)
+      return discardedAt > 0 && now - discardedAt < 12 * 60 * 60 * 1000
+    })
+
+    return {
+      discardedSessions: Object.fromEntries(nextEntries),
+    }
+  }),
+
+  clearDiscardedSession: (sessionId) => set((state) => {
+    const numericSessionId = Number(sessionId || 0)
+    if (!numericSessionId || !state.discardedSessions?.[numericSessionId]) return state
+    const nextDiscarded = { ...state.discardedSessions }
+    delete nextDiscarded[numericSessionId]
+    return { discardedSessions: nextDiscarded }
+  }),
+
+  clearDiscardedSessionsForDate: (sessionDate) => set((state) => {
+    const normalizedDate = String(sessionDate || '')
+    if (!normalizedDate) return state
+
+    const nextDiscarded = Object.fromEntries(
+      Object.entries(state.discardedSessions || {}).filter(([, value]) => String(value?.sessionDate || '') !== normalizedDate)
+    )
+
+    return { discardedSessions: nextDiscarded }
+  }),
 
   clearSessionState: () => set({ session: null, sessionId: null, activeExerciseIdx: 0, wasResumed: false, sessionMode: 'normal', undoToast: null, error: null }),
 
   bootstrapSession: async () => {
     const { sessionId } = get()
+    get().pruneDiscardedSessions()
     set({ loading: true, error: null })
 
     try {
       if (sessionId) {
-        const full = await workoutApi.get(sessionId)
-        if (full?.session?.id && !full?.session?.completed && !full?.session?.skip_requested) {
-          set({
-            session: full,
-            sessionId: full.session.id,
-            loading: false,
-            bootstrapped: true,
-            wasResumed: true,
-            sessionMode: full.session_mode || (Number(full?.session?.readiness_score ?? 0) <= 3 ? 'maintenance' : 'normal'),
-            timeTier: full?.session?.time_tier || get().timeTier,
-            readinessScore: full?.session?.readiness_score ?? get().readinessScore,
-          })
-          return
-        }
+        try {
+          const full = await workoutApi.get(sessionId)
+          if (full?.session?.id && !full?.session?.completed && !full?.session?.skip_requested) {
+            if (isDiscardedSession(get().discardedSessions, full?.session)) {
+              get().clearSessionState()
+            } else {
+            set({
+              session: full,
+              sessionId: full.session.id,
+              loading: false,
+              bootstrapped: true,
+              wasResumed: true,
+              sessionMode: full.session_mode || (Number(full?.session?.readiness_score ?? 0) <= 3 ? 'maintenance' : 'normal'),
+              timeTier: full?.session?.time_tier || get().timeTier,
+              readinessScore: full?.session?.readiness_score ?? get().readinessScore,
+            })
+            return
+            }
+          }
 
-        get().clearSessionState()
+          get().clearSessionState()
+        } catch (err) {
+          if (err?.status && [404, 410].includes(err.status)) {
+            get().clearSessionState()
+          } else {
+            throw err
+          }
+        }
       }
 
       const current = await workoutApi.current()
       if (current?.session?.id) {
+        if (isDiscardedSession(get().discardedSessions, current?.session)) {
+          set({ session: null, sessionId: null, loading: false, bootstrapped: true, wasResumed: false, activeExerciseIdx: 0, undoToast: null })
+          return
+        }
+
         set({
           session: current,
           sessionId: current.session.id,
@@ -73,44 +187,39 @@ export const useWorkoutStore = create(persist((set, get) => ({
     const selectedTimeTier = options.timeTier ?? timeTier
     const selectedReadiness = options.readinessScore ?? readinessScore
     const selectedDayType = options.dayType ?? null
+    const selectedExerciseSwaps = Array.isArray(options.exerciseSwaps) ? options.exerciseSwaps : []
+    const selectedExerciseOrder = Array.isArray(options.exerciseOrder) ? options.exerciseOrder : []
     set({ loading: true, error: null })
     try {
       const data = await workoutApi.start({
         time_tier: selectedTimeTier,
         readiness_score: selectedReadiness,
         ...(selectedDayType ? { day_type: selectedDayType } : {}),
+        ...(selectedExerciseSwaps.length ? { exercise_swaps: selectedExerciseSwaps } : {}),
+        ...(selectedExerciseOrder.length ? { exercise_order: selectedExerciseOrder } : {}),
       })
-      // data may be the session directly or the full session object depending on whether
-      // an existing session was returned
-      if (data.session) {
-        set({
-          session: data,
-          sessionId: data.session.id,
-          loading: false,
-          bootstrapped: true,
-          wasResumed: false,
-          activeExerciseIdx: 0,
-          timeTier: data?.session?.time_tier || selectedTimeTier,
-          readinessScore: data?.session?.readiness_score ?? selectedReadiness,
-          sessionMode: data.session_mode || (Number(data?.session?.readiness_score ?? 0) <= 3 ? 'maintenance' : 'normal'),
-          undoToast: null,
+      const resolvedSession = data.session ? data : await workoutApi.get(data.session_id)
+
+      if (isDiscardedSession(get().discardedSessions, resolvedSession?.session)) {
+        await workoutApi.discard(resolvedSession.session.id)
+        get().clearDiscardedSession(resolvedSession.session.id)
+
+        const retryData = await workoutApi.start({
+          time_tier: selectedTimeTier,
+          readiness_score: selectedReadiness,
+          ...(selectedDayType ? { day_type: selectedDayType } : {}),
+          ...(selectedExerciseSwaps.length ? { exercise_swaps: selectedExerciseSwaps } : {}),
+          ...(selectedExerciseOrder.length ? { exercise_order: selectedExerciseOrder } : {}),
         })
-      } else {
-        // Build/return from session id
-        const full = await workoutApi.get(data.session_id)
-        set({
-          session: full,
-          sessionId: full.session.id,
-          loading: false,
-          bootstrapped: true,
-          wasResumed: false,
-          activeExerciseIdx: 0,
-          timeTier: full?.session?.time_tier || selectedTimeTier,
-          readinessScore: full?.session?.readiness_score ?? selectedReadiness,
-          sessionMode: full.session_mode || (Number(full?.session?.readiness_score ?? 0) <= 3 ? 'maintenance' : 'normal'),
-          undoToast: null,
-        })
+
+        const retriedSession = retryData.session ? retryData : await workoutApi.get(retryData.session_id)
+        get().clearDiscardedSessionsForDate(retriedSession?.session?.session_date)
+        setResolvedSessionState(set, get, retriedSession, selectedTimeTier, selectedReadiness)
+        return
       }
+
+      get().clearDiscardedSessionsForDate(resolvedSession?.session?.session_date)
+      setResolvedSessionState(set, get, resolvedSession, selectedTimeTier, selectedReadiness)
     } catch (err) {
       set({ loading: false, error: err.message, bootstrapped: true })
     }
@@ -297,14 +406,18 @@ export const useWorkoutStore = create(persist((set, get) => ({
   completeSession: async () => {
     const { sessionId } = get()
     const result = await workoutApi.complete(sessionId, {})
+    get().clearDiscardedSession(sessionId)
     get().clearSessionState()
+    get().clearPreviewDrafts()
     return result
   },
 
   skipSession: async () => {
     const { sessionId } = get()
     const result = await workoutApi.skip(sessionId)
+    get().clearDiscardedSession(sessionId)
     get().clearSessionState()
+    get().clearPreviewDrafts()
     return result
   },
 
@@ -314,19 +427,40 @@ export const useWorkoutStore = create(persist((set, get) => ({
 
     if (session?.session?.completed) {
       get().clearSessionState()
+      get().clearPreviewDrafts()
       return { restarted: true, clearedCompletedSession: true }
     }
 
     try {
       const result = await workoutApi.restart(sessionId)
+      get().clearDiscardedSession(sessionId)
       get().clearSessionState()
+      get().clearPreviewDrafts()
       return result
     } catch (err) {
       if (err?.message === 'Completed sessions cannot be restarted.') {
         get().clearSessionState()
+        get().clearPreviewDrafts()
         return { restarted: true, clearedCompletedSession: true }
       }
 
+      throw err
+    }
+  },
+
+  exitSession: async () => {
+    const { sessionId, session } = get()
+    if (!sessionId) return null
+
+    get().markSessionDiscarded(session?.session || { id: sessionId })
+
+    try {
+      const result = await workoutApi.discard(sessionId)
+      get().clearSessionState()
+      get().clearPreviewDrafts()
+      return result
+    } catch (err) {
+      get().clearDiscardedSession(sessionId)
       throw err
     }
   },
@@ -345,7 +479,9 @@ export const useWorkoutStore = create(persist((set, get) => ({
     }
 
     const result = await workoutApi.complete(sessionId, { actual_day_type: 'rest' })
+    get().clearDiscardedSession(sessionId)
     get().clearSessionState()
+    get().clearPreviewDrafts()
     return result
   },
 
@@ -359,5 +495,62 @@ export const useWorkoutStore = create(persist((set, get) => ({
     readinessScore: state.readinessScore,
     sessionMode: state.sessionMode,
     activeExerciseIdx: state.activeExerciseIdx,
+    previewDayType: state.previewDayType,
+    previewDrafts: state.previewDrafts,
+    discardedSessions: state.discardedSessions,
   }),
 }))
+
+function setResolvedSessionState(set, get, sessionData, selectedTimeTier, selectedReadiness) {
+  set({
+    session: sessionData,
+    sessionId: sessionData.session.id,
+    loading: false,
+    bootstrapped: true,
+    wasResumed: false,
+    activeExerciseIdx: 0,
+    timeTier: sessionData?.session?.time_tier || selectedTimeTier,
+    readinessScore: sessionData?.session?.readiness_score ?? selectedReadiness,
+    sessionMode: sessionData.session_mode || (Number(sessionData?.session?.readiness_score ?? 0) <= 3 ? 'maintenance' : 'normal'),
+    undoToast: null,
+    previewDayType: '',
+    previewDrafts: {},
+  })
+}
+
+function isDiscardedSession(discardedSessions, sessionRecord) {
+  const sessionId = Number(sessionRecord?.id || sessionRecord?.session_id || 0)
+  if (!sessionId) return false
+
+  const discardedSession = discardedSessions?.[sessionId]
+  if (!discardedSession) return false
+
+  const discardedAt = Number(discardedSession?.discardedAt || 0)
+  if (!discardedAt || Date.now() - discardedAt >= 12 * 60 * 60 * 1000) {
+    return false
+  }
+
+  const sessionDate = String(sessionRecord?.session_date || '')
+  const discardedDate = String(discardedSession?.sessionDate || '')
+
+  return !discardedDate || !sessionDate || discardedDate === sessionDate
+}
+
+function getPreviewDraft(previewDrafts, dayType) {
+  const normalizedDayType = String(dayType || '').trim()
+  const draft = normalizedDayType ? previewDrafts?.[normalizedDayType] : null
+
+  return {
+    exerciseSwaps: draft?.exerciseSwaps && typeof draft.exerciseSwaps === 'object' ? draft.exerciseSwaps : {},
+    exerciseOrder: Array.isArray(draft?.exerciseOrder) ? draft.exerciseOrder.map(Number).filter(id => id > 0) : [],
+  }
+}
+
+function syncDraftExerciseOrder(currentOrder, nextIds) {
+  const filteredNextIds = Array.isArray(nextIds) ? nextIds.map(Number).filter(id => id > 0) : []
+  const filteredCurrent = (Array.isArray(currentOrder) ? currentOrder : []).map(Number).filter(id => filteredNextIds.includes(id))
+  const missingIds = filteredNextIds.filter(id => !filteredCurrent.includes(id))
+  const combined = [...filteredCurrent, ...missingIds]
+
+  return combined.length === filteredNextIds.length ? combined : filteredNextIds
+}

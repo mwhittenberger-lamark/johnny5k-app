@@ -318,7 +318,7 @@ export default function BodyScreen() {
             <span className={`dashboard-chip ${recoverySummary.mode === 'normal' ? 'success' : 'subtle'}`}>{recoverySummary.mode}</span>
           </div>
           <div className="body-mini-stats">
-            <div><strong>{recoverySummary.last_sleep_hours || '—'}h</strong><span>Last night</span></div>
+            <div><strong>{recoverySummary.last_sleep_is_recent ? `${recoverySummary.last_sleep_hours || '—'}h` : '—'}</strong><span>{buildRecoverySleepLabel(recoverySummary)}</span></div>
             <div><strong>{recoverySummary.avg_sleep_3d || '—'}h</strong><span>3-day avg</span></div>
             <div><strong>{recoverySummary.cardio_minutes_7d || 0}</strong><span>Cardio min / 7d</span></div>
             <div><strong>{recoverySummary.active_flags || 0}</strong><span>Active flags</span></div>
@@ -336,7 +336,7 @@ export default function BodyScreen() {
           )}
           <p className="body-recovery-note">Recommended training tier: <strong>{recoverySummary.recommended_time_tier}</strong></p>
           {caloriePreview ? (
-            <p className="body-recovery-note">Calorie adjustment preview: <strong>{caloriePreview.action}</strong> {caloriePreview.delta_calories > 0 ? '+' : ''}{caloriePreview.delta_calories} kcal. {caloriePreview.reason}</p>
+            <p className="body-recovery-note">Calorie adjustment preview: <strong>{caloriePreview.action}</strong> {caloriePreview.delta_calories > 0 ? '+' : ''}{caloriePreview.delta_calories} Calories. {caloriePreview.reason}</p>
           ) : (
             <p className="body-recovery-note">No calorie change is queued right now. Keep logging weight and meals for a stronger adjustment signal.</p>
           )}
@@ -1254,4 +1254,10 @@ function withinDays(logs, days) {
 
 function round(value) {
   return Math.round(value * 100) / 100
+}
+
+function buildRecoverySleepLabel(recoverySummary) {
+  if (!recoverySummary?.last_sleep_date) return 'No sleep logged'
+  if (recoverySummary.last_sleep_is_recent) return 'Last night'
+  return `Logged ${formatUsShortDate(recoverySummary.last_sleep_date, recoverySummary.last_sleep_date)}`
 }

@@ -127,8 +127,8 @@ export default function AppShell({ children }) {
           <div className="app-shell-mobile-nav-head">
             <div>
               <p className="dashboard-eyebrow">Navigation</p>
-              <h2>Navigate</h2>
-              <p>Use one large tap target per destination instead of the old emoji tab bar.</p>
+              <h2>Menu</h2>
+              <p>Choose where you want to go.</p>
             </div>
           </div>
 

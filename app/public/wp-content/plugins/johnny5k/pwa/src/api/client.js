@@ -158,6 +158,8 @@ export const onboardingApi = {
   complete:    ()       => api.post('/onboarding/complete', {}),
   restart:     ()       => api.post('/onboarding/restart', {}),
   updateTrainingSchedule: (data) => api.post('/onboarding/training-schedule', data),
+  getSmsReminders: ()   => api.get('/onboarding/sms-reminders'),
+  cancelSmsReminder: (id) => api.del(`/onboarding/sms-reminders/${id}`),
   recalculate: ()       => api.post('/onboarding/recalculate', {}),
 }
 
@@ -217,6 +219,7 @@ export const trainingApi = {
 export const workoutApi = {
   current:   ()              => api.get('/workout/current'),
   getHistory: (days = 3, limit = 10) => api.get(`/workout/history?days=${days}&limit=${limit}`),
+  preview:   (data)          => api.post('/workout/preview', data),
   start:     (data)          => api.post('/workout/start', data),
   get:       (id)            => api.get(`/workout/${id}`),
   updateHistory: (id, data)  => api.put(`/workout/history/${id}`, data),
@@ -233,6 +236,7 @@ export const workoutApi = {
   quickAdd:  (id, data)      => api.post(`/workout/${id}/quick-add`, data),
   undoQuickAdd: (id, data)   => api.post(`/workout/${id}/quick-add/undo`, data),
   restart:   (id)            => api.post(`/workout/${id}/restart`, {}),
+  discard:   (id)            => api.post(`/workout/${id}/discard`, {}),
   skip:      (id)            => api.post(`/workout/${id}/skip`, {}),
   complete:  (id, data)      => api.post(`/workout/${id}/complete`, data),
 }
@@ -268,13 +272,17 @@ export const nutritionApi = {
 
 // ── AI ────────────────────────────────────────────────────────────────────────
 export const aiApi = {
-  chat:         (message, threadKey = 'main', mode = 'general') => api.post('/ai/chat', { message, thread_key: threadKey, mode }),
+  chat:         (message, threadKey = 'main', mode = 'general', options = {}) => api.post('/ai/chat', { message, thread_key: threadKey, mode, context: options.context ?? {} }),
   analyseMeal:  (base64)                      => api.post('/ai/analyse/meal',  { image_base64: base64 }),
   analyseLabel: (base64)                      => api.post('/ai/analyse/label', { image_base64: base64 }),
   analyseFoodText: (foodText)                 => api.post('/ai/analyse/food-text', { food_text: foodText }),
   analysePantryText: (pantryText)             => api.post('/ai/analyse/pantry-text', { pantry_text: pantryText }),
   getThread:    (key)                         => api.get(`/ai/thread/${key}`),
   clearThread:  (key)                         => api.del(`/ai/thread/${key}`),
+  dismissFollowUp: (id)                       => api.del(`/ai/follow-up/${id}`),
+  updateFollowUp: (id, data)                  => api.post(`/ai/follow-up/${id}`, data),
+  getMemory:    ()                            => api.get('/ai/memory'),
+  updateMemory: (bullets)                     => api.post('/ai/memory', { bullets }),
 }
 
 // ── Admin API ─────────────────────────────────────────────────────────────────
@@ -302,4 +310,5 @@ export const adminApi = {
   testPersona:      (message)  => api.post('/admin/persona/test', { message }),
   previewPersonaTime: (message) => api.post('/admin/persona/time-preview', { message }),
   previewPersonaActions: (message) => api.post('/admin/persona/action-preview', { message }),
+  personaFollowUps: (userId)   => api.get(userId ? `/admin/persona/follow-ups?user_id=${userId}` : '/admin/persona/follow-ups'),
 }

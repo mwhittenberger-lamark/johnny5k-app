@@ -334,6 +334,7 @@ export function settingsFormFromState(profile, prefs, goal) {
     ...goalsFormFromState(goal),
     ...notificationsFormFromState(profile, prefs),
     weekly_schedule: training.weekly_schedule,
+    color_scheme: preferenceMeta?.color_scheme ?? 'classic',
     preference_meta: preferenceMeta,
   }
 }

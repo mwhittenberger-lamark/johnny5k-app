@@ -60,6 +60,11 @@ class AwardEngine {
 		self::check_calorie_target_week( $user_id );
 	}
 
+	public static function sync_user_awards( int $user_id ): void {
+		self::evaluate( $user_id );
+		self::reconcile_invalid_awards( $user_id );
+	}
+
 	// ── Individual checks ──────────────────────────────────────────────────────
 
 	private static function check_first_login( int $uid ): void {
@@ -146,7 +151,7 @@ class AwardEngine {
 				return;
 			}
 
-			$current->modify( '-1 day' );
+			$current = $current->modify( '-1 day' );
 		}
 	}
 
@@ -213,7 +218,7 @@ class AwardEngine {
 				return;
 			}
 
-			$current->modify( '-1 day' );
+			$current = $current->modify( '-1 day' );
 		}
 	}
 
@@ -241,7 +246,7 @@ class AwardEngine {
 				return;
 			}
 
-			$current->modify( '-1 day' );
+			$current = $current->modify( '-1 day' );
 		}
 	}
 
@@ -333,7 +338,7 @@ class AwardEngine {
 				return;
 			}
 
-			$current->modify( '-1 day' );
+			$current = $current->modify( '-1 day' );
 		}
 	}
 
@@ -361,7 +366,7 @@ class AwardEngine {
 				return;
 			}
 
-			$current->modify( '-1 day' );
+			$current = $current->modify( '-1 day' );
 		}
 	}
 
@@ -408,12 +413,310 @@ class AwardEngine {
 				$days_in_range++;
 			}
 
-			$current->modify( '-1 day' );
+			$current = $current->modify( '-1 day' );
 		}
 
 		if ( $days_in_range >= 5 ) {
 			self::grant( $uid, 'calorie_target_week' );
 		}
+	}
+
+	private static function reconcile_invalid_awards( int $user_id ): void {
+		global $wpdb;
+		$rows = $wpdb->get_results( $wpdb->prepare(
+			"SELECT ua.id, a.code
+			 FROM {$wpdb->prefix}fit_user_awards ua
+			 JOIN {$wpdb->prefix}fit_awards a ON a.id = ua.award_id
+			 WHERE ua.user_id = %d",
+			$user_id
+		), ARRAY_A );
+
+		foreach ( $rows as $row ) {
+			$award_id = (int) ( $row['id'] ?? 0 );
+			$code = (string) ( $row['code'] ?? '' );
+			if ( ! $award_id || ! $code ) {
+				continue;
+			}
+
+			if ( self::award_is_earned( $user_id, $code ) ) {
+				continue;
+			}
+
+			$wpdb->delete( $wpdb->prefix . 'fit_user_awards', [ 'id' => $award_id, 'user_id' => $user_id ], [ '%d', '%d' ] );
+		}
+	}
+
+	private static function award_is_earned( int $uid, string $code ): bool {
+		switch ( $code ) {
+			case 'first_login':
+				return (bool) get_user_meta( $uid, 'jf_first_login_done', true );
+			case 'onboarding_complete':
+				return self::is_onboarding_complete( $uid );
+			case 'first_workout':
+				return self::completed_workout_count( $uid ) >= 1;
+			case 'first_meal_logged':
+				return self::confirmed_meal_count( $uid ) >= 1;
+			case 'first_progress_photo':
+				return self::progress_photo_count( $uid ) >= 1;
+			case 'logging_streak_7':
+				return self::has_meal_streak( $uid, 7 );
+			case 'logging_streak_30':
+				return self::has_meal_streak( $uid, 30 );
+			case 'workouts_week_complete':
+				return self::has_workouts_week_complete( $uid );
+			case 'protein_streak_5':
+				return self::has_protein_streak( $uid, 5 );
+			case 'steps_10k_3days':
+				return self::has_steps_streak( $uid, 10000, 3 );
+			case 'weight_loss_5lb':
+				return self::has_weight_loss_milestone( $uid, 5 );
+			case 'weight_loss_10lb':
+				return self::has_weight_loss_milestone( $uid, 10 );
+			case 'consistency_comeback':
+				return self::has_consistency_comeback( $uid );
+			case 'first_pr':
+				return self::pr_count( $uid ) >= 1;
+			case 'sleep_streak_5':
+				return self::has_sleep_streak( $uid, 5 );
+			case 'cardio_streak_3':
+				return self::has_cardio_streak( $uid, 3 );
+			case 'meals_logged_week':
+				return self::meal_days_in_last_week( $uid ) >= 7;
+			case 'calorie_target_week':
+				return self::calorie_target_days_in_last_week( $uid ) >= 5;
+			default:
+				return true;
+		}
+	}
+
+	private static function is_onboarding_complete( int $uid ): bool {
+		global $wpdb;
+		return (bool) $wpdb->get_var( $wpdb->prepare(
+			"SELECT onboarding_complete FROM {$wpdb->prefix}fit_user_profiles WHERE user_id = %d",
+			$uid
+		) );
+	}
+
+	private static function completed_workout_count( int $uid ): int {
+		global $wpdb;
+		return (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT COUNT(*) FROM {$wpdb->prefix}fit_workout_sessions WHERE user_id = %d AND completed = 1",
+			$uid
+		) );
+	}
+
+	private static function confirmed_meal_count( int $uid ): int {
+		global $wpdb;
+		return (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT COUNT(*) FROM {$wpdb->prefix}fit_meals WHERE user_id = %d AND confirmed = 1",
+			$uid
+		) );
+	}
+
+	private static function progress_photo_count( int $uid ): int {
+		global $wpdb;
+		return (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT COUNT(*) FROM {$wpdb->prefix}fit_progress_photos WHERE user_id = %d",
+			$uid
+		) );
+	}
+
+	private static function pr_count( int $uid ): int {
+		global $wpdb;
+		return (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT COUNT(*) FROM {$wpdb->prefix}fit_exercise_performance_snapshots WHERE user_id = %d",
+			$uid
+		) );
+	}
+
+	private static function has_meal_streak( int $uid, int $days ): bool {
+		global $wpdb;
+		$streak = 0;
+		$current = UserTime::now( $uid )->setTime( 12, 0 );
+		for ( $i = 0; $i < max( 60, $days * 2 ); $i++ ) {
+			$d = $current->format( 'Y-m-d' );
+			$meal_count = (int) $wpdb->get_var( $wpdb->prepare(
+				"SELECT COUNT(*) FROM {$wpdb->prefix}fit_meals WHERE user_id = %d AND DATE(meal_datetime) = %s AND confirmed = 1",
+				$uid,
+				$d
+			) );
+			$streak = $meal_count > 0 ? $streak + 1 : 0;
+			if ( $streak >= $days ) {
+				return true;
+			}
+			$current = $current->modify( '-1 day' );
+		}
+		return false;
+	}
+
+	private static function has_workouts_week_complete( int $uid ): bool {
+		global $wpdb;
+		$since = UserTime::days_ago( $uid, 6 );
+		$count = (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT COUNT(DISTINCT session_date) FROM {$wpdb->prefix}fit_workout_sessions WHERE user_id = %d AND completed = 1 AND session_date >= %s",
+			$uid,
+			$since
+		) );
+		$plan_days = (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT COUNT(*) FROM {$wpdb->prefix}fit_user_training_days utd JOIN {$wpdb->prefix}fit_user_training_plans utp ON utp.id = utd.training_plan_id WHERE utp.user_id = %d AND utp.active = 1 AND utd.day_type != 'rest'",
+			$uid
+		) );
+		$required = $plan_days > 0 ? $plan_days : 3;
+		return $count >= $required;
+	}
+
+	private static function has_protein_streak( int $uid, int $days ): bool {
+		global $wpdb;
+		$goal_protein = (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT target_protein_g FROM {$wpdb->prefix}fit_user_goals WHERE user_id = %d AND active = 1 ORDER BY created_at DESC LIMIT 1",
+			$uid
+		) );
+		if ( ! $goal_protein ) {
+			return false;
+		}
+		$streak = 0;
+		$current = UserTime::now( $uid )->setTime( 12, 0 );
+		for ( $i = 0; $i < 60; $i++ ) {
+			$d = $current->format( 'Y-m-d' );
+			$protein = (float) $wpdb->get_var( $wpdb->prepare(
+				"SELECT SUM(mi.protein_g) FROM {$wpdb->prefix}fit_meal_items mi JOIN {$wpdb->prefix}fit_meals m ON m.id = mi.meal_id WHERE m.user_id = %d AND DATE(m.meal_datetime) = %s AND m.confirmed = 1",
+				$uid,
+				$d
+			) );
+			$streak = $protein >= $goal_protein ? $streak + 1 : 0;
+			if ( $streak >= $days ) {
+				return true;
+			}
+			$current = $current->modify( '-1 day' );
+		}
+		return false;
+	}
+
+	private static function has_steps_streak( int $uid, int $threshold, int $days ): bool {
+		global $wpdb;
+		$streak = 0;
+		$current = UserTime::now( $uid )->setTime( 12, 0 );
+		for ( $i = 0; $i < 30; $i++ ) {
+			$d = $current->format( 'Y-m-d' );
+			$steps = (int) $wpdb->get_var( $wpdb->prepare(
+				"SELECT steps FROM {$wpdb->prefix}fit_step_logs WHERE user_id = %d AND step_date = %s",
+				$uid,
+				$d
+			) );
+			$streak = $steps >= $threshold ? $streak + 1 : 0;
+			if ( $streak >= $days ) {
+				return true;
+			}
+			$current = $current->modify( '-1 day' );
+		}
+		return false;
+	}
+
+	private static function has_weight_loss_milestone( int $uid, float $lbs ): bool {
+		global $wpdb;
+		$starting = (float) $wpdb->get_var( $wpdb->prepare( "SELECT starting_weight_lb FROM {$wpdb->prefix}fit_user_profiles WHERE user_id = %d", $uid ) );
+		$current_weight = (float) $wpdb->get_var( $wpdb->prepare( "SELECT weight_lb FROM {$wpdb->prefix}fit_body_metrics WHERE user_id = %d ORDER BY metric_date DESC LIMIT 1", $uid ) );
+		return $starting > 0 && $current_weight > 0 && ( $starting - $current_weight ) >= $lbs;
+	}
+
+	private static function has_consistency_comeback( int $uid ): bool {
+		global $wpdb;
+		$dates = $wpdb->get_col( $wpdb->prepare(
+			"SELECT DISTINCT DATE(meal_datetime) AS d FROM {$wpdb->prefix}fit_meals WHERE user_id = %d AND DATE(meal_datetime) >= %s AND confirmed = 1 ORDER BY d ASC",
+			$uid,
+			UserTime::days_ago( $uid, 29 )
+		) );
+		if ( count( $dates ) < 4 ) {
+			return false;
+		}
+		for ( $i = 1; $i < count( $dates ) - 2; $i++ ) {
+			$gap = ( new \DateTime( $dates[ $i ] ) )->diff( new \DateTime( $dates[ $i - 1 ] ) )->days;
+			if ( $gap >= 5 ) {
+				$d1 = new \DateTime( $dates[ $i ] );
+				$d2 = new \DateTime( $dates[ $i + 1 ] ?? '' );
+				$d3 = new \DateTime( $dates[ $i + 2 ] ?? '' );
+				if ( 1 === $d1->diff( $d2 )->days && 1 === $d2->diff( $d3 )->days ) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	private static function has_sleep_streak( int $uid, int $days ): bool {
+		global $wpdb;
+		$streak = 0;
+		$current = UserTime::now( $uid )->setTime( 12, 0 );
+		for ( $i = 0; $i < 30; $i++ ) {
+			$d = $current->format( 'Y-m-d' );
+			$hours = (float) $wpdb->get_var( $wpdb->prepare(
+				"SELECT hours_sleep FROM {$wpdb->prefix}fit_sleep_logs WHERE user_id = %d AND sleep_date = %s",
+				$uid,
+				$d
+			) );
+			$streak = $hours >= 7.0 ? $streak + 1 : 0;
+			if ( $streak >= $days ) {
+				return true;
+			}
+			$current = $current->modify( '-1 day' );
+		}
+		return false;
+	}
+
+	private static function has_cardio_streak( int $uid, int $days ): bool {
+		global $wpdb;
+		$streak = 0;
+		$current = UserTime::now( $uid )->setTime( 12, 0 );
+		for ( $i = 0; $i < 30; $i++ ) {
+			$d = $current->format( 'Y-m-d' );
+			$count = (int) $wpdb->get_var( $wpdb->prepare(
+				"SELECT COUNT(*) FROM {$wpdb->prefix}fit_cardio_logs WHERE user_id = %d AND cardio_date = %s",
+				$uid,
+				$d
+			) );
+			$streak = $count > 0 ? $streak + 1 : 0;
+			if ( $streak >= $days ) {
+				return true;
+			}
+			$current = $current->modify( '-1 day' );
+		}
+		return false;
+	}
+
+	private static function meal_days_in_last_week( int $uid ): int {
+		global $wpdb;
+		return (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT COUNT(DISTINCT DATE(meal_datetime)) FROM {$wpdb->prefix}fit_meals WHERE user_id = %d AND confirmed = 1 AND DATE(meal_datetime) >= %s",
+			$uid,
+			UserTime::days_ago( $uid, 6 )
+		) );
+	}
+
+	private static function calorie_target_days_in_last_week( int $uid ): int {
+		global $wpdb;
+		$target = (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT target_calories FROM {$wpdb->prefix}fit_user_goals WHERE user_id = %d AND active = 1 ORDER BY created_at DESC LIMIT 1",
+			$uid
+		) );
+		if ( ! $target ) {
+			return 0;
+		}
+		$tolerance = 0.10;
+		$days_in_range = 0;
+		$current = UserTime::now( $uid )->setTime( 12, 0 );
+		for ( $i = 0; $i < 7; $i++ ) {
+			$d = $current->format( 'Y-m-d' );
+			$daily_cal = (float) $wpdb->get_var( $wpdb->prepare(
+				"SELECT SUM(mi.calories) FROM {$wpdb->prefix}fit_meal_items mi JOIN {$wpdb->prefix}fit_meals m ON m.id = mi.meal_id WHERE m.user_id = %d AND DATE(m.meal_datetime) = %s AND m.confirmed = 1",
+				$uid,
+				$d
+			) );
+			if ( $daily_cal >= $target * ( 1 - $tolerance ) && $daily_cal <= $target * ( 1 + $tolerance ) ) {
+				$days_in_range++;
+			}
+			$current = $current->modify( '-1 day' );
+		}
+		return $days_in_range;
 	}
 
 	// ── Grant (idempotent) ────────────────────────────────────────────────────
