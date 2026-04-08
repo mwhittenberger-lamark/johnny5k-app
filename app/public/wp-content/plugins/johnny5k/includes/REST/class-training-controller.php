@@ -4,6 +4,7 @@ namespace Johnny5k\REST;
 defined( 'ABSPATH' ) || exit;
 
 use Johnny5k\Services\TrainingEngine;
+use Johnny5k\Services\ExerciseLibraryService;
 use Johnny5k\Services\UserTime;
 
 /**
@@ -51,6 +52,39 @@ class TrainingController {
 		register_rest_route( $ns, '/training/exercises', [
 			'methods'             => 'GET',
 			'callback'            => [ __CLASS__, 'get_exercises' ],
+			'permission_callback' => $auth,
+		] );
+
+		register_rest_route( $ns, '/training/exercises/personal', [
+			'methods'             => 'POST',
+			'callback'            => [ __CLASS__, 'save_personal_exercise' ],
+			'permission_callback' => $auth,
+		] );
+
+		register_rest_route( $ns, '/training/exercises/personal/merge', [
+			'methods'             => 'POST',
+			'callback'            => [ __CLASS__, 'merge_personal_exercises' ],
+			'permission_callback' => $auth,
+		] );
+
+		register_rest_route( $ns, '/training/exercises/personal/(?P<id>\d+)', [
+			[
+				'methods'             => 'PUT',
+				'callback'            => [ __CLASS__, 'update_personal_exercise' ],
+				'permission_callback' => $auth,
+				'args'                => [ 'id' => [ 'required' => true, 'type' => 'integer' ] ],
+			],
+			[
+				'methods'             => 'DELETE',
+				'callback'            => [ __CLASS__, 'delete_personal_exercise' ],
+				'permission_callback' => $auth,
+				'args'                => [ 'id' => [ 'required' => true, 'type' => 'integer' ] ],
+			],
+		] );
+
+		register_rest_route( $ns, '/training/substitutions/personal', [
+			'methods'             => 'POST',
+			'callback'            => [ __CLASS__, 'save_personal_substitution' ],
 			'permission_callback' => $auth,
 		] );
 	}
@@ -180,6 +214,10 @@ class TrainingController {
 			return new \WP_REST_Response( [ 'message' => 'Not found.' ], 404 );
 		}
 
+		if ( ! ExerciseLibraryService::is_exercise_accessible( $user_id, $exercise_id ) ) {
+			return new \WP_REST_Response( [ 'message' => 'Exercise not found.' ], 404 );
+		}
+
 		$max_order = (int) $wpdb->get_var( $wpdb->prepare(
 			"SELECT MAX(sort_order) FROM {$wpdb->prefix}fit_user_training_day_exercises WHERE training_day_id = %d",
 			$day_id
@@ -230,11 +268,19 @@ class TrainingController {
 
 	public static function get_exercises( \WP_REST_Request $req ): \WP_REST_Response {
 		global $wpdb;
+		$user_id     = get_current_user_id();
+		$own_only    = in_array( strtolower( (string) ( $req->get_param( 'own_only' ) ?? '' ) ), [ '1', 'true', 'yes', 'on' ], true );
 
 		$where       = [ '1=1' ];
 		$vals        = [];
 		$limit       = max( 1, min( 50, (int) ( $req->get_param( 'limit' ) ?: 50 ) ) );
 		$order_parts = [];
+		$where[]     = $own_only
+			? 'user_id = %d'
+			: ExerciseLibraryService::accessible_exercise_where( '', $user_id );
+		if ( $own_only ) {
+			$vals[] = $user_id;
+		}
 
 		if ( $query = sanitize_text_field( $req->get_param( 'q' ) ?: '' ) ) {
 			$like         = '%' . $wpdb->esc_like( $query ) . '%';
@@ -271,6 +317,8 @@ class TrainingController {
 			);
 		}
 
+		$order_parts[] = $wpdb->prepare( 'CASE WHEN user_id = %d THEN 0 ELSE 1 END', $user_id );
+
 		if ( $preferred_equipment = sanitize_text_field( $req->get_param( 'preferred_equipment' ) ?: '' ) ) {
 			$order_parts[] = $wpdb->prepare(
 				'CASE WHEN equipment = %s THEN 0 ELSE 1 END',
@@ -296,13 +344,86 @@ class TrainingController {
 
 		$where_sql = implode( ' AND ', $where );
 		$order_sql = implode( ', ', $order_parts );
-		$sql       = "SELECT id, slug, name, primary_muscle, equipment, difficulty, default_rep_min, default_rep_max, default_sets
+		$sql       = "SELECT id, user_id, CASE WHEN user_id = %d THEN 1 ELSE 0 END AS owned_by_user, slug, name, description, movement_pattern, primary_muscle, equipment, difficulty, default_rep_min, default_rep_max, default_sets
 		              FROM {$wpdb->prefix}fit_exercises WHERE active = 1 AND $where_sql ORDER BY {$order_sql} LIMIT %d";
-		$vals[]    = $limit;
+		$vals      = array_merge( [ $user_id ], $vals, [ $limit ] );
 
 		$rows = $wpdb->get_results( $wpdb->prepare( $sql, ...$vals ) );
 
 		return new \WP_REST_Response( $rows );
+	}
+
+	public static function save_personal_exercise( \WP_REST_Request $req ): \WP_REST_Response {
+		$user_id = get_current_user_id();
+		$result = ExerciseLibraryService::create_personal_exercise( $user_id, $req->get_json_params() ?: $req->get_params() );
+
+		if ( is_wp_error( $result ) ) {
+			return new \WP_REST_Response( [ 'message' => $result->get_error_message() ], 400 );
+		}
+
+		return new \WP_REST_Response( $result, ! empty( $result['created'] ) ? 201 : 200 );
+	}
+
+	public static function update_personal_exercise( \WP_REST_Request $req ): \WP_REST_Response {
+		$user_id = get_current_user_id();
+		$result = ExerciseLibraryService::update_personal_exercise(
+			$user_id,
+			(int) $req->get_param( 'id' ),
+			$req->get_json_params() ?: $req->get_params()
+		);
+
+		if ( is_wp_error( $result ) ) {
+			$status = 'exercise_not_found' === $result->get_error_code() ? 404 : 400;
+			return new \WP_REST_Response( [ 'message' => $result->get_error_message() ], $status );
+		}
+
+		return new \WP_REST_Response( $result );
+	}
+
+	public static function delete_personal_exercise( \WP_REST_Request $req ): \WP_REST_Response {
+		$user_id = get_current_user_id();
+		$result = ExerciseLibraryService::delete_personal_exercise( $user_id, (int) $req->get_param( 'id' ) );
+
+		if ( is_wp_error( $result ) ) {
+			$status = 'exercise_not_found' === $result->get_error_code() ? 404 : 400;
+			return new \WP_REST_Response( [ 'message' => $result->get_error_message() ], $status );
+		}
+
+		return new \WP_REST_Response( $result );
+	}
+
+	public static function merge_personal_exercises( \WP_REST_Request $req ): \WP_REST_Response {
+		$user_id = get_current_user_id();
+		$params  = $req->get_json_params() ?: $req->get_params();
+		$result  = ExerciseLibraryService::merge_personal_exercises(
+			$user_id,
+			(int) ( $params['keep_exercise_id'] ?? 0 ),
+			(array) ( $params['remove_exercise_ids'] ?? [] )
+		);
+
+		if ( is_wp_error( $result ) ) {
+			$status = 'exercise_not_found' === $result->get_error_code() ? 404 : 400;
+			return new \WP_REST_Response( [ 'message' => $result->get_error_message() ], $status );
+		}
+
+		return new \WP_REST_Response( $result );
+	}
+
+	public static function save_personal_substitution( \WP_REST_Request $req ): \WP_REST_Response {
+		$user_id = get_current_user_id();
+		$result = ExerciseLibraryService::create_personal_substitution(
+			$user_id,
+			(int) $req->get_param( 'exercise_id' ),
+			(int) $req->get_param( 'substitute_exercise_id' ),
+			(string) ( $req->get_param( 'reason_code' ) ?: 'variation' ),
+			max( 1, (int) ( $req->get_param( 'priority' ) ?: 1 ) )
+		);
+
+		if ( is_wp_error( $result ) ) {
+			return new \WP_REST_Response( [ 'message' => $result->get_error_message() ], 400 );
+		}
+
+		return new \WP_REST_Response( $result, ! empty( $result['created'] ) ? 201 : 200 );
 	}
 
 	// ── Helpers ───────────────────────────────────────────────────────────────

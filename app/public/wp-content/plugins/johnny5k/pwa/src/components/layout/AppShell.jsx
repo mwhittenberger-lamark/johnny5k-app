@@ -171,7 +171,7 @@ export default function AppShell({ children }) {
         </div>
       </nav>
 
-      <main className="app-content">{children}</main>
+      <main className="app-content" data-route-scroll-root="true">{children}</main>
       {isDrawerOpen ? (
         <Suspense fallback={null}>
           <JohnnyAssistantDrawer />

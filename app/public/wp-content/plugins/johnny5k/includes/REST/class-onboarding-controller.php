@@ -41,6 +41,12 @@ class OnboardingController {
 			'permission_callback' => $auth,
 		] );
 
+		register_rest_route( $ns, '/onboarding/health-flags', [
+			'methods'             => 'POST',
+			'callback'            => [ __CLASS__, 'sync_health_flags' ],
+			'permission_callback' => $auth,
+		] );
+
 		register_rest_route( $ns, '/onboarding/complete', [
 			'methods'             => 'POST',
 			'callback'            => [ __CLASS__, 'complete' ],
@@ -111,6 +117,7 @@ class OnboardingController {
 			'prefs'               => self::decode_preferences( $prefs ),
 			'goal'                => $goal,
 			'color_schemes'       => AdminApiController::get_color_schemes_config(),
+			'live_workout_frames' => AdminApiController::get_live_workout_frames_config(),
 			'health_flags'        => $health_flags,
 			'progress_photos'     => $progress_photos,
 			'completion_ready'    => empty( $missing_fields ),
@@ -286,6 +293,78 @@ class OnboardingController {
 		}
 
 		return new \WP_REST_Response( [ 'saved' => true ], 200 );
+	}
+
+	public static function sync_health_flags( \WP_REST_Request $req ): \WP_REST_Response {
+		$user_id = get_current_user_id();
+		global $wpdb;
+		$p = $wpdb->prefix;
+
+		$raw_flags = $req->get_param( 'flags' );
+		$flags = is_array( $raw_flags ) ? $raw_flags : [];
+		$seen_ids = [];
+
+		foreach ( $flags as $flag ) {
+			if ( ! is_array( $flag ) ) {
+				continue;
+			}
+
+			$id = isset( $flag['id'] ) ? (int) $flag['id'] : 0;
+			$data = [
+				'user_id'   => $user_id,
+				'flag_type' => sanitize_text_field( (string) ( $flag['flag_type'] ?? 'injury' ) ),
+				'body_area' => sanitize_text_field( (string) ( $flag['body_area'] ?? '' ) ),
+				'severity'  => sanitize_text_field( (string) ( $flag['severity'] ?? 'low' ) ),
+				'notes'     => sanitize_textarea_field( (string) ( $flag['notes'] ?? '' ) ),
+				'active'    => isset( $flag['active'] ) ? (int) (bool) $flag['active'] : 1,
+			];
+
+			if ( '' === $data['body_area'] ) {
+				continue;
+			}
+
+			if ( $id > 0 ) {
+				$updated = $wpdb->update( $p . 'fit_user_health_flags', $data, [ 'id' => $id, 'user_id' => $user_id ] );
+				if ( false !== $updated ) {
+					$seen_ids[] = $id;
+				}
+				continue;
+			}
+
+			$wpdb->insert( $p . 'fit_user_health_flags', $data );
+			if ( $wpdb->insert_id ) {
+				$seen_ids[] = (int) $wpdb->insert_id;
+			}
+		}
+
+		$existing_ids = $wpdb->get_col( $wpdb->prepare(
+			"SELECT id FROM {$p}fit_user_health_flags WHERE user_id = %d AND flag_type = %s",
+			$user_id,
+			'injury'
+		) );
+
+		foreach ( is_array( $existing_ids ) ? $existing_ids : [] as $existing_id ) {
+			$existing_id = (int) $existing_id;
+			if ( $existing_id > 0 && ! in_array( $existing_id, $seen_ids, true ) ) {
+				$wpdb->update(
+					$p . 'fit_user_health_flags',
+					[ 'active' => 0 ],
+					[ 'id' => $existing_id, 'user_id' => $user_id ],
+					[ '%d' ],
+					[ '%d', '%d' ]
+				);
+			}
+		}
+
+		$active_rows = $wpdb->get_results( $wpdb->prepare(
+			"SELECT * FROM {$p}fit_user_health_flags WHERE user_id = %d AND active = 1 ORDER BY created_at DESC",
+			$user_id
+		) );
+
+		return new \WP_REST_Response( [
+			'saved' => true,
+			'health_flags' => $active_rows,
+		], 200 );
 	}
 
 	// ── POST /onboarding/complete ─────────────────────────────────────────────

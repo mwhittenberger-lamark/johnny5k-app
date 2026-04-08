@@ -5,6 +5,7 @@
  */
 
 const BASE = '/wp-json/fit/v1'
+const WP_CORE_BASE = '/wp-json/wp/v2'
 const NONCE_KEY = 'jf_rest_nonce'
 const AUTH_KEY = 'jf_auth'
 const NONCE_ENDPOINT = '/wp-admin/admin-ajax.php?action=rest-nonce'
@@ -47,6 +48,10 @@ async function refreshNonce() {
 }
 
 async function request(method, path, body = null, isFormData = false) {
+  return requestToUrl(method, `${BASE}${path}`, body, isFormData, path)
+}
+
+async function requestToUrl(method, url, body = null, isFormData = false, redirectPath = '') {
   const nonce = getNonce()
   const headers = {}
 
@@ -58,7 +63,7 @@ async function request(method, path, body = null, isFormData = false) {
     headers['Content-Type'] = 'application/json'
   }
 
-  const res = await fetch(`${BASE}${path}`, {
+  const res = await fetch(url, {
     method,
     credentials: 'include',
     headers,
@@ -77,7 +82,7 @@ async function request(method, path, body = null, isFormData = false) {
   const authFailure = res.status === 401 || invalidNonce
 
   if (!res.ok) {
-    if (authFailure && !path.startsWith('/auth/login') && !path.startsWith('/auth/register')) {
+    if (authFailure && !redirectPath.startsWith('/auth/login') && !redirectPath.startsWith('/auth/register')) {
       clearPersistedAuth()
       window.location.replace('/login')
     }
@@ -138,6 +143,25 @@ export const api = {
   blob:   (path)         => requestBlob('GET', path),
 }
 
+export const mediaApi = {
+  list: ({ search = '', page = 1, perPage = 24 } = {}) => {
+    const params = new URLSearchParams()
+    params.set('context', 'edit')
+    params.set('orderby', 'date')
+    params.set('order', 'desc')
+    params.set('page', String(page))
+    params.set('per_page', String(perPage))
+    if (search.trim()) params.set('search', search.trim())
+    return requestToUrl('GET', `${WP_CORE_BASE}/media?${params.toString()}`, null, false, '/wp/v2/media')
+  },
+  upload: (file, { title = '' } = {}) => {
+    const form = new FormData()
+    form.append('file', file)
+    if (title.trim()) form.append('title', title.trim())
+    return requestToUrl('POST', `${WP_CORE_BASE}/media`, form, true, '/wp/v2/media')
+  },
+}
+
 // ── Auth ──────────────────────────────────────────────────────────────────────
 export const authApi = {
   login: (email, password) => api.post('/auth/login', { email, password }),
@@ -155,6 +179,7 @@ export const onboardingApi = {
   getState:    ()       => api.get('/onboarding'),
   saveProfile: (data)   => api.post('/onboarding/profile', data),
   savePrefs:   (data)   => api.post('/onboarding/prefs', data),
+  saveHealthFlags: (data) => api.post('/onboarding/health-flags', data),
   complete:    ()       => api.post('/onboarding/complete', {}),
   restart:     ()       => api.post('/onboarding/restart', {}),
   updateTrainingSchedule: (data) => api.post('/onboarding/training-schedule', data),
@@ -208,11 +233,16 @@ export const bodyApi = {
 
 // ── Training plan ─────────────────────────────────────────────────────────────
 export const trainingApi = {
-  getPlan:       ()         => api.get('/training/plan'),
-  getExercises:  (params)   => api.get('/training/exercises?' + new URLSearchParams(params)),
-  updateDay:     (id, data) => api.put(`/training/day/${id}`, data),
-  addExToDay:    (id, data) => api.post(`/training/day/${id}/exercise`, data),
-  removeEx:      (id)       => api.del(`/training/day-exercise/${id}`),
+  getPlan:                 ()         => api.get('/training/plan'),
+  getExercises:            (params)   => api.get('/training/exercises?' + new URLSearchParams(params)),
+  savePersonalExercise:    (data)     => api.post('/training/exercises/personal', data),
+  mergePersonalExercises:  (data)     => api.post('/training/exercises/personal/merge', data),
+  updatePersonalExercise:  (id, data) => api.put(`/training/exercises/personal/${id}`, data),
+  deletePersonalExercise:  (id)       => api.del(`/training/exercises/personal/${id}`),
+  savePersonalSubstitution:(data)     => api.post('/training/substitutions/personal', data),
+  updateDay:               (id, data) => api.put(`/training/day/${id}`, data),
+  addExToDay:              (id, data) => api.post(`/training/day/${id}/exercise`, data),
+  removeEx:                (id)       => api.del(`/training/day-exercise/${id}`),
 }
 
 // ── Workout (active session) ──────────────────────────────────────────────────
@@ -254,6 +284,8 @@ export const nutritionApi = {
   updateSavedFood: (id, data)  => api.put(`/nutrition/saved-foods/${id}`, data),
   deleteSavedFood: (id)        => api.del(`/nutrition/saved-foods/${id}`),
   logSavedFood:    (id, data)  => api.post(`/nutrition/saved-foods/${id}/log`, data ?? {}),
+  getRecipeCookbook: ()        => api.get('/nutrition/recipe-cookbook'),
+  updateRecipeCookbook: (recipes) => api.put('/nutrition/recipe-cookbook', { recipes }),
   addPantry:       (data)      => api.post('/nutrition/pantry', data),
   addPantryBulk:   (items)     => api.post('/nutrition/pantry/bulk', { items }),
   getPantry:       ()          => api.get('/nutrition/pantry'),

@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import ExerciseCard from '../../components/workout/ExerciseCard'
+import LiveWorkoutMode from '../../components/workout/LiveWorkoutMode'
 import PlanOverviewSwapDrawer from '../../components/workout/PlanOverviewSwapDrawer'
-import { trainingApi, workoutApi } from '../../api/client'
+import { onboardingApi, trainingApi, workoutApi } from '../../api/client'
 import { formatUsShortDate, formatUsWeekday } from '../../lib/dateFormat'
 import { useWorkoutStore } from '../../store/workoutStore'
 
@@ -68,6 +69,8 @@ export default function WorkoutScreen() {
   const [restartNotice, setRestartNotice] = useState('')
   const [restartError, setRestartError] = useState('')
   const [addonsExpanded, setAddonsExpanded] = useState(false)
+  const [liveModeOpen, setLiveModeOpen] = useState(false)
+  const [liveWorkoutFrames, setLiveWorkoutFrames] = useState([])
   const [timerNow, setTimerNow] = useState(() => Date.now())
   const location = useLocation()
   const navigate = useNavigate()
@@ -131,6 +134,20 @@ export default function WorkoutScreen() {
       .finally(() => {
         if (active) setPlanLoading(false)
       })
+
+    return () => { active = false }
+  }, [])
+
+  useEffect(() => {
+    let active = true
+
+    onboardingApi.getState()
+      .then(data => {
+        if (active) {
+          setLiveWorkoutFrames(Array.isArray(data?.live_workout_frames) ? data.live_workout_frames : [])
+        }
+      })
+      .catch(() => {})
 
     return () => { active = false }
   }, [])
@@ -261,6 +278,11 @@ export default function WorkoutScreen() {
     return () => window.clearInterval(intervalId)
   }, [activeSessionStartedAt])
 
+  useEffect(() => {
+    if (session) return
+    setLiveModeOpen(false)
+  }, [session])
+
   async function handleComplete() {
     setCompleting(true)
     const result = await completeSession()
@@ -318,6 +340,11 @@ export default function WorkoutScreen() {
 
   function handleLogCardio() {
     navigate('/body', { state: { focusTab: 'cardio' } })
+  }
+
+  function handleOpenExerciseDemo(exerciseName) {
+    const query = encodeURIComponent(`${exerciseName} exercise tutorial`)
+    window.open(`https://www.youtube.com/results?search_query=${query}`, '_blank', 'noopener,noreferrer')
   }
 
   async function handleRestartSession() {
@@ -481,6 +508,7 @@ export default function WorkoutScreen() {
                 <button className="btn-secondary" onClick={handleStartSession} disabled={loading}>
                   {loading ? 'Building session...' : isMaintenanceMode ? 'Start Maintenance Cardio' : 'Start Cardio Workout'}
                 </button>
+                <button className="btn-outline" onClick={() => navigate('/workout/library')}>My exercise library</button>
                 <button className="btn-outline" onClick={handleSkip}>Skip today</button>
               </>
             ) : isRestSelection ? (
@@ -489,12 +517,14 @@ export default function WorkoutScreen() {
                   {takingRestDay ? 'Logging rest day...' : 'Take Rest Day'}
                 </button>
                 <button className="btn-secondary" onClick={() => navigate('/body')}>Open Progress</button>
+                <button className="btn-outline" onClick={() => navigate('/workout/library')}>My exercise library</button>
               </>
             ) : (
               <>
                 <button className="btn-primary" onClick={handleStartSession} disabled={loading}>
                   {loading ? 'Building session...' : isMaintenanceMode ? 'Start Maintenance Workout' : 'Start Workout'}
                 </button>
+                <button className="btn-secondary" onClick={() => navigate('/workout/library')}>My exercise library</button>
                 <button className="btn-secondary" onClick={handleSkip}>Skip today</button>
               </>
             )}
@@ -547,6 +577,13 @@ export default function WorkoutScreen() {
                           </span>
                         </div>
                         <div className="workout-preview-actions">
+                          <button
+                            type="button"
+                            className="btn-secondary small"
+                            onClick={() => handleOpenExerciseDemo(exercise.exercise_name)}
+                          >
+                            Demo
+                          </button>
                           <div className="workout-preview-order-buttons">
                             <button type="button" className="btn-ghost small" onClick={() => handlePreviewMove(exercise.plan_exercise_id, -1)} disabled={index === 0}>↑</button>
                             <button type="button" className="btn-ghost small" onClick={() => handlePreviewMove(exercise.plan_exercise_id, 1)} disabled={index === previewExercises.length - 1}>↓</button>
@@ -611,6 +648,11 @@ export default function WorkoutScreen() {
           {wasResumed ? <p className="settings-subtitle workout-session-note">Resumed your in-progress workout automatically.</p> : null}
           {scheduledDayType && displayDayType && scheduledDayType !== displayDayType ? <p className="settings-subtitle workout-session-note">Scheduled for today: {formatDayType(scheduledDayType)}. You chose to run {formatDayType(displayDayType)} instead.</p> : null}
           {restartError ? <p className="error">{restartError}</p> : null}
+        </div>
+        <div className="workout-session-header-actions">
+          <button type="button" className="btn-primary" onClick={() => setLiveModeOpen(true)}>
+            Live Workout Mode
+          </button>
         </div>
       </header>
 
@@ -719,6 +761,9 @@ export default function WorkoutScreen() {
         </div>
         <p className="workout-session-note">Exit discards this in-progress workout completely. Start over deletes it too, but keeps you here so you can rebuild today&apos;s session.</p>
         <div className="workout-page-actions-row">
+          <button className="btn-outline" onClick={() => navigate('/workout/library')} disabled={exiting || restarting || completing}>
+            My exercise library
+          </button>
           <button className="btn-secondary" onClick={handleExitSession} disabled={exiting || restarting || completing}>
             {exiting ? 'Exiting...' : 'Exit and discard'}
           </button>
@@ -747,6 +792,21 @@ export default function WorkoutScreen() {
           </div>
         </div>
       ) : null}
+
+      <LiveWorkoutMode
+        isOpen={liveModeOpen}
+        session={session}
+        exercises={exercises}
+        liveFrames={liveWorkoutFrames}
+        activeExerciseIdx={activeExerciseIdx}
+        onSetActiveExerciseIdx={setActiveExerciseIdx}
+        onCreateSet={logSet}
+        onUpdateSet={updateSet}
+        onClose={() => setLiveModeOpen(false)}
+        timerLabel={activeSessionTimerLabel}
+        todayLabel={todayLabel}
+        displayDayType={displayDayType}
+      />
     </div>
   )
 }

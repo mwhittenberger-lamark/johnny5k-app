@@ -187,6 +187,10 @@ export default function BodyScreen() {
   const recoverySummary = snapshot?.recovery_summary
   const activeFlagItems = Array.isArray(recoverySummary?.active_flag_items) ? recoverySummary.active_flag_items : []
   const caloriePreview = snapshot?.calorie_adjustment_preview
+
+  function handleRecoveryQuickAction() {
+    routeRecoveryAction(recoverySummary, navigate)
+  }
   const weightSeries = selectSeries(
     metrics.weight,
     chartRange.weight,
@@ -319,10 +323,23 @@ export default function BodyScreen() {
           </div>
           <div className="body-mini-stats">
             <div><strong>{recoverySummary.last_sleep_is_recent ? `${recoverySummary.last_sleep_hours || '—'}h` : '—'}</strong><span>{buildRecoverySleepLabel(recoverySummary)}</span></div>
-            <div><strong>{recoverySummary.avg_sleep_3d || '—'}h</strong><span>3-day avg</span></div>
+            <div><strong>{recoverySummary.avg_sleep_3d || '—'}h</strong><span>{buildRecoveryWindowLabel(recoverySummary)}</span></div>
             <div><strong>{recoverySummary.cardio_minutes_7d || 0}</strong><span>Cardio min / 7d</span></div>
-            <div><strong>{recoverySummary.active_flags || 0}</strong><span>Active flags</span></div>
+            <div><strong>{recoverySummary.active_flag_load || 0}</strong><span>Weighted flag load</span></div>
           </div>
+          {recoverySummary.why_summary ? (
+            <p className="body-recovery-note">Why: <strong>{recoverySummary.why_summary}</strong></p>
+          ) : null}
+          {recoverySummary.trend_summary ? (
+            <p className="body-recovery-note">Trend: <strong>{recoverySummary.trend_summary}</strong></p>
+          ) : null}
+          {Array.isArray(recoverySummary.reason_items) && recoverySummary.reason_items.length ? (
+            <div className="dashboard-johnny-metric-row">
+              {recoverySummary.reason_items.map(reason => (
+                <span key={reason} className="dashboard-chip subtle dashboard-johnny-metric">{reason}</span>
+              ))}
+            </div>
+          ) : null}
           {activeFlagItems.length ? (
             <div className="dashboard-johnny-metric-row">
               {activeFlagItems.map(flag => (
@@ -335,6 +352,11 @@ export default function BodyScreen() {
             <p className="body-recovery-note">Active flags: <strong>None</strong></p>
           )}
           <p className="body-recovery-note">Recommended training tier: <strong>{recoverySummary.recommended_time_tier}</strong></p>
+          <div className="dashboard-recovery-action-row">
+            <button className="btn-outline small" type="button" onClick={handleRecoveryQuickAction}>
+              {recoverySummary?.recommended_action?.label || 'Take action'}
+            </button>
+          </div>
           {caloriePreview ? (
             <p className="body-recovery-note">Calorie adjustment preview: <strong>{caloriePreview.action}</strong> {caloriePreview.delta_calories > 0 ? '+' : ''}{caloriePreview.delta_calories} Calories. {caloriePreview.reason}</p>
           ) : (
@@ -1260,4 +1282,26 @@ function buildRecoverySleepLabel(recoverySummary) {
   if (!recoverySummary?.last_sleep_date) return 'No sleep logged'
   if (recoverySummary.last_sleep_is_recent) return 'Last night'
   return `Logged ${formatUsShortDate(recoverySummary.last_sleep_date, recoverySummary.last_sleep_date)}`
+}
+
+function buildRecoveryWindowLabel(recoverySummary) {
+  const loggedDays = Number(recoverySummary?.sleep_logged_days_3d || 0)
+  return `${loggedDays}/3 nights logged`
+}
+
+function routeRecoveryAction(recoverySummary, navigate) {
+  const action = recoverySummary?.recommended_action
+  const target = action?.target || 'body'
+  const notice = action?.notice || 'Johnny opened recovery so you can act on the current signal.'
+
+  if (target === 'sleep' || target === 'steps' || target === 'cardio') {
+    navigate('/body', { state: { focusTab: target, johnnyActionNotice: notice } })
+    return
+  }
+  if (target === 'injuries') {
+    navigate('/onboarding/injuries', { state: { johnnyActionNotice: notice } })
+    return
+  }
+
+  navigate('/body', { state: { johnnyActionNotice: notice } })
 }

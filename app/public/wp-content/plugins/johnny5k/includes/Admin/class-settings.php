@@ -19,6 +19,7 @@ class Settings {
 	/** Option keys managed by this page. */
 	private const FIELDS = [
 		'jf_openai_api_key'      => [ 'label' => 'OpenAI API Key',          'type' => 'password', 'placeholder' => 'sk-…'        ],
+		'jf_usda_api_key'        => [ 'label' => 'USDA API Key',            'type' => 'password', 'placeholder' => 'DEMO_KEY or your key' ],
 		'jf_clicksend_username'  => [ 'label' => 'ClickSend Username',       'type' => 'text',     'placeholder' => 'you@email.com' ],
 		'jf_clicksend_api_key'   => [ 'label' => 'ClickSend API Key',        'type' => 'password', 'placeholder' => ''             ],
 		'jf_clicksend_sender_id' => [ 'label' => 'SMS Sender ID (≤11 chars)','type' => 'text',     'placeholder' => 'Johnny5000'  ],
@@ -84,6 +85,9 @@ class Settings {
 		echo '<tr><th colspan="2"><h2 style="margin:0">OpenAI</h2></th></tr>';
 		self::render_field( 'jf_openai_api_key' );
 		echo '<tr><td></td><td><p class="description">Used for the AI coach (Johnny 5000), meal analysis, and workout summaries. Get your key at <strong>platform.openai.com/api-keys</strong>.</p></td></tr>';
+		echo '<tr><th colspan="2"><h2 style="margin:0;padding-top:16px">Nutrition Sources</h2></th></tr>';
+		self::render_field( 'jf_usda_api_key' );
+		echo '<tr><td></td><td><p class="description">Used to improve meal-photo nutrition accuracy with USDA FoodData Central. Leave blank to fall back to USDA demo access.</p></td></tr>';
 
 		// ── ClickSend section ─────────────────────────────────────────────
 		$current_sender_id = (string) get_option( 'jf_clicksend_sender_id', '' );

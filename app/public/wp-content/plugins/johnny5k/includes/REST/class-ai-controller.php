@@ -27,6 +27,7 @@ use Johnny5k\Services\UserTime;
 class AiController {
 	private const GROCERY_GAP_ITEMS_META_KEY = 'jf_nutrition_grocery_gap_items';
 	private const PANTRY_CATEGORY_OVERRIDES_META_KEY = 'johnny5k_pantry_category_overrides';
+	private const RECIPE_COOKBOOK_META_KEY = 'johnny5k_recipe_cookbook';
 
 	public static function register_routes(): void {
 		$ns   = JF_REST_NAMESPACE;
@@ -218,6 +219,19 @@ class AiController {
 			'methods'             => 'GET',
 			'callback'            => [ __CLASS__, 'get_recipe_suggestions' ],
 			'permission_callback' => $auth,
+		] );
+
+		register_rest_route( $ns, '/nutrition/recipe-cookbook', [
+			[
+				'methods'             => 'GET',
+				'callback'            => [ __CLASS__, 'get_recipe_cookbook' ],
+				'permission_callback' => $auth,
+			],
+			[
+				'methods'             => 'PUT',
+				'callback'            => [ __CLASS__, 'update_recipe_cookbook' ],
+				'permission_callback' => $auth,
+			],
 		] );
 
 		register_rest_route( $ns, '/nutrition/grocery-gap', [
@@ -709,7 +723,7 @@ class AiController {
 		$user_id = get_current_user_id();
 
 		$rows = $wpdb->get_results( $wpdb->prepare(
-			"SELECT id, canonical_name, brand, serving_size, serving_grams, calories, protein_g, carbs_g, fat_g, fiber_g, sugar_g, sodium_mg, micros_json, source, label_json
+			"SELECT id, canonical_name, brand, serving_size, serving_grams, calories, protein_g, carbs_g, fat_g, fiber_g, sugar_g, sodium_mg, micros_json, source, label_json, source_json
 			 FROM {$p}fit_foods
 			 WHERE user_id = %d AND active = 1
 			 ORDER BY updated_at DESC, id DESC",
@@ -719,8 +733,11 @@ class AiController {
 		foreach ( $rows as $row ) {
 			$row->micros = $row->micros_json ? self::decode_json_list( $row->micros_json ) : [];
 			$row->label = $row->label_json ? json_decode( (string) $row->label_json, true ) : null;
+			$row->source_details = $row->source_json ? json_decode( (string) $row->source_json, true ) : null;
+			$row->source = $row->source_details ?: $row->source;
 			unset( $row->micros_json );
 			unset( $row->label_json );
+			unset( $row->source_json );
 		}
 
 		return new \WP_REST_Response( $rows );
@@ -749,6 +766,7 @@ class AiController {
 			'micros_json'   => $payload['micros_json'],
 			'source'        => $payload['source'],
 			'label_json'    => $payload['label_json'],
+			'source_json'   => $payload['source_json'],
 		], static fn( $value ) => null !== $value ) );
 
 		return new \WP_REST_Response( [ 'id' => (int) $wpdb->insert_id ], 201 );
@@ -781,6 +799,7 @@ class AiController {
 			'micros_json'   => $payload['micros_json'],
 			'source'        => $payload['source'],
 			'label_json'    => $payload['label_json'],
+			'source_json'   => $payload['source_json'],
 		], static fn( $value ) => null !== $value ), [ 'id' => $food_id ] );
 
 		return new \WP_REST_Response( [ 'updated' => true ] );
@@ -1137,22 +1156,30 @@ class AiController {
 		$prefs = self::get_user_food_preferences( $user_id );
 		$suggestions = self::build_recipe_suggestions( $pantry_rows, $prefs, $refresh_token );
 
-		$wpdb->delete( $p . 'fit_recipe_suggestions', [ 'user_id' => $user_id ] );
+		$wpdb->delete( $p . 'fit_recipe_suggestions', [ 'user_id' => $user_id, 'is_cookbook' => 0 ] );
 		foreach ( $suggestions as $suggestion ) {
-			$wpdb->insert( $p . 'fit_recipe_suggestions', [
-				'user_id'                => $user_id,
-				'recipe_name'            => $suggestion['recipe_name'],
-				'ingredients_json'       => wp_json_encode( $suggestion['ingredients'] ),
-				'instructions_json'      => wp_json_encode( $suggestion['instructions'] ),
-				'estimated_calories'     => $suggestion['estimated_calories'],
-				'estimated_protein_g'    => $suggestion['estimated_protein_g'],
-				'estimated_carbs_g'      => $suggestion['estimated_carbs_g'],
-				'estimated_fat_g'        => $suggestion['estimated_fat_g'],
-				'fits_goal'              => 1,
-			] );
+			$wpdb->insert( $p . 'fit_recipe_suggestions', self::recipe_suggestion_db_payload( $user_id, $suggestion, 0 ) );
 		}
 
 		return new \WP_REST_Response( $suggestions );
+	}
+
+	public static function get_recipe_cookbook( \WP_REST_Request $req ): \WP_REST_Response {
+		$user_id = get_current_user_id();
+		return new \WP_REST_Response( self::get_recipe_cookbook_items( $user_id ) );
+	}
+
+	public static function update_recipe_cookbook( \WP_REST_Request $req ): \WP_REST_Response {
+		$user_id = get_current_user_id();
+		$recipes = $req->get_param( 'recipes' );
+		$recipes = is_array( $recipes ) ? $recipes : [];
+		$sanitized = self::sanitize_recipe_cookbook_items( $recipes );
+		self::set_recipe_cookbook_items( $user_id, $sanitized );
+
+		return new \WP_REST_Response( [
+			'updated' => true,
+			'recipes' => $sanitized,
+		] );
 	}
 
 	public static function get_grocery_gap( \WP_REST_Request $req ): \WP_REST_Response {
@@ -1491,6 +1518,8 @@ class AiController {
 		$label = is_array( $label ) ? $label : [];
 		$micros = $req->get_param( 'micros' );
 		$micros = is_array( $micros ) ? array_values( $micros ) : [];
+		$source_details = $req->get_param( 'source_details' );
+		$source_details = is_array( $source_details ) ? $source_details : [];
 
 		return [
 			'canonical_name' => sanitize_text_field( (string) ( $req->get_param( 'canonical_name' ) ?: $req->get_param( 'food_name' ) ?: 'Saved food' ) ),
@@ -1507,6 +1536,7 @@ class AiController {
 			'micros_json'    => ! empty( $micros ) ? wp_json_encode( $micros ) : null,
 			'source'         => sanitize_text_field( (string) ( $req->get_param( 'source' ) ?: 'manual' ) ),
 			'label_json'     => ! empty( $label ) ? wp_json_encode( $label ) : null,
+			'source_json'    => ! empty( $source_details ) ? wp_json_encode( $source_details ) : null,
 		];
 	}
 
@@ -2127,6 +2157,174 @@ class AiController {
 		}
 
 		update_user_meta( $user_id, self::GROCERY_GAP_ITEMS_META_KEY, array_values( $items ) );
+	}
+
+	private static function get_recipe_cookbook_items( int $user_id ): array {
+		self::maybe_migrate_recipe_cookbook_meta_to_table( $user_id );
+
+		global $wpdb;
+		$table = $wpdb->prefix . 'fit_recipe_suggestions';
+		$rows = $wpdb->get_results( $wpdb->prepare(
+			"SELECT recipe_key, meal_type, recipe_name, ingredients_json, instructions_json, estimated_calories,
+			        estimated_protein_g, estimated_carbs_g, estimated_fat_g, why_this_works, source
+			 FROM {$table}
+			 WHERE user_id = %d AND is_cookbook = 1
+			 ORDER BY updated_at DESC, id DESC",
+			$user_id
+		), ARRAY_A );
+
+		return array_values( array_filter( array_map( [ __CLASS__, 'map_recipe_suggestion_row' ], $rows ) ) );
+	}
+
+	private static function set_recipe_cookbook_items( int $user_id, array $recipes ): void {
+		$recipes = self::sanitize_recipe_cookbook_items( $recipes );
+		self::maybe_migrate_recipe_cookbook_meta_to_table( $user_id );
+
+		global $wpdb;
+		$table = $wpdb->prefix . 'fit_recipe_suggestions';
+		$recipe_keys = array_values( array_filter( array_map( static fn( array $recipe ): string => (string) ( $recipe['key'] ?? '' ), $recipes ) ) );
+
+		if ( empty( $recipe_keys ) ) {
+			$wpdb->delete( $table, [ 'user_id' => $user_id, 'is_cookbook' => 1 ] );
+			return;
+		}
+
+		$placeholders = implode( ',', array_fill( 0, count( $recipe_keys ), '%s' ) );
+		$params = array_merge( [ $user_id ], $recipe_keys );
+		$wpdb->query( $wpdb->prepare(
+			"DELETE FROM {$table} WHERE user_id = %d AND is_cookbook = 1 AND recipe_key NOT IN ({$placeholders})",
+			...$params
+		) );
+
+		foreach ( $recipes as $recipe ) {
+			$key = (string) ( $recipe['key'] ?? '' );
+			if ( '' === $key ) {
+				continue;
+			}
+
+			$existing_id = (int) $wpdb->get_var( $wpdb->prepare(
+				"SELECT id FROM {$table} WHERE user_id = %d AND recipe_key = %s AND is_cookbook = 1 ORDER BY id DESC LIMIT 1",
+				$user_id,
+				$key
+			) );
+			$payload = self::recipe_suggestion_db_payload( $user_id, $recipe, 1 );
+
+			if ( $existing_id > 0 ) {
+				$wpdb->update( $table, $payload, [ 'id' => $existing_id ] );
+				continue;
+			}
+
+			$wpdb->insert( $table, $payload );
+		}
+	}
+
+	private static function maybe_migrate_recipe_cookbook_meta_to_table( int $user_id ): void {
+		$stored = get_user_meta( $user_id, self::RECIPE_COOKBOOK_META_KEY, true );
+		$stored = is_array( $stored ) ? $stored : [];
+
+		if ( empty( $stored ) ) {
+			return;
+		}
+
+		global $wpdb;
+		$table = $wpdb->prefix . 'fit_recipe_suggestions';
+		$existing_count = (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT COUNT(*) FROM {$table} WHERE user_id = %d AND is_cookbook = 1",
+			$user_id
+		) );
+
+		if ( $existing_count <= 0 ) {
+			$this_turn_recipes = self::sanitize_recipe_cookbook_items( $stored );
+			foreach ( $this_turn_recipes as $recipe ) {
+				$wpdb->insert( $table, self::recipe_suggestion_db_payload( $user_id, $recipe, 1 ) );
+			}
+		}
+
+		delete_user_meta( $user_id, self::RECIPE_COOKBOOK_META_KEY );
+	}
+
+	private static function sanitize_recipe_cookbook_items( array $recipes ): array {
+		$sanitized = [];
+		$seen = [];
+
+		foreach ( $recipes as $recipe ) {
+			if ( ! is_array( $recipe ) ) {
+				continue;
+			}
+
+			$recipe_name = sanitize_text_field( (string) ( $recipe['recipe_name'] ?? '' ) );
+			if ( '' === $recipe_name ) {
+				continue;
+			}
+
+			$key = sanitize_title( (string) ( $recipe['key'] ?? '' ) );
+			if ( '' === $key ) {
+				$key = sanitize_title(
+					( sanitize_key( (string) ( $recipe['meal_type'] ?? 'meal' ) ) ?: 'meal' ) . '-' . $recipe_name
+				);
+			}
+
+			if ( isset( $seen[ $key ] ) ) {
+				continue;
+			}
+
+			$seen[ $key ] = true;
+			$sanitized[] = [
+				'key'                 => $key,
+				'recipe_name'         => $recipe_name,
+				'meal_type'           => sanitize_key( (string) ( $recipe['meal_type'] ?? 'lunch' ) ) ?: 'lunch',
+				'ingredients'         => self::unique_recipe_ingredients( (array) ( $recipe['ingredients'] ?? [] ) ),
+				'instructions'        => array_values( array_filter( array_map( 'sanitize_text_field', (array) ( $recipe['instructions'] ?? [] ) ) ) ),
+				'estimated_calories'  => (int) ( $recipe['estimated_calories'] ?? 0 ),
+				'estimated_protein_g' => round( (float) ( $recipe['estimated_protein_g'] ?? 0 ), 2 ),
+				'estimated_carbs_g'   => round( (float) ( $recipe['estimated_carbs_g'] ?? 0 ), 2 ),
+				'estimated_fat_g'     => round( (float) ( $recipe['estimated_fat_g'] ?? 0 ), 2 ),
+				'why_this_works'      => sanitize_text_field( (string) ( $recipe['why_this_works'] ?? '' ) ),
+				'source'              => sanitize_key( (string) ( $recipe['source'] ?? '' ) ) ?: 'generated',
+				'on_hand_ingredients' => self::unique_recipe_ingredients( (array) ( $recipe['on_hand_ingredients'] ?? [] ) ),
+				'missing_ingredients' => self::unique_recipe_ingredients( (array) ( $recipe['missing_ingredients'] ?? [] ) ),
+			];
+		}
+
+		return $sanitized;
+	}
+
+	private static function recipe_suggestion_db_payload( int $user_id, array $recipe, int $is_cookbook = 0 ): array {
+		$recipe = self::sanitize_recipe_cookbook_items( [ $recipe ] );
+		$recipe = $recipe[0] ?? [];
+
+		return [
+			'user_id'             => $user_id,
+			'recipe_key'          => (string) ( $recipe['key'] ?? '' ),
+			'meal_type'           => (string) ( $recipe['meal_type'] ?? 'lunch' ),
+			'recipe_name'         => (string) ( $recipe['recipe_name'] ?? '' ),
+			'ingredients_json'    => wp_json_encode( (array) ( $recipe['ingredients'] ?? [] ) ),
+			'instructions_json'   => wp_json_encode( (array) ( $recipe['instructions'] ?? [] ) ),
+			'estimated_calories'  => (int) ( $recipe['estimated_calories'] ?? 0 ),
+			'estimated_protein_g' => (float) ( $recipe['estimated_protein_g'] ?? 0 ),
+			'estimated_carbs_g'   => (float) ( $recipe['estimated_carbs_g'] ?? 0 ),
+			'estimated_fat_g'     => (float) ( $recipe['estimated_fat_g'] ?? 0 ),
+			'why_this_works'      => (string) ( $recipe['why_this_works'] ?? '' ),
+			'source'              => (string) ( $recipe['source'] ?? 'generated' ),
+			'is_cookbook'         => $is_cookbook ? 1 : 0,
+			'fits_goal'           => 1,
+		];
+	}
+
+	private static function map_recipe_suggestion_row( array $row ): array {
+		return [
+			'key'                 => sanitize_title( (string) ( $row['recipe_key'] ?? '' ) ),
+			'recipe_name'         => sanitize_text_field( (string) ( $row['recipe_name'] ?? '' ) ),
+			'meal_type'           => sanitize_key( (string) ( $row['meal_type'] ?? 'lunch' ) ) ?: 'lunch',
+			'ingredients'         => self::unique_recipe_ingredients( (array) json_decode( (string) ( $row['ingredients_json'] ?? '[]' ), true ) ),
+			'instructions'        => array_values( array_filter( array_map( 'sanitize_text_field', (array) json_decode( (string) ( $row['instructions_json'] ?? '[]' ), true ) ) ) ),
+			'estimated_calories'  => (int) ( $row['estimated_calories'] ?? 0 ),
+			'estimated_protein_g' => round( (float) ( $row['estimated_protein_g'] ?? 0 ), 2 ),
+			'estimated_carbs_g'   => round( (float) ( $row['estimated_carbs_g'] ?? 0 ), 2 ),
+			'estimated_fat_g'     => round( (float) ( $row['estimated_fat_g'] ?? 0 ), 2 ),
+			'why_this_works'      => sanitize_text_field( (string) ( $row['why_this_works'] ?? '' ) ),
+			'source'              => sanitize_key( (string) ( $row['source'] ?? '' ) ) ?: 'generated',
+		];
 	}
 
 	private static function merge_grocery_gap_items( array $items ): array {

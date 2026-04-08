@@ -352,7 +352,7 @@ class TrainingEngine {
 					}
 				}
 
-				$resolved_exercise = self::resolve_session_exercise_selection( $next_day_type, $exercise, (int) ( $exercise_swaps[ (int) $exercise->id ] ?? 0 ) );
+				$resolved_exercise = self::resolve_session_exercise_selection( $user_id, $next_day_type, $exercise, (int) ( $exercise_swaps[ (int) $exercise->id ] ?? 0 ) );
 				$resolved_exercise_id = (int) ( $resolved_exercise['exercise_id'] ?? (int) $exercise->exercise_id );
 				$prog = self::recommended_progression( $user_id, $resolved_exercise_id );
 
@@ -422,7 +422,7 @@ class TrainingEngine {
 		return array_values( $exercises );
 	}
 
-	private static function resolve_session_exercise_selection( string $day_type, object $plan_exercise, int $swap_exercise_id ): array {
+	private static function resolve_session_exercise_selection( int $user_id, string $day_type, object $plan_exercise, int $swap_exercise_id ): array {
 		global $wpdb;
 		$p = $wpdb->prefix;
 
@@ -441,11 +441,13 @@ class TrainingEngine {
 
 		$day_json = '"' . esc_sql( $day_type ) . '"';
 		$slot_json = '"' . esc_sql( (string) $plan_exercise->slot_type ) . '"';
+		$exercise_access_where = ExerciseLibraryService::accessible_exercise_where( '', $user_id );
 		$override = $wpdb->get_row( $wpdb->prepare(
 			"SELECT id, name, primary_muscle, equipment, difficulty
 			 FROM {$p}fit_exercises
 			 WHERE id = %d
 			   AND active = 1
+			   AND {$exercise_access_where}
 			   AND JSON_CONTAINS(day_types_json, %s)
 			   AND JSON_CONTAINS(slot_types_json, %s)
 			 LIMIT 1",

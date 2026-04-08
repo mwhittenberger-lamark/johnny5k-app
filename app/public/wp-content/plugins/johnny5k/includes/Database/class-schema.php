@@ -184,6 +184,7 @@ class Schema {
 			/* ── Exercise Library ──────────────────────────────────────────────── */
 			"CREATE TABLE {$p}exercises (
   id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+        user_id bigint(20) unsigned DEFAULT NULL,
   slug varchar(150) NOT NULL,
   name varchar(150) NOT NULL,
   description text DEFAULT NULL,
@@ -207,6 +208,8 @@ class Schema {
   updated_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY  (id),
   UNIQUE KEY slug (slug),
+  KEY user_id (user_id),
+  KEY user_active (user_id,active),
   KEY primary_muscle (primary_muscle),
   KEY equipment (equipment),
   KEY active (active)
@@ -215,12 +218,15 @@ class Schema {
 			/* ── Exercise Substitutions ────────────────────────────────────────── */
 			"CREATE TABLE {$p}exercise_substitutions (
   id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+        user_id bigint(20) unsigned DEFAULT NULL,
   exercise_id bigint(20) unsigned NOT NULL,
   substitute_exercise_id bigint(20) unsigned NOT NULL,
   reason_code enum('equipment','joint_friendly','skill_level','variation') NOT NULL DEFAULT 'variation',
   priority int(11) NOT NULL DEFAULT 1,
   created_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY  (id),
+        KEY user_id (user_id),
+        KEY user_exercise (user_id,exercise_id),
   KEY exercise_id (exercise_id),
   KEY substitute_exercise_id (substitute_exercise_id)
 ) $c;",
@@ -410,8 +416,9 @@ class Schema {
   sugar_g decimal(6,2) DEFAULT NULL,
   sodium_mg decimal(8,2) DEFAULT NULL,
   micros_json longtext DEFAULT NULL,
-  source enum('manual','label','ai_photo','recipe','system') NOT NULL DEFAULT 'manual',
+  source enum('manual','label','ai_photo','recipe','system','usda_ai_text','usda_ai_photo') NOT NULL DEFAULT 'manual',
   label_json longtext DEFAULT NULL,
+  source_json longtext DEFAULT NULL,
   active tinyint(1) NOT NULL DEFAULT 1,
   created_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -496,6 +503,8 @@ class Schema {
 			"CREATE TABLE {$p}recipe_suggestions (
   id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
   user_id bigint(20) unsigned NOT NULL,
+  recipe_key varchar(191) NOT NULL DEFAULT '',
+  meal_type varchar(50) NOT NULL DEFAULT 'lunch',
   recipe_name varchar(200) NOT NULL DEFAULT '',
   ingredients_json longtext DEFAULT NULL,
   instructions_json longtext DEFAULT NULL,
@@ -503,10 +512,16 @@ class Schema {
   estimated_protein_g decimal(6,2) NOT NULL DEFAULT 0.00,
   estimated_carbs_g decimal(6,2) NOT NULL DEFAULT 0.00,
   estimated_fat_g decimal(6,2) NOT NULL DEFAULT 0.00,
+  why_this_works text DEFAULT NULL,
+  source varchar(50) NOT NULL DEFAULT 'generated',
+  is_cookbook tinyint(1) NOT NULL DEFAULT 0,
   fits_goal tinyint(1) NOT NULL DEFAULT 1,
   created_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY  (id),
-  KEY user_id (user_id)
+  KEY user_id (user_id),
+  KEY user_recipe_key (user_id,recipe_key),
+  KEY user_cookbook (user_id,is_cookbook)
 ) $c;",
 
 			/* ── Media Analysis Jobs ───────────────────────────────────────────── */

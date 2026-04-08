@@ -155,6 +155,8 @@ class DashboardController {
 			$user_id, $today
 		) );
 
+		$training_status = self::get_today_training_status_data( $user_id, $today, $today_schedule, $session );
+
 		$tomorrow_preview = $wpdb->get_row( $wpdb->prepare(
 			"SELECT id, session_date, planned_day_type, actual_day_type, completed, skip_requested, time_tier
 			 FROM {$p}fit_workout_sessions
@@ -218,6 +220,7 @@ class DashboardController {
 			'micronutrient_totals' => $micronutrient_totals,
 			'meals_today'      => $meals_today,
 			'session'          => $session,
+			'training_status'  => $training_status,
 			'today_schedule'   => $today_schedule,
 			'tomorrow_preview' => $tomorrow_preview,
 			'tomorrow_schedule'=> $tomorrow_schedule,
@@ -232,6 +235,151 @@ class DashboardController {
 			'skip_count_30d'   => $skip_count,
 			'skip_warning'     => $skip_count >= 3,
 		];
+	}
+
+	private static function get_today_training_status_data( int $user_id, string $date, ?object $today_schedule = null, ?object $latest_session = null ): array {
+		global $wpdb;
+		$p = $wpdb->prefix;
+
+		$scheduled_day_type = (string) ( $today_schedule->day_type ?? self::infer_next_day_type( $user_id, $date ) );
+		$scheduled_time_tier = (string) ( $today_schedule->time_tier ?? $latest_session->time_tier ?? 'medium' );
+
+		$active_session = $wpdb->get_row( $wpdb->prepare(
+			"SELECT id, session_date, planned_day_type, actual_day_type, completed, skip_requested, time_tier, duration_minutes, started_at, completed_at
+			 FROM {$p}fit_workout_sessions
+			 WHERE user_id = %d AND session_date = %s AND completed = 0 AND skip_requested = 0
+			 ORDER BY id DESC
+			 LIMIT 1",
+			$user_id,
+			$date
+		) );
+
+		$completed_session = $wpdb->get_row( $wpdb->prepare(
+			"SELECT id, session_date, planned_day_type, actual_day_type, completed, skip_requested, time_tier, duration_minutes, started_at, completed_at
+			 FROM {$p}fit_workout_sessions
+			 WHERE user_id = %d AND session_date = %s AND completed = 1 AND skip_requested = 0
+			 ORDER BY completed_at DESC, id DESC
+			 LIMIT 1",
+			$user_id,
+			$date
+		) );
+
+		$cardio_log = $wpdb->get_row( $wpdb->prepare(
+			"SELECT id, cardio_date, cardio_type, duration_minutes, intensity, estimated_calories, notes
+			 FROM {$p}fit_cardio_logs
+			 WHERE user_id = %d AND cardio_date = %s
+			 ORDER BY id DESC
+			 LIMIT 1",
+			$user_id,
+			$date
+		) );
+
+		$active_summary = self::normalise_dashboard_session_summary( $active_session );
+		$completed_summary = self::normalise_dashboard_session_summary( $completed_session );
+		$cardio_summary = self::normalise_dashboard_cardio_summary( $cardio_log );
+
+		$recorded = false;
+		$recorded_type = '';
+		$status = 'open';
+		$matching_workout_session = null;
+
+		if ( 'rest' === $scheduled_day_type ) {
+			if ( 'rest' === self::get_dashboard_session_day_type( $completed_session ) ) {
+				$recorded = true;
+				$recorded_type = 'rest';
+				$matching_workout_session = $completed_summary;
+			}
+			$status = 'rest_day';
+		} elseif ( 'cardio' === $scheduled_day_type ) {
+			if ( ! empty( $cardio_summary ) ) {
+				$recorded = true;
+				$recorded_type = 'cardio';
+			} elseif ( 'cardio' === self::get_dashboard_session_day_type( $completed_session ) ) {
+				$recorded = true;
+				$recorded_type = 'cardio';
+				$matching_workout_session = $completed_summary;
+			}
+
+			if ( ! $recorded ) {
+				$status = 'cardio' === self::get_dashboard_session_day_type( $active_session ) ? 'active' : 'open';
+			} else {
+				$status = 'recorded';
+			}
+		} else {
+			if ( self::is_strength_dashboard_session( $completed_session ) ) {
+				$recorded = true;
+				$recorded_type = 'workout';
+				$matching_workout_session = $completed_summary;
+			}
+
+			if ( ! $recorded ) {
+				$status = self::is_strength_dashboard_session( $active_session ) ? 'active' : 'open';
+			} else {
+				$status = 'recorded';
+			}
+		}
+
+		return [
+			'scheduled_day_type' => $scheduled_day_type,
+			'scheduled_time_tier' => $scheduled_time_tier,
+			'status' => $status,
+			'recorded' => $recorded,
+			'recorded_type' => $recorded_type,
+			'has_active_session' => ! empty( $active_summary ),
+			'active_session' => $active_summary,
+			'completed_session' => $completed_summary,
+			'matching_workout_session' => $matching_workout_session,
+			'cardio_log' => $cardio_summary,
+		];
+	}
+
+	private static function normalise_dashboard_session_summary( ?object $session ): ?array {
+		if ( ! $session ) {
+			return null;
+		}
+
+		return [
+			'id' => (int) ( $session->id ?? 0 ),
+			'session_date' => (string) ( $session->session_date ?? '' ),
+			'planned_day_type' => (string) ( $session->planned_day_type ?? '' ),
+			'actual_day_type' => (string) ( $session->actual_day_type ?? '' ),
+			'completed' => ! empty( $session->completed ),
+			'skip_requested' => ! empty( $session->skip_requested ),
+			'time_tier' => (string) ( $session->time_tier ?? '' ),
+			'duration_minutes' => isset( $session->duration_minutes ) ? (int) $session->duration_minutes : 0,
+			'started_at' => (string) ( $session->started_at ?? '' ),
+			'completed_at' => (string) ( $session->completed_at ?? '' ),
+		];
+	}
+
+	private static function normalise_dashboard_cardio_summary( ?object $cardio_log ): ?array {
+		if ( ! $cardio_log ) {
+			return null;
+		}
+
+		return [
+			'id' => (int) ( $cardio_log->id ?? 0 ),
+			'cardio_date' => (string) ( $cardio_log->cardio_date ?? '' ),
+			'cardio_type' => (string) ( $cardio_log->cardio_type ?? '' ),
+			'duration_minutes' => isset( $cardio_log->duration_minutes ) ? (int) $cardio_log->duration_minutes : 0,
+			'intensity' => (string) ( $cardio_log->intensity ?? '' ),
+			'estimated_calories' => isset( $cardio_log->estimated_calories ) ? (int) $cardio_log->estimated_calories : 0,
+			'notes' => (string) ( $cardio_log->notes ?? '' ),
+		];
+	}
+
+	private static function get_dashboard_session_day_type( ?object $session ): string {
+		if ( ! $session ) {
+			return '';
+		}
+
+		return (string) ( $session->actual_day_type ?: $session->planned_day_type ?: '' );
+	}
+
+	private static function is_strength_dashboard_session( ?object $session ): bool {
+		$day_type = self::get_dashboard_session_day_type( $session );
+
+		return '' !== $day_type && ! in_array( $day_type, [ 'rest', 'cardio' ], true );
 	}
 
 	// ── GET /dashboard/awards ─────────────────────────────────────────────────
@@ -852,12 +1000,14 @@ class DashboardController {
 		global $wpdb;
 		$p = $wpdb->prefix;
 
-		$avg_sleep = (float) $wpdb->get_var( $wpdb->prepare(
-			"SELECT AVG(hours_sleep) FROM {$p}fit_sleep_logs
-			 WHERE user_id = %d AND sleep_date >= %s",
+		$sleep_rows = $wpdb->get_results( $wpdb->prepare(
+			"SELECT sleep_date, hours_sleep
+			 FROM {$p}fit_sleep_logs
+			 WHERE user_id = %d AND sleep_date >= %s
+			 ORDER BY sleep_date DESC",
 			$user_id,
-			UserTime::days_ago( $user_id, 2 )
-		) );
+			UserTime::days_ago( $user_id, 6 )
+		), ARRAY_A );
 
 		$cardio_minutes = (int) $wpdb->get_var( $wpdb->prepare(
 			"SELECT COALESCE(SUM(duration_minutes), 0) FROM {$p}fit_cardio_logs
@@ -867,17 +1017,34 @@ class DashboardController {
 		) );
 
 		$active_flag_rows = $wpdb->get_results( $wpdb->prepare(
-			"SELECT id, flag_type, body_area, severity, notes
+			"SELECT id, flag_type, body_area, severity, notes, updated_at
 			 FROM {$p}fit_user_health_flags
 			 WHERE user_id = %d AND active = 1
 			 ORDER BY created_at DESC",
 			$user_id
 		) );
-		$active_flags = count( $active_flag_rows );
-		$active_flag_items = array_map( static function( object $row ): array {
+		$now = UserTime::now( $user_id );
+		$active_flag_load = 0.0;
+		$active_flag_items = array_map( static function( object $row ) use ( $now, &$active_flag_load ): array {
 			$flag_type = ucwords( str_replace( '_', ' ', (string) ( $row->flag_type ?? '' ) ) );
 			$body_area = ucwords( str_replace( '_', ' ', (string) ( $row->body_area ?? '' ) ) );
 			$label = trim( $flag_type );
+			$severity = (string) ( $row->severity ?? 'low' );
+			$severity_weight = match ( $severity ) {
+				'high' => 3.0,
+				'medium' => 2.0,
+				default => 1.0,
+			};
+			$days_since_update = 999;
+			try {
+				$updated_at = new \DateTimeImmutable( (string) ( $row->updated_at ?? '' ), UserTime::timezone( get_current_user_id() ) );
+				$days_since_update = (int) $now->diff( $updated_at )->days;
+			} catch ( \Exception $e ) {
+				$days_since_update = 999;
+			}
+			$recency_multiplier = $days_since_update <= 14 ? 1.0 : ( $days_since_update <= 45 ? 0.7 : 0.45 );
+			$impact_score = round( $severity_weight * $recency_multiplier, 2 );
+			$active_flag_load += $impact_score;
 
 			if ( '' !== $body_area ) {
 				$label = trim( $label . ': ' . $body_area );
@@ -886,10 +1053,13 @@ class DashboardController {
 			return [
 				'id'       => (int) ( $row->id ?? 0 ),
 				'label'    => $label ?: 'Active flag',
-				'severity' => (string) ( $row->severity ?? 'low' ),
+				'severity' => $severity,
 				'notes'    => (string) ( $row->notes ?? '' ),
+				'days_since_update' => $days_since_update,
+				'impact_score' => $impact_score,
 			];
 		}, is_array( $active_flag_rows ) ? $active_flag_rows : [] );
+		$active_flags = count( $active_flag_rows );
 
 		$target_sleep = (float) ( $goal->target_sleep_hours ?? 8 );
 		$target_steps = (int) ( $goal->target_steps ?? 8000 );
@@ -898,17 +1068,63 @@ class DashboardController {
 		$has_recent_sleep = '' !== $last_sleep_date && $last_sleep_date >= $recent_sleep_cutoff;
 		$last_sleep = $has_recent_sleep ? (float) ( $sleep->hours_sleep ?? 0 ) : 0;
 		$steps_pct = $target_steps > 0 ? ( $steps_today / $target_steps ) : 0;
+		$sleep_by_date = [];
+		foreach ( is_array( $sleep_rows ) ? $sleep_rows : [] as $row ) {
+			$date = (string) ( $row['sleep_date'] ?? '' );
+			if ( '' === $date || isset( $sleep_by_date[ $date ] ) ) {
+				continue;
+			}
+			$sleep_by_date[ $date ] = (float) ( $row['hours_sleep'] ?? 0 );
+		}
+		$recent_sleep_window = self::build_sleep_window_stats( $sleep_by_date, [
+			UserTime::days_ago( $user_id, 3 ),
+			UserTime::days_ago( $user_id, 2 ),
+			UserTime::days_ago( $user_id, 1 ),
+		] );
+		$previous_sleep_window = self::build_sleep_window_stats( $sleep_by_date, [
+			UserTime::days_ago( $user_id, 6 ),
+			UserTime::days_ago( $user_id, 5 ),
+			UserTime::days_ago( $user_id, 4 ),
+		] );
+		$avg_sleep = $recent_sleep_window['avg_logged'];
+		$reason_items = [];
+		$dominant_reason_key = '';
 
 		$mode = 'normal';
 		$headline = 'Recovery is supporting normal training.';
+		if ( ! $has_recent_sleep ) {
+			$reason_items[] = 'No sleep log from last night yet.';
+			$dominant_reason_key = 'sleep';
+		}
+		if ( $last_sleep > 0 && $last_sleep < max( 5.5, $target_sleep - 2 ) ) {
+			$reason_items[] = sprintf( 'Last night sleep was only %.1f hours.', $last_sleep );
+			$dominant_reason_key = $dominant_reason_key ?: 'sleep';
+		} elseif ( $avg_sleep > 0 && $avg_sleep < max( 6.5, $target_sleep - 1 ) ) {
+			$reason_items[] = sprintf( 'Recent sleep average is %.1f hours.', $avg_sleep );
+			$dominant_reason_key = $dominant_reason_key ?: 'sleep';
+		}
+		if ( $cardio_minutes >= 150 ) {
+			$reason_items[] = sprintf( 'Cardio load is %d minutes over the last 7 days.', $cardio_minutes );
+			$dominant_reason_key = $dominant_reason_key ?: 'cardio';
+		}
+		if ( $steps_pct >= 1.25 ) {
+			$reason_items[] = sprintf( 'Today’s steps are at %d%% of target.', (int) round( $steps_pct * 100 ) );
+			$dominant_reason_key = $dominant_reason_key ?: 'steps';
+		}
+		if ( $active_flag_load > 0 ) {
+			$reason_items[] = sprintf( 'Active injury load is elevated (%.1f weighted points).', $active_flag_load );
+			$dominant_reason_key = $dominant_reason_key ?: 'flags';
+		}
 
-		if ( $active_flags > 0 || ( $has_recent_sleep && $last_sleep < max( 5.5, $target_sleep - 2 ) ) ) {
+		if ( $active_flag_load >= 3.5 || ( $has_recent_sleep && $last_sleep < max( 5.5, $target_sleep - 2 ) ) ) {
 			$mode = 'maintenance';
 			$headline = 'Recovery is compromised. Keep training lighter and cleaner today.';
-		} elseif ( $avg_sleep < max( 6.5, $target_sleep - 1 ) || $cardio_minutes >= 150 || $steps_pct >= 1.25 ) {
+		} elseif ( ! $has_recent_sleep || $active_flag_load >= 1.5 || $avg_sleep < max( 6.5, $target_sleep - 1 ) || $cardio_minutes >= 150 || $steps_pct >= 1.25 ) {
 			$mode = 'caution';
 			$headline = 'Recovery is mixed. Train well, but keep the session tight and avoid grinding.';
 		}
+		$trend = self::build_recovery_trend_summary( $recent_sleep_window, $previous_sleep_window );
+		$recommended_action = self::build_recovery_action_payload( $dominant_reason_key ?: 'overview', $mode, $active_flags );
 
 		return [
 			'mode'              => $mode,
@@ -917,12 +1133,113 @@ class DashboardController {
 			'last_sleep_date'   => $last_sleep_date,
 			'last_sleep_is_recent' => $has_recent_sleep,
 			'avg_sleep_3d'      => round( $avg_sleep, 1 ),
+			'avg_sleep_3d_window' => round( $recent_sleep_window['avg_window'], 1 ),
+			'sleep_logged_days_3d' => $recent_sleep_window['logged_days'],
+			'sleep_missing_days_3d' => $recent_sleep_window['missing_days'],
 			'steps_today'       => $steps_today,
 			'steps_target'      => $target_steps,
 			'cardio_minutes_7d' => $cardio_minutes,
 			'active_flags'      => $active_flags,
+			'active_flag_load'  => round( $active_flag_load, 2 ),
 			'active_flag_items' => $active_flag_items,
+			'why_summary'       => implode( ' ', array_slice( $reason_items, 0, 2 ) ),
+			'reason_items'      => array_slice( $reason_items, 0, 3 ),
+			'trend_direction'   => $trend['direction'],
+			'trend_summary'     => $trend['summary'],
+			'recommended_action'=> $recommended_action,
 			'recommended_time_tier' => 'maintenance' === $mode ? 'short' : ( 'caution' === $mode ? 'medium' : 'full' ),
+		];
+	}
+
+	private static function build_sleep_window_stats( array $sleep_by_date, array $dates ): array {
+		$total_logged = 0.0;
+		$logged_days = 0;
+		$total_window = 0.0;
+
+		foreach ( $dates as $date ) {
+			$hours = isset( $sleep_by_date[ $date ] ) ? (float) $sleep_by_date[ $date ] : null;
+			if ( null !== $hours ) {
+				$total_logged += $hours;
+				$logged_days++;
+				$total_window += $hours;
+			}
+		}
+
+		$window_days = max( 1, count( $dates ) );
+
+		return [
+			'avg_logged'  => $logged_days > 0 ? round( $total_logged / $logged_days, 2 ) : 0.0,
+			'avg_window'  => round( $total_window / $window_days, 2 ),
+			'logged_days' => $logged_days,
+			'missing_days'=> max( 0, $window_days - $logged_days ),
+		];
+	}
+
+	private static function build_recovery_trend_summary( array $recent_window, array $previous_window ): array {
+		if ( (int) ( $recent_window['logged_days'] ?? 0 ) === 0 && (int) ( $previous_window['logged_days'] ?? 0 ) === 0 ) {
+			return [
+				'direction' => 'unknown',
+				'summary' => 'Not enough sleep history to judge the recovery trend yet.',
+			];
+		}
+
+		$recent = (float) ( $recent_window['avg_logged'] ?? 0 );
+		$previous = (float) ( $previous_window['avg_logged'] ?? 0 );
+		$delta = round( $recent - $previous, 1 );
+
+		if ( $delta >= 0.4 ) {
+			return [
+				'direction' => 'improving',
+				'summary' => sprintf( 'Recovery trend is improving. Sleep is up %.1f hours versus the previous 3-night block.', $delta ),
+			];
+		}
+		if ( $delta <= -0.4 ) {
+			return [
+				'direction' => 'declining',
+				'summary' => sprintf( 'Recovery trend is slipping. Sleep is down %.1f hours versus the previous 3-night block.', abs( $delta ) ),
+			];
+		}
+
+		return [
+			'direction' => 'steady',
+			'summary' => 'Recovery trend is steady versus the previous 3-night block.',
+		];
+	}
+
+	private static function build_recovery_action_payload( string $reason_key, string $mode, int $active_flags ): array {
+		if ( 'flags' === $reason_key || $active_flags > 0 ) {
+			return [
+				'label' => 'Review flags',
+				'target' => 'injuries',
+				'notice' => 'Johnny opened injury flags so you can clean up anything that should not be driving recovery.',
+			];
+		}
+		if ( 'sleep' === $reason_key || 'maintenance' === $mode ) {
+			return [
+				'label' => 'Log sleep',
+				'target' => 'sleep',
+				'notice' => 'Johnny opened sleep logging so the Recovery Loop can use the right night entry.',
+			];
+		}
+		if ( 'cardio' === $reason_key ) {
+			return [
+				'label' => 'Open cardio',
+				'target' => 'cardio',
+				'notice' => 'Johnny opened cardio so you can review recent conditioning load.',
+			];
+		}
+		if ( 'steps' === $reason_key ) {
+			return [
+				'label' => 'Open steps',
+				'target' => 'steps',
+				'notice' => 'Johnny opened steps so you can see whether movement load is driving the caution signal.',
+			];
+		}
+
+		return [
+			'label' => 'Open recovery',
+			'target' => 'body',
+			'notice' => 'Johnny opened recovery details so you can make the next call from live data.',
 		];
 	}
 

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { adminApi } from '../../api/client'
+import { adminApi, mediaApi } from '../../api/client'
 import AppIcon, { normalizeAppIconName } from '../../components/ui/AppIcon'
 import { getColorSchemeOptions, setAvailableColorSchemes } from '../../lib/theme'
 
@@ -16,6 +16,25 @@ function createEmptyColorScheme(index = 0) {
     description: 'Custom color scheme',
     colors: { ...(fallback?.colors ?? {}) },
   }
+}
+
+function createEmptyLiveWorkoutFrame(index = 0) {
+  return {
+    image_url: '',
+    label: `Live frame ${index + 1}`,
+    note: '',
+  }
+}
+
+function reorderItems(items, fromIndex, toIndex) {
+  if (!Array.isArray(items) || fromIndex === toIndex || fromIndex < 0 || toIndex < 0 || fromIndex >= items.length || toIndex >= items.length) {
+    return items
+  }
+
+  const nextItems = [...items]
+  const [movedItem] = nextItems.splice(fromIndex, 1)
+  nextItems.splice(toIndex, 0, movedItem)
+  return nextItems
 }
 
 export default function AdminScreen() {
@@ -765,8 +784,11 @@ function SettingsTab() {
     },
     feature_flags: {},
     color_schemes: getColorSchemeOptions(),
+    live_workout_frames: [],
   })
   const [msg, setMsg] = useState('')
+  const [draggedFrameIndex, setDraggedFrameIndex] = useState(null)
+  const [mediaPickerFrameIndex, setMediaPickerFrameIndex] = useState(null)
 
   useEffect(() => {
     adminApi.settings()
@@ -815,6 +837,64 @@ function SettingsTab() {
       ...current,
       color_schemes: (current.color_schemes ?? []).filter((_, schemeIndex) => schemeIndex !== index),
     }))
+  }
+
+  function updateLiveWorkoutFrame(index, field, value) {
+    setSettings(current => ({
+      ...current,
+      live_workout_frames: (current.live_workout_frames ?? []).map((frame, frameIndex) => (
+        frameIndex === index ? { ...frame, [field]: value } : frame
+      )),
+    }))
+  }
+
+  function addLiveWorkoutFrame() {
+    setSettings(current => ({
+      ...current,
+      live_workout_frames: [...(current.live_workout_frames ?? []), createEmptyLiveWorkoutFrame((current.live_workout_frames ?? []).length)],
+    }))
+  }
+
+  function removeLiveWorkoutFrame(index) {
+    setSettings(current => ({
+      ...current,
+      live_workout_frames: (current.live_workout_frames ?? []).filter((_, frameIndex) => frameIndex !== index),
+    }))
+  }
+
+  function moveLiveWorkoutFrame(fromIndex, toIndex) {
+    setSettings(current => ({
+      ...current,
+      live_workout_frames: reorderItems(current.live_workout_frames ?? [], fromIndex, toIndex),
+    }))
+  }
+
+  function handleLiveWorkoutFrameDrop(targetIndex) {
+    if (draggedFrameIndex == null || draggedFrameIndex === targetIndex) {
+      setDraggedFrameIndex(null)
+      return
+    }
+
+    moveLiveWorkoutFrame(draggedFrameIndex, targetIndex)
+    setDraggedFrameIndex(null)
+  }
+
+  function applyMediaToFrame(frameIndex, media) {
+    if (frameIndex == null || !media?.source_url) return
+
+    const fallbackLabel = String(media?.title?.rendered || media?.slug || '').trim()
+    setSettings(current => ({
+      ...current,
+      live_workout_frames: (current.live_workout_frames ?? []).map((frame, currentIndex) => {
+        if (currentIndex !== frameIndex) return frame
+        return {
+          ...frame,
+          image_url: media.source_url,
+          label: String(frame?.label || '').trim() ? frame.label : fallbackLabel || `Live frame ${frameIndex + 1}`,
+        }
+      }),
+    }))
+    setMediaPickerFrameIndex(null)
   }
 
   async function save(event) {
@@ -878,8 +958,180 @@ function SettingsTab() {
           ))}
         </div>
       </div>
+      <div className="admin-settings-section">
+        <div className="admin-settings-section-head">
+          <h3>Live workout frames</h3>
+          <button className="btn-secondary small" type="button" onClick={addLiveWorkoutFrame}>Add frame</button>
+        </div>
+        <p className="settings-subtitle">Set remote image URLs for the rotating Johnny art in Live Workout Mode. If this list is empty, the app falls back to the bundled defaults.</p>
+        <div className="admin-live-frame-list">
+          {(settings.live_workout_frames ?? []).map((frame, index) => (
+            <div
+              key={`${frame.image_url || 'frame'}-${index}`}
+              className={`admin-color-scheme-card admin-live-frame-card${draggedFrameIndex === index ? ' is-dragging' : ''}`}
+              draggable
+              onDragStart={() => setDraggedFrameIndex(index)}
+              onDragEnd={() => setDraggedFrameIndex(null)}
+              onDragOver={event => event.preventDefault()}
+              onDrop={() => handleLiveWorkoutFrameDrop(index)}
+            >
+              <div className="admin-color-scheme-head">
+                <div className="admin-live-frame-headline">
+                  <strong>Frame {index + 1}</strong>
+                  <span className="admin-live-frame-drag-hint">Drag to reorder</span>
+                </div>
+                <div className="admin-live-frame-actions">
+                  <button className="btn-outline small" type="button" onClick={() => moveLiveWorkoutFrame(index, index - 1)} disabled={index === 0}>Up</button>
+                  <button className="btn-outline small" type="button" onClick={() => moveLiveWorkoutFrame(index, index + 1)} disabled={index === (settings.live_workout_frames ?? []).length - 1}>Down</button>
+                  <button className="btn-danger small" type="button" onClick={() => removeLiveWorkoutFrame(index)}>Remove</button>
+                </div>
+              </div>
+              <div className="admin-live-frame-layout">
+                <div className="admin-live-frame-preview" aria-hidden="true">
+                  {frame.image_url ? <img src={frame.image_url} alt="" /> : <span>No preview</span>}
+                </div>
+                <div className="admin-color-scheme-meta admin-live-frame-meta">
+                  <label className="admin-color-scheme-description">
+                    <span>Image URL</span>
+                    <input value={frame.image_url ?? ''} onChange={e => updateLiveWorkoutFrame(index, 'image_url', e.target.value)} placeholder="https://.../johnny-frame.jpg" />
+                  </label>
+                  <div className="admin-live-frame-picker-row">
+                    <button className="btn-secondary small" type="button" onClick={() => setMediaPickerFrameIndex(index)}>Choose from media library</button>
+                  </div>
+                  <label>
+                    <span>Label</span>
+                    <input value={frame.label ?? ''} onChange={e => updateLiveWorkoutFrame(index, 'label', e.target.value)} />
+                  </label>
+                  <label>
+                    <span>Note</span>
+                    <input value={frame.note ?? ''} onChange={e => updateLiveWorkoutFrame(index, 'note', e.target.value)} />
+                  </label>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <MediaLibraryPicker
+        isOpen={mediaPickerFrameIndex != null}
+        onClose={() => setMediaPickerFrameIndex(null)}
+        onSelect={applyMediaToFrame}
+        frameIndex={mediaPickerFrameIndex}
+      />
       {msg ? <p className="success-msg">{msg}</p> : null}
       <button className="btn-primary" type="submit">Save settings</button>
     </form>
+  )
+}
+
+function MediaLibraryPicker({ isOpen, onClose, onSelect, frameIndex }) {
+  const [items, setItems] = useState([])
+  const [search, setSearch] = useState('')
+  const [page, setPage] = useState(1)
+  const [loading, setLoading] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    if (!isOpen) return
+
+    let active = true
+    setLoading(true)
+    setError('')
+
+    mediaApi.list({ search, page })
+      .then(data => {
+        if (active) {
+          setItems(Array.isArray(data) ? data : [])
+        }
+      })
+      .catch(err => {
+        if (active) {
+          setError(err.message || 'Could not load media library.')
+        }
+      })
+      .finally(() => {
+        if (active) setLoading(false)
+      })
+
+    return () => {
+      active = false
+    }
+  }, [isOpen, page, search])
+
+  useEffect(() => {
+    if (!isOpen) {
+      setSearch('')
+      setPage(1)
+      setItems([])
+      setError('')
+    }
+  }, [isOpen])
+
+  async function handleUpload(event) {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+
+    setUploading(true)
+    setError('')
+    try {
+      const uploaded = await mediaApi.upload(file, { title: file.name.replace(/\.[^.]+$/, '') })
+      setItems(current => [uploaded, ...current])
+      setPage(1)
+    } catch (err) {
+      setError(err.message || 'Upload failed.')
+    }
+    setUploading(false)
+  }
+
+  if (!isOpen) return null
+
+  return (
+    <div className="exercise-drawer-shell" role="dialog" aria-modal="true" aria-labelledby="media-library-picker-title">
+      <button type="button" className="exercise-drawer-backdrop" aria-label="Close media library" onClick={onClose} />
+      <aside className="exercise-drawer admin-media-picker-drawer">
+        <div className="exercise-drawer-head">
+          <div>
+            <p className="exercise-drawer-eyebrow">Media library</p>
+            <h3 id="media-library-picker-title">Choose a live workout image</h3>
+          </div>
+          <button type="button" className="exercise-drawer-close" onClick={onClose}>Close</button>
+        </div>
+        <p className="exercise-drawer-subtitle">Select an existing WordPress image or upload a new one without leaving the admin app.</p>
+        <div className="admin-media-picker-controls">
+          <label className="field-label field-label-wide admin-media-picker-search">
+            <span>Search media</span>
+            <input value={search} onChange={event => { setSearch(event.target.value); setPage(1) }} placeholder="Search by title or filename" />
+          </label>
+          <label className="btn-secondary small admin-media-picker-upload">
+            <input type="file" accept="image/*" onChange={handleUpload} disabled={uploading} />
+            {uploading ? 'Uploading…' : 'Upload image'}
+          </label>
+        </div>
+        {error ? <p className="error-msg">{error}</p> : null}
+        <div className="admin-media-picker-grid">
+          {loading ? <p className="settings-subtitle">Loading media…</p> : null}
+          {!loading && !items.length ? <p className="settings-subtitle">No images found for this search.</p> : null}
+          {items.map(item => {
+            const preview = item?.media_details?.sizes?.medium?.source_url || item?.media_details?.sizes?.thumbnail?.source_url || item?.source_url
+            const title = item?.title?.rendered || item?.slug || 'Untitled image'
+
+            return (
+              <button key={item.id} type="button" className="admin-media-picker-card" onClick={() => onSelect(frameIndex, item)}>
+                <img src={preview} alt="" />
+                <strong>{title}</strong>
+                <span>{item?.media_details?.width && item?.media_details?.height ? `${item.media_details.width} x ${item.media_details.height}` : 'WordPress image'}</span>
+              </button>
+            )
+          })}
+        </div>
+        <div className="admin-media-picker-pagination">
+          <button type="button" className="btn-outline small" onClick={() => setPage(current => Math.max(1, current - 1))} disabled={page <= 1 || loading}>Previous</button>
+          <span>Page {page}</span>
+          <button type="button" className="btn-outline small" onClick={() => setPage(current => current + 1)} disabled={loading || items.length < 24}>Next</button>
+        </div>
+      </aside>
+    </div>
   )
 }
