@@ -105,6 +105,42 @@ function isValidColorString(value) {
   return typeof value === 'string' && value.trim().length > 0
 }
 
+function parseHexColor(value) {
+  const normalized = String(value || '').trim().replace('#', '')
+  if (![3, 6].includes(normalized.length)) return null
+
+  const expanded = normalized.length === 3
+    ? normalized.split('').map(char => `${char}${char}`).join('')
+    : normalized
+
+  const red = Number.parseInt(expanded.slice(0, 2), 16)
+  const green = Number.parseInt(expanded.slice(2, 4), 16)
+  const blue = Number.parseInt(expanded.slice(4, 6), 16)
+
+  if ([red, green, blue].some(channel => Number.isNaN(channel))) {
+    return null
+  }
+
+  return { red, green, blue }
+}
+
+function getRelativeLuminance({ red, green, blue }) {
+  const channels = [red, green, blue].map(channel => {
+    const normalized = channel / 255
+    return normalized <= 0.03928
+      ? normalized / 12.92
+      : ((normalized + 0.055) / 1.055) ** 2.4
+  })
+
+  return (0.2126 * channels[0]) + (0.7152 * channels[1]) + (0.0722 * channels[2])
+}
+
+function getThemeMode(colors) {
+  const parsedBackground = parseHexColor(colors?.bg)
+  if (!parsedBackground) return 'light'
+  return getRelativeLuminance(parsedBackground) < 0.24 ? 'dark' : 'light'
+}
+
 function normalizeScheme(option, index) {
   const fallback = DEFAULT_COLOR_SCHEMES[index] ?? DEFAULT_COLOR_SCHEMES[0]
   const colors = option?.colors ?? {}
@@ -160,6 +196,7 @@ export function getStoredColorScheme() {
 
 export function applyColorScheme(value) {
   const scheme = getColorScheme(value)
+  const themeMode = getThemeMode(scheme.colors)
 
   if (typeof document !== 'undefined') {
     const root = document.documentElement
@@ -176,6 +213,8 @@ export function applyColorScheme(value) {
     root.style.setProperty('--success', scheme.colors.success)
     root.style.setProperty('--yellow', scheme.colors.yellow)
     root.dataset.colorScheme = scheme.id
+    root.dataset.themeMode = themeMode
+    root.style.colorScheme = themeMode
   }
 
   if (typeof window !== 'undefined') {

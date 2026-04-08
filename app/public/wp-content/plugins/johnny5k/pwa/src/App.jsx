@@ -1,5 +1,5 @@
-import { lazy, Suspense, useEffect, useState } from 'react'
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { lazy, Suspense, useEffect, useLayoutEffect, useState } from 'react'
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { onboardingApi } from './api/client'
 import { useAuthStore } from './store/authStore'
 import AppShell from './components/layout/AppShell'
@@ -12,6 +12,7 @@ const ResetPasswordScreen = lazy(() => import('./screens/auth/ResetPasswordScree
 const OnboardingRoutes = lazy(() => import('./screens/onboarding/OnboardingRoutes'))
 const DashboardScreen = lazy(() => import('./screens/dashboard/DashboardScreen'))
 const WorkoutScreen = lazy(() => import('./screens/workout/WorkoutScreen'))
+const ExerciseLibraryScreen = lazy(() => import('./screens/workout/ExerciseLibraryScreen'))
 const NutritionScreen = lazy(() => import('./screens/nutrition/NutritionScreen'))
 const BodyScreen = lazy(() => import('./screens/body/BodyScreen'))
 const AiScreen = lazy(() => import('./screens/ai/AiScreen'))
@@ -77,27 +78,52 @@ export default function App() {
   if (!ready) return <div className="splash">Loading...</div>
 
   return (
-    <Routes>
-      <Route path="/login" element={<LazyRoute><LoginScreen /></LazyRoute>} />
-      <Route path="/register" element={<LazyRoute><RegisterScreen /></LazyRoute>} />
-      <Route path="/forgot-password" element={<LazyRoute><ForgotPasswordScreen /></LazyRoute>} />
-      <Route path="/reset-password" element={<LazyRoute><ResetPasswordScreen /></LazyRoute>} />
-      <Route path="/onboarding/*" element={<RequireAuth><LazyRoute><OnboardingRoutes /></LazyRoute></RequireAuth>} />
-      <Route path="/" element={<RequireOnboarded><AppShell><LazyRoute><DashboardScreen /></LazyRoute></AppShell></RequireOnboarded>} />
-      <Route path="/dashboard" element={<RequireOnboarded><AppShell><LazyRoute><DashboardScreen /></LazyRoute></AppShell></RequireOnboarded>} />
-      <Route path="/workout" element={<RequireOnboarded><AppShell><LazyRoute><WorkoutScreen /></LazyRoute></AppShell></RequireOnboarded>} />
-      <Route path="/nutrition/*" element={<RequireOnboarded><AppShell><LazyRoute><NutritionScreen /></LazyRoute></AppShell></RequireOnboarded>} />
-      <Route path="/body" element={<RequireOnboarded><AppShell><LazyRoute><BodyScreen /></LazyRoute></AppShell></RequireOnboarded>} />
-      <Route path="/progress-photos" element={<RequireOnboarded><AppShell><LazyRoute><ProgressPhotosScreen /></LazyRoute></AppShell></RequireOnboarded>} />
-      <Route path="/rewards" element={<RequireOnboarded><AppShell><LazyRoute><RewardsScreen /></LazyRoute></AppShell></RequireOnboarded>} />
-      <Route path="/ai" element={<RequireOnboarded><AppShell><LazyRoute><AiScreen /></LazyRoute></AppShell></RequireOnboarded>} />
-      <Route path="/settings" element={<RequireOnboarded><AppShell><LazyRoute><SettingsScreen /></LazyRoute></AppShell></RequireOnboarded>} />
-      <Route path="/admin" element={<RequireAdmin><AppShell><LazyRoute><AdminScreen /></LazyRoute></AppShell></RequireAdmin>} />
-      <Route path="*"          element={<Navigate to="/dashboard" replace />} />
-    </Routes>
+    <>
+      <ScrollToTopOnRouteChange />
+      <Routes>
+        <Route path="/login" element={<LazyRoute><LoginScreen /></LazyRoute>} />
+        <Route path="/register" element={<LazyRoute><RegisterScreen /></LazyRoute>} />
+        <Route path="/forgot-password" element={<LazyRoute><ForgotPasswordScreen /></LazyRoute>} />
+        <Route path="/reset-password" element={<LazyRoute><ResetPasswordScreen /></LazyRoute>} />
+        <Route path="/onboarding/*" element={<RequireAuth><LazyRoute><OnboardingRoutes /></LazyRoute></RequireAuth>} />
+        <Route path="/" element={<RequireOnboarded><AppShell><LazyRoute><DashboardScreen /></LazyRoute></AppShell></RequireOnboarded>} />
+        <Route path="/dashboard" element={<RequireOnboarded><AppShell><LazyRoute><DashboardScreen /></LazyRoute></AppShell></RequireOnboarded>} />
+        <Route path="/workout" element={<RequireOnboarded><AppShell><LazyRoute><WorkoutScreen /></LazyRoute></AppShell></RequireOnboarded>} />
+        <Route path="/workout/library" element={<RequireOnboarded><AppShell><LazyRoute><ExerciseLibraryScreen /></LazyRoute></AppShell></RequireOnboarded>} />
+        <Route path="/nutrition/*" element={<RequireOnboarded><AppShell><LazyRoute><NutritionScreen /></LazyRoute></AppShell></RequireOnboarded>} />
+        <Route path="/body" element={<RequireOnboarded><AppShell><LazyRoute><BodyScreen /></LazyRoute></AppShell></RequireOnboarded>} />
+        <Route path="/progress-photos" element={<RequireOnboarded><AppShell><LazyRoute><ProgressPhotosScreen /></LazyRoute></AppShell></RequireOnboarded>} />
+        <Route path="/rewards" element={<RequireOnboarded><AppShell><LazyRoute><RewardsScreen /></LazyRoute></AppShell></RequireOnboarded>} />
+        <Route path="/ai" element={<RequireOnboarded><AppShell><LazyRoute><AiScreen /></LazyRoute></AppShell></RequireOnboarded>} />
+        <Route path="/settings" element={<RequireOnboarded><AppShell><LazyRoute><SettingsScreen /></LazyRoute></AppShell></RequireOnboarded>} />
+        <Route path="/admin" element={<RequireAdmin><AppShell><LazyRoute><AdminScreen /></LazyRoute></AppShell></RequireAdmin>} />
+        <Route path="*"          element={<Navigate to="/dashboard" replace />} />
+      </Routes>
+    </>
   )
 }
 
 function LazyRoute({ children }) {
   return <Suspense fallback={<div className="screen-loading">Loading…</div>}>{children}</Suspense>
+}
+
+function ScrollToTopOnRouteChange() {
+  const location = useLocation()
+
+  useLayoutEffect(() => {
+    if (typeof window === 'undefined') {
+      return
+    }
+
+    window.scrollTo(0, 0)
+    document.documentElement.scrollTop = 0
+    document.body.scrollTop = 0
+
+    const shellScroller = document.querySelector('[data-route-scroll-root="true"]')
+    if (shellScroller instanceof HTMLElement) {
+      shellScroller.scrollTo(0, 0)
+    }
+  }, [location.pathname])
+
+  return null
 }

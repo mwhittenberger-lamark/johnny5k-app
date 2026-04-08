@@ -274,7 +274,7 @@ class AiService {
 				$context_data['target_calories'] ?: 'unknown',
 				$context_data['target_protein_g'] ?: 'unknown'
 			)
-			: 'Estimate the nutrition for this meal photo. Return as JSON: {meal_name, items:[{name, serving_size, calories, protein_g, carbs_g, fat_g}], total_calories, total_protein_g, total_carbs_g, total_fat_g, confidence(0-1)}.';
+			: 'Identify the foods in this meal photo and estimate portion size for each item. Return only valid JSON in this exact shape: {meal_name, items:[{name, serving_amount, serving_unit, estimated_grams, portion_description, calories, protein_g, carbs_g, fat_g, confidence_food, confidence_portion}], total_calories, total_protein_g, total_carbs_g, total_fat_g, confidence}. estimated_grams should be your best weight estimate for that specific food portion. serving_unit should be concise labels like piece, bowl, cup, scoop, serving, slice, or oz. portion_description should be brief. Include rough calories and macros as a fallback estimate even when uncertain.';
 
 		$messages = [
 			[
@@ -304,6 +304,7 @@ class AiService {
 			$parsed = self::normalise_label_analysis( $parsed );
 		} else {
 			$parsed = self::normalise_meal_analysis( $parsed );
+			$parsed = NutritionSourceService::enrich_meal_analysis( $parsed );
 		}
 
 		return $parsed;
@@ -352,7 +353,7 @@ class AiService {
 			return new \WP_Error( 'ai_parse_error', 'Could not parse AI food analysis response.' );
 		}
 
-		return self::normalise_food_analysis( $parsed );
+		return NutritionSourceService::enrich_food_analysis( self::normalise_food_analysis( $parsed ) );
 	}
 
 	/**
@@ -1010,7 +1011,7 @@ PROMPT;
 	 * (from the admin editor) with real-time user context and optional mode instructions.
 	 *
 	 * @param int    $user_id
-	 * @param string $mode  One of: general, coach, nutrition, workout_review, accountability, planning, education
+	 * @param string $mode  One of: general, coach, live_workout, nutrition, workout_review, accountability, planning, education
 	 */
 	public static function build_system_prompt( int $user_id, string $mode = 'general', array $context_overrides = [] ): string {
 		$admin_prompt = get_option( 'jf_johnny_system_prompt', '' );
@@ -1028,17 +1029,17 @@ PROMPT;
 		$ctx_block = $ctx_lines ? "\n\nUser context:\n" . implode( "\n", $ctx_lines ) : '';
 		$memory_block = self::format_durable_memory_block( $user_id );
 		$follow_up_block = self::format_follow_up_history_block( $user_id );
-		$tool_note = "\n\nYou may use Johnny5k backend tools to read live user data and perform supported actions. Before answering about meal count, what the user ate for dinner, pantry inventory, available recipes, or whether today's workout already happened, read the live data with the relevant tools instead of guessing from memory. When the user clearly asks you to log steps, log food, update pantry, adjust a workout, create a training plan, or schedule a text reminder, do it with the available tools instead of only describing what they should do. If a required detail is missing or the request is materially ambiguous, ask one short follow-up question instead of guessing. Never claim an action succeeded unless a tool confirmed it. Never create or edit a workout plan when the user is asking about meals, recipes, pantry, groceries, or macros. When the user says today, yesterday, tomorrow, tonight, or last night, resolve that against the current local date and time above. Do not invent a calendar date for relative time references. If the user did not provide a literal YYYY-MM-DD date, omit the date argument and let the backend resolve it from the user's local date. If you estimate food or recovery details, say plainly that it is an estimate and tell the user what detail would make it more accurate.";
+		$tool_note = "\n\nYou may use Johnny5k backend tools to read live user data and perform supported actions. Before answering about meal count, what the user ate for dinner, exact serving amounts or units, pantry inventory, available recipes, exact workout reps or sets, or whether today's workout already happened, read the live data with the relevant tools instead of guessing from memory. When the user clearly asks you to log steps, log food, update pantry, adjust a workout, create a training plan, or schedule a text reminder, do it with the available tools instead of only describing what they should do. If a required detail is missing or the request is materially ambiguous, ask one short follow-up question instead of guessing. Never claim an action succeeded unless a tool confirmed it. Never create or edit a workout plan when the user is asking about meals, recipes, pantry, groceries, or macros. When the user says today, yesterday, tomorrow, tonight, or last night, resolve that against the current local date and time above. Do not invent a calendar date for relative time references. If the user did not provide a literal YYYY-MM-DD date, omit the date argument and let the backend resolve it from the user's local date. If you estimate food or recovery details, say plainly that it is an estimate and tell the user what detail would make it more accurate.";
 		$format_note = "\n\nResponse format rules: default to one short paragraph or two short paragraphs. Do not use markdown headings. Do not produce canned sections like \"Next steps:\" or label-heavy templates like \"Calorie Target:\" unless the user explicitly asks for a breakdown. Do not pad with generic advice like \"track each meal\" or \"consider a workout\" unless it is specifically grounded in the user's current data. Prefer one concrete next move over a five-point plan. Do not end with an upsell question like \"Would you like recipe suggestions?\" unless the user asked for recipes, meal ideas, or options.";
 
 		$mode_block = '';
-		$mode_instr = self::get_mode_instructions( $mode );
+		$mode_instr = self::get_mode_instructions( $mode, $context_overrides );
 		if ( $mode_instr ) {
 			$mode_block = "\n\n" . $mode_instr;
 		}
 
 		// Brief action-capability note so the model can optionally return structured actions.
-		$action_block = "\n\nAction capability: When genuinely useful, you may wrap your response as JSON — {\"reply\":\"...\",\"why\":\"short reason grounded in the user's data\",\"confidence\":\"high|medium|low\",\"context_used\":[\"brief context bullet\"],\"actions\":[{\"type\":\"action_name\",\"payload\":{}}]} — so the app can take action and show your reasoning. Supported types: open_screen (payload: {\"screen\":\"name\"}), show_nutrition_summary, show_grocery_gap, highlight_goal_issue, create_saved_meal_draft (payload: {\"name\":\"meal name\",\"meal_type\":\"lunch\",\"items\":[]}), suggest_recipe_plan, queue_follow_up (payload: {\"prompt\":\"short follow-up prompt\",\"reason\":\"why ask later\",\"due_at\":\"YYYY-MM-DD HH:MM\",\"next_step\":\"what to do\",\"starter_prompt\":\"prompt to run later\"}), run_workflow (payload: {\"workflow\":\"fix_macros\",\"title\":\"short title\",\"summary\":\"why this workflow helps\",\"steps\":[\"step one\"],\"screen\":\"nutrition\",\"meal_type\":\"dinner\",\"starter_prompt\":\"prompt to kick it off\"}). If no action is needed, respond in plain text.";
+		$action_block = "\n\nAction capability: When genuinely useful, you may wrap your response as JSON — {\"reply\":\"...\",\"why\":\"short reason grounded in the user's data\",\"confidence\":\"high|medium|low\",\"context_used\":[\"brief context bullet\"],\"actions\":[{\"type\":\"action_name\",\"payload\":{}}]} — so the app can take action and show your reasoning. Supported types: open_screen (payload: {\"screen\":\"name\"}), open_exercise_demo (payload: {\"exercise_name\":\"exercise\",\"query\":\"youtube search terms\"}), show_nutrition_summary, show_grocery_gap, highlight_goal_issue, create_saved_meal_draft (payload: {\"name\":\"meal name\",\"meal_type\":\"lunch\",\"items\":[]}), suggest_recipe_plan, queue_follow_up (payload: {\"prompt\":\"short follow-up prompt\",\"reason\":\"why ask later\",\"due_at\":\"YYYY-MM-DD HH:MM\",\"next_step\":\"what to do\",\"starter_prompt\":\"prompt to run later\"}), run_workflow (payload: {\"workflow\":\"fix_macros\",\"title\":\"short title\",\"summary\":\"why this workflow helps\",\"steps\":[\"step one\"],\"screen\":\"nutrition\",\"meal_type\":\"dinner\",\"starter_prompt\":\"prompt to kick it off\"}). If no action is needed, respond in plain text.";
 
 		return $persona . $ctx_block . $memory_block . $follow_up_block . $tool_note . $format_note . $mode_block . $action_block;
 	}
@@ -1182,7 +1183,7 @@ RULES;
 	/**
 	 * Return mode-specific instructions to append to the system prompt.
 	 */
-	private static function get_mode_instructions( string $mode ): string {
+	private static function get_mode_instructions( string $mode, array $context_overrides = [] ): string {
 		switch ( $mode ) {
 			case 'nutrition':
 				return 'Mode: Nutrition coaching. Be practical and macro-aware. Focus on food swaps, meal timing, and hitting macro targets. Give specific, actionable food suggestions tied to the user\'s current numbers. Prefer a concrete next meal or two over abstract planning language. Do not invent arbitrary meal-count goals unless the user or data specifically supports them.';
@@ -1194,11 +1195,48 @@ RULES;
 				return 'Mode: Education. Explain the why behind advice. Add more context than usual. Be thorough and clear, not rushed.';
 			case 'workout_review':
 				return 'Mode: Workout review. Frame everything around performance and recovery. Reference sets, reps, and progression. Note what to push next session.';
+			case 'live_workout':
+				return self::get_live_workout_mode_instructions( $context_overrides );
 			case 'coach':
 				return 'Mode: Coaching session. Act as a focused personal trainer. Ask a clarifying question if something is unclear. Hold the user accountable to their stated goals.';
 			default:
 				return '';
 		}
+	}
+
+	private static function get_live_workout_mode_instructions( array $context_overrides = [] ): string {
+		$event_type      = sanitize_key( (string) ( $context_overrides['event_type'] ?? '' ) );
+		$current_exercise = sanitize_text_field( (string) ( $context_overrides['active_exercise'] ?? '' ) );
+		$current_set      = max( 0, (int) ( $context_overrides['current_set_number'] ?? 0 ) );
+		$rest_seconds     = max( 0, (int) ( $context_overrides['last_rest_seconds'] ?? 0 ) );
+		$rep_target       = sanitize_text_field( (string) ( $context_overrides['active_target_reps'] ?? '' ) );
+
+		$base = 'Mode: Live workout coaching. You are inside an active training session with the user right now. Respond like a coach in the room, not like a general advice chat. Keep replies to 1 or 2 short sentences unless the user explicitly asks for more. Every reply should either give a useful cue, a pacing instruction, a progression note, a recovery reminder, or a brief shot of encouragement grounded in the current workout state. Never give broad lifestyle advice here unless the user explicitly asks for it. Do not restate the entire session context back to the user. Treat timing as real: between sets aim to keep rest around 30 to 60 seconds; between exercises aim to keep transitions around 2 to 3 minutes unless safety or a heavy compound lift clearly justifies longer.';
+
+		$event_instruction = match ( $event_type ) {
+			'set_saved' => 'The user just saved a set. Comment on the logged performance directly. If reps, load, or RiR suggest they are overshooting or sandbagging, say it plainly and give one adjustment for the next set.',
+			'set_changed' => 'The user changed sets without logging yet. Give a fast cue about what to focus on for the upcoming set.',
+			'exercise_changed' => 'The user changed exercises. Re-orient them quickly to the new movement and setup. If transition time is dragging, tell them to get moving.',
+			'user_question' => 'The user asked a direct question mid-session. Answer clearly and briefly. If they ask about how to perform or demo the movement, prefer returning an open_exercise_demo action tied to the current exercise.',
+			'session_opened' => 'The user just entered live workout mode. Set the tone, make it feel live, and point them at the next immediate move.',
+			default => 'Treat this as a live workout state update and give the most useful next cue for the exact moment.',
+		};
+
+		$demo_instruction = 'When the user asks to see how to do the movement, asks for a demo, asks about form for the current lift, or asks how an exercise should look, return a structured open_exercise_demo action using the current exercise name and a YouTube-ready query. Keep the reply short and let the action do the navigation.';
+
+		$detail_bits = array_filter([
+			'' !== $current_exercise ? sprintf( 'Current exercise: %s.', $current_exercise ) : '',
+			$current_set > 0 ? sprintf( 'Current set: %d.', $current_set ) : '',
+			'' !== $rep_target ? sprintf( 'Target reps: %s.', $rep_target ) : '',
+			$rest_seconds > 0 ? sprintf( 'Rest elapsed: %d seconds.', $rest_seconds ) : '',
+		]);
+
+		return trim( implode( ' ', array_filter([
+			$base,
+			$event_instruction,
+			$demo_instruction,
+			implode( ' ', $detail_bits ),
+		])) );
 	}
 
 	/**
@@ -1247,6 +1285,12 @@ RULES;
 
 		if ( ! empty( $context['last_meal_logged_at'] ) ) {
 			$lines[] = "Last meal logged: {$context['last_meal_logged_at']}";
+		}
+		if ( ! empty( $context['latest_meal_item_summary'] ) ) {
+			$lines[] = "Latest meal detail: {$context['latest_meal_item_summary']}";
+		}
+		if ( ! empty( $context['latest_workout_set_summary'] ) ) {
+			$lines[] = "Latest workout detail: {$context['latest_workout_set_summary']}";
 		}
 
 		if ( isset( $context['pantry_item_count'] ) )      $lines[] = "Pantry items: {$context['pantry_item_count']}";
@@ -1618,6 +1662,8 @@ RULES;
 				$last_meal_logged_display = (string) $last_meal_logged_at;
 			}
 		}
+		$latest_meal_item_summary = self::get_latest_meal_item_summary( $user_id );
+		$latest_workout_set_summary = self::get_latest_workout_set_summary( $user_id );
 
 		// ── Pantry & saved meals counts ───────────────────────────────────────
 		$pantry_count      = (int) $wpdb->get_var( $wpdb->prepare(
@@ -1682,6 +1728,8 @@ RULES;
 			'days_with_meal_logs_last_7_days' => $days_logged_7d,
 			'meal_logs_last_7_days'      => $meals_logged_7d,
 			'last_meal_logged_at'        => $last_meal_logged_display,
+			'latest_meal_item_summary'   => $latest_meal_item_summary,
+			'latest_workout_set_summary' => $latest_workout_set_summary,
 			'pantry_item_count'          => $pantry_count,
 			'saved_meals_count'          => $saved_meals_count,
 			'saved_meal_logs_last_30_days' => $saved_meal_logs_30d,
@@ -2021,6 +2069,8 @@ RULES;
 	}
 
 	private static function dashboard_review_cache_payload( array $snapshot ): array {
+		$training_status = is_array( $snapshot['training_status'] ?? null ) ? $snapshot['training_status'] : [];
+
 		return [
 			'date'              => (string) ( $snapshot['date'] ?? '' ),
 			'goal_type'         => (string) ( $snapshot['goal']->goal_type ?? '' ),
@@ -2035,7 +2085,11 @@ RULES;
 			'sleep_hours'       => (float) ( $snapshot['sleep']->hours_sleep ?? 0 ),
 			'sleep_quality'     => (string) ( $snapshot['sleep']->sleep_quality ?? '' ),
 			'session_completed' => (bool) ( $snapshot['session']->completed ?? false ),
-			'planned_day_type'  => (string) ( $snapshot['session']->planned_day_type ?? $snapshot['today_schedule']->day_type ?? '' ),
+			'planned_day_type'  => (string) ( $training_status['scheduled_day_type'] ?? $snapshot['session']->planned_day_type ?? $snapshot['today_schedule']->day_type ?? '' ),
+			'training_status'   => (string) ( $training_status['status'] ?? '' ),
+			'training_recorded' => ! empty( $training_status['recorded'] ),
+			'training_recorded_type' => (string) ( $training_status['recorded_type'] ?? '' ),
+			'has_cardio_log_today' => ! empty( $training_status['cardio_log'] ),
 			'score_7d'          => (int) ( $snapshot['score_7d'] ?? 0 ),
 			'streaks'           => (array) ( $snapshot['streaks'] ?? [] ),
 			'recovery_mode'     => (string) ( $snapshot['recovery_summary']['mode'] ?? '' ),
@@ -2051,11 +2105,18 @@ RULES;
 		$steps = $snapshot['steps'] ?? [];
 		$sleep = $snapshot['sleep'] ?? (object) [];
 		$session = $snapshot['session'] ?? (object) [];
+		$training_status = is_array( $snapshot['training_status'] ?? null ) ? $snapshot['training_status'] : [];
 		$today_schedule = $snapshot['today_schedule'] ?? (object) [];
 		$tomorrow = $snapshot['tomorrow_preview'] ?? (object) [];
 		$recovery = $snapshot['recovery_summary'] ?? [];
 		$streaks = $snapshot['streaks'] ?? [];
 		$adjustment = $snapshot['calorie_adjustment_preview'] ?? [];
+		$scheduled_day_type = (string) ( $training_status['scheduled_day_type'] ?? $session->planned_day_type ?? $today_schedule->day_type ?? '' );
+		$training_state = (string) ( $training_status['status'] ?? 'open' );
+		$training_recorded = ! empty( $training_status['recorded'] );
+		$training_recorded_type = (string) ( $training_status['recorded_type'] ?? '' );
+		$cardio_log = is_array( $training_status['cardio_log'] ?? null ) ? $training_status['cardio_log'] : [];
+		$matching_session = is_array( $training_status['matching_workout_session'] ?? null ) ? $training_status['matching_workout_session'] : [];
 
 		$lines = [
 			sprintf( 'Date: %s', (string) ( $snapshot['date'] ?? current_time( 'Y-m-d' ) ) ),
@@ -2064,7 +2125,13 @@ RULES;
 			sprintf( 'Targets: %d calories, %.0f g protein, %d steps, %.1f hours sleep.', (int) ( $goal->target_calories ?? 0 ), (float) ( $goal->target_protein_g ?? 0 ), (int) ( $steps['target'] ?? 0 ), (float) ( $goal->target_sleep_hours ?? 0 ) ),
 			sprintf( 'Steps today: %d.', (int) ( $steps['today'] ?? 0 ) ),
 			sprintf( 'Sleep last night: %.1f hours%s.', (float) ( $sleep->hours_sleep ?? 0 ), ! empty( $sleep->sleep_quality ) ? sprintf( ' (%s quality)', (string) $sleep->sleep_quality ) : '' ),
-			sprintf( 'Workout today: %s%s.', ! empty( $session->completed ) ? 'completed' : 'not completed', ! empty( $session->planned_day_type ) || ! empty( $today_schedule->day_type ) ? ' for ' . str_replace( '_', ' ', (string) ( $session->planned_day_type ?? $today_schedule->day_type ) ) : '' ),
+			sprintf( 'Training today: scheduled for %s. Status: %s. Recorded for schedule: %s%s%s.',
+				'' !== $scheduled_day_type ? str_replace( '_', ' ', $scheduled_day_type ) : 'open recovery',
+				$training_state,
+				$training_recorded ? 'yes' : 'no',
+				'' !== $training_recorded_type ? ' via ' . str_replace( '_', ' ', $training_recorded_type ) : '',
+				! empty( $cardio_log ) && ! empty( $cardio_log['duration_minutes'] ) ? sprintf( ' Cardio log: %d min %s.', (int) $cardio_log['duration_minutes'], (string) ( $cardio_log['cardio_type'] ?? 'cardio' ) ) : ( ! empty( $matching_session ) ? ' Matching workout session is present.' : '' )
+			),
 			sprintf( 'Weekly score: %d.', (int) ( $snapshot['score_7d'] ?? 0 ) ),
 			sprintf( 'Streaks: meals %d, training %d, sleep %d, cardio %d.', (int) ( $streaks['logging_days'] ?? 0 ), (int) ( $streaks['training_days'] ?? 0 ), (int) ( $streaks['sleep_days'] ?? 0 ), (int) ( $streaks['cardio_days'] ?? 0 ) ),
 			sprintf( 'Recovery mode: %s. Headline: %s', (string) ( $recovery['mode'] ?? 'normal' ), (string) ( $recovery['headline'] ?? '' ) ),
@@ -2079,8 +2146,8 @@ RULES;
 			$lines[] = sprintf( 'Skip warning active: %d skips in the last 30 days.', (int) ( $snapshot['skip_count_30d'] ?? 0 ) );
 		}
 
-		$lines[] = 'Return only valid JSON with this exact shape: {title, message, next_step, encouragement, starter_prompt}.';
-		$lines[] = 'Rules: title 4-10 words. message 2-3 sentences max reviewing current progress. next_step 1 sentence telling the user what to do next. encouragement 1 supportive sentence. starter_prompt 1 sentence the app can send back to Johnny for a deeper follow-up about today. Be specific to the data. Do not invent metrics. Keep the tone warm, direct, and encouraging.';
+		$lines[] = 'Return only valid JSON with this exact shape: {title, message, next_step, next_step_label, next_step_hint, backup_step, encouragement, starter_prompt}.';
+		$lines[] = 'Rules: title 4-10 words. message 2-3 sentences max reviewing current progress. next_step 1 sentence telling the user what to do next. next_step_label 2-5 words, optional but useful when you can frame the move more specifically than "Next step". next_step_hint 1 short supporting sentence, optional. backup_step 1 short fallback action the user can do if the main next step is not practical right now, optional. encouragement 1 supportive sentence. starter_prompt 1 sentence the app can send back to Johnny for a deeper follow-up about today. Be specific to the data. Do not invent metrics. Keep the tone warm, direct, and encouraging.';
 
 		return implode( "\n", $lines );
 	}
@@ -2089,8 +2156,12 @@ RULES;
 		$title = sanitize_text_field( (string) ( $parsed['title'] ?? '' ) );
 		$message = sanitize_textarea_field( (string) ( $parsed['message'] ?? '' ) );
 		$next_step = sanitize_textarea_field( (string) ( $parsed['next_step'] ?? '' ) );
+		$next_step_label = sanitize_text_field( (string) ( $parsed['next_step_label'] ?? '' ) );
+		$next_step_hint = sanitize_textarea_field( (string) ( $parsed['next_step_hint'] ?? '' ) );
+		$backup_step = sanitize_textarea_field( (string) ( $parsed['backup_step'] ?? '' ) );
 		$encouragement = sanitize_textarea_field( (string) ( $parsed['encouragement'] ?? '' ) );
 		$starter_prompt = sanitize_textarea_field( (string) ( $parsed['starter_prompt'] ?? '' ) );
+		$next_step_meta = self::dashboard_review_next_step_meta( $snapshot );
 
 		if ( '' === $title ) {
 			$title = 'Johnny reviewed your board';
@@ -2112,10 +2183,24 @@ RULES;
 			$starter_prompt = 'Review my current dashboard stats and tell me exactly what I should do next today.';
 		}
 
+		if ( '' !== $next_step_label ) {
+			$next_step_meta['label'] = $next_step_label;
+		}
+
+		if ( '' !== $next_step_hint ) {
+			$next_step_meta['hint'] = $next_step_hint;
+		}
+
+		if ( '' === $backup_step ) {
+			$backup_step = self::dashboard_review_backup_step( $snapshot );
+		}
+
 		return [
 			'title' => $title,
 			'message' => $message,
 			'next_step' => $next_step,
+			'next_step_meta' => $next_step_meta,
+			'backup_step' => $backup_step,
 			'encouragement' => $encouragement,
 			'starter_prompt' => $starter_prompt,
 			'metrics' => self::dashboard_review_metrics( $snapshot ),
@@ -2127,13 +2212,145 @@ RULES;
 		$steps = $snapshot['steps'] ?? [];
 		$nutrition = $snapshot['nutrition_totals'] ?? [];
 		$sleep = $snapshot['sleep'] ?? (object) [];
+		$training_status = is_array( $snapshot['training_status'] ?? null ) ? $snapshot['training_status'] : [];
+		$scheduled_day_type = (string) ( $training_status['scheduled_day_type'] ?? '' );
+		$training_metric = 'Training open';
+
+		if ( 'rest' === $scheduled_day_type ) {
+			$training_metric = 'Rest day scheduled';
+		} elseif ( ! empty( $training_status['recorded'] ) ) {
+			$training_metric = sprintf( '%s logged', ucfirst( (string) ( $training_status['recorded_type'] ?? 'training' ) ) );
+		} elseif ( '' !== $scheduled_day_type ) {
+			$training_metric = sprintf( '%s still open', str_replace( '_', ' ', ucfirst( $scheduled_day_type ) ) );
+		}
 
 		return array_values( array_filter( [
-			sprintf( 'Weekly score %d', (int) ( $snapshot['score_7d'] ?? 0 ) ),
-			sprintf( 'Steps %s / %s', number_format_i18n( (int) ( $steps['today'] ?? 0 ) ), number_format_i18n( (int) ( $steps['target'] ?? 0 ) ) ),
-			! empty( $sleep->hours_sleep ) ? sprintf( 'Sleep %.1fh', (float) $sleep->hours_sleep ) : 'Sleep not logged',
-			! empty( $goal->target_protein_g ) ? sprintf( 'Protein %d / %dg', (int) round( (float) ( $nutrition['protein_g'] ?? 0 ) ), (int) round( (float) $goal->target_protein_g ) ) : sprintf( 'Protein %dg', (int) round( (float) ( $nutrition['protein_g'] ?? 0 ) ) ),
+			[
+				'key'   => 'weekly_score',
+				'label' => 'Weekly score',
+				'value' => (string) (int) ( $snapshot['score_7d'] ?? 0 ),
+			],
+			[
+				'key'   => 'training',
+				'label' => 'Training',
+				'value' => $training_metric,
+			],
+			[
+				'key'   => 'steps',
+				'label' => 'Steps',
+				'value' => sprintf( '%s / %s', number_format_i18n( (int) ( $steps['today'] ?? 0 ) ), number_format_i18n( (int) ( $steps['target'] ?? 0 ) ) ),
+			],
+			[
+				'key'   => 'sleep',
+				'label' => 'Sleep',
+				'value' => ! empty( $sleep->hours_sleep ) ? sprintf( '%.1fh', (float) $sleep->hours_sleep ) : 'Not logged',
+			],
+			[
+				'key'   => 'protein',
+				'label' => 'Protein',
+				'value' => ! empty( $goal->target_protein_g ) ? sprintf( '%d / %dg', (int) round( (float) ( $nutrition['protein_g'] ?? 0 ) ), (int) round( (float) $goal->target_protein_g ) ) : sprintf( '%dg', (int) round( (float) ( $nutrition['protein_g'] ?? 0 ) ) ),
+			],
 		] ) );
+	}
+
+	private static function dashboard_review_next_step_meta( array $snapshot ): array {
+		$training_status = is_array( $snapshot['training_status'] ?? null ) ? $snapshot['training_status'] : [];
+		$planned_day_type = (string) ( $training_status['scheduled_day_type'] ?? $snapshot['today_schedule']->day_type ?? '' );
+		$recorded_type = (string) ( $training_status['recorded_type'] ?? '' );
+		$sleep_hours = (float) ( $snapshot['sleep']->hours_sleep ?? 0 );
+		$target_sleep = (float) ( $snapshot['goal']->target_sleep_hours ?? 8 );
+		$steps_today = (int) ( $snapshot['steps']['today'] ?? 0 );
+		$steps_target = max( 1, (int) ( $snapshot['steps']['target'] ?? 8000 ) );
+		$protein = (float) ( $snapshot['nutrition_totals']['protein_g'] ?? 0 );
+		$protein_target = (float) ( $snapshot['goal']->target_protein_g ?? 0 );
+		$score_7d = (int) ( $snapshot['score_7d'] ?? 0 );
+
+		if ( 'cardio' === $planned_day_type && empty( $training_status['recorded'] ) ) {
+			return [
+				'label' => 'Conditioning focus',
+				'hint'  => 'Clear the open cardio box before the day gets noisy.',
+				'icon'  => 'bolt',
+			];
+		}
+
+		if ( 'rest' === $planned_day_type || 'rest' === $recorded_type ) {
+			return [
+				'label' => 'Recovery focus',
+				'hint'  => 'Keep the easy basics sharp so tomorrow starts cleaner.',
+				'icon'  => 'star',
+			];
+		}
+
+		if ( $sleep_hours > 0 && $sleep_hours < max( 6.5, $target_sleep - 1 ) ) {
+			return [
+				'label' => 'Energy saver',
+				'hint'  => 'Keep output crisp and let recovery carry more of the load.',
+				'icon'  => 'coach',
+			];
+		}
+
+		if ( $steps_today < (int) round( $steps_target * 0.55 ) ) {
+			return [
+				'label' => 'Movement move',
+				'hint'  => 'The fastest way to rescue the board is usually a short walk.',
+				'icon'  => 'bolt',
+			];
+		}
+
+		if ( $protein_target > 0 && $protein < ( $protein_target * 0.55 ) ) {
+			return [
+				'label' => 'Meal anchor',
+				'hint'  => 'One decisive protein-first meal can steady the rest of the day.',
+				'icon'  => 'star',
+			];
+		}
+
+		if ( $score_7d >= 80 ) {
+			return [
+				'label' => 'Protect the run',
+				'hint'  => 'Good days pay off most when you avoid adding cleanup later.',
+				'icon'  => 'flame',
+			];
+		}
+
+		return [
+			'label' => 'Do this now',
+			'hint'  => 'Handle the highest-leverage action before the day gets louder.',
+			'icon'  => 'coach',
+		];
+	}
+
+	private static function dashboard_review_backup_step( array $snapshot ): string {
+		$training_status = is_array( $snapshot['training_status'] ?? null ) ? $snapshot['training_status'] : [];
+		$planned_day_type = (string) ( $training_status['scheduled_day_type'] ?? $snapshot['today_schedule']->day_type ?? '' );
+		$sleep_hours = (float) ( $snapshot['sleep']->hours_sleep ?? 0 );
+		$target_sleep = (float) ( $snapshot['goal']->target_sleep_hours ?? 8 );
+		$steps_today = (int) ( $snapshot['steps']['today'] ?? 0 );
+		$steps_target = max( 1, (int) ( $snapshot['steps']['target'] ?? 8000 ) );
+		$protein = (float) ( $snapshot['nutrition_totals']['protein_g'] ?? 0 );
+		$protein_target = (float) ( $snapshot['goal']->target_protein_g ?? 0 );
+
+		if ( 'cardio' === $planned_day_type && empty( $training_status['recorded'] ) ) {
+			return 'If you cannot do the full cardio block yet, take a brisk 10-minute walk now so the day starts moving in the right direction.';
+		}
+
+		if ( 'rest' === $planned_day_type || 'rest' === (string) ( $training_status['recorded_type'] ?? '' ) ) {
+			return 'If recovery still feels hard to organize, start with a protein-first meal and an easy walk.';
+		}
+
+		if ( $sleep_hours > 0 && $sleep_hours < max( 6.5, $target_sleep - 1 ) ) {
+			return 'If the full plan feels too aggressive, shrink the ask and just protect food quality plus bedtime.';
+		}
+
+		if ( $steps_today < (int) round( $steps_target * 0.55 ) ) {
+			return 'If you cannot fit a longer walk, stack two short movement blocks before dinner.';
+		}
+
+		if ( $protein_target > 0 && $protein < ( $protein_target * 0.55 ) ) {
+			return 'If a full meal is not realistic yet, start with a high-protein snack that keeps the board moving.';
+		}
+
+		return 'If the main move is blocked, choose the smallest clean action you can finish in the next 10 minutes.';
 	}
 
 	private static function tool_registry(): array {
@@ -2161,7 +2378,7 @@ RULES;
 			'get_recent_meals' => [
 				'read_only'   => true,
 				'enabled'     => true,
-				'description' => 'Get detailed logged meals for a specific date, optionally narrowed to breakfast, lunch, dinner, snack, or shake.',
+				'description' => 'Get detailed logged meals for a specific date, optionally narrowed to breakfast, lunch, dinner, snack, or shake. Includes item-level food names, serving amounts, serving units, estimated grams when available, and macros.',
 				'parameters'  => [
 					'type'                 => 'object',
 					'properties'           => [
@@ -2207,7 +2424,7 @@ RULES;
 			'get_current_workout' => [
 				'read_only'   => true,
 				'enabled'     => true,
-				'description' => 'Get the user’s current or today’s workout session and planned exercises.',
+				'description' => 'Get the user’s current or today’s workout session and exercises, including logged sets, reps, weights, and the most recent completed workout details.',
 				'parameters'  => [ 'type' => 'object', 'properties' => $empty_object, 'additionalProperties' => false ],
 			],
 			'log_steps' => [
@@ -2387,7 +2604,7 @@ RULES;
 
 		$workout_requested = self::message_contains_any( $message, $workout_keywords );
 		$nutrition_requested = self::message_contains_any( $message, $nutrition_keywords );
-		$workout_surface = in_array( $mode, [ 'coach', 'workout_review' ], true ) || in_array( $current_screen, [ 'workout', 'workouts' ], true );
+		$workout_surface = in_array( $mode, [ 'coach', 'live_workout', 'workout_review' ], true ) || in_array( $current_screen, [ 'workout', 'workouts' ], true );
 
 		return [
 			'workout_mutation_allowed' => $workout_requested || ( $workout_surface && ! $nutrition_requested ),
@@ -2698,11 +2915,26 @@ RULES;
 		$today_session = is_array( $today_payload['session'] ?? null ) ? $today_payload['session'] : $active_session;
 		$today_exercises = is_array( $today_payload['exercises'] ?? null ) ? $today_payload['exercises'] : $active_exercises;
 		$last_completed = self::get_latest_completed_workout_session_payload( $user_id );
+		$snapshot = \Johnny5k\REST\DashboardController::get_daily_snapshot_data( $user_id );
+		$training_status = is_array( $snapshot['training_status'] ?? null ) ? $snapshot['training_status'] : [];
 
 		return [
 			'session'      => $active_session,
 			'session_mode' => (string) ( $workout['session_mode'] ?? 'normal' ),
-			'exercises'    => array_map( static function( array $exercise ): array {
+			'exercises'    => array_map( static function( $exercise ): array {
+				$exercise = is_array( $exercise ) ? $exercise : (array) $exercise;
+				$sets = array_map( static function( $set ): array {
+					$payload = is_array( $set ) ? $set : (array) $set;
+					return [
+						'set_number' => (int) ( $payload['set_number'] ?? 0 ),
+						'reps'       => (int) ( $payload['reps'] ?? 0 ),
+						'weight'     => isset( $payload['weight'] ) ? (float) $payload['weight'] : null,
+						'rir'        => isset( $payload['rir'] ) ? (int) $payload['rir'] : null,
+						'rpe'        => isset( $payload['rpe'] ) ? (float) $payload['rpe'] : null,
+						'completed'  => ! empty( $payload['completed'] ),
+					];
+				}, is_array( $exercise['sets'] ?? null ) ? $exercise['sets'] : [] );
+
 				return [
 					'id'                  => (int) ( $exercise['id'] ?? 0 ),
 					'exercise_id'         => (int) ( $exercise['exercise_id'] ?? 0 ),
@@ -2714,23 +2946,30 @@ RULES;
 					'target_sets'         => (int) ( $exercise['target_sets'] ?? 0 ),
 					'target_rep_min'      => (int) ( $exercise['target_rep_min'] ?? 0 ),
 					'target_rep_max'      => (int) ( $exercise['target_rep_max'] ?? 0 ),
-					'swap_options'        => array_map( static function( array $option ): array {
+					'sets'                => $sets,
+					'swap_options'        => array_map( static function( $option ): array {
+						$payload = is_array( $option ) ? $option : (array) $option;
 						return [
-							'id'          => (int) ( $option['id'] ?? 0 ),
-							'name'        => (string) ( $option['name'] ?? '' ),
-							'equipment'   => (string) ( $option['equipment'] ?? '' ),
-							'difficulty'  => (string) ( $option['difficulty'] ?? '' ),
-							'swap_reason' => (string) ( $option['swap_reason'] ?? '' ),
+							'id'          => (int) ( $payload['id'] ?? 0 ),
+							'name'        => (string) ( $payload['name'] ?? '' ),
+							'equipment'   => (string) ( $payload['equipment'] ?? '' ),
+							'difficulty'  => (string) ( $payload['difficulty'] ?? '' ),
+							'swap_reason' => (string) ( $payload['swap_reason'] ?? '' ),
 						];
 					}, is_array( $exercise['swap_options'] ?? null ) ? $exercise['swap_options'] : [] ),
 				];
 			}, $active_exercises ),
 			'has_active_session' => ! empty( $active_session['id'] ),
 			'completed_today'    => ! empty( $today_session['completed'] ),
-			'today_status'       => ! empty( $active_session['id'] ) ? 'active' : ( ! empty( $today_session['completed'] ) ? 'completed' : ( ! empty( $today_session['id'] ) ? 'scheduled' : 'none' ) ),
+			'today_status'       => (string) ( $training_status['status'] ?? ( ! empty( $active_session['id'] ) ? 'active' : ( ! empty( $today_session['completed'] ) ? 'completed' : ( ! empty( $today_session['id'] ) ? 'scheduled' : 'none' ) ) ) ),
+			'scheduled_day_type' => (string) ( $training_status['scheduled_day_type'] ?? '' ),
+			'today_recorded_for_schedule' => ! empty( $training_status['recorded'] ),
+			'today_recorded_type' => (string) ( $training_status['recorded_type'] ?? '' ),
+			'today_training_status' => $training_status,
 			'today_session'      => self::normalise_tool_session_summary( $today_session ),
 			'today_exercises'    => array_map( [ __CLASS__, 'normalise_tool_exercise_summary' ], $today_exercises ),
 			'last_completed_session' => self::normalise_tool_session_summary( is_array( $last_completed['session'] ?? null ) ? $last_completed['session'] : [] ),
+			'last_completed_exercises' => array_map( [ __CLASS__, 'normalise_tool_exercise_summary' ], is_array( $last_completed['exercises'] ?? null ) ? $last_completed['exercises'] : [] ),
 		];
 	}
 
@@ -2814,9 +3053,54 @@ RULES;
 			$date,
 			$limit
 		), ARRAY_A );
+		$item_rows = $wpdb->get_results( $wpdb->prepare(
+			"SELECT
+				m.id AS meal_id,
+				mi.id,
+				mi.food_name,
+				mi.serving_amount,
+				mi.serving_unit,
+				mi.calories,
+				mi.protein_g,
+				mi.carbs_g,
+				mi.fat_g,
+				mi.source_json
+			 FROM {$p}fit_meals m
+			 JOIN {$p}fit_meal_items mi ON mi.meal_id = m.id
+			 WHERE m.user_id = %d AND DATE(m.meal_datetime) = %s AND m.confirmed = 1{$where_sql}
+			 ORDER BY m.meal_datetime ASC, mi.id ASC",
+			$user_id,
+			$date
+		), ARRAY_A );
+		$items_by_meal = [];
+		foreach ( is_array( $item_rows ) ? $item_rows : [] as $item_row ) {
+			$meal_id = (int) ( $item_row['meal_id'] ?? 0 );
+			if ( $meal_id <= 0 ) {
+				continue;
+			}
 
-		$entries = array_map( static function( array $row ): array {
+			$source_json = json_decode( (string) ( $item_row['source_json'] ?? '' ), true );
+			$estimated_grams = is_array( $source_json ) && isset( $source_json['ai_estimated_grams'] )
+				? (float) $source_json['ai_estimated_grams']
+				: ( is_array( $source_json ) && isset( $source_json['estimated_grams'] ) ? (float) $source_json['estimated_grams'] : null );
+
+			$items_by_meal[ $meal_id ][] = [
+				'id'              => (int) ( $item_row['id'] ?? 0 ),
+				'food_name'       => sanitize_text_field( (string) ( $item_row['food_name'] ?? '' ) ),
+				'serving_amount'  => round( (float) ( $item_row['serving_amount'] ?? 1 ), 2 ),
+				'serving_unit'    => sanitize_text_field( (string) ( $item_row['serving_unit'] ?? 'serving' ) ),
+				'estimated_grams' => null !== $estimated_grams ? round( $estimated_grams, 1 ) : null,
+				'calories'        => (int) round( (float) ( $item_row['calories'] ?? 0 ) ),
+				'protein_g'       => round( (float) ( $item_row['protein_g'] ?? 0 ), 2 ),
+				'carbs_g'         => round( (float) ( $item_row['carbs_g'] ?? 0 ), 2 ),
+				'fat_g'           => round( (float) ( $item_row['fat_g'] ?? 0 ), 2 ),
+			];
+		}
+
+		$entries = array_map( static function( array $row ) use ( $items_by_meal ): array {
 			$foods = array_values( array_filter( array_map( static fn( string $item ): string => sanitize_text_field( trim( $item ) ), explode( '|', (string) ( $row['foods'] ?? '' ) ) ) ) );
+			$meal_id = (int) ( $row['id'] ?? 0 );
+			$items = $items_by_meal[ $meal_id ] ?? [];
 			return [
 				'id'            => (int) ( $row['id'] ?? 0 ),
 				'meal_type'     => sanitize_key( (string) ( $row['meal_type'] ?? '' ) ),
@@ -2827,6 +3111,7 @@ RULES;
 				'fat_g'         => (float) ( $row['fat_g'] ?? 0 ),
 				'foods'         => $foods,
 				'food_summary'  => implode( ', ', array_slice( $foods, 0, 6 ) ),
+				'items'         => $items,
 			];
 		}, is_array( $rows ) ? $rows : [] );
 
@@ -2857,6 +3142,19 @@ RULES;
 	}
 
 	private static function normalise_tool_exercise_summary( array $exercise ): array {
+		$sets = array_map( static function( $set ): array {
+			$payload = is_array( $set ) ? $set : (array) $set;
+			return [
+				'set_number' => (int) ( $payload['set_number'] ?? 0 ),
+				'reps'       => (int) ( $payload['reps'] ?? 0 ),
+				'weight'     => isset( $payload['weight'] ) ? (float) $payload['weight'] : null,
+				'rir'        => isset( $payload['rir'] ) ? (int) $payload['rir'] : null,
+				'rpe'        => isset( $payload['rpe'] ) ? (float) $payload['rpe'] : null,
+				'completed'  => ! empty( $payload['completed'] ),
+				'notes'      => sanitize_text_field( (string) ( $payload['notes'] ?? '' ) ),
+			];
+		}, is_array( $exercise['sets'] ?? null ) ? $exercise['sets'] : [] );
+
 		return [
 			'id'             => (int) ( $exercise['id'] ?? 0 ),
 			'exercise_name'  => (string) ( $exercise['exercise_name'] ?? '' ),
@@ -2865,7 +3163,72 @@ RULES;
 			'target_rep_min' => (int) ( $exercise['target_rep_min'] ?? 0 ),
 			'target_rep_max' => (int) ( $exercise['target_rep_max'] ?? 0 ),
 			'was_swapped'    => ! empty( $exercise['was_swapped'] ),
+			'sets'           => $sets,
 		];
+	}
+
+	private static function get_latest_meal_item_summary( int $user_id ): string {
+		global $wpdb;
+		$p = $wpdb->prefix;
+
+		$rows = $wpdb->get_results( $wpdb->prepare(
+			"SELECT mi.food_name, mi.serving_amount, mi.serving_unit
+			 FROM {$p}fit_meals m
+			 JOIN {$p}fit_meal_items mi ON mi.meal_id = m.id
+			 WHERE m.user_id = %d AND m.confirmed = 1
+			 ORDER BY m.meal_datetime DESC, mi.id ASC
+			 LIMIT 4",
+			$user_id
+		), ARRAY_A );
+
+		if ( ! is_array( $rows ) || empty( $rows ) ) {
+			return '';
+		}
+
+		$parts = array_map( static function( array $row ): string {
+			$amount = round( (float) ( $row['serving_amount'] ?? 1 ), 2 );
+			$amount_display = rtrim( rtrim( (string) $amount, '0' ), '.' );
+			$unit = sanitize_text_field( (string) ( $row['serving_unit'] ?? 'serving' ) );
+			$name = sanitize_text_field( (string) ( $row['food_name'] ?? '' ) );
+			return trim( "{$amount_display} {$unit} {$name}" );
+		}, $rows );
+
+		return implode( ', ', array_filter( $parts ) );
+	}
+
+	private static function get_latest_workout_set_summary( int $user_id ): string {
+		$payload = self::get_latest_completed_workout_session_payload( $user_id );
+		$exercises = is_array( $payload['exercises'] ?? null ) ? $payload['exercises'] : [];
+		if ( empty( $exercises ) ) {
+			return '';
+		}
+
+		$parts = [];
+		foreach ( array_slice( $exercises, 0, 3 ) as $exercise ) {
+			if ( ! is_array( $exercise ) ) {
+				continue;
+			}
+
+			$name = sanitize_text_field( (string) ( $exercise['exercise_name'] ?? '' ) );
+			$sets = is_array( $exercise['sets'] ?? null ) ? $exercise['sets'] : [];
+			if ( '' === $name || empty( $sets ) ) {
+				continue;
+			}
+
+			$set_parts = [];
+			foreach ( array_slice( $sets, 0, 4 ) as $set ) {
+				$payload = is_array( $set ) ? $set : (array) $set;
+				$reps = isset( $payload['reps'] ) ? (int) $payload['reps'] : 0;
+				$weight = isset( $payload['weight'] ) && '' !== (string) $payload['weight'] ? (float) $payload['weight'] : null;
+				$set_parts[] = null !== $weight && $weight > 0 ? "{$reps} reps @ {$weight} lb" : "{$reps} reps";
+			}
+
+			if ( ! empty( $set_parts ) ) {
+				$parts[] = "{$name}: " . implode( '; ', $set_parts );
+			}
+		}
+
+		return implode( ' | ', $parts );
 	}
 
 	private static function get_latest_workout_session_payload_for_date( int $user_id, string $date ): array {
@@ -3801,6 +4164,23 @@ RULES;
 
 				return $result;
 
+			case 'open_exercise_demo':
+				$exercise_name = sanitize_text_field( (string) ( $payload['exercise_name'] ?? '' ) );
+				$query = sanitize_text_field( (string) ( $payload['query'] ?? '' ) );
+
+				if ( '' === $exercise_name && '' === $query ) {
+					return null;
+				}
+
+				if ( '' === $query ) {
+					$query = trim( $exercise_name . ' exercise tutorial' );
+				}
+
+				return array_filter([
+					'exercise_name' => $exercise_name,
+					'query' => $query,
+				], static fn( $value ) => '' !== $value );
+
 			case 'show_nutrition_summary':
 			case 'show_grocery_gap':
 				return [];
@@ -4087,6 +4467,7 @@ RULES;
 			'food_name'    => sanitize_text_field( (string) ( $parsed['food_name'] ?? $parsed['product_name'] ?? $parsed['name'] ?? '' ) ),
 			'brand'        => sanitize_text_field( (string) ( $parsed['brand'] ?? '' ) ),
 			'serving_size' => sanitize_text_field( (string) ( $parsed['serving_size'] ?? '1 serving' ) ),
+			'serving_grams'=> isset( $parsed['serving_grams'] ) ? round( (float) $parsed['serving_grams'], 2 ) : 0,
 			'calories'     => (int) round( (float) ( $parsed['calories'] ?? 0 ) ),
 			'protein_g'    => round( (float) ( $parsed['protein_g'] ?? 0 ), 2 ),
 			'carbs_g'      => round( (float) ( $parsed['carbs_g'] ?? 0 ), 2 ),
@@ -4097,6 +4478,7 @@ RULES;
 			'micros'       => self::normalise_micros( $parsed['micros'] ?? [] ),
 			'confidence'   => max( 0, min( 1, (float) ( $parsed['confidence'] ?? 0 ) ) ),
 			'notes'        => sanitize_textarea_field( (string) ( $parsed['notes'] ?? '' ) ),
+			'source'       => is_array( $parsed['source'] ?? null ) ? $parsed['source'] : null,
 		];
 	}
 
@@ -4169,10 +4551,14 @@ RULES;
 				'food_name'      => sanitize_text_field( (string) ( $item['food_name'] ?? $item['name'] ?? 'Food item' ) ),
 				'serving_amount' => max( 0.1, (float) ( $item['serving_amount'] ?? 1 ) ),
 				'serving_unit'   => sanitize_text_field( (string) ( $item['serving_unit'] ?? $item['serving_size'] ?? 'serving' ) ),
+				'estimated_grams'=> round( max( 0, (float) ( $item['estimated_grams'] ?? 0 ) ), 2 ),
+				'portion_description' => sanitize_text_field( (string) ( $item['portion_description'] ?? '' ) ),
 				'calories'       => (int) round( (float) ( $item['calories'] ?? 0 ) ),
 				'protein_g'      => round( (float) ( $item['protein_g'] ?? 0 ), 2 ),
 				'carbs_g'        => round( (float) ( $item['carbs_g'] ?? 0 ), 2 ),
 				'fat_g'          => round( (float) ( $item['fat_g'] ?? 0 ), 2 ),
+				'food_confidence' => max( 0, min( 1, (float) ( $item['food_confidence'] ?? $item['confidence_food'] ?? $parsed['confidence'] ?? 0 ) ) ),
+				'portion_confidence' => max( 0, min( 1, (float) ( $item['portion_confidence'] ?? $item['confidence_portion'] ?? $parsed['confidence'] ?? 0 ) ) ),
 			];
 		}
 

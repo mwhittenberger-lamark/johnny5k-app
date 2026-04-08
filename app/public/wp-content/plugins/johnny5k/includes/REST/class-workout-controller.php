@@ -4,6 +4,7 @@ namespace Johnny5k\REST;
 defined( 'ABSPATH' ) || exit;
 
 use Johnny5k\Services\TrainingEngine;
+use Johnny5k\Services\ExerciseLibraryService;
 use Johnny5k\Services\UserTime;
 use Johnny5k\Services\AiService;
 use Johnny5k\Services\AwardEngine;
@@ -259,8 +260,8 @@ class WorkoutController {
 		}
 
 		$preview_day_type = (string) ( $result['day_type'] ?? $day_type ?? '' );
-		$result['exercises'] = array_map( static function( array $exercise ) use ( $preview_day_type ): array {
-			$exercise['swap_options'] = self::get_swap_options_for_day_type( $preview_day_type, (object) $exercise );
+		$result['exercises'] = array_map( static function( array $exercise ) use ( $preview_day_type, $user_id ): array {
+			$exercise['swap_options'] = self::get_swap_options_for_day_type( $user_id, $preview_day_type, (object) $exercise );
 			return $exercise;
 		}, is_array( $result['exercises'] ?? null ) ? $result['exercises'] : [] );
 
@@ -374,7 +375,7 @@ class WorkoutController {
 			$ex->slot_types        = self::decode_json_list( $ex->slot_types_json ?? '' );
 			$ex->exercise_summary = self::build_exercise_summary( $ex );
 			$ex->recent_history = self::get_recent_history( $user_id, (int) $ex->exercise_id );
-			$ex->swap_options   = self::get_swap_options( $session, $ex );
+			$ex->swap_options   = self::get_swap_options( $user_id, $session, $ex );
 		}
 
 		return new \WP_REST_Response( [
@@ -698,10 +699,12 @@ class WorkoutController {
 			return new \WP_REST_Response( [ 'message' => 'That exercise is already active.' ], 400 );
 		}
 
+		$exercise_access_where = ExerciseLibraryService::accessible_exercise_where( '', $user_id );
+
 		$new_ex = $wpdb->get_row( $wpdb->prepare(
 			"SELECT id, name, primary_muscle, equipment, difficulty
 			 FROM {$p}fit_exercises
-			 WHERE id = %d AND active = 1",
+			 WHERE id = %d AND active = 1 AND {$exercise_access_where}",
 			$new_ex_id
 		) );
 
@@ -779,10 +782,13 @@ class WorkoutController {
 			return new \WP_REST_Response( [ 'message' => 'Session not found.' ], 404 );
 		}
 
+		$exercise_access_where = ExerciseLibraryService::accessible_exercise_where( '', $user_id );
+
 		if ( ! $exercise_id ) {
 			$exercise_id = (int) $wpdb->get_var( $wpdb->prepare(
 				"SELECT id FROM {$p}fit_exercises
 				 WHERE active = 1
+				   AND {$exercise_access_where}
 				   AND JSON_CONTAINS(slot_types_json, %s)
 				   AND JSON_CONTAINS(day_types_json, %s)
 				 ORDER BY difficulty, id DESC
@@ -798,7 +804,7 @@ class WorkoutController {
 
 		$exercise = $wpdb->get_row( $wpdb->prepare(
 			"SELECT id, name, primary_muscle, default_rep_min, default_rep_max, default_sets
-			 FROM {$p}fit_exercises WHERE id = %d AND active = 1",
+			 FROM {$p}fit_exercises WHERE id = %d AND active = 1 AND {$exercise_access_where}",
 			$exercise_id
 		) );
 
@@ -1335,46 +1341,81 @@ class WorkoutController {
 		return is_array( $rows ) ? $rows : [];
 	}
 
-	private static function get_swap_options( object $session, object $exercise ): array {
-		return self::get_swap_options_for_day_type( (string) $session->planned_day_type, $exercise );
+	private static function get_swap_options( int $user_id, object $session, object $exercise ): array {
+		return self::get_swap_options_for_day_type( $user_id, (string) $session->planned_day_type, $exercise );
 	}
 
-	private static function get_swap_options_for_day_type( string $day_type, object $exercise ): array {
+	private static function get_swap_options_for_day_type( int $user_id, string $day_type, object $exercise ): array {
 		global $wpdb;
 		$p = $wpdb->prefix;
 
 		$day_json  = '"' . esc_sql( $day_type ) . '"';
 		$slot_json = '"' . esc_sql( $exercise->slot_type ) . '"';
+		$exercise_access_where = ExerciseLibraryService::accessible_exercise_where( 'e', $user_id );
+		$substitution_access_where = ExerciseLibraryService::accessible_substitution_where( 's', $user_id );
+		$base_exercise_id = (int) ( $exercise->original_exercise_id ?? 0 );
+		if ( $base_exercise_id <= 0 ) {
+			$base_exercise_id = (int) $exercise->exercise_id;
+		}
 
 		$options = $wpdb->get_results( $wpdb->prepare(
-			"SELECT id, name, primary_muscle, equipment, difficulty
-			 FROM {$p}fit_exercises
-			 WHERE active = 1
-			   AND id != %d
-			   AND primary_muscle = %s
-			   AND JSON_CONTAINS(day_types_json, %s)
-			   AND JSON_CONTAINS(slot_types_json, %s)
-			 ORDER BY difficulty, name
+			"SELECT e.id, e.user_id, CASE WHEN e.user_id = %d THEN 1 ELSE 0 END AS owned_by_user, e.name, e.primary_muscle, e.equipment, e.difficulty
+			 FROM {$p}fit_exercise_substitutions s
+			 JOIN {$p}fit_exercises e ON e.id = s.substitute_exercise_id
+			 WHERE s.exercise_id = %d
+			   AND {$substitution_access_where}
+			   AND e.active = 1
+			   AND {$exercise_access_where}
+			   AND e.id != %d
+			   AND JSON_CONTAINS(e.day_types_json, %s)
+			   AND JSON_CONTAINS(e.slot_types_json, %s)
+			 ORDER BY CASE WHEN s.user_id = %d THEN 0 ELSE 1 END, s.priority, e.name
 			 LIMIT 4",
+			$user_id,
+			$base_exercise_id,
 			(int) $exercise->exercise_id,
-			(string) $exercise->primary_muscle,
 			$day_json,
-			$slot_json
+			$slot_json,
+			$user_id
 		) );
 
 		if ( empty( $options ) ) {
 			$options = $wpdb->get_results( $wpdb->prepare(
-				"SELECT id, name, primary_muscle, equipment, difficulty
-				 FROM {$p}fit_exercises
-				 WHERE active = 1
-				   AND id != %d
-				   AND JSON_CONTAINS(day_types_json, %s)
-				   AND JSON_CONTAINS(slot_types_json, %s)
-				 ORDER BY primary_muscle, difficulty, name
+				"SELECT e.id, e.user_id, CASE WHEN e.user_id = %d THEN 1 ELSE 0 END AS owned_by_user, e.name, e.primary_muscle, e.equipment, e.difficulty
+				 FROM {$p}fit_exercises e
+				 WHERE e.active = 1
+				   AND {$exercise_access_where}
+				   AND e.id != %d
+				   AND e.primary_muscle = %s
+				   AND JSON_CONTAINS(e.day_types_json, %s)
+				   AND JSON_CONTAINS(e.slot_types_json, %s)
+				 ORDER BY CASE WHEN e.user_id = %d THEN 0 ELSE 1 END, e.difficulty, e.name
 				 LIMIT 4",
+				$user_id,
+				(int) $exercise->exercise_id,
+				(string) $exercise->primary_muscle,
+				$day_json,
+				$slot_json,
+				$user_id
+			) );
+		}
+
+		if ( empty( $options ) ) {
+			$options = $wpdb->get_results( $wpdb->prepare(
+				"SELECT e.id, e.user_id, CASE WHEN e.user_id = %d THEN 1 ELSE 0 END AS owned_by_user, e.name, e.primary_muscle, e.equipment, e.difficulty
+				 FROM {$p}fit_exercises e
+				 WHERE e.active = 1
+				   AND {$exercise_access_where}
+				   AND e.id != %d
+				   AND JSON_CONTAINS(e.day_types_json, %s)
+				   AND JSON_CONTAINS(e.slot_types_json, %s)
+				 ORDER BY CASE WHEN e.user_id = %d THEN 0 ELSE 1 END, e.primary_muscle, e.difficulty, e.name
+				 LIMIT 4",
+				$user_id,
 				(int) $exercise->exercise_id,
 				$day_json,
-				$slot_json
+				$slot_json,
+				$user_id
 			) );
 		}
 

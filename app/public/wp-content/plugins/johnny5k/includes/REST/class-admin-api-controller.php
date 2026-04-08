@@ -129,6 +129,14 @@ class AdminApiController {
 		return self::sanitize_color_schemes( get_option( 'jf_color_schemes', self::default_color_schemes() ) );
 	}
 
+	public static function default_live_workout_frames(): array {
+		return [];
+	}
+
+	public static function get_live_workout_frames_config(): array {
+		return self::sanitize_live_workout_frames( get_option( 'jf_live_workout_frames', self::default_live_workout_frames() ) );
+	}
+
 	public static function sanitize_color_schemes( $schemes ): array {
 		$defaults = self::default_color_schemes();
 		$allowed_color_keys = [ 'bg', 'bg2', 'bg3', 'border', 'text', 'textMuted', 'accent', 'accent2', 'accent3', 'danger', 'success', 'yellow' ];
@@ -166,6 +174,40 @@ class AdminApiController {
 
 		if ( empty( $clean ) ) {
 			return $defaults;
+		}
+
+		return array_values( $clean );
+	}
+
+	public static function sanitize_live_workout_frames( $frames ): array {
+		if ( ! is_array( $frames ) ) {
+			return self::default_live_workout_frames();
+		}
+
+		$clean = [];
+
+		foreach ( $frames as $index => $frame ) {
+			if ( ! is_array( $frame ) ) {
+				continue;
+			}
+
+			$image_url = esc_url_raw( (string) ( $frame['image_url'] ?? '' ) );
+			if ( '' === $image_url ) {
+				continue;
+			}
+
+			$label = sanitize_text_field( (string) ( $frame['label'] ?? '' ) );
+			$note  = sanitize_text_field( (string) ( $frame['note'] ?? '' ) );
+
+			$clean[] = [
+				'image_url' => $image_url,
+				'label'     => '' !== $label ? $label : sprintf( 'Live frame %d', (int) $index + 1 ),
+				'note'      => $note,
+			];
+
+			if ( count( $clean ) >= 8 ) {
+				break;
+			}
 		}
 
 		return array_values( $clean );
@@ -547,6 +589,7 @@ class AdminApiController {
 				'recovery_summary'=> 1,
 			] ),
 			'color_schemes' => self::get_color_schemes_config(),
+			'live_workout_frames' => self::get_live_workout_frames_config(),
 		] );
 	}
 
@@ -554,6 +597,7 @@ class AdminApiController {
 		$ai_settings = (array) $req->get_param( 'ai_settings' );
 		$feature_flags = (array) $req->get_param( 'feature_flags' );
 		$color_schemes = $req->get_param( 'color_schemes' );
+		$live_workout_frames = $req->get_param( 'live_workout_frames' );
 
 		update_option( 'jf_ai_settings', [
 			'default_model'                        => sanitize_text_field( (string) ( $ai_settings['default_model'] ?? 'gpt-5.4-mini' ) ),
@@ -568,6 +612,7 @@ class AdminApiController {
 		), false );
 
 		update_option( 'jf_color_schemes', self::sanitize_color_schemes( $color_schemes ), false );
+		update_option( 'jf_live_workout_frames', self::sanitize_live_workout_frames( $live_workout_frames ), false );
 
 		return new \WP_REST_Response( [ 'saved' => true ] );
 	}

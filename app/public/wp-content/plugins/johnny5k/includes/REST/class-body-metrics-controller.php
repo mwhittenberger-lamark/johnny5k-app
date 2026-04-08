@@ -459,7 +459,7 @@ class BodyMetricsController {
 			'body_area' => sanitize_text_field( $req->get_param( 'body_area' ) ?: '' ),
 			'severity'  => sanitize_text_field( $req->get_param( 'severity' ) ?: 'low' ),
 			'notes'     => sanitize_textarea_field( $req->get_param( 'notes' ) ?: '' ),
-			'active'    => 1,
+			'active'    => (int) (bool) $req->get_param( 'active' ),
 		];
 
 		$id = $req->get_param( 'id' );

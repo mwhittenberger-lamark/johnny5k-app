@@ -25,7 +25,9 @@ export default function ProgressPhotosScreen() {
   const [error, setError] = useState('')
   const [comparison, setComparison] = useState(null)
   const [selectedPair, setSelectedPair] = useState(null)
+  const [openTimelineDates, setOpenTimelineDates] = useState({})
   const uploadRef = useRef(null)
+  const comparisonRef = useRef(null)
 
   async function loadPhotos() {
     setError('')
@@ -95,6 +97,29 @@ export default function ProgressPhotosScreen() {
     })
   }, [photos])
 
+  const timelineDateGroups = useMemo(() => {
+    const groups = []
+    const photoGroups = new Map()
+
+    timelinePhotos.forEach(photo => {
+      const photoDate = String(photo.photo_date || '')
+      if (!photoGroups.has(photoDate)) {
+        photoGroups.set(photoDate, [])
+      }
+      photoGroups.get(photoDate).push(photo)
+    })
+
+    photoGroups.forEach((items, photoDate) => {
+      groups.push({
+        date: photoDate,
+        label: formatPhotoDate(photoDate),
+        items,
+      })
+    })
+
+    return groups
+  }, [timelinePhotos])
+
   const compareGroups = useMemo(() => {
     return ANGLES.map(currentAngle => {
       const items = grouped[currentAngle] ?? []
@@ -115,6 +140,34 @@ export default function ProgressPhotosScreen() {
 
   const comparisonFirstSrc = comparison ? photoSrcs[comparison.first_photo?.id] ?? '' : ''
   const comparisonSecondSrc = comparison ? photoSrcs[comparison.second_photo?.id] ?? '' : ''
+  const showComparisonCard = comparing || Boolean(comparison)
+
+  useEffect(() => {
+    if (!timelineDateGroups.length) {
+      setOpenTimelineDates({})
+      return
+    }
+
+    setOpenTimelineDates(current => {
+      const next = {}
+
+      timelineDateGroups.forEach((group, index) => {
+        next[group.date] = Object.prototype.hasOwnProperty.call(current, group.date)
+          ? current[group.date]
+          : index === 0
+      })
+
+      return next
+    })
+  }, [timelineDateGroups])
+
+  useEffect(() => {
+    if (!showComparisonCard || !comparisonRef.current) return
+
+    window.requestAnimationFrame(() => {
+      comparisonRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
+  }, [showComparisonCard])
 
   async function handleUpload(event) {
     const file = event.target.files?.[0]
@@ -141,11 +194,12 @@ export default function ProgressPhotosScreen() {
   async function runCompare(firstPhoto, secondPhoto, label) {
     if (!firstPhoto || !secondPhoto) return
 
+    setSelectedPair(label)
+    setComparison(null)
     setComparing(true)
     setError('')
     try {
       const data = await dashboardApi.comparePhotos(firstPhoto.id, secondPhoto.id)
-      setSelectedPair(label)
       setComparison(data)
     } catch (err) {
       setError(err.message)
@@ -193,6 +247,13 @@ export default function ProgressPhotosScreen() {
     } finally {
       setDeletingId(0)
     }
+  }
+
+  function toggleTimelineDate(dateKey) {
+    setOpenTimelineDates(current => ({
+      ...current,
+      [dateKey]: !current[dateKey],
+    }))
   }
 
   return (
@@ -261,23 +322,42 @@ export default function ProgressPhotosScreen() {
           {!compareGroups.length ? <p className="empty-state">No progress photos yet. Upload a front or side photo to start your timeline.</p> : null}
         </div>
 
-        {comparison ? (
-          <div className="dash-card progress-comparison-card">
+        {showComparisonCard ? (
+          <div ref={comparisonRef} className="dash-card progress-comparison-card">
             <div className="dashboard-card-head">
               <span className="dashboard-chip ai">AI compare</span>
               <strong>{selectedPair}</strong>
             </div>
-            <div className="progress-comparison-images">
-              <figure>
-                <img src={comparisonFirstSrc} alt={`${comparison.first_photo.angle} on ${formatPhotoDate(comparison.first_photo.photo_date)}`} />
-                <figcaption>{formatPhotoDate(comparison.first_photo.photo_date)} · {comparison.first_photo.angle}</figcaption>
-              </figure>
-              <figure>
-                <img src={comparisonSecondSrc} alt={`${comparison.second_photo.angle} on ${formatPhotoDate(comparison.second_photo.photo_date)}`} />
-                <figcaption>{formatPhotoDate(comparison.second_photo.photo_date)} · {comparison.second_photo.angle}</figcaption>
-              </figure>
-            </div>
-            <p>{comparison.comparison}</p>
+            {comparing ? (
+              <>
+                <div className="progress-comparison-images progress-comparison-images-loading" aria-hidden="true">
+                  <div className="progress-comparison-image-skeleton" />
+                  <div className="progress-comparison-image-skeleton" />
+                </div>
+                <div className="progress-comparison-loading" aria-live="polite">
+                  <p className="progress-comparison-loading-copy">Johnny is reviewing both photos now.</p>
+                  <div className="progress-comparison-loading-lines">
+                    <span />
+                    <span />
+                    <span />
+                  </div>
+                </div>
+              </>
+            ) : comparison ? (
+              <>
+                <div className="progress-comparison-images">
+                  <figure>
+                    <img src={comparisonFirstSrc} alt={`${comparison.first_photo.angle} on ${formatPhotoDate(comparison.first_photo.photo_date)}`} />
+                    <figcaption>{formatPhotoDate(comparison.first_photo.photo_date)} · {comparison.first_photo.angle}</figcaption>
+                  </figure>
+                  <figure>
+                    <img src={comparisonSecondSrc} alt={`${comparison.second_photo.angle} on ${formatPhotoDate(comparison.second_photo.photo_date)}`} />
+                    <figcaption>{formatPhotoDate(comparison.second_photo.photo_date)} · {comparison.second_photo.angle}</figcaption>
+                  </figure>
+                </div>
+                <p>{comparison.comparison}</p>
+              </>
+            ) : null}
           </div>
         ) : null}
       </section>
@@ -285,38 +365,63 @@ export default function ProgressPhotosScreen() {
       <section className="dashboard-section">
         <div className="dashboard-section-title-row">
           <h2>Timeline</h2>
-          <span>All angles together</span>
+          <span>Grouped by photo date</span>
         </div>
 
-        <div className="progress-photo-grid">
-          {timelinePhotos.map(photo => (
-            <article key={photo.id} className="dash-card progress-photo-card">
-              <img src={photoSrcs[photo.id] ?? ''} alt={`${photo.angle} progress photo from ${formatPhotoDate(photo.photo_date)}`} />
-              <div className="progress-photo-meta">
-                <div>
-                  <strong>{formatPhotoDate(photo.photo_date)}</strong>
-                  <div className="progress-photo-tags">
-                    <span className="dashboard-chip">{titleCase(photo.angle)}</span>
-                    {photo.is_baseline ? <span className="dashboard-chip success">Baseline</span> : null}
-                  </div>
-                </div>
-              </div>
-              <div className="progress-photo-actions">
+        <div className="progress-timeline-accordion">
+          {timelineDateGroups.map(group => {
+            const isOpen = Boolean(openTimelineDates[group.date])
+
+            return (
+              <section key={group.date} className="dash-card progress-date-group-card">
                 <button
-                  className="btn-secondary small"
                   type="button"
-                  onClick={() => handleSetBaseline(photo)}
-                  disabled={baselineSavingAngle === photo.angle || photo.is_baseline}
+                  className="progress-date-group-toggle"
+                  onClick={() => toggleTimelineDate(group.date)}
+                  aria-expanded={isOpen}
                 >
-                  {photo.is_baseline ? 'Current baseline' : baselineSavingAngle === photo.angle ? 'Saving…' : 'Set baseline'}
+                  <div>
+                    <strong>{group.label}</strong>
+                    <span>{group.items.length} photo{group.items.length === 1 ? '' : 's'}</span>
+                  </div>
+                  <span className={`progress-date-group-chevron ${isOpen ? 'open' : ''}`} aria-hidden="true">⌄</span>
                 </button>
-                <button className="btn-outline small" type="button" onClick={() => handleDelete(photo)} disabled={deletingId === photo.id}>
-                  {deletingId === photo.id ? 'Removing…' : 'Remove'}
-                </button>
-              </div>
-            </article>
-          ))}
-          {!timelinePhotos.length ? <p className="empty-state">No progress photos yet. Upload one to start your timeline.</p> : null}
+
+                {isOpen ? (
+                  <div className="progress-photo-grid progress-photo-grid-grouped">
+                    {group.items.map(photo => (
+                      <article key={photo.id} className="dash-card progress-photo-card">
+                        <img src={photoSrcs[photo.id] ?? ''} alt={`${photo.angle} progress photo from ${formatPhotoDate(photo.photo_date)}`} />
+                        <div className="progress-photo-meta">
+                          <div>
+                            <strong>{titleCase(photo.angle)}</strong>
+                            <div className="progress-photo-tags">
+                              <span className="dashboard-chip">{titleCase(photo.angle)}</span>
+                              {photo.is_baseline ? <span className="dashboard-chip success">Baseline</span> : null}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="progress-photo-actions">
+                          <button
+                            className="btn-secondary small"
+                            type="button"
+                            onClick={() => handleSetBaseline(photo)}
+                            disabled={baselineSavingAngle === photo.angle || photo.is_baseline}
+                          >
+                            {photo.is_baseline ? 'Current baseline' : baselineSavingAngle === photo.angle ? 'Saving…' : 'Set baseline'}
+                          </button>
+                          <button className="btn-outline small" type="button" onClick={() => handleDelete(photo)} disabled={deletingId === photo.id}>
+                            {deletingId === photo.id ? 'Removing…' : 'Remove'}
+                          </button>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                ) : null}
+              </section>
+            )
+          })}
+          {!timelineDateGroups.length ? <p className="empty-state">No progress photos yet. Upload one to start your timeline.</p> : null}
         </div>
       </section>
     </div>

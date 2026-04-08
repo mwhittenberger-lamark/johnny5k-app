@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
-import { adminApi, aiApi, trainingApi } from '../../api/client'
-import { useAuthStore } from '../../store/authStore'
+import { aiApi, trainingApi } from '../../api/client'
 
 export default function PlanOverviewSwapDrawer({
   isOpen,
@@ -10,7 +9,6 @@ export default function PlanOverviewSwapDrawer({
   onSwap,
   onClearSwap,
 }) {
-  const isAdmin = useAuthStore(state => state.isAdmin)
   const [searchQuery, setSearchQuery] = useState('')
   const [searchingLibrary, setSearchingLibrary] = useState(false)
   const [searchError, setSearchError] = useState('')
@@ -24,6 +22,14 @@ export default function PlanOverviewSwapDrawer({
   const [aiSources, setAiSources] = useState([])
   const [savingSuggestionName, setSavingSuggestionName] = useState('')
   const [saveMessage, setSaveMessage] = useState('')
+  const [myExercises, setMyExercises] = useState([])
+  const [loadingMyExercises, setLoadingMyExercises] = useState(false)
+  const [myExercisesError, setMyExercisesError] = useState('')
+  const [editingExerciseId, setEditingExerciseId] = useState(0)
+  const [editDraft, setEditDraft] = useState(() => buildPersonalExerciseDraft())
+  const [savingPersonalExerciseId, setSavingPersonalExerciseId] = useState(0)
+  const [deletingPersonalExerciseId, setDeletingPersonalExerciseId] = useState(0)
+  const [savedExerciseIds, setSavedExerciseIds] = useState([])
 
   useEffect(() => {
     if (!isOpen) return
@@ -39,7 +45,52 @@ export default function PlanOverviewSwapDrawer({
     setAiSources([])
     setSavingSuggestionName('')
     setSaveMessage('')
+    setMyExercises([])
+    setLoadingMyExercises(false)
+    setMyExercisesError('')
+    setEditingExerciseId(0)
+    setEditDraft(buildPersonalExerciseDraft())
+    setSavingPersonalExerciseId(0)
+    setDeletingPersonalExerciseId(0)
+    setSavedExerciseIds([])
   }, [exercise?.plan_exercise_id, isOpen])
+
+  useEffect(() => {
+    if (!isOpen || !exercise) return undefined
+
+    let active = true
+    const query = searchQuery.trim()
+    const timer = window.setTimeout(async () => {
+      setLoadingMyExercises(true)
+      setMyExercisesError('')
+
+      try {
+        const rows = await trainingApi.getExercises({
+          own_only: 1,
+          q: query.length >= 2 ? query : '',
+          limit: query.length >= 2 ? 12 : 8,
+          day_type: dayType || '',
+          preferred_muscle: exercise.primary_muscle || '',
+          preferred_equipment: exercise.equipment || '',
+        })
+
+        if (!active) return
+        setMyExercises(normalizeLibraryRows(rows).filter(candidate => Number(candidate.id) !== Number(exercise.exercise_id)))
+      } catch (error) {
+        if (!active) return
+        setMyExercisesError(error?.message || 'Could not load your saved exercises.')
+      } finally {
+        if (active) {
+          setLoadingMyExercises(false)
+        }
+      }
+    }, query.length >= 2 ? 220 : 0)
+
+    return () => {
+      active = false
+      window.clearTimeout(timer)
+    }
+  }, [dayType, exercise, isOpen, searchQuery])
 
   useEffect(() => {
     if (!isOpen) return undefined
@@ -101,10 +152,11 @@ export default function PlanOverviewSwapDrawer({
     return null
   }
 
+  const myExerciseIds = new Set(myExercises.map(option => Number(option.id)))
   const localOptions = dedupeExercisePool([
     ...(Array.isArray(exercise.swap_options) ? exercise.swap_options : []),
     ...searchResults,
-  ]).filter(option => Number(option.id) !== Number(exercise.exercise_id))
+  ]).filter(option => Number(option.id) !== Number(exercise.exercise_id) && !myExerciseIds.has(Number(option.id)))
 
   async function handleChoose(option) {
     setSelectingExerciseId(option.id)
@@ -172,7 +224,7 @@ export default function PlanOverviewSwapDrawer({
   }
 
   async function handleSaveSuggestion(suggestion) {
-    if (!isAdmin || !suggestion?.name || savingSuggestionName) return
+    if (!suggestion?.name || savingSuggestionName) return
 
     setSavingSuggestionName(suggestion.name)
     setAiError('')
@@ -185,7 +237,7 @@ export default function PlanOverviewSwapDrawer({
         dayType,
         aiPrompt,
       })
-      const result = await adminApi.saveExercise(payload)
+      const result = await trainingApi.savePersonalExercise(payload)
       const savedExerciseId = Number(result?.id)
 
       if (!savedExerciseId) {
@@ -194,7 +246,7 @@ export default function PlanOverviewSwapDrawer({
 
       const baseExerciseId = getSubstitutionBaseExerciseId(exercise)
       if (baseExerciseId > 0 && baseExerciseId !== savedExerciseId) {
-        await adminApi.saveSubstitution({
+        await trainingApi.savePersonalSubstitution({
           exercise_id: baseExerciseId,
           substitute_exercise_id: savedExerciseId,
           reason_code: inferSubstitutionReasonCode({ exercise, aiPrompt }),
@@ -205,17 +257,96 @@ export default function PlanOverviewSwapDrawer({
       const savedExercise = {
         id: savedExerciseId,
         name: suggestion.name,
+        description: payload.description,
+        movement_pattern: payload.movement_pattern,
         primary_muscle: exercise.primary_muscle || '',
         equipment: exercise.equipment || 'other',
         difficulty: exercise.difficulty || 'beginner',
+        owned_by_user: 1,
       }
 
-      setSaveMessage(`${suggestion.name} was added to the exercise library, registered as a future swap option, and swapped into this plan.`)
+      setSavedExerciseIds(current => Array.from(new Set([...current, savedExerciseId])))
+      setMyExercises(current => dedupeExercisePool([normalizeLibraryExercise(savedExercise), ...current]))
+      setSaveMessage(`${suggestion.name} was added to your library, registered as a future swap option, and swapped into this plan.`)
       await handleChoose(savedExercise)
     } catch (error) {
       setAiError(error?.message || 'Could not save that exercise to the library.')
     } finally {
       setSavingSuggestionName('')
+    }
+  }
+
+  function handleEditPersonalExercise(option) {
+    setEditingExerciseId(option.id)
+    setEditDraft(buildPersonalExerciseDraft(option))
+    setSearchError('')
+  }
+
+  function handleEditDraftChange(key, value) {
+    setEditDraft(current => ({
+      ...current,
+      [key]: value,
+    }))
+  }
+
+  async function handleSavePersonalExercise(optionId) {
+    if (!optionId || savingPersonalExerciseId) return
+
+    setSavingPersonalExerciseId(optionId)
+    setMyExercisesError('')
+
+    try {
+      await trainingApi.updatePersonalExercise(optionId, {
+        name: editDraft.name,
+        description: editDraft.description,
+        primary_muscle: editDraft.primary_muscle,
+        equipment: editDraft.equipment,
+        difficulty: editDraft.difficulty,
+        movement_pattern: editDraft.movement_pattern,
+      })
+
+      setMyExercises(current => current.map(option => (
+        Number(option.id) === Number(optionId)
+          ? {
+              ...option,
+              name: editDraft.name.trim(),
+              description: editDraft.description.trim(),
+              primary_muscle: editDraft.primary_muscle,
+              equipment: editDraft.equipment,
+              difficulty: editDraft.difficulty,
+              movement_pattern: editDraft.movement_pattern,
+            }
+          : option
+      )))
+      setEditingExerciseId(0)
+      setSaveMessage('Your personal exercise was updated.')
+    } catch (error) {
+      setMyExercisesError(error?.message || 'Could not update that exercise.')
+    } finally {
+      setSavingPersonalExerciseId(0)
+    }
+  }
+
+  async function handleDeletePersonalExercise(optionId) {
+    if (!optionId || deletingPersonalExerciseId) return
+    if (!window.confirm('Remove this personal exercise from your library? Any personal swap links that depend on it will be removed too.')) return
+
+    setDeletingPersonalExerciseId(optionId)
+    setMyExercisesError('')
+
+    try {
+      await trainingApi.deletePersonalExercise(optionId)
+      setMyExercises(current => current.filter(option => Number(option.id) !== Number(optionId)))
+      setSavedExerciseIds(current => current.filter(id => Number(id) !== Number(optionId)))
+      if (editingExerciseId === optionId) {
+        setEditingExerciseId(0)
+        setEditDraft(buildPersonalExerciseDraft())
+      }
+      setSaveMessage('That personal exercise was removed from your library.')
+    } catch (error) {
+      setMyExercisesError(error?.message || 'Could not remove that exercise.')
+    } finally {
+      setDeletingPersonalExerciseId(0)
     }
   }
 
@@ -278,13 +409,122 @@ export default function PlanOverviewSwapDrawer({
           />
           {searchingLibrary ? <p className="settings-subtitle">Searching the library...</p> : null}
           {searchError ? <p className="error">{searchError}</p> : null}
+          <div className="workout-swap-subsection-head">
+            <strong>My exercises</strong>
+            <span className="workout-swap-badge personal">Personal library</span>
+          </div>
+          {loadingMyExercises ? <p className="settings-subtitle">Loading your saved exercises...</p> : null}
+          {myExercisesError ? <p className="error">{myExercisesError}</p> : null}
+          {myExercises.length ? (
+            <div className="workout-swap-list workout-swap-list-personal">
+              {myExercises.map(option => {
+                const isEditing = editingExerciseId === option.id
+                const isRecentlySaved = savedExerciseIds.includes(Number(option.id))
+
+                return (
+                  <div key={`personal-${option.id}`} className="workout-swap-row workout-swap-row-card">
+                    <div className="workout-swap-row-copy">
+                      <div className="workout-swap-row-title">
+                        <strong>{option.name}</strong>
+                        <span className={`workout-swap-badge ${isRecentlySaved ? 'saved' : 'mine'}`}>
+                          {isRecentlySaved ? 'Saved to your library' : 'My exercise'}
+                        </span>
+                      </div>
+                      <p>{buildLocalOptionReason(option, exercise)}</p>
+                      <p className="workout-swap-row-meta">{buildExerciseMeta(option)}</p>
+                      {isEditing ? (
+                        <div className="personal-exercise-editor">
+                          <input
+                            type="text"
+                            value={editDraft.name}
+                            onChange={event => handleEditDraftChange('name', event.target.value)}
+                            placeholder="Exercise name"
+                          />
+                          <div className="personal-exercise-editor-grid">
+                            <input
+                              type="text"
+                              value={editDraft.primary_muscle}
+                              onChange={event => handleEditDraftChange('primary_muscle', event.target.value)}
+                              placeholder="Primary muscle"
+                            />
+                            <input
+                              type="text"
+                              value={editDraft.movement_pattern}
+                              onChange={event => handleEditDraftChange('movement_pattern', event.target.value)}
+                              placeholder="Movement pattern"
+                            />
+                            <input
+                              type="text"
+                              value={editDraft.equipment}
+                              onChange={event => handleEditDraftChange('equipment', event.target.value)}
+                              placeholder="Equipment"
+                            />
+                            <select
+                              value={editDraft.difficulty}
+                              onChange={event => handleEditDraftChange('difficulty', event.target.value)}
+                            >
+                              <option value="beginner">Beginner</option>
+                              <option value="intermediate">Intermediate</option>
+                              <option value="advanced">Advanced</option>
+                            </select>
+                          </div>
+                          <textarea
+                            value={editDraft.description}
+                            onChange={event => handleEditDraftChange('description', event.target.value)}
+                            placeholder="Optional note for how this variation should feel or why you saved it."
+                          />
+                        </div>
+                      ) : null}
+                    </div>
+                    <div className="workout-swap-row-actions">
+                      <button
+                        type="button"
+                        className="btn-outline small"
+                        onClick={() => handleChoose(option)}
+                        disabled={selectingExerciseId === option.id}
+                      >
+                        {selectingExerciseId === option.id ? 'Swapping...' : 'Swap in'}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-outline small"
+                        onClick={() => isEditing ? setEditingExerciseId(0) : handleEditPersonalExercise(option)}
+                        disabled={savingPersonalExerciseId === option.id || deletingPersonalExerciseId === option.id}
+                      >
+                        {isEditing ? 'Cancel' : 'Edit'}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-outline small"
+                        onClick={() => isEditing ? handleSavePersonalExercise(option.id) : handleDeletePersonalExercise(option.id)}
+                        disabled={savingPersonalExerciseId === option.id || deletingPersonalExerciseId === option.id}
+                      >
+                        {isEditing
+                          ? (savingPersonalExerciseId === option.id ? 'Saving...' : 'Save')
+                          : (deletingPersonalExerciseId === option.id ? 'Deleting...' : 'Delete')}
+                      </button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          ) : !loadingMyExercises ? (
+            <p className="settings-subtitle">No personal exercises match yet. Save one from Johnny’s suggestions and it will appear here.</p>
+          ) : null}
+          <div className="workout-swap-subsection-head">
+            <strong>All matching exercises</strong>
+          </div>
           {localOptions.length ? (
             <div className="workout-swap-list">
               {localOptions.map(option => (
-                <div key={option.id} className="workout-swap-row">
-                  <div>
-                    <strong>{option.name}</strong>
+                <div key={option.id} className="workout-swap-row workout-swap-row-card">
+                  <div className="workout-swap-row-copy">
+                    <div className="workout-swap-row-title">
+                      <strong>{option.name}</strong>
+                      {isUserOwnedExercise(option) ? <span className="workout-swap-badge saved">Saved to your library</span> : null}
+                    </div>
                     <p>{option.swap_reason || buildLocalOptionReason(option, exercise)}</p>
+                    <p className="workout-swap-row-meta">{buildExerciseMeta(option)}</p>
                   </div>
                   <button
                     type="button"
@@ -306,7 +546,7 @@ export default function PlanOverviewSwapDrawer({
           <div className="dashboard-card-head">
             <span className="dashboard-chip coach">Ask Johnny</span>
           </div>
-          <p className="settings-subtitle">Johnny will stay inside your saved exercise library by default. If you explicitly ask him to check broader options, he can review that too and show sources when available.</p>
+          <p className="settings-subtitle">Johnny will stay inside your saved exercise library by default. If you explicitly ask him to check broader options, he can review that too and show sources when available. You can save a new suggestion into your personal library directly from here.</p>
           <form className="exercise-ai-swap-form" onSubmit={handleAskJohnny}>
             <label className="exercise-note-label" htmlFor={`plan-swap-ai-${exercise.plan_exercise_id}`}>Describe what you want instead</label>
             <textarea
@@ -316,7 +556,7 @@ export default function PlanOverviewSwapDrawer({
               placeholder="Example: I want a machine-based chest option because my shoulder feels touchy."
             />
             <div className="exercise-panel-actions">
-              <button type="submit" className="btn-secondary small" disabled={aiLoading || !aiPrompt.trim()}>
+              <button type="submit" className="btn-secondary small exercise-ai-review-button" disabled={aiLoading || !aiPrompt.trim()}>
                 {aiLoading ? 'Reviewing...' : 'Ask Johnny to review'}
               </button>
             </div>
@@ -337,7 +577,10 @@ export default function PlanOverviewSwapDrawer({
                 return (
                   <div key={`${exercise.plan_exercise_id}-ai-${index}`} className="exercise-ai-swap-row">
                     <div>
-                      <strong>{matchedExercise?.name || suggestion.name}</strong>
+                      <div className="workout-swap-row-title">
+                        <strong>{matchedExercise?.name || suggestion.name}</strong>
+                        {matchedExercise && isUserOwnedExercise(matchedExercise) ? <span className="workout-swap-badge saved">Saved to your library</span> : null}
+                      </div>
                       {matchedExercise && matchedExercise.name !== suggestion.name ? (
                         <p>Johnny suggested {suggestion.name}. Closest library match: {matchedExercise.name}. {suggestion.reason}</p>
                       ) : (
@@ -353,17 +596,15 @@ export default function PlanOverviewSwapDrawer({
                       >
                         {selectingExerciseId === matchedExercise.id ? 'Swapping...' : 'Swap in'}
                       </button>
-                    ) : isAdmin ? (
+                    ) : (
                       <button
                         type="button"
                         className="btn-outline small"
                         onClick={() => handleSaveSuggestion(suggestion)}
                         disabled={savingSuggestionName === suggestion.name}
                       >
-                        {savingSuggestionName === suggestion.name ? 'Saving...' : 'Save and swap in'}
+                        {savingSuggestionName === suggestion.name ? 'Saving...' : 'Save to my library and swap in'}
                       </button>
-                    ) : (
-                      <span className="exercise-ai-swap-missing">No saved match</span>
                     )}
                   </div>
                 )
@@ -383,6 +624,39 @@ export default function PlanOverviewSwapDrawer({
       </aside>
     </div>
   )
+}
+
+function buildPersonalExerciseDraft(exercise = null) {
+  return {
+    name: String(exercise?.name || '').trim(),
+    description: String(exercise?.description || '').trim(),
+    primary_muscle: String(exercise?.primary_muscle || '').trim(),
+    movement_pattern: String(exercise?.movement_pattern || '').trim(),
+    equipment: String(exercise?.equipment || '').trim(),
+    difficulty: String(exercise?.difficulty || 'beginner').trim() || 'beginner',
+  }
+}
+
+function normalizeLibraryRows(rows) {
+  return Array.isArray(rows) ? rows.map(normalizeLibraryExercise) : []
+}
+
+function normalizeLibraryExercise(exercise) {
+  return {
+    ...exercise,
+    owned_by_user: isUserOwnedExercise(exercise) ? 1 : 0,
+  }
+}
+
+function isUserOwnedExercise(exercise) {
+  return Number(exercise?.owned_by_user || 0) === 1 || Number(exercise?.user_id || 0) > 0
+}
+
+function buildExerciseMeta(option) {
+  return [option?.primary_muscle, option?.equipment, option?.difficulty]
+    .map(humanizeToken)
+    .filter(Boolean)
+    .join(' · ')
 }
 
 function buildSuggestedExercisePayload({ suggestion, exercise, dayType, aiPrompt }) {

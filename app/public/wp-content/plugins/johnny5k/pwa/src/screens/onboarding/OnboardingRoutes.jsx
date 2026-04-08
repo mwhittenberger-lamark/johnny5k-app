@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Navigate, Route, Routes, useNavigate } from 'react-router-dom'
-import { bodyApi, dashboardApi, onboardingApi } from '../../api/client'
+import { dashboardApi, onboardingApi } from '../../api/client'
 import { useAuthStore } from '../../store/authStore'
 import {
   bodyFormFromState,
@@ -384,16 +384,16 @@ function InjuriesStep() {
 
     try {
       await onboardingApi.savePrefs({ exercise_avoid_json: parseCommaList(form.exercise_avoid) })
-      await Promise.all(
-        form.flags.map(flag => bodyApi.saveFlag({
+      await onboardingApi.saveHealthFlags({
+        flags: form.flags.map(flag => ({
           id: flag.id,
           flag_type: 'injury',
           body_area: flag.body_area,
           severity: flag.severity,
           notes: flag.notes,
           active: flag.active,
-        }))
-      )
+        })),
+      })
       navigate('/onboarding/equipment')
     } catch (err) {
       setError(err.message)

@@ -24,6 +24,7 @@ const PANTRY_SORT_OPTIONS = [
 ]
 const FOOD_SEARCH_CACHE = new Map()
 const GROCERY_GAP_CHECKLIST_STORAGE_KEY = 'johnny5k:nutrition:grocery-gap-checked'
+const RECIPE_FILTER_STATE_STORAGE_KEY = 'johnny5k:nutrition:recipe-filter-state'
 const MICRO_TARGETS = {
   calcium: { amount: 1300, unit: 'mg' },
   choline: { amount: 550, unit: 'mg' },
@@ -107,9 +108,12 @@ export default function NutritionScreen() {
   const [toastQueue, setToastQueue] = useState([])
   const [activeView, setActiveView] = useState('today')
   const [showMicros, setShowMicros] = useState(false)
+  const [cookbookRecipes, setCookbookRecipes] = useState([])
   const [selectedRecipeKeys, setSelectedRecipeKeys] = useState([])
-  const [recipeMealFilter, setRecipeMealFilter] = useState('all')
-  const [recipeCollectionFilter, setRecipeCollectionFilter] = useState('all')
+  const [recipeMealFilter, setRecipeMealFilter] = useState(() => loadStoredRecipeFilterState().mealFilter)
+  const [recipeCollectionFilter, setRecipeCollectionFilter] = useState(() => loadStoredRecipeFilterState().collectionFilter)
+  const [recipeSearchQuery, setRecipeSearchQuery] = useState(() => loadStoredRecipeFilterState().searchQuery)
+  const [recipeFiltersOpen, setRecipeFiltersOpen] = useState(() => loadStoredRecipeFilterState().filtersOpen)
   const [pantrySearchQuery, setPantrySearchQuery] = useState('')
   const [pantryCategoryFilter, setPantryCategoryFilter] = useState('all')
   const [pantrySortMode, setPantrySortMode] = useState('name')
@@ -180,21 +184,32 @@ export default function NutritionScreen() {
   )
   const filteredRecipes = useMemo(
     () => {
+      const sourceRecipes = recipeCollectionFilter === 'cookbook' ? cookbookRecipes : recipes
       const mealFilteredRecipes = recipeMealFilter === 'all'
-        ? recipes
-        : recipes.filter(recipe => String(recipe?.meal_type || '').trim() === recipeMealFilter)
+        ? sourceRecipes
+        : sourceRecipes.filter(recipe => String(recipe?.meal_type || '').trim() === recipeMealFilter)
 
-      if (recipeCollectionFilter !== 'cookbook') {
+      const normalizedRecipeQuery = normalisePantryMatchText(recipeSearchQuery)
+      if (!normalizedRecipeQuery) {
         return mealFilteredRecipes
       }
 
-      return mealFilteredRecipes.filter(recipe => selectedRecipeKeys.includes(getRecipeKey(recipe)))
+      return mealFilteredRecipes.filter(recipe => {
+        const haystack = normalisePantryMatchText([
+          recipe?.recipe_name,
+          ...(Array.isArray(recipe?.ingredients) ? recipe.ingredients : []),
+          recipe?.why_this_works,
+          recipe?.meal_type,
+        ].filter(Boolean).join(' '))
+
+        return haystack.includes(normalizedRecipeQuery)
+      })
     },
-    [recipeCollectionFilter, recipeMealFilter, recipes, selectedRecipeKeys],
+    [cookbookRecipes, recipeCollectionFilter, recipeMealFilter, recipeSearchQuery, recipes],
   )
   const visibleRecipes = useMemo(
-    () => filteredRecipes.slice(0, RECIPE_CARD_VISIBLE_LIMIT),
-    [filteredRecipes],
+    () => getVisibleItems(filteredRecipes, expandedSections.recipes, RECIPE_CARD_VISIBLE_LIMIT),
+    [expandedSections.recipes, filteredRecipes],
   )
   const visibleGapItems = useMemo(
     () => getVisibleItems(orderedGapItems, expandedSections.groceryGap, 10),
@@ -269,7 +284,7 @@ export default function NutritionScreen() {
   async function loadData() {
     setError('')
     try {
-      const [mealRows, summaryRow, savedMealRows, savedFoodRows, pantryRows, recipeRows, groceryGapRow] = await Promise.all([
+      const [mealRows, summaryRow, savedMealRows, savedFoodRows, pantryRows, recipeRows, groceryGapRow, cookbookRows] = await Promise.all([
         nutritionApi.getMeals(today),
         nutritionApi.getSummary(today),
         nutritionApi.getSavedMeals(),
@@ -277,6 +292,7 @@ export default function NutritionScreen() {
         nutritionApi.getPantry(),
         nutritionApi.getRecipes(),
         nutritionApi.getGroceryGap(),
+        nutritionApi.getRecipeCookbook(),
       ])
       setMeals(mealRows)
       setSummary(summaryRow)
@@ -284,7 +300,8 @@ export default function NutritionScreen() {
       setSavedFoods(savedFoodRows)
       setPantry(pantryRows)
       setRecipes(recipeRows)
-      setSelectedRecipeKeys(current => current.filter(key => recipeRows.some(recipe => getRecipeKey(recipe) === key)))
+      setCookbookRecipes(Array.isArray(cookbookRows) ? cookbookRows.map(normaliseCookbookRecipe).filter(recipe => recipe.recipe_name) : [])
+      setSelectedRecipeKeys((Array.isArray(cookbookRows) ? cookbookRows : []).map(recipe => getRecipeKey(recipe)))
       setGroceryGap(groceryGapRow)
     } catch (err) {
       setError(err.message)
@@ -376,22 +393,47 @@ export default function NutritionScreen() {
     persistCheckedGapItems(checkedGapItems)
   }, [checkedGapItems])
 
+  useEffect(() => {
+    persistRecipeFilterState({
+      mealFilter: recipeMealFilter,
+      collectionFilter: recipeCollectionFilter,
+      searchQuery: recipeSearchQuery,
+      filtersOpen: recipeFiltersOpen,
+    })
+  }, [recipeCollectionFilter, recipeFiltersOpen, recipeMealFilter, recipeSearchQuery])
+
+  useEffect(() => {
+    if (cookbookRecipes.length) {
+      clearStoredCookbookRecipes()
+      return
+    }
+
+    const legacyRecipes = loadStoredCookbookRecipes()
+    if (!legacyRecipes.length) {
+      return
+    }
+
+    persistRecipeCookbook(legacyRecipes)
+  }, [cookbookRecipes.length])
+
   async function refreshPlanning(options = {}) {
     const { recipeRefreshToken = '' } = options
     setLoadingExtras(true)
     try {
-      const [savedMealRows, savedFoodRows, pantryRows, recipeRows, groceryGapRow] = await Promise.all([
+      const [savedMealRows, savedFoodRows, pantryRows, recipeRows, groceryGapRow, cookbookRows] = await Promise.all([
         nutritionApi.getSavedMeals(),
         nutritionApi.getSavedFoods(),
         nutritionApi.getPantry(),
         nutritionApi.getRecipes(recipeRefreshToken),
         nutritionApi.getGroceryGap(),
+        nutritionApi.getRecipeCookbook(),
       ])
       setSavedMeals(savedMealRows)
       setSavedFoods(savedFoodRows)
       setPantry(pantryRows)
       setRecipes(recipeRows)
-      setSelectedRecipeKeys(current => current.filter(key => recipeRows.some(recipe => getRecipeKey(recipe) === key)))
+      setCookbookRecipes(Array.isArray(cookbookRows) ? cookbookRows.map(normaliseCookbookRecipe).filter(recipe => recipe.recipe_name) : [])
+      setSelectedRecipeKeys((Array.isArray(cookbookRows) ? cookbookRows : []).map(recipe => getRecipeKey(recipe)))
       setGroceryGap(groceryGapRow)
       return true
     } catch (err) {
@@ -473,6 +515,7 @@ export default function NutritionScreen() {
       () => nutritionApi.createSavedFood({
         canonical_name: item.food_name,
         serving_size: item.serving_unit,
+        serving_grams: Number(item.estimated_grams) || null,
         calories: item.calories,
         protein_g: item.protein_g,
         carbs_g: item.carbs_g,
@@ -481,7 +524,8 @@ export default function NutritionScreen() {
         sugar_g: item.sugar_g,
         sodium_mg: item.sodium_mg,
         micros: item.micros,
-        source: 'ai_photo',
+        source: item.source?.provider === 'usda' ? 'usda_ai_photo' : 'ai_photo',
+        source_details: item.source || null,
       }),
       'Saved food added.',
       {
@@ -610,11 +654,30 @@ export default function NutritionScreen() {
     })
   }
 
-  function toggleRecipeSelection(recipe) {
+  async function persistRecipeCookbook(nextRecipes) {
+    const normalized = (Array.isArray(nextRecipes) ? nextRecipes : []).map(normaliseCookbookRecipe).filter(recipe => recipe.recipe_name)
+    setCookbookRecipes(normalized)
+    setSelectedRecipeKeys(normalized.map(entry => getRecipeKey(entry)))
+
+    try {
+      const response = await nutritionApi.updateRecipeCookbook(normalized)
+      const persisted = Array.isArray(response?.recipes) ? response.recipes.map(normaliseCookbookRecipe).filter(recipe => recipe.recipe_name) : normalized
+      setCookbookRecipes(persisted)
+      setSelectedRecipeKeys(persisted.map(entry => getRecipeKey(entry)))
+      clearStoredCookbookRecipes()
+      return true
+    } catch (err) {
+      showErrorToast(err, 'Could not save your cookbook.')
+      return false
+    }
+  }
+
+  async function toggleRecipeSelection(recipe) {
     const recipeKey = getRecipeKey(recipe)
-    setSelectedRecipeKeys(current => current.includes(recipeKey)
-      ? current.filter(key => key !== recipeKey)
-      : [...current, recipeKey])
+    const nextRecipes = cookbookRecipes.some(entry => getRecipeKey(entry) === recipeKey)
+      ? cookbookRecipes.filter(entry => getRecipeKey(entry) !== recipeKey)
+      : [...cookbookRecipes, normaliseCookbookRecipe(recipe)]
+    await persistRecipeCookbook(nextRecipes)
   }
 
   function toggleGapItemChecked(itemKey) {
@@ -631,8 +694,8 @@ export default function NutritionScreen() {
     setCheckedGapItems([])
   }
 
-  function handleClearSelectedRecipes() {
-    setSelectedRecipeKeys([])
+  async function handleClearSelectedRecipes() {
+    await persistRecipeCookbook([])
   }
 
   async function handleBulkGroceryGapImport(items) {
@@ -1561,40 +1624,68 @@ export default function NutritionScreen() {
           </div>
           <h3>What you can make next</h3>
           <p>Select recipes to feed the grocery gap above. Use My cook book to focus only on the recipes you already picked.</p>
-          <div className="nutrition-gap-list nutrition-quick-picks">
-            <button
-              type="button"
-              className={`onboarding-chip${recipeCollectionFilter === 'all' ? ' active' : ''}`}
-              onClick={() => setRecipeCollectionFilter('all')}
-            >
-              All recipes
-            </button>
-            <button
-              type="button"
-              className={`onboarding-chip${recipeCollectionFilter === 'cookbook' ? ' active' : ''}`}
-              onClick={() => setRecipeCollectionFilter('cookbook')}
-            >
-              My cook book ({selectedRecipeKeys.length})
-            </button>
-          </div>
-          <div className="nutrition-gap-list nutrition-quick-picks">
-            <button type="button" className={`onboarding-chip${recipeMealFilter === 'all' ? ' active' : ''}`} onClick={() => setRecipeMealFilter('all')}>
-              All ({recipes.length})
-            </button>
-            {MEAL_TYPES.map(mealType => {
-              const count = recipes.filter(recipe => recipe?.meal_type === mealType).length
-              return (
+          <details className="nutrition-filter-accordion" open={recipeFiltersOpen} onToggle={event => setRecipeFiltersOpen(event.currentTarget.open)}>
+            <summary>
+              <span>Search and filters</span>
+              <span className="nutrition-filter-accordion-meta">{recipeSearchQuery ? `Search: ${recipeSearchQuery}` : `${recipeCollectionFilter === 'cookbook' ? 'My cook book' : 'All recipes'} · ${recipeMealFilter === 'all' ? 'All meals' : formatMealTypeLabel(recipeMealFilter)}`}</span>
+            </summary>
+            <div className="nutrition-filter-accordion-body">
+              <label className="field-label nutrition-pantry-search">
+                <span>Search recipes</span>
+                <input
+                  type="search"
+                  placeholder="Search by recipe or ingredient"
+                  value={recipeSearchQuery}
+                  onChange={event => setRecipeSearchQuery(event.target.value)}
+                />
+              </label>
+              <div className="nutrition-gap-list nutrition-quick-picks">
                 <button
-                  key={mealType}
                   type="button"
-                  className={`onboarding-chip${recipeMealFilter === mealType ? ' active' : ''}`}
-                  onClick={() => setRecipeMealFilter(mealType)}
+                  className={`onboarding-chip${recipeCollectionFilter === 'all' ? ' active' : ''}`}
+                  onClick={() => setRecipeCollectionFilter('all')}
                 >
-                  {formatMealTypeLabel(mealType)} ({count})
+                  All recipes
                 </button>
-              )
-            })}
-          </div>
+                <button
+                  type="button"
+                  className={`onboarding-chip${recipeCollectionFilter === 'cookbook' ? ' active' : ''}`}
+                  onClick={() => setRecipeCollectionFilter('cookbook')}
+                >
+                  My cook book ({selectedRecipeKeys.length})
+                </button>
+              </div>
+              <div className="nutrition-gap-list nutrition-quick-picks">
+                <button type="button" className={`onboarding-chip${recipeMealFilter === 'all' ? ' active' : ''}`} onClick={() => setRecipeMealFilter('all')}>
+                  All ({recipes.length})
+                </button>
+                {MEAL_TYPES.map(mealType => {
+                  const count = recipes.filter(recipe => recipe?.meal_type === mealType).length
+                  return (
+                    <button
+                      key={mealType}
+                      type="button"
+                      className={`onboarding-chip${recipeMealFilter === mealType ? ' active' : ''}`}
+                      onClick={() => setRecipeMealFilter(mealType)}
+                    >
+                      {formatMealTypeLabel(mealType)} ({count})
+                    </button>
+                  )
+                })}
+              </div>
+              {(recipeSearchQuery || recipeMealFilter !== 'all' || recipeCollectionFilter !== 'all') ? (
+                <div className="nutrition-card-actions">
+                  {recipeSearchQuery ? <button type="button" className="btn-secondary small" onClick={() => setRecipeSearchQuery('')}>Clear search</button> : null}
+                  {recipeMealFilter !== 'all' || recipeCollectionFilter !== 'all'
+                    ? <button type="button" className="btn-ghost small" onClick={() => {
+                      setRecipeMealFilter('all')
+                      setRecipeCollectionFilter('all')
+                    }}>Reset filters</button>
+                    : null}
+                </div>
+              ) : null}
+            </div>
+          </details>
           <div className="nutrition-stack-list">
             {visibleRecipes.map(recipe => (
               <RecipeIdeaCard
@@ -1606,8 +1697,15 @@ export default function NutritionScreen() {
             ))}
             {!recipes.length ? <p className="empty-state">No suggestions yet. Add pantry items or refresh recipe ideas.</p> : null}
             {recipeCollectionFilter === 'cookbook' && !selectedRecipeKeys.length ? <p className="empty-state">Choose a few recipes first, then use My cook book to narrow the list.</p> : null}
-            {recipes.length > 0 && filteredRecipes.length === 0 && !(recipeCollectionFilter === 'cookbook' && !selectedRecipeKeys.length) ? <p className="empty-state">No {formatMealTypeLabel(recipeMealFilter).toLowerCase()} ideas match this filter right now. Refresh and try again.</p> : null}
+            {recipes.length > 0 && filteredRecipes.length === 0 && !(recipeCollectionFilter === 'cookbook' && !selectedRecipeKeys.length) ? <p className="empty-state">No {formatMealTypeLabel(recipeMealFilter).toLowerCase()} ideas match this search and filter state right now. Clear the search or refresh and try again.</p> : null}
           </div>
+          <SectionClampToggle
+            count={filteredRecipes.length}
+            expanded={expandedSections.recipes}
+            limit={RECIPE_CARD_VISIBLE_LIMIT}
+            label="recipes"
+            onToggle={() => toggleSection('recipes')}
+          />
           {filteredRecipes.length > RECIPE_CARD_VISIBLE_LIMIT ? <p className="nutrition-list-note">Showing 5 of {filteredRecipes.length} recipe ideas on the dashboard.</p> : null}
         </div>
       </section>
@@ -1775,10 +1873,18 @@ function AiMealReviewCard({ draft, caloriesRemaining, onChange, onConfirm, onCan
   const [pendingAction, setPendingAction] = useState('')
 
   function updateItem(index, field, value) {
-    onChange(current => ({
-      ...current,
-      items: current.items.map((item, itemIndex) => itemIndex === index ? { ...item, [field]: numericField(field) ? Number(value) || 0 : value } : item),
-    }))
+    onChange(current => {
+      const nextItems = current.items.map((item, itemIndex) => {
+        if (itemIndex !== index) return item
+        const nextItem = { ...item, [field]: numericField(field) ? Number(value) || 0 : value }
+        return recomputeMealDraftItem(nextItem, field)
+      })
+
+      return {
+        ...current,
+        items: nextItems,
+      }
+    })
   }
 
   async function handleConfirm() {
@@ -1818,10 +1924,24 @@ function AiMealReviewCard({ draft, caloriesRemaining, onChange, onConfirm, onCan
           <div key={index} className="nutrition-item-row editing">
             <div className="macro-inputs nutrition-item-editor">
               <FieldLabel label="Food name"><input value={item.food_name} onChange={event => updateItem(index, 'food_name', event.target.value)} /></FieldLabel>
+              <FieldLabel label="Portion count"><input type="number" min="0" step="0.25" value={item.serving_amount} onChange={event => updateItem(index, 'serving_amount', event.target.value)} placeholder="1" /></FieldLabel>
+              <FieldLabel label="Unit / size"><input value={item.serving_unit} onChange={event => updateItem(index, 'serving_unit', event.target.value)} placeholder="bowl" /></FieldLabel>
+              <FieldLabel label="Estimated grams"><input type="number" min="0" step="1" value={item.estimated_grams} onChange={event => updateItem(index, 'estimated_grams', event.target.value)} placeholder="0" /></FieldLabel>
               <FieldLabel label="Calories"><input type="number" value={item.calories} onChange={event => updateItem(index, 'calories', event.target.value)} placeholder="0" /></FieldLabel>
               <FieldLabel label="Protein"><input type="number" step="0.1" value={item.protein_g} onChange={event => updateItem(index, 'protein_g', event.target.value)} placeholder="0" /></FieldLabel>
               <FieldLabel label="Carbs"><input type="number" step="0.1" value={item.carbs_g} onChange={event => updateItem(index, 'carbs_g', event.target.value)} placeholder="0" /></FieldLabel>
               <FieldLabel label="Fat"><input type="number" step="0.1" value={item.fat_g} onChange={event => updateItem(index, 'fat_g', event.target.value)} placeholder="0" /></FieldLabel>
+            </div>
+            <div className="nutrition-item-meta">
+              {item.portion_description ? <p className="empty-state">{item.portion_description}</p> : null}
+              {item.source?.provider === 'usda' ? (
+                <p className="empty-state">
+                  USDA match: {item.source.matched_name || item.food_name}
+                  {item.source.data_type ? ` · ${item.source.data_type}` : ''}
+                </p>
+              ) : (
+                <p className="empty-state">Using AI estimate only. Adjust grams if the portion looks off.</p>
+              )}
             </div>
             <div className="nutrition-row-actions">
               <button className="btn-secondary small" type="button" onClick={() => handleSaveFood(item, index)} disabled={Boolean(pendingAction)}>{pendingAction === `food-${index}` ? 'Saving…' : 'Save food'}</button>
@@ -1906,6 +2026,7 @@ function SavedFoodForm({ initialValues = null, savedFoods = [], submitLabel = 'S
         canonical_name: result?.food_name || current.canonical_name,
         brand: result?.brand || current.brand,
         serving_size: result?.serving_size || current.serving_size,
+        serving_grams: result?.serving_grams ?? current.serving_grams,
         calories: result?.calories ?? current.calories,
         protein_g: result?.protein_g ?? current.protein_g,
         carbs_g: result?.carbs_g ?? current.carbs_g,
@@ -1914,6 +2035,7 @@ function SavedFoodForm({ initialValues = null, savedFoods = [], submitLabel = 'S
         sugar_g: result?.sugar_g ?? current.sugar_g,
         sodium_mg: result?.sodium_mg ?? current.sodium_mg,
         micros: Array.isArray(result?.micros) ? result.micros : current.micros,
+        source: result?.source || current.source,
       }))
       setAiNote(result?.notes || 'AI draft ready. Check the name and macros before saving.')
       onToast?.('AI food draft ready. Review and save it.')
@@ -1933,7 +2055,11 @@ function SavedFoodForm({ initialValues = null, savedFoods = [], submitLabel = 'S
       try {
         await onSave({
           ...form,
-          source: 'manual',
+          source: typeof form.source === 'string'
+            ? form.source
+            : (form.source?.provider === 'usda' ? 'usda_ai_text' : 'manual'),
+          source_details: typeof form.source === 'object' ? form.source : null,
+          serving_grams: form.serving_grams === '' || form.serving_grams == null ? null : (+form.serving_grams || 0),
           calories: +form.calories || 0,
           protein_g: +form.protein_g || 0,
           carbs_g: +form.carbs_g || 0,
@@ -1956,6 +2082,7 @@ function SavedFoodForm({ initialValues = null, savedFoods = [], submitLabel = 'S
           </label>
           {aiError ? <p className="error">{aiError}</p> : null}
           {aiNote ? <p className="empty-state">{aiNote}</p> : null}
+          {form.source?.provider === 'usda' ? <p className="empty-state">USDA match: {form.source.matched_name || form.canonical_name}</p> : null}
           <button type="button" className="btn-secondary" onClick={handleAnalyseDescription} disabled={aiBusy || submitting}>{aiBusy ? 'Analysing…' : 'Analyze with AI'}</button>
         </div>
       ) : null}
@@ -1986,6 +2113,9 @@ function SavedFoodForm({ initialValues = null, savedFoods = [], submitLabel = 'S
       </FieldLabel>
       <FieldLabel label="Serving size">
         <input placeholder="1 bowl" value={form.serving_size} onChange={event => update('serving_size', event.target.value)} />
+      </FieldLabel>
+      <FieldLabel label="Serving grams">
+        <input type="number" min="0" step="1" placeholder="170" value={form.serving_grams ?? ''} onChange={event => update('serving_grams', event.target.value)} />
       </FieldLabel>
       <div className="macro-inputs">
         <FieldLabel label="Calories"><input type="number" placeholder="0" value={form.calories} onChange={event => update('calories', event.target.value)} /></FieldLabel>
@@ -2846,6 +2976,8 @@ function normaliseMealItems(items) {
     food_name: item.food_name || 'Food item',
     serving_amount: Number(item.serving_amount ?? 1),
     serving_unit: item.serving_unit || 'serving',
+    estimated_grams: Number(item.estimated_grams ?? item.source?.estimated_grams ?? 0),
+    portion_description: item.portion_description || '',
     calories: Number(item.calories ?? 0),
     protein_g: Number(item.protein_g ?? 0),
     carbs_g: Number(item.carbs_g ?? 0),
@@ -2854,12 +2986,15 @@ function normaliseMealItems(items) {
     sugar_g: Number(item.sugar_g ?? 0),
     sodium_mg: Number(item.sodium_mg ?? 0),
     micros: Array.isArray(item.micros) ? item.micros : [],
+    source: item.source || null,
+    food_confidence: Number(item.food_confidence ?? item.source?.food_confidence ?? 0),
+    portion_confidence: Number(item.portion_confidence ?? item.source?.portion_confidence ?? 0),
     notes: item.notes || '',
   }))
 }
 
 function numericField(field) {
-  return ['calories', 'protein_g', 'carbs_g', 'fat_g', 'fiber_g', 'sodium_mg'].includes(field)
+  return ['serving_amount', 'estimated_grams', 'calories', 'protein_g', 'carbs_g', 'fat_g', 'fiber_g', 'sugar_g', 'sodium_mg'].includes(field)
 }
 
 function buildLabelReview(result, targets) {
@@ -3116,6 +3251,8 @@ function createEmptyMealItem() {
     food_name: '',
     serving_amount: '1',
     serving_unit: 'serving',
+    estimated_grams: '',
+    portion_description: '',
     calories: '',
     protein_g: '',
     carbs_g: '',
@@ -3136,6 +3273,7 @@ function applyFoodSuggestion(currentItem, suggestion) {
     food_name: suggestion.food_name || suggestion.canonical_name || currentItem.food_name,
     serving_amount: String(suggestion.serving_amount ?? currentItem.serving_amount ?? '1'),
     serving_unit: suggestion.serving_unit || suggestion.serving_size || currentItem.serving_unit || 'serving',
+    estimated_grams: String(suggestion.estimated_grams ?? suggestion.serving_grams ?? currentItem.estimated_grams ?? ''),
     calories: String(suggestion.calories ?? currentItem.calories ?? ''),
     protein_g: String(suggestion.protein_g ?? currentItem.protein_g ?? ''),
     carbs_g: String(suggestion.carbs_g ?? currentItem.carbs_g ?? ''),
@@ -3155,6 +3293,7 @@ function buildMealItemPayload(item) {
     food_name: item.food_name?.trim() || '',
     serving_amount: Number(item.serving_amount) || 1,
     serving_unit: item.serving_unit?.trim() || 'serving',
+    estimated_grams: Number(item.estimated_grams) || 0,
     calories: Number(item.calories) || 0,
     protein_g: Number(item.protein_g) || 0,
     carbs_g: Number(item.carbs_g) || 0,
@@ -3165,6 +3304,56 @@ function buildMealItemPayload(item) {
     micros: Array.isArray(item.micros) ? item.micros : [],
     source: item.source,
   }
+}
+
+function recomputeMealDraftItem(item, changedField) {
+  const source = item?.source
+  if (!source || source.provider !== 'usda' || !source.per_100g) {
+    return item
+  }
+
+  const currentGrams = Number(item.estimated_grams ?? source.estimated_grams ?? 0)
+  let nextGrams = currentGrams
+
+  if (changedField === 'serving_amount') {
+    const sourceServingAmount = Number(source.serving_amount ?? 1) || 1
+    const referenceServing = Number(source.reference_serving_grams ?? 0) || ((Number(source.estimated_grams ?? 0) || 0) / sourceServingAmount)
+    if (referenceServing > 0) {
+      nextGrams = (Number(item.serving_amount) || 0) * referenceServing
+    }
+  }
+
+  if (changedField === 'estimated_grams') {
+    nextGrams = Number(item.estimated_grams) || 0
+  }
+
+  if (nextGrams <= 0) {
+    return item
+  }
+
+  const factor = nextGrams / 100
+  return {
+    ...item,
+    estimated_grams: Math.round(nextGrams),
+    calories: Math.round((Number(source.per_100g.calories ?? 0) || 0) * factor),
+    protein_g: roundTo((Number(source.per_100g.protein_g ?? 0) || 0) * factor, 2),
+    carbs_g: roundTo((Number(source.per_100g.carbs_g ?? 0) || 0) * factor, 2),
+    fat_g: roundTo((Number(source.per_100g.fat_g ?? 0) || 0) * factor, 2),
+    fiber_g: roundTo((Number(source.per_100g.fiber_g ?? 0) || 0) * factor, 2),
+    sugar_g: roundTo((Number(source.per_100g.sugar_g ?? 0) || 0) * factor, 2),
+    sodium_mg: roundTo((Number(source.per_100g.sodium_mg ?? 0) || 0) * factor, 2),
+    source: {
+      ...source,
+      estimated_grams: roundTo(nextGrams, 2),
+      serving_amount: Number(item.serving_amount) || 1,
+      serving_unit: item.serving_unit || source.serving_unit || 'serving',
+    },
+  }
+}
+
+function roundTo(value, digits = 0) {
+  const multiplier = 10 ** digits
+  return Math.round((Number(value) || 0) * multiplier) / multiplier
 }
 
 function aggregateMealMicros(meals) {
@@ -3424,8 +3613,109 @@ function persistCheckedGapItems(items) {
   }
 }
 
+function loadStoredRecipeFilterState() {
+  const fallback = {
+    mealFilter: 'all',
+    collectionFilter: 'all',
+    searchQuery: '',
+    filtersOpen: false,
+  }
+
+  if (typeof window === 'undefined') {
+    return fallback
+  }
+
+  try {
+    const rawValue = window.localStorage.getItem(RECIPE_FILTER_STATE_STORAGE_KEY)
+    const parsed = rawValue ? JSON.parse(rawValue) : {}
+    const mealFilter = String(parsed?.mealFilter || '').trim()
+    const collectionFilter = String(parsed?.collectionFilter || '').trim()
+
+    return {
+      mealFilter: ['all', ...MEAL_TYPES].includes(mealFilter) ? mealFilter : fallback.mealFilter,
+      collectionFilter: ['all', 'cookbook'].includes(collectionFilter) ? collectionFilter : fallback.collectionFilter,
+      searchQuery: String(parsed?.searchQuery || '').trim(),
+      filtersOpen: Boolean(parsed?.filtersOpen),
+    }
+  } catch {
+    return fallback
+  }
+}
+
+function persistRecipeFilterState(state) {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  try {
+    window.localStorage.setItem(RECIPE_FILTER_STATE_STORAGE_KEY, JSON.stringify({
+      mealFilter: ['all', ...MEAL_TYPES].includes(String(state?.mealFilter || '').trim()) ? String(state.mealFilter).trim() : 'all',
+      collectionFilter: ['all', 'cookbook'].includes(String(state?.collectionFilter || '').trim()) ? String(state.collectionFilter).trim() : 'all',
+      searchQuery: String(state?.searchQuery || '').trim(),
+      filtersOpen: Boolean(state?.filtersOpen),
+    }))
+  } catch {
+    return
+  }
+}
+
+function loadStoredCookbookRecipes() {
+  if (typeof window === 'undefined') {
+    return []
+  }
+
+  try {
+    const rawValue = window.localStorage.getItem('johnny5k:nutrition:recipe-cookbook')
+    const parsed = rawValue ? JSON.parse(rawValue) : []
+    const recipes = Array.isArray(parsed) ? parsed.map(normaliseCookbookRecipe).filter(recipe => recipe.recipe_name) : []
+    const seen = new Set()
+
+    return recipes.filter(recipe => {
+      const key = getRecipeKey(recipe)
+      if (!key || seen.has(key)) {
+        return false
+      }
+
+      seen.add(key)
+      return true
+    })
+  } catch {
+    return []
+  }
+}
+
+function clearStoredCookbookRecipes() {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  try {
+    window.localStorage.removeItem('johnny5k:nutrition:recipe-cookbook')
+  } catch {
+    return
+  }
+}
+
 function getRecipeKey(recipe) {
   return String(recipe?.key || `${recipe?.meal_type || 'meal'}-${recipe?.recipe_name || recipe?.id || ''}`).trim()
+}
+
+function normaliseCookbookRecipe(recipe) {
+  return {
+    key: getRecipeKey(recipe),
+    recipe_name: String(recipe?.recipe_name || '').trim(),
+    meal_type: String(recipe?.meal_type || 'lunch').trim() || 'lunch',
+    ingredients: dedupeIngredientList(recipe?.ingredients),
+    instructions: (Array.isArray(recipe?.instructions) ? recipe.instructions : []).map(step => String(step || '').trim()).filter(Boolean),
+    estimated_calories: Number(recipe?.estimated_calories ?? 0),
+    estimated_protein_g: Number(recipe?.estimated_protein_g ?? 0),
+    estimated_carbs_g: Number(recipe?.estimated_carbs_g ?? 0),
+    estimated_fat_g: Number(recipe?.estimated_fat_g ?? 0),
+    why_this_works: String(recipe?.why_this_works || '').trim(),
+    source: String(recipe?.source || '').trim(),
+    on_hand_ingredients: dedupeIngredientList(recipe?.on_hand_ingredients),
+    missing_ingredients: dedupeIngredientList(recipe?.missing_ingredients),
+  }
 }
 
 function formatMealTypeLabel(mealType) {
@@ -3792,6 +4082,7 @@ function buildSavedFoodFormState(food) {
     canonical_name: food?.canonical_name || food?.food_name || '',
     brand: food?.brand || '',
     serving_size: food?.serving_size || '1 serving',
+    serving_grams: food?.serving_grams ?? '',
     calories: food?.calories ?? '',
     protein_g: food?.protein_g ?? '',
     carbs_g: food?.carbs_g ?? '',
@@ -3800,6 +4091,7 @@ function buildSavedFoodFormState(food) {
     sugar_g: food?.sugar_g ?? '',
     sodium_mg: food?.sodium_mg ?? '',
     micros: Array.isArray(food?.micros) ? food.micros.map(micro => ({ ...micro, amount: roundMicroAmount(micro?.amount) })) : [],
+    source: food?.source || null,
   }
 }
 
