@@ -295,8 +295,8 @@ class WorkoutController {
 		global $wpdb;
 		$p       = $wpdb->prefix;
 		$user_id = get_current_user_id();
-		$days    = max( 1, min( 3, (int) ( $req->get_param( 'days' ) ?: 3 ) ) );
-		$limit   = max( 1, min( 10, (int) ( $req->get_param( 'limit' ) ?: 10 ) ) );
+		$days    = max( 1, min( 365, (int) ( $req->get_param( 'days' ) ?: 3 ) ) );
+		$limit   = max( 1, min( 90, (int) ( $req->get_param( 'limit' ) ?: 10 ) ) );
 		$cutoff  = UserTime::days_ago( $user_id, max( 0, $days - 1 ) );
 
 		$rows = $wpdb->get_results( $wpdb->prepare(

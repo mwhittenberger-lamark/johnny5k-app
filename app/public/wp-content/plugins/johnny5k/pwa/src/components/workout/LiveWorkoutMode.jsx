@@ -39,6 +39,9 @@ export default function LiveWorkoutMode({
   const [frameIndex, setFrameIndex] = useState(0)
   const [now, setNow] = useState(() => Date.now())
   const [lastTransition, setLastTransition] = useState(() => ({ kind: 'exercise', at: Date.now(), summary: 'Workout live mode opened.' }))
+  const [sessionMapOpen, setSessionMapOpen] = useState(false)
+  const [coachLogOpen, setCoachLogOpen] = useState(false)
+  const [restToast, setRestToast] = useState(null)
   const queueRef = useRef([])
   const processingRef = useRef(false)
   const recognitionRef = useRef(null)
@@ -46,6 +49,14 @@ export default function LiveWorkoutMode({
   const previousExerciseIdRef = useRef(0)
   const textareaRef = useRef(null)
   const spokenMessageRef = useRef('')
+  const onCloseRef = useRef(onClose)
+  const panelRef = useRef(null)
+  const stickyMetaRef = useRef(null)
+  const currentLiftRef = useRef(null)
+  const johnnyCardRef = useRef(null)
+  const coachLogRef = useRef(null)
+  const latestAssistantMessageKeyRef = useRef('')
+  const restToastTimerRef = useRef(null)
   const voiceSupported = typeof window !== 'undefined' && (window.SpeechRecognition || window.webkitSpeechRecognition)
   const playbackSupported = typeof window !== 'undefined' && 'speechSynthesis' in window
   const workoutSessionId = Number(session?.session?.id || 0)
@@ -64,6 +75,10 @@ export default function LiveWorkoutMode({
   const currentFrame = coachFrames[frameIndex % coachFrames.length]
 
   useEffect(() => {
+    onCloseRef.current = onClose
+  }, [onClose])
+
+  useEffect(() => {
     if (!isOpen) return undefined
 
     const intervalId = window.setInterval(() => {
@@ -75,17 +90,21 @@ export default function LiveWorkoutMode({
 
     function handleKeyDown(event) {
       if (event.key === 'Escape') {
-        onClose()
+        onCloseRef.current?.()
       }
     }
 
     window.addEventListener('keydown', handleKeyDown)
+
+    panelRef.current?.scrollTo({ top: 0, behavior: 'auto' })
+    window.scrollTo({ top: 0, behavior: 'auto' })
+
     return () => {
       window.clearInterval(intervalId)
       document.body.style.overflow = previousOverflow
       window.removeEventListener('keydown', handleKeyDown)
     }
-  }, [isOpen, onClose])
+  }, [isOpen])
 
   useEffect(() => () => recognitionRef.current?.stop(), [])
 
@@ -124,6 +143,12 @@ export default function LiveWorkoutMode({
     textareaRef.current?.focus()
   }, [isOpen])
 
+  useEffect(() => () => {
+    if (restToastTimerRef.current) {
+      window.clearTimeout(restToastTimerRef.current)
+    }
+  }, [])
+
   useEffect(() => {
     if (!isOpen || !activeExercise?.id) return
 
@@ -159,6 +184,8 @@ export default function LiveWorkoutMode({
     initializedSessionRef.current = workoutSessionId
     setCoachMessages([])
     setFrameIndex(0)
+    setSessionMapOpen(false)
+    setCoachLogOpen(false)
     setLastTransition({ kind: 'exercise', at: Date.now(), summary: 'Workout live mode opened.' })
     enqueueCoachEvent({
       type: 'session_opened',
@@ -171,6 +198,22 @@ export default function LiveWorkoutMode({
     if (!isOpen || coachMessages[coachMessages.length - 1]?.role !== 'assistant') return
     setFrameIndex(index => (index + 1) % coachFrames.length)
   }, [coachFrames.length, coachMessages, isOpen])
+
+  useEffect(() => {
+    if (!isOpen || !coachLogOpen) return
+    coachLogRef.current?.scrollTo({ top: coachLogRef.current.scrollHeight, behavior: 'smooth' })
+  }, [coachBusy, coachLogOpen, coachMessages, isOpen])
+
+  useEffect(() => {
+    if (!isOpen) return
+
+    const latestAssistantMessage = [...coachMessages].reverse().find(message => message.role === 'assistant')
+    const nextKey = latestAssistantMessage ? `${latestAssistantMessage.createdAt || ''}-${latestAssistantMessage.text || ''}` : ''
+    if (!nextKey || latestAssistantMessageKeyRef.current === nextKey) return
+
+    latestAssistantMessageKeyRef.current = nextKey
+    scrollPanelToSection(johnnyCardRef)
+  }, [coachMessages, isOpen])
 
   useEffect(() => {
     setFrameIndex(0)
@@ -195,6 +238,25 @@ export default function LiveWorkoutMode({
     window.speechSynthesis.cancel()
     window.speechSynthesis.speak(utterance)
   }, [availableVoices, coachMessages, isOpen, playbackSupported, voicePrefs.autoSpeak, voicePrefs.pitch, voicePrefs.rate, voicePrefs.voiceURI])
+
+  useEffect(() => {
+    if (!isOpen || !lastTransition?.summary) return
+
+    const guidance = buildRestGuidance(lastTransition.kind, 0)
+    setRestToast({
+      title: guidance.title,
+      message: guidance.message,
+      key: `${lastTransition.kind}-${lastTransition.at}`,
+    })
+
+    if (restToastTimerRef.current) {
+      window.clearTimeout(restToastTimerRef.current)
+    }
+
+    restToastTimerRef.current = window.setTimeout(() => {
+      setRestToast(current => (current?.key === `${lastTransition.kind}-${lastTransition.at}` ? null : current))
+    }, 10000)
+  }, [isOpen, lastTransition])
 
   if (!isOpen || !activeExercise) {
     return null
@@ -291,6 +353,7 @@ export default function LiveWorkoutMode({
     enqueueCoachEvent({
       type: 'exercise_changed',
       summary: `The user moved to exercise ${nextIndex + 1} of ${totalExerciseCount}: ${nextExercise?.exercise_name || 'next exercise'}.`,
+      exerciseContext: buildLiveExerciseSnapshot(nextExercise),
     })
   }
 
@@ -460,20 +523,60 @@ export default function LiveWorkoutMode({
     }
   }
 
+  function scrollPanelToSection(targetRef) {
+    const panelNode = panelRef.current
+    const targetNode = targetRef?.current
+    if (!panelNode || !targetNode) return
+
+    const panelRect = panelNode.getBoundingClientRect()
+    const targetRect = targetNode.getBoundingClientRect()
+    const stickyHeight = stickyMetaRef.current?.offsetHeight || 0
+    const nextTop = panelNode.scrollTop + (targetRect.top - panelRect.top) - stickyHeight - 12
+
+    panelNode.scrollTo({
+      top: Math.max(0, nextTop),
+      behavior: 'smooth',
+    })
+  }
+
   const latestCoachMessage = [...coachMessages].reverse().find(message => message.role === 'assistant')
   const voiceLabel = availableVoices.find(voice => voice.voiceURI === voicePrefs.voiceURI)?.name || 'Default'
+  const stickyMeta = (
+    <div ref={stickyMetaRef} className="live-workout-sticky-meta">
+      <div className="live-workout-sticky-meta-copy">
+        {timerLabel ? <span className="dashboard-chip subtle workout-session-timer">Workout {timerLabel}</span> : null}
+        <span className={`dashboard-chip subtle live-workout-rest-chip ${restGuidance.tone}`}>{restGuidance.label}</span>
+      </div>
+      <div className="live-workout-sticky-nav" aria-label="Live workout shortcuts">
+        <button
+          type="button"
+          className="btn-secondary small live-workout-sticky-arrow"
+          aria-label="Go to current lift"
+          onClick={() => scrollPanelToSection(currentLiftRef)}
+        >
+          ↑
+        </button>
+        <button
+          type="button"
+          className="btn-secondary small live-workout-sticky-arrow"
+          aria-label="Go to Johnny Live"
+          onClick={() => scrollPanelToSection(johnnyCardRef)}
+        >
+          ↓
+        </button>
+      </div>
+    </div>
+  )
 
   return (
     <div className="live-workout-shell" role="dialog" aria-modal="true" aria-label="Live workout mode">
       <div className="live-workout-backdrop" onClick={onClose} aria-hidden="true" />
-      <section className="live-workout-panel">
+      <section ref={panelRef} className="live-workout-panel">
         <header className="live-workout-header">
           <div className="live-workout-header-copy">
             <span className="dashboard-chip ai">Live Workout Mode</span>
             <h2>{todayLabel} • {formatToken(displayDayType || session?.session?.planned_day_type || 'workout')} day</h2>
             <div className="live-workout-header-meta">
-              {timerLabel ? <span className="dashboard-chip subtle workout-session-timer">Workout {timerLabel}</span> : null}
-              <span className={`dashboard-chip subtle live-workout-rest-chip ${restGuidance.tone}`}>{restGuidance.label}</span>
               {playbackSupported ? <span className={`dashboard-chip subtle ${voicePrefs.autoSpeak ? 'success' : ''}`}>Voice {voicePrefs.autoSpeak ? 'on' : 'off'} • {voiceLabel}</span> : null}
             </div>
           </div>
@@ -483,9 +586,11 @@ export default function LiveWorkoutMode({
           </div>
         </header>
 
+        {stickyMeta}
+
         <div className="live-workout-grid">
           <div className="live-workout-main">
-            <section className="dash-card live-workout-exercise-card">
+            <section ref={currentLiftRef} className="dash-card live-workout-exercise-card">
               <div className="live-workout-section-head">
                 <span className="dashboard-chip workout">Current lift</span>
                 <span className="dashboard-chip subtle">Exercise {activeExerciseIdx + 1} of {totalExerciseCount}</span>
@@ -561,29 +666,33 @@ export default function LiveWorkoutMode({
             </section>
 
             <section className="dash-card live-workout-plan-card">
-              <div className="live-workout-section-head">
-                <span className="dashboard-chip subtle">Session map</span>
-                <span className="settings-subtitle">Jump anywhere without leaving live mode.</span>
-              </div>
-              <div className="live-workout-session-strip">
-                {exercises.map((exercise, index) => (
-                  <button
-                    key={exercise.id}
-                    type="button"
-                    className={`live-workout-session-pill ${index === activeExerciseIdx ? 'active' : ''}`}
-                    onClick={() => moveExercise(index - activeExerciseIdx)}
-                  >
-                    <strong>{index + 1}</strong>
-                    <span>{exercise.exercise_name}</span>
-                    <small>{exercise.sets?.filter(set => set.completed).length || 0}/{getLiveTotalSetCount(exercise)} sets</small>
-                  </button>
-                ))}
-              </div>
+              <details open={sessionMapOpen} onToggle={event => setSessionMapOpen(event.currentTarget.open)}>
+                <summary className="live-workout-plan-summary">
+                  <div className="live-workout-section-head">
+                    <span className="dashboard-chip subtle">Session map</span>
+                    <span className="settings-subtitle">{sessionMapOpen ? 'Hide the session map.' : 'Click me to see the exercises for todays session.'}</span>
+                  </div>
+                </summary>
+                <div className="live-workout-session-strip">
+                  {exercises.map((exercise, index) => (
+                    <button
+                      key={exercise.id}
+                      type="button"
+                      className={`live-workout-session-pill ${index === activeExerciseIdx ? 'active' : ''}`}
+                      onClick={() => moveExercise(index - activeExerciseIdx)}
+                    >
+                      <strong>{index + 1}</strong>
+                      <span>{exercise.exercise_name}</span>
+                      <small>{exercise.sets?.filter(set => set.completed).length || 0}/{getLiveTotalSetCount(exercise)} sets</small>
+                    </button>
+                  ))}
+                </div>
+              </details>
             </section>
           </div>
 
           <aside className="live-workout-coach">
-            <section className="dash-card live-workout-johnny-card">
+            <section ref={johnnyCardRef} className="dash-card live-workout-johnny-card">
               <div className="live-workout-section-head">
                 <span className="dashboard-chip coach">Johnny live</span>
                 <span className="dashboard-chip subtle">Every workout change updates him</span>
@@ -592,10 +701,6 @@ export default function LiveWorkoutMode({
               <div className="live-workout-johnny-hero">
                 <div className="live-workout-johnny-frame">
                   <img src={currentFrame.image} alt="" />
-                  <div className="live-workout-johnny-frame-copy">
-                    <strong>{currentFrame.label}</strong>
-                    <span>{currentFrame.note}</span>
-                  </div>
                 </div>
                 <div className="live-workout-johnny-latest">
                   <span className="live-workout-johnny-label">What Johnny is saying</span>
@@ -603,36 +708,39 @@ export default function LiveWorkoutMode({
                 </div>
               </div>
 
-              <div className="live-workout-rest-card">
-                <strong>{restGuidance.title}</strong>
-                <p>{restGuidance.message}</p>
-              </div>
-
-              <div className="live-workout-coach-log" role="log" aria-live="polite">
-                {coachMessages.length ? coachMessages.slice(-6).map((message, index) => (
-                  <div key={`${message.role}-${message.createdAt || index}`} className={`live-workout-coach-bubble ${message.role}`}>
-                    <span>{message.role === 'assistant' ? 'Johnny' : 'You'}</span>
-                    <p>{message.text}</p>
-                    {message.role === 'assistant' && Array.isArray(message.actions) && message.actions.length ? (
-                      <div className="live-workout-coach-bubble-actions">
-                        {message.actions.map((action, actionIndex) => (
-                          <button
-                            key={`${action.type}-${actionIndex}`}
-                            type="button"
-                            className="btn-outline small"
-                            onClick={() => handleCoachAction(action)}
-                          >
-                            {formatLiveWorkoutActionLabel(action)}
-                          </button>
-                        ))}
-                      </div>
-                    ) : null}
+              <details className="live-workout-coach-history" open={coachLogOpen} onToggle={event => setCoachLogOpen(event.currentTarget.open)}>
+                <summary className="live-workout-coach-history-summary">
+                  <div>
+                    <strong>Chat history</strong>
+                    <span>{coachMessages.length ? `${Math.min(coachMessages.length, 6)} recent message${Math.min(coachMessages.length, 6) === 1 ? '' : 's'}` : 'Open to review Johnny updates and your questions.'}</span>
                   </div>
-                )) : (
-                  <p className="settings-subtitle">Johnny will keep this feed updated as you move through the workout.</p>
-                )}
-                {coachBusy ? <div className="live-workout-coach-bubble assistant pending"><span>Johnny</span><p>Thinking through the current workout state…</p></div> : null}
-              </div>
+                </summary>
+                <div ref={coachLogRef} className="live-workout-coach-log" role="log" aria-live="polite">
+                  {coachMessages.length ? coachMessages.slice(-6).map((message, index) => (
+                    <div key={`${message.role}-${message.createdAt || index}`} className={`live-workout-coach-bubble ${message.role}`}>
+                      <span>{message.role === 'assistant' ? 'Johnny' : 'You'}</span>
+                      <p>{message.text}</p>
+                      {message.role === 'assistant' && Array.isArray(message.actions) && message.actions.length ? (
+                        <div className="live-workout-coach-bubble-actions">
+                          {message.actions.map((action, actionIndex) => (
+                            <button
+                              key={`${action.type}-${actionIndex}`}
+                              type="button"
+                              className="btn-outline small"
+                              onClick={() => handleCoachAction(action)}
+                            >
+                              {formatLiveWorkoutActionLabel(action)}
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                  )) : (
+                    <p className="settings-subtitle">Johnny will keep this feed updated as you move through the workout.</p>
+                  )}
+                  {coachBusy ? <div className="live-workout-coach-bubble assistant pending"><span>Johnny</span><p>Thinking through the current workout state…</p></div> : null}
+                </div>
+              </details>
 
               {coachStatus ? <p className="settings-subtitle">{coachStatus}</p> : null}
 
@@ -642,7 +750,7 @@ export default function LiveWorkoutMode({
                   value={coachInput}
                   onChange={event => setCoachInput(event.target.value)}
                   onKeyDown={handleCoachInputKeyDown}
-                  placeholder="Ask Johnny anything about this set, your form, progression, or tell him to find a demo."
+                  placeholder="Type or record your question here."
                   rows={3}
                 />
                 <div className="live-workout-coach-buttons">
@@ -657,6 +765,13 @@ export default function LiveWorkoutMode({
             </section>
           </aside>
         </div>
+
+        {restToast ? (
+          <div className="live-workout-toast" role="status" aria-live="polite">
+            <strong>{restToast.title}</strong>
+            <p>{restToast.message}</p>
+          </div>
+        ) : null}
       </section>
     </div>
   )
@@ -665,10 +780,16 @@ export default function LiveWorkoutMode({
 function buildCoachPrompt(event, activeExercise) {
   const eventSummary = String(event?.summary || '').trim()
   const userText = String(event?.userText || '').trim()
-  const exerciseName = activeExercise?.exercise_name || 'the current exercise'
+  const exerciseContext = event?.exerciseContext || buildLiveExerciseSnapshot(activeExercise)
+  const exerciseName = exerciseContext?.exercise_name || activeExercise?.exercise_name || 'the current exercise'
 
   if (event?.manual && userText) {
     return `You are Johnny coaching a user live during their workout inside Johnny5k. Current exercise: ${exerciseName}. Answer the user's question directly in no more than 3 short sentences. Give one concrete coaching cue when possible. If the question is about form, setup, or how to perform the movement, prefer returning an open_exercise_demo action for the current exercise. User question: ${userText}`
+  }
+
+  if (event?.type === 'exercise_changed') {
+    const loadGuidance = buildLoadGuidancePromptFragment(exerciseContext)
+    return `You are Johnny coaching a user live during their workout inside Johnny5k. The user just moved to a new exercise. Respond with 1 to 2 short sentences only. ${loadGuidance} Give a direct setup cue or execution reminder for the first working set. Do not repeat the whole workout plan. Event: ${eventSummary}`
   }
 
   return `You are Johnny coaching a user live during their workout inside Johnny5k. The app is sending you a workout-state update. Respond with 1 to 2 short sentences only. Give live encouragement, one useful cue, or rest-timing guidance based on the current state. Do not repeat the entire workout plan. Event: ${eventSummary}`
@@ -701,6 +822,8 @@ function buildLiveWorkoutContext({
     active_muscle: activeExercise?.primary_muscle || '',
     active_equipment: activeExercise?.equipment || '',
     active_target_reps: formatRepRange(activeExercise),
+    active_recommended_weight: Number(activeExercise?.recommended_weight || 0) || null,
+    active_recent_history: normalizeLiveWorkoutHistory(activeExercise?.recent_history),
     active_planned_sets: Number(activeExercise?.planned_sets || 0),
     completed_sets_for_exercise: activeExercise?.sets?.filter(set => set.completed).length || 0,
     current_set_number: currentSetIdx + 1,
@@ -715,6 +838,7 @@ function buildLiveWorkoutContext({
     rest_guidance_tone: restGuidance.tone,
     event_type: event?.type || '',
     event_summary: event?.summary || '',
+    event_exercise_context: event?.exerciseContext || null,
     session_overview: Array.isArray(exercises)
       ? exercises.map((exercise, index) => ({
           position: index + 1,
@@ -733,6 +857,67 @@ function buildDraftFromSet(set) {
     reps: set?.reps != null ? String(set.reps) : '',
     rir: set?.rir != null ? String(set.rir) : '',
   }
+}
+
+function buildLiveExerciseSnapshot(exercise) {
+  if (!exercise) return null
+
+  return {
+    exercise_name: exercise.exercise_name || '',
+    equipment: exercise.equipment || '',
+    planned_rep_range: formatRepRange(exercise),
+    recommended_weight: Number(exercise.recommended_weight || 0) || null,
+    recent_history: normalizeLiveWorkoutHistory(exercise.recent_history),
+  }
+}
+
+function normalizeLiveWorkoutHistory(history) {
+  if (!Array.isArray(history)) return []
+
+  return history
+    .map(entry => ({
+      snapshot_date: entry?.snapshot_date || '',
+      best_weight: Number(entry?.best_weight || 0) || null,
+      best_reps: Number(entry?.best_reps || 0) || null,
+      best_volume: Number(entry?.best_volume || 0) || null,
+      estimated_1rm: Number(entry?.estimated_1rm || 0) || null,
+    }))
+    .filter(entry => entry.snapshot_date || entry.best_weight || entry.best_reps || entry.best_volume || entry.estimated_1rm)
+    .slice(0, 3)
+}
+
+function buildLoadGuidancePromptFragment(exerciseContext) {
+  const recommendedWeight = Number(exerciseContext?.recommended_weight || 0) || 0
+  const latestHistory = Array.isArray(exerciseContext?.recent_history) ? exerciseContext.recent_history[0] : null
+  const previousWeight = Number(latestHistory?.best_weight || 0) || 0
+  const previousReps = Number(latestHistory?.best_reps || 0) || 0
+
+  if (recommendedWeight > 0) {
+    const formattedWeight = formatLiveWorkoutWeight(recommendedWeight, exerciseContext?.equipment)
+    if (previousWeight > 0) {
+      return `Tell the user what weight to start with for this exercise. Recommended starting load is about ${formattedWeight} lbs, with recent history around ${formatLiveWorkoutWeight(previousWeight, exerciseContext?.equipment)} lbs${previousReps > 0 ? ` for ${previousReps} reps` : ''}.`
+    }
+
+    return `Tell the user what weight to start with for this exercise. Recommended starting load is about ${formattedWeight} lbs.`
+  }
+
+  if (previousWeight > 0) {
+    return `Tell the user what weight to start with for this exercise using their recent history. Their latest top effort was about ${formatLiveWorkoutWeight(previousWeight, exerciseContext?.equipment)} lbs${previousReps > 0 ? ` for ${previousReps} reps` : ''}.`
+  }
+
+  return 'If no prior loading data exists, say that clearly and give a practical first-set feel target instead of inventing a number.'
+}
+
+function formatLiveWorkoutWeight(value, equipment = '') {
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric) || numeric <= 0) return '0'
+
+  const increment = equipment === 'dumbbell'
+    ? 10
+    : (numeric >= 100 ? 5 : 2.5)
+  const rounded = Math.round(numeric / increment) * increment
+
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1)
 }
 
 function getSuggestedSetIndex(exercise) {

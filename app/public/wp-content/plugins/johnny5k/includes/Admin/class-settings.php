@@ -30,6 +30,8 @@ class Settings {
 			wp_die( 'Unauthorized' );
 		}
 
+		wp_enqueue_media();
+
 		$saved   = false;
 		$errors  = [];
 
@@ -56,6 +58,14 @@ class Settings {
 				update_option(
 					'jf_color_schemes',
 					AdminApiController::sanitize_color_schemes( wp_unslash( $_POST['jf_color_schemes'] ) ),
+					false
+				);
+			}
+
+			if ( isset( $_POST['jf_live_workout_frames'] ) ) {
+				update_option(
+					'jf_live_workout_frames',
+					AdminApiController::sanitize_live_workout_frames( wp_unslash( $_POST['jf_live_workout_frames'] ) ),
 					false
 				);
 			}
@@ -102,6 +112,11 @@ class Settings {
 		echo '<tr><th colspan="2"><h2 style="margin:0;padding-top:16px">Color Schemes</h2></th></tr>';
 		echo '<tr><td colspan="2">';
 		self::render_color_schemes_editor();
+		echo '</td></tr>';
+
+		echo '<tr><th colspan="2"><h2 style="margin:0;padding-top:16px">Live Workout Frames</h2></th></tr>';
+		echo '<tr><td colspan="2">';
+		self::render_live_workout_frames_editor();
 		echo '</td></tr>';
 
 		echo '</table>';
@@ -280,6 +295,78 @@ class Settings {
 		echo '</div>';
 	}
 
+	private static function render_live_workout_frames_editor(): void {
+		$frames = AdminApiController::get_live_workout_frames_config();
+
+		echo '<p class="description" style="margin:0 0 12px">Manage the rotating Johnny images used in Live Workout Mode. If this list is empty, the app falls back to the bundled defaults.</p>';
+		echo '<div id="jf-live-workout-frames" style="display:grid;gap:16px">';
+
+		foreach ( $frames as $index => $frame ) {
+			self::render_live_workout_frame_card( $frame, $index );
+		}
+
+		echo '</div>';
+		echo '<p style="margin-top:12px"><button type="button" class="button" id="jf-add-live-workout-frame">Add Frame</button></p>';
+		echo '<script type="text/template" id="jf-live-workout-frame-template">';
+		self::render_live_workout_frame_card(
+			[
+				'image_url' => '',
+				'label'     => 'Live frame __NUMBER__',
+				'note'      => '',
+			],
+			'__INDEX__'
+		);
+		echo '</script>';
+	}
+
+	private static function render_live_workout_frame_card( array $frame, $index ): void {
+		$image_url = esc_url( (string) ( $frame['image_url'] ?? '' ) );
+		$label     = esc_attr( (string) ( $frame['label'] ?? '' ) );
+		$note      = esc_attr( (string) ( $frame['note'] ?? '' ) );
+		$index_key = esc_attr( (string) $index );
+
+		echo '<div class="jf-live-workout-frame-card" style="padding:16px;border:1px solid #d0d7de;border-radius:12px;background:#fff">';
+		echo '<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap">';
+		echo '<div style="display:flex;flex-direction:column;gap:4px">';
+		echo '<strong>Live workout frame</strong>';
+		echo '<span style="color:#666">Rotates in Johnny Live mode during workouts.</span>';
+		echo '</div>';
+		echo '<div style="display:flex;gap:8px;flex-wrap:wrap">';
+		echo '<button type="button" class="button jf-move-live-workout-frame-up">Up</button>';
+		echo '<button type="button" class="button jf-move-live-workout-frame-down">Down</button>';
+		echo '<button type="button" class="button-link-delete jf-remove-live-workout-frame">Remove</button>';
+		echo '</div>';
+		echo '</div>';
+		echo '<div style="display:grid;grid-template-columns:minmax(180px,220px) minmax(0,1fr);gap:16px;align-items:start">';
+		echo '<div class="jf-live-workout-frame-preview" style="display:flex;align-items:center;justify-content:center;min-height:160px;border-radius:12px;border:1px solid #d0d7de;background:#f6f7f7;overflow:hidden">';
+		if ( '' !== $image_url ) {
+			echo '<img src="' . $image_url . '" alt="" style="display:block;width:100%;height:160px;object-fit:cover">';
+		} else {
+			echo '<span style="color:#666">No preview</span>';
+		}
+		echo '</div>';
+		echo '<div style="display:grid;gap:12px">';
+		echo '<label style="display:grid;gap:6px">';
+		echo '<strong>Image URL</strong>';
+		echo '<input class="regular-text jf-live-workout-frame-image-url" style="width:100%" name="jf_live_workout_frames[' . $index_key . '][image_url]" value="' . $image_url . '" placeholder="https://.../johnny-frame.jpg">';
+		echo '</label>';
+		echo '<div style="display:flex;gap:8px;flex-wrap:wrap">';
+		echo '<button type="button" class="button jf-live-workout-frame-media">Choose from Media Library</button>';
+		echo '<button type="button" class="button-link jf-live-workout-frame-clear">Clear image</button>';
+		echo '</div>';
+		echo '<label style="display:grid;gap:6px">';
+		echo '<strong>Label</strong>';
+		echo '<input class="regular-text" style="width:100%" name="jf_live_workout_frames[' . $index_key . '][label]" value="' . $label . '">';
+		echo '</label>';
+		echo '<label style="display:grid;gap:6px">';
+		echo '<strong>Note</strong>';
+		echo '<input class="regular-text" style="width:100%" name="jf_live_workout_frames[' . $index_key . '][note]" value="' . $note . '">';
+		echo '</label>';
+		echo '</div>';
+		echo '</div>';
+		echo '</div>';
+	}
+
 	private static function render_test_script(): void {
 		$nonce = wp_create_nonce( 'wp_rest' );
 		?>
@@ -429,6 +516,116 @@ class Settings {
 						colorInput.value = event.target.value;
 					}
 				}
+			});
+		})();
+
+		(function initLiveWorkoutFrameEditor() {
+			const container = document.getElementById('jf-live-workout-frames');
+			const addButton = document.getElementById('jf-add-live-workout-frame');
+			const template = document.getElementById('jf-live-workout-frame-template');
+			if (!container || !addButton || !template) return;
+
+			function syncIndexes() {
+				[...container.querySelectorAll('.jf-live-workout-frame-card')].forEach((card, index) => {
+					card.querySelectorAll('input').forEach(input => {
+						input.name = input.name.replace(/jf_live_workout_frames\[[^\]]+\]/, `jf_live_workout_frames[${index}]`);
+					});
+				});
+			}
+
+			function createMediaFrame() {
+				if (typeof wp === 'undefined' || !wp.media) return null;
+
+				return wp.media({
+					title: 'Select live workout image',
+					button: { text: 'Use this image' },
+					multiple: false,
+					library: { type: 'image' },
+				});
+			}
+
+			function updatePreview(card, imageUrl) {
+				const preview = card.querySelector('.jf-live-workout-frame-preview');
+				if (!preview) return;
+
+				if (imageUrl) {
+					preview.innerHTML = `<img src="${imageUrl}" alt="" style="display:block;width:100%;height:160px;object-fit:cover">`;
+					return;
+				}
+
+				preview.innerHTML = '<span style="color:#666">No preview</span>';
+			}
+
+			addButton.addEventListener('click', function() {
+				const index = container.querySelectorAll('.jf-live-workout-frame-card').length;
+				const html = template.innerHTML
+					.replace(/__INDEX__/g, String(index))
+					.replace(/__NUMBER__/g, String(index + 1));
+				container.insertAdjacentHTML('beforeend', html);
+				syncIndexes();
+			});
+
+			container.addEventListener('click', function(event) {
+				const card = event.target.closest('.jf-live-workout-frame-card');
+				if (!card) return;
+
+				if (event.target.classList.contains('jf-remove-live-workout-frame')) {
+					card.remove();
+					syncIndexes();
+					return;
+				}
+
+				if (event.target.classList.contains('jf-move-live-workout-frame-up')) {
+					const previous = card.previousElementSibling;
+					if (previous) {
+						container.insertBefore(card, previous);
+						syncIndexes();
+					}
+					return;
+				}
+
+				if (event.target.classList.contains('jf-move-live-workout-frame-down')) {
+					const next = card.nextElementSibling;
+					if (next) {
+						container.insertBefore(next, card);
+						syncIndexes();
+					}
+					return;
+				}
+
+				if (event.target.classList.contains('jf-live-workout-frame-clear')) {
+					const urlInput = card.querySelector('.jf-live-workout-frame-image-url');
+					if (urlInput) {
+						urlInput.value = '';
+						updatePreview(card, '');
+					}
+					return;
+				}
+
+				if (event.target.classList.contains('jf-live-workout-frame-media')) {
+					const mediaFrame = createMediaFrame();
+					if (!mediaFrame) return;
+
+					mediaFrame.on('select', function() {
+						const selection = mediaFrame.state().get('selection').first();
+						const attachment = selection ? selection.toJSON() : null;
+						const imageUrl = attachment?.url || '';
+						const urlInput = card.querySelector('.jf-live-workout-frame-image-url');
+						if (urlInput) {
+							urlInput.value = imageUrl;
+						}
+						updatePreview(card, imageUrl);
+					});
+
+					mediaFrame.open();
+				}
+			});
+
+			container.addEventListener('input', function(event) {
+				if (!event.target.classList.contains('jf-live-workout-frame-image-url')) return;
+				const card = event.target.closest('.jf-live-workout-frame-card');
+				if (!card) return;
+				updatePreview(card, event.target.value.trim());
 			});
 		})();
 		</script>

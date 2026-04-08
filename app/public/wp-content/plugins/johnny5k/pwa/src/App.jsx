@@ -15,6 +15,7 @@ const WorkoutScreen = lazy(() => import('./screens/workout/WorkoutScreen'))
 const ExerciseLibraryScreen = lazy(() => import('./screens/workout/ExerciseLibraryScreen'))
 const NutritionScreen = lazy(() => import('./screens/nutrition/NutritionScreen'))
 const BodyScreen = lazy(() => import('./screens/body/BodyScreen'))
+const ActivityLogScreen = lazy(() => import('./screens/activity/ActivityLogScreen'))
 const AiScreen = lazy(() => import('./screens/ai/AiScreen'))
 const AdminScreen = lazy(() => import('./screens/admin/AdminScreen'))
 const SettingsScreen = lazy(() => import('./screens/settings/SettingsScreen'))
@@ -92,6 +93,7 @@ export default function App() {
         <Route path="/workout/library" element={<RequireOnboarded><AppShell><LazyRoute><ExerciseLibraryScreen /></LazyRoute></AppShell></RequireOnboarded>} />
         <Route path="/nutrition/*" element={<RequireOnboarded><AppShell><LazyRoute><NutritionScreen /></LazyRoute></AppShell></RequireOnboarded>} />
         <Route path="/body" element={<RequireOnboarded><AppShell><LazyRoute><BodyScreen /></LazyRoute></AppShell></RequireOnboarded>} />
+        <Route path="/activity-log" element={<RequireOnboarded><AppShell><LazyRoute><ActivityLogScreen /></LazyRoute></AppShell></RequireOnboarded>} />
         <Route path="/progress-photos" element={<RequireOnboarded><AppShell><LazyRoute><ProgressPhotosScreen /></LazyRoute></AppShell></RequireOnboarded>} />
         <Route path="/rewards" element={<RequireOnboarded><AppShell><LazyRoute><RewardsScreen /></LazyRoute></AppShell></RequireOnboarded>} />
         <Route path="/ai" element={<RequireOnboarded><AppShell><LazyRoute><AiScreen /></LazyRoute></AppShell></RequireOnboarded>} />

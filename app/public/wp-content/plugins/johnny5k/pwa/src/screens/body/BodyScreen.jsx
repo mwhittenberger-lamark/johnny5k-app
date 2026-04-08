@@ -277,6 +277,9 @@ export default function BodyScreen() {
           <h1>Progress</h1>
           <p className="body-screen-subtitle">Track bodyweight, recovery, movement, and cardio in one place.</p>
         </div>
+        <button className="btn-secondary" type="button" onClick={() => navigate('/activity-log')}>
+          Activity Log
+        </button>
       </header>
 
       {msg && <p className={msg.startsWith('Error') ? 'error' : 'success-msg'} onClick={() => setMsg('')}>{msg}</p>}

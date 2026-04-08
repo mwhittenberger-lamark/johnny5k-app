@@ -326,6 +326,10 @@ class TrainingEngine {
 
 		$plan_exercises = [];
 		$exercises = [];
+		$variation_strategy = [
+			'swaps' => [],
+			'order' => [],
+		];
 		if ( $day ) {
 			$slot_limit = self::slot_limits_for_tier( $time_tier );
 			$plan_exercises = $wpdb->get_results( $wpdb->prepare(
@@ -341,6 +345,7 @@ class TrainingEngine {
 			$selected_exercises = $maintenance_mode
 				? self::select_maintenance_exercises( $plan_exercises )
 				: $plan_exercises;
+			$variation_strategy = self::build_day_variation_strategy( $user_id, $next_day_type, $selected_exercises, $exercise_swaps, $exercise_order );
 
 			$slot_counts = [];
 			foreach ( $selected_exercises as $exercise ) {
@@ -352,7 +357,12 @@ class TrainingEngine {
 					}
 				}
 
-				$resolved_exercise = self::resolve_session_exercise_selection( $user_id, $next_day_type, $exercise, (int) ( $exercise_swaps[ (int) $exercise->id ] ?? 0 ) );
+				$resolved_exercise = self::resolve_session_exercise_selection(
+					$user_id,
+					$next_day_type,
+					$exercise,
+					(int) ( $exercise_swaps[ (int) $exercise->id ] ?? $variation_strategy['swaps'][ (int) $exercise->id ] ?? 0 )
+				);
 				$resolved_exercise_id = (int) ( $resolved_exercise['exercise_id'] ?? (int) $exercise->exercise_id );
 				$prog = self::recommended_progression( $user_id, $resolved_exercise_id );
 
@@ -380,7 +390,8 @@ class TrainingEngine {
 			}
 		}
 
-		$exercises = self::apply_exercise_order( $exercises, $exercise_order );
+		$effective_exercise_order = ! empty( $exercise_order ) ? $exercise_order : (array) ( $variation_strategy['order'] ?? [] );
+		$exercises = self::apply_exercise_order( $exercises, $effective_exercise_order );
 
 		return [
 			'day_type'            => $next_day_type,
@@ -389,6 +400,30 @@ class TrainingEngine {
 			'plan_exercise_count' => count( $plan_exercises ),
 			'exercises'           => $exercises,
 		];
+	}
+
+	private static function build_day_variation_strategy( int $user_id, string $day_type, array $plan_exercises, array $exercise_swaps, array $exercise_order ): array {
+		$strategy = [
+			'swaps' => [],
+			'order' => [],
+		];
+
+		if ( 'pull' !== $day_type || empty( $plan_exercises ) ) {
+			return $strategy;
+		}
+
+		$last_session = self::get_last_completed_day_session_detail( $user_id, $day_type );
+		if ( empty( $last_session['session_id'] ) ) {
+			return $strategy;
+		}
+
+		$strategy['swaps'] = self::build_pull_day_variation_swaps( $user_id, $day_type, $plan_exercises, $exercise_swaps, $last_session );
+
+		if ( empty( $exercise_order ) ) {
+			$strategy['order'] = self::build_pull_day_variation_order( $plan_exercises, $last_session, $exercise_swaps, $strategy['swaps'] );
+		}
+
+		return $strategy;
 	}
 
 	private static function apply_exercise_order( array $exercises, array $exercise_order ): array {
@@ -420,6 +455,172 @@ class TrainingEngine {
 		} );
 
 		return array_values( $exercises );
+	}
+
+	private static function get_last_completed_day_session_detail( int $user_id, string $day_type ): array {
+		global $wpdb;
+		$p = $wpdb->prefix;
+
+		$session = $wpdb->get_row( $wpdb->prepare(
+			"SELECT id
+			 FROM {$p}fit_workout_sessions
+			 WHERE user_id = %d
+			   AND completed = 1
+			   AND COALESCE(actual_day_type, planned_day_type) = %s
+			 ORDER BY COALESCE(completed_at, updated_at, created_at) DESC, id DESC
+			 LIMIT 1",
+			$user_id,
+			$day_type
+		), ARRAY_A );
+
+		if ( ! is_array( $session ) || empty( $session['id'] ) ) {
+			return [];
+		}
+
+		$exercise_rows = $wpdb->get_results( $wpdb->prepare(
+			"SELECT sort_order, exercise_id, original_exercise_id, slot_type
+			 FROM {$p}fit_workout_session_exercises
+			 WHERE session_id = %d
+			 ORDER BY sort_order ASC, id ASC",
+			(int) $session['id']
+		), ARRAY_A );
+
+		return [
+			'session_id' => (int) $session['id'],
+			'exercises'  => is_array( $exercise_rows ) ? $exercise_rows : [],
+		];
+	}
+
+	private static function build_pull_day_variation_swaps( int $user_id, string $day_type, array $plan_exercises, array $exercise_swaps, array $last_session ): array {
+		$previous_exercise_ids = array_values( array_filter( array_map(
+			static fn( array $row ): int => (int) ( $row['exercise_id'] ?? 0 ),
+			(array) ( $last_session['exercises'] ?? [] )
+		) ) );
+
+		if ( empty( $previous_exercise_ids ) ) {
+			return [];
+		}
+
+		$resolved_current_ids = [];
+		foreach ( $plan_exercises as $exercise ) {
+			$plan_exercise_id = (int) ( $exercise->id ?? 0 );
+			$resolved_current_ids[] = (int) ( $exercise_swaps[ $plan_exercise_id ] ?? $exercise->exercise_id ?? 0 );
+		}
+
+		$candidate_slots = [ 'accessory', 'secondary', 'shoulders' ];
+
+		foreach ( $candidate_slots as $slot_type ) {
+			foreach ( $plan_exercises as $exercise ) {
+				$plan_exercise_id = (int) ( $exercise->id ?? 0 );
+				if ( $slot_type !== (string) ( $exercise->slot_type ?? '' ) || isset( $exercise_swaps[ $plan_exercise_id ] ) ) {
+					continue;
+				}
+
+				$excluded_ids = array_values( array_unique( array_filter( array_merge(
+					$previous_exercise_ids,
+					$resolved_current_ids
+				) ) ) );
+
+				$alternative_id = self::find_pull_day_variation_exercise_id( $user_id, $day_type, $exercise, $excluded_ids );
+				if ( $alternative_id > 0 ) {
+					return [ $plan_exercise_id => $alternative_id ];
+				}
+			}
+		}
+
+		return [];
+	}
+
+	private static function find_pull_day_variation_exercise_id( int $user_id, string $day_type, object $plan_exercise, array $excluded_ids ): int {
+		global $wpdb;
+		$p = $wpdb->prefix;
+
+		$exercise_access_where = ExerciseLibraryService::accessible_exercise_where( 'e', $user_id );
+		$day_json = '"' . esc_sql( $day_type ) . '"';
+		$slot_json = '"' . esc_sql( (string) ( $plan_exercise->slot_type ?? '' ) ) . '"';
+		$primary_muscle = sanitize_text_field( (string) ( $plan_exercise->primary_muscle ?? '' ) );
+		$equipment = sanitize_text_field( (string) ( $plan_exercise->equipment ?? '' ) );
+
+		$sql = "
+			SELECT e.id
+			FROM {$p}fit_exercises e
+			WHERE e.active = 1
+			  AND {$exercise_access_where}
+			  AND e.id != %d
+			  AND JSON_CONTAINS(e.day_types_json, %s)
+			  AND JSON_CONTAINS(e.slot_types_json, %s)";
+		$params = [
+			(int) $plan_exercise->exercise_id,
+			$day_json,
+			$slot_json,
+		];
+
+		if ( ! empty( $excluded_ids ) ) {
+			$placeholders = implode( ',', array_fill( 0, count( $excluded_ids ), '%d' ) );
+			$sql .= " AND e.id NOT IN ({$placeholders})";
+			$params = array_merge( $params, array_map( 'intval', $excluded_ids ) );
+		}
+
+		$sql .= "
+			ORDER BY
+			  CASE WHEN e.primary_muscle = %s THEN 0 ELSE 1 END,
+			  CASE WHEN e.equipment = %s THEN 0 ELSE 1 END,
+			  CASE WHEN e.user_id = %d THEN 0 ELSE 1 END,
+			  e.id ASC
+			LIMIT 1";
+		$params[] = $primary_muscle;
+		$params[] = $equipment;
+		$params[] = $user_id;
+
+		$alternative_id = $wpdb->get_var( $wpdb->prepare( $sql, $params ) );
+
+		return $alternative_id ? (int) $alternative_id : 0;
+	}
+
+	private static function build_pull_day_variation_order( array $plan_exercises, array $last_session, array $manual_swaps, array $auto_swaps ): array {
+		if ( count( $plan_exercises ) < 3 ) {
+			return [];
+		}
+
+		$main_exercises = array_values( array_filter( $plan_exercises, static fn( $exercise ): bool => 'main' === (string) ( $exercise->slot_type ?? '' ) ) );
+		$other_exercises = array_values( array_filter( $plan_exercises, static fn( $exercise ): bool => 'main' !== (string) ( $exercise->slot_type ?? '' ) ) );
+
+		if ( count( $other_exercises ) < 2 ) {
+			return [];
+		}
+
+		$offset = (int) ( ( (int) ( $last_session['session_id'] ?? 0 ) ) % count( $other_exercises ) );
+		if ( 0 === $offset ) {
+			$offset = 1;
+		}
+
+		$attempt = 0;
+		$max_attempts = count( $other_exercises );
+		$previous_actual_order = array_values( array_filter( array_map(
+			static fn( array $row ): int => (int) ( $row['exercise_id'] ?? 0 ),
+			(array) ( $last_session['exercises'] ?? [] )
+		) ) );
+
+		while ( $attempt < $max_attempts ) {
+			$rotated = array_merge(
+				array_slice( $other_exercises, $offset ),
+				array_slice( $other_exercises, 0, $offset )
+			);
+			$ordered = array_merge( $main_exercises, $rotated );
+			$predicted_actual_order = array_map(
+				static fn( $exercise ): int => (int) ( $manual_swaps[ (int) $exercise->id ] ?? $auto_swaps[ (int) $exercise->id ] ?? $exercise->exercise_id ?? 0 ),
+				$ordered
+			);
+
+			if ( $predicted_actual_order !== $previous_actual_order ) {
+				return array_map( static fn( $exercise ): int => (int) $exercise->id, $ordered );
+			}
+
+			$offset = ( $offset % count( $other_exercises ) ) + 1;
+			$attempt++;
+		}
+
+		return [];
 	}
 
 	private static function resolve_session_exercise_selection( int $user_id, string $day_type, object $plan_exercise, int $swap_exercise_id ): array {

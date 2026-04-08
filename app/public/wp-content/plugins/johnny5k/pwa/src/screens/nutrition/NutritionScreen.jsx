@@ -1301,13 +1301,18 @@ export default function NutritionScreen() {
 
                     await runAction(
                       async () => {
+                        if (!data.items.length) {
+                          await Promise.all(mealIds.map(id => nutritionApi.deleteMeal(id)))
+                          return
+                        }
+
                         await nutritionApi.updateMeal(primaryMealId, { meal_datetime: data.meal_datetime, meal_type: data.meal_type, source: meal.source, items: data.items })
 
                         if (duplicateMealIds.length) {
                           await Promise.all(duplicateMealIds.map(id => nutritionApi.deleteMeal(id)))
                         }
                       },
-                      'Logged meal updated.',
+                      data.items.length ? 'Logged meal updated.' : 'Logged meal deleted.',
                       {
                         onSuccess: async () => {
                           invalidate()
@@ -1785,6 +1790,7 @@ function MealCard({ meal, savedFoods, onSave, onDelete, onError }) {
           submitLabel="Update meal"
           savedFoods={savedFoods}
           includeMealDateTime
+          allowEmptyItems
           onError={onError}
           initialValues={{
             meal_datetime: meal.meal_datetime,
@@ -1819,7 +1825,9 @@ function MealCard({ meal, savedFoods, onSave, onDelete, onError }) {
       </div>
       <p className="meal-card-meta">{entryCount > 1 ? `${entryCount} entries merged • ` : ''}{mealCount} item{mealCount === 1 ? '' : 's'} logged</p>
       {visibleItems?.map((item, index) => (
-        <p key={index} className="meal-item">{item.food_name} — {item.serving_amount} {item.serving_unit}</p>
+        <p key={index} className="meal-item">
+          {item.food_name} — {item.serving_amount} {item.serving_unit} · {Math.round(Number(item.calories) || 0)} Calories
+        </p>
       ))}
       {(meal.items?.length ?? 0) > 3 ? (
         <button type="button" className="btn-ghost small nutrition-section-toggle" onClick={() => setExpandedItems(current => !current)}>
@@ -2617,12 +2625,18 @@ function PantryCategorySection({ category, collapsed = false, onToggle, onSaveIt
   )
 }
 
-function MealComposerForm({ title, savedFoods, requireName = false, submitLabel, secondaryLabel = '', initialValues = null, includeMealDateTime = false, onSubmit, onSecondaryAction, onCancel, onError, onToast }) {
-  const [mealType, setMealType] = useState(initialValues?.meal_type || 'lunch')
+function MealComposerForm({ title, savedFoods, requireName = false, submitLabel, secondaryLabel = '', initialValues = null, includeMealDateTime = false, allowEmptyItems = false, onSubmit, onSecondaryAction, onCancel, onError, onToast }) {
+  const [mealType, setMealType] = useState(() => initialValues?.meal_type || getDefaultMealTypeForCurrentTime())
   const [name, setName] = useState(initialValues?.name || '')
   const [mealDate, setMealDate] = useState(() => getMealDateInputValue(initialValues?.meal_datetime))
   const [mealTime, setMealTime] = useState(() => getMealTimeInputValue(initialValues?.meal_datetime))
-  const [items, setItems] = useState(() => initialValues?.items?.length ? normaliseMealItems(initialValues.items) : [createEmptyMealItem()])
+  const [items, setItems] = useState(() => {
+    if (initialValues?.items?.length) {
+      return normaliseMealItems(initialValues.items)
+    }
+
+    return allowEmptyItems ? [] : [createEmptyMealItem()]
+  })
   const [busyIndex, setBusyIndex] = useState(null)
   const [submitAction, setSubmitAction] = useState('')
   const [error, setError] = useState('')
@@ -2645,7 +2659,13 @@ function MealComposerForm({ title, savedFoods, requireName = false, submitLabel,
   }
 
   function removeItem(index) {
-    setItems(current => current.length > 1 ? current.filter((_, itemIndex) => itemIndex !== index) : [createEmptyMealItem()])
+    setItems(current => {
+      if (current.length > 1) {
+        return current.filter((_, itemIndex) => itemIndex !== index)
+      }
+
+      return allowEmptyItems ? [] : [createEmptyMealItem()]
+    })
   }
 
   async function autofillItem(index) {
@@ -2675,7 +2695,7 @@ function MealComposerForm({ title, savedFoods, requireName = false, submitLabel,
       .map(buildMealItemPayload)
       .filter(item => item.food_name)
 
-    if (!validItems.length) {
+    if (!validItems.length && !allowEmptyItems) {
       return null
     }
 
@@ -2763,19 +2783,23 @@ function MealComposerForm({ title, savedFoods, requireName = false, submitLabel,
         </div>
       ) : null}
 
-      <div className="nutrition-stack-list">
-        {items.map((item, index) => (
-          <MealComposerItemRow
-            key={index}
-            item={item}
-            busy={busyIndex === index}
-            onChange={patch => updateItem(index, patch)}
-            onSelectSuggestion={suggestion => updateItem(index, applyFoodSuggestion(item, suggestion))}
-            onAutofill={() => autofillItem(index)}
-            onRemove={() => removeItem(index)}
-          />
-        ))}
-      </div>
+      {items.length ? (
+        <div className="nutrition-stack-list">
+          {items.map((item, index) => (
+            <MealComposerItemRow
+              key={index}
+              item={item}
+              busy={busyIndex === index}
+              onChange={patch => updateItem(index, patch)}
+              onSelectSuggestion={suggestion => updateItem(index, applyFoodSuggestion(item, suggestion))}
+              onAutofill={() => autofillItem(index)}
+              onRemove={() => removeItem(index)}
+            />
+          ))}
+        </div>
+      ) : (
+        <p className="empty-state">All foods removed. Save changes to delete this logged meal, or add a food to keep editing it.</p>
+      )}
 
       <div className="nutrition-item-row nutrition-composer-totals">
         <div>
@@ -4110,6 +4134,25 @@ function getMealTimeInputValue(mealDateTime) {
 
   const match = String(mealDateTime).match(/(\d{2}:\d{2})/)
   return match?.[1] || '12:00'
+}
+
+function getDefaultMealTypeForCurrentTime() {
+  const [hours, minutes] = getCurrentLocalTimeString().split(':').map(value => Number(value) || 0)
+  const currentMinutes = (hours * 60) + minutes
+
+  if (currentMinutes < ((10 * 60) + 30)) {
+    return 'breakfast'
+  }
+
+  if (currentMinutes >= (12 * 60) && currentMinutes <= (13 * 60)) {
+    return 'lunch'
+  }
+
+  if (currentMinutes >= (17 * 60) && currentMinutes <= (19 * 60)) {
+    return 'dinner'
+  }
+
+  return 'snack'
 }
 
 function combineMealDateTime(date, time) {

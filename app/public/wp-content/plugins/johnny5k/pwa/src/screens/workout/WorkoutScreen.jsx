@@ -508,6 +508,7 @@ export default function WorkoutScreen() {
                 <button className="btn-secondary" onClick={handleStartSession} disabled={loading}>
                   {loading ? 'Building session...' : isMaintenanceMode ? 'Start Maintenance Cardio' : 'Start Cardio Workout'}
                 </button>
+                <button className="btn-secondary" onClick={() => navigate('/activity-log')}>Activity Log</button>
                 <button className="btn-outline" onClick={() => navigate('/workout/library')}>My exercise library</button>
                 <button className="btn-outline" onClick={handleSkip}>Skip today</button>
               </>
@@ -516,6 +517,7 @@ export default function WorkoutScreen() {
                 <button className="btn-primary" onClick={handleStartSession} disabled={takingRestDay}>
                   {takingRestDay ? 'Logging rest day...' : 'Take Rest Day'}
                 </button>
+                <button className="btn-secondary" onClick={() => navigate('/activity-log')}>Activity Log</button>
                 <button className="btn-secondary" onClick={() => navigate('/body')}>Open Progress</button>
                 <button className="btn-outline" onClick={() => navigate('/workout/library')}>My exercise library</button>
               </>
@@ -524,6 +526,7 @@ export default function WorkoutScreen() {
                 <button className="btn-primary" onClick={handleStartSession} disabled={loading}>
                   {loading ? 'Building session...' : isMaintenanceMode ? 'Start Maintenance Workout' : 'Start Workout'}
                 </button>
+                <button className="btn-secondary" onClick={() => navigate('/activity-log')}>Activity Log</button>
                 <button className="btn-secondary" onClick={() => navigate('/workout/library')}>My exercise library</button>
                 <button className="btn-secondary" onClick={handleSkip}>Skip today</button>
               </>
@@ -652,6 +655,9 @@ export default function WorkoutScreen() {
         <div className="workout-session-header-actions">
           <button type="button" className="btn-primary" onClick={() => setLiveModeOpen(true)}>
             Live Workout Mode
+          </button>
+          <button type="button" className="btn-secondary" onClick={() => navigate('/activity-log')}>
+            Activity Log
           </button>
         </div>
       </header>
