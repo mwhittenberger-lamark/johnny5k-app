@@ -10,6 +10,7 @@
 /app/public/*
 !/app/public/wp-content
 !/app/public/wp-content/**
+/app/public/wp-content/plugins/johnny5k.zip
 /app/public/wp-content/uploads
 /app/public/wp-content/uploads/**
 /app/public/wp-content/.DS_Store
