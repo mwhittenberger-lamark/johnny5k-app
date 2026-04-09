@@ -283,6 +283,7 @@ CREATE TABLE IF NOT EXISTS `wp_fit_workout_sessions` (
   `started_at` datetime DEFAULT NULL,
   `completed_at` datetime DEFAULT NULL,
   `duration_minutes` int(11) DEFAULT NULL,
+  `estimated_calories` int(11) DEFAULT NULL,
   `completed` tinyint(1) NOT NULL DEFAULT 0,
   `skip_requested` tinyint(1) NOT NULL DEFAULT 0,
   `is_optional_session` tinyint(1) NOT NULL DEFAULT 0,

@@ -65,6 +65,17 @@ export default function SettingsScreen() {
   const [accordionSections, setAccordionSections] = useState(PROFILE_ACCORDION_DEFAULTS)
   const [liveVoicePrefs, setLiveVoicePrefs] = useState(() => readLiveWorkoutVoicePrefs())
   const [availableSpeechVoices, setAvailableSpeechVoices] = useState([])
+  const [headshot, setHeadshot] = useState({ configured: false })
+  const [headshotSrc, setHeadshotSrc] = useState('')
+  const [headshotUploading, setHeadshotUploading] = useState(false)
+  const [headshotError, setHeadshotError] = useState('')
+  const [headshotMessage, setHeadshotMessage] = useState('')
+  const [generatedImages, setGeneratedImages] = useState([])
+  const [generatedImageSrcs, setGeneratedImageSrcs] = useState({})
+  const [generatingImages, setGeneratingImages] = useState(false)
+  const [generationPrompt, setGenerationPrompt] = useState('')
+  const [generationError, setGenerationError] = useState('')
+  const [generationMessage, setGenerationMessage] = useState('')
   const speechPlaybackSupported = typeof window !== 'undefined' && 'speechSynthesis' in window
 
   function update(field, value) {
@@ -103,6 +114,8 @@ export default function SettingsScreen() {
           color_scheme: normalizeColorScheme(nextForm.color_scheme),
           phone: formatPhoneInput(nextForm.phone),
         })
+        setHeadshot(data?.headshot ?? { configured: false })
+        setGeneratedImages(Array.isArray(data?.generated_images) ? data.generated_images : [])
         setTimezoneRegion(getTimezoneRegion(nextForm.timezone))
         setTargets(normalizeTargets(data.goal))
         setMissingFields(formatMissingFields(data.missing_profile_fields))
@@ -124,6 +137,62 @@ export default function SettingsScreen() {
   useEffect(() => {
     writeLiveWorkoutVoicePrefs(liveVoicePrefs)
   }, [liveVoicePrefs])
+
+  useEffect(() => {
+    let active = true
+    let objectUrl = ''
+
+    if (!headshot?.configured) {
+      setHeadshotSrc('')
+      return () => {}
+    }
+
+    onboardingApi.headshotBlob()
+      .then(blob => {
+        if (!active) return
+        objectUrl = URL.createObjectURL(blob)
+        setHeadshotSrc(objectUrl)
+      })
+      .catch(err => {
+        if (!active) return
+        setHeadshotSrc('')
+        setHeadshotError(err.message)
+      })
+
+    return () => {
+      active = false
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  }, [headshot])
+
+  useEffect(() => {
+    let active = true
+    const createdUrls = []
+
+    if (!Array.isArray(generatedImages) || generatedImages.length === 0) {
+      setGeneratedImageSrcs({})
+      return () => {}
+    }
+
+    Promise.all(generatedImages.map(async image => {
+      const blob = await onboardingApi.generatedImageBlob(image.id)
+      const url = URL.createObjectURL(blob)
+      createdUrls.push(url)
+      return [image.id, url]
+    }))
+      .then(entries => {
+        if (!active) return
+        setGeneratedImageSrcs(Object.fromEntries(entries))
+      })
+      .catch(err => {
+        if (active) setGenerationError(err.message)
+      })
+
+    return () => {
+      active = false
+      createdUrls.forEach(url => URL.revokeObjectURL(url))
+    }
+  }, [generatedImages])
 
   useEffect(() => {
     if (!speechPlaybackSupported) return undefined
@@ -248,6 +317,7 @@ export default function SettingsScreen() {
         exercise_preferences_json: {
           ...(form.preference_meta ?? {}),
           color_scheme: form.color_scheme,
+          add_exercise_calories_to_target: form.add_exercise_calories_to_target,
           workout_reminder_enabled: form.workout_reminder_enabled,
           workout_reminder_hour: Number(form.workout_reminder_hour),
           meal_reminder_enabled: form.meal_reminder_enabled,
@@ -275,6 +345,8 @@ export default function SettingsScreen() {
 
       const state = await onboardingApi.getState()
       setMissingFields(formatMissingFields(state.missing_profile_fields))
+      setHeadshot(state?.headshot ?? { configured: false })
+      setGeneratedImages(Array.isArray(state?.generated_images) ? state.generated_images : [])
       invalidate()
       await loadSnapshot(true)
     } catch (err) {
@@ -287,6 +359,62 @@ export default function SettingsScreen() {
       }
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function handleHeadshotUpload(event) {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+
+    const formData = new FormData()
+    formData.append('headshot', file)
+
+    setHeadshotUploading(true)
+    setHeadshotError('')
+    setHeadshotMessage('')
+
+    try {
+      const data = await onboardingApi.uploadHeadshot(formData)
+      setHeadshot(data?.headshot ?? { configured: true })
+      setHeadshotMessage('Headshot uploaded.')
+    } catch (err) {
+      setHeadshotError(err.message)
+    } finally {
+      setHeadshotUploading(false)
+    }
+  }
+
+  async function handleHeadshotDelete() {
+    setHeadshotUploading(true)
+    setHeadshotError('')
+    setHeadshotMessage('')
+
+    try {
+      await onboardingApi.deleteHeadshot()
+      setHeadshot({ configured: false })
+      setHeadshotMessage('Headshot removed.')
+    } catch (err) {
+      setHeadshotError(err.message)
+    } finally {
+      setHeadshotUploading(false)
+    }
+  }
+
+  async function handleGenerateImages() {
+    setGeneratingImages(true)
+    setGenerationError('')
+    setGenerationMessage('')
+
+    try {
+      const data = await onboardingApi.generateImages({ prompt: generationPrompt.trim() })
+      const nextImages = Array.isArray(data?.generated_images) ? data.generated_images : []
+      setGeneratedImages(nextImages)
+      setGenerationMessage('Generated a new batch of personalized images.')
+    } catch (err) {
+      setGenerationError(err.message)
+    } finally {
+      setGeneratingImages(false)
     }
   }
 
@@ -495,7 +623,7 @@ export default function SettingsScreen() {
           eyebrow="Core inputs"
           title="Profile Basics"
           description="Identity, body stats, goal direction, and the numbers used to calculate targets."
-          itemCountLabel="2 sections"
+          itemCountLabel="3 sections"
           open={accordionSections.profile}
           onToggle={toggleAccordionSection}
         >
@@ -539,6 +667,83 @@ export default function SettingsScreen() {
                   </label>
                 </div>
               </div>
+            </div>
+          </section>
+
+          <section className="settings-section dash-card settings-headshot-section">
+            <div className="settings-headshot-head">
+              <div>
+                <h3>Your Headshot</h3>
+                <p className="settings-subtitle">Upload a clear face photo. Gemini uses this together with your recent progress photos and Johnny&apos;s reference image to generate square workout and lifestyle scenes.</p>
+              </div>
+              <div className="settings-headshot-actions">
+                <label className="btn-secondary settings-upload-trigger">
+                  <input type="file" accept="image/*" onChange={handleHeadshotUpload} disabled={headshotUploading || generatingImages} />
+                  {headshotUploading ? 'Uploading…' : headshot?.configured ? 'Replace Headshot' : 'Upload Headshot'}
+                </label>
+                {headshot?.configured ? (
+                  <button type="button" className="btn-outline small" onClick={handleHeadshotDelete} disabled={headshotUploading || generatingImages}>
+                    Remove
+                  </button>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="settings-headshot-layout">
+              <div className="settings-headshot-preview-shell">
+                {headshotSrc ? (
+                  <img src={headshotSrc} alt="Uploaded headshot" className="settings-headshot-preview" />
+                ) : (
+                  <div className="settings-headshot-empty">No headshot uploaded yet.</div>
+                )}
+              </div>
+
+              <div className="settings-headshot-controls">
+                <label className="settings-field settings-field-span-2">
+                  <span className="settings-field-label">Extra image direction</span>
+                  <textarea
+                    rows="4"
+                    value={generationPrompt}
+                    onChange={event => setGenerationPrompt(event.target.value)}
+                    placeholder="Optional: add scene direction like rainy marathon training, heavy barbell work, or bright early-morning track energy."
+                  />
+                </label>
+                <div className="settings-inline-panel settings-field-span-2">
+                  <strong>Generate Johnny scenes</strong>
+                  <p className="settings-subtitle">This creates four square images using your headshot, your recent progress photos, and the Johnny reference image configured in the plugin settings.</p>
+                  <div className="settings-ai-actions">
+                    <button type="button" className="btn-primary small" onClick={handleGenerateImages} disabled={!headshot?.configured || generatingImages || headshotUploading}>
+                      {generatingImages ? 'Generating…' : 'Generate 4 Images'}
+                    </button>
+                  </div>
+                </div>
+                {headshotError ? <p className="error">{headshotError}</p> : null}
+                {headshotMessage ? <p className="success-message">{headshotMessage}</p> : null}
+                {generationError ? <p className="error">{generationError}</p> : null}
+                {generationMessage ? <p className="success-message">{generationMessage}</p> : null}
+              </div>
+            </div>
+
+            <div className="settings-generated-gallery">
+              <div className="settings-generated-gallery-head">
+                <strong>Generated Images</strong>
+                <span>{generatedImages.length}</span>
+              </div>
+              {generatedImages.length > 0 ? (
+                <div className="settings-generated-grid">
+                  {generatedImages.map(image => (
+                    <article key={image.id} className="settings-generated-card">
+                      {generatedImageSrcs[image.id] ? <img src={generatedImageSrcs[image.id]} alt={image.scenario || 'Generated workout scene'} /> : <div className="settings-generated-loading">Loading…</div>}
+                      <div className="settings-generated-copy">
+                        <strong>{image.scenario || 'Generated scene'}</strong>
+                        <span>{image.created_at ? formatUsShortDate(image.created_at, image.created_at) : 'Just now'}</span>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <p className="settings-subtitle">Generated images will appear here after your first run.</p>
+              )}
             </div>
           </section>
 
@@ -588,6 +793,18 @@ export default function SettingsScreen() {
             <div className="settings-grid">
               <label className="settings-field"><span className="settings-field-label">Steps</span><input type="number" min="1000" max="30000" step="1" value={form.target_steps} onChange={e => update('target_steps', Number(e.target.value))} /></label>
               <label className="settings-field"><span className="settings-field-label">Sleep (hours)</span><input type="number" min="4" max="12" step="0.5" value={form.target_sleep_hours} onChange={e => update('target_sleep_hours', Number(e.target.value))} /></label>
+              <div className="settings-inline-panel settings-field-span-2">
+                <label className="switch-field">
+                  <span className="switch-copy">
+                    <span className="settings-field-label">Add burned workout calories back</span>
+                    <span className="settings-field-hint">Increase today&apos;s calorie target by logged cardio and completed workout burn.</span>
+                  </span>
+                  <span className="switch-control">
+                    <input className="switch-input" type="checkbox" checked={form.add_exercise_calories_to_target} onChange={e => update('add_exercise_calories_to_target', e.target.checked)} />
+                    <span className="switch-track" aria-hidden="true" />
+                  </span>
+                </label>
+              </div>
               <div className="settings-inline-panel settings-field-span-2 settings-reminders-panel">
                 <label className="switch-field">
                   <span className="switch-copy">
@@ -1114,6 +1331,8 @@ function formatReminderStatus(status) {
   switch (status) {
     case 'sent':
       return 'Sent'
+    case 'queued':
+      return 'Queued'
     case 'failed':
       return 'Failed'
     case 'canceled':

@@ -52,6 +52,7 @@ class SmsService {
 	public static function list_user_reminders( int $user_id ): array {
 		$timezone = UserTime::timezone_string( $user_id );
 		$reminders = self::get_scheduled_reminders( $user_id );
+		$reminders = self::reconcile_scheduled_reminders( $user_id, $reminders );
 
 		usort( $reminders, static fn( array $left, array $right ): int => strcmp( (string) ( $left['send_at_utc'] ?? '' ), (string) ( $right['send_at_utc'] ?? '' ) ) );
 
@@ -90,16 +91,29 @@ class SmsService {
 
 		$timezone = UserTime::timezone_string( $user_id );
 		$scheduled_for_utc = $scheduled_for->setTimezone( new \DateTimeZone( 'UTC' ) );
+		$schedule_result = self::schedule_with_clicksend(
+			$user_id,
+			(string) $profile->phone,
+			'encouragement',
+			$normalized_message,
+			$scheduled_for_utc->getTimestamp()
+		);
+		if ( is_wp_error( $schedule_result ) ) {
+			return $schedule_result;
+		}
+
 		$reminders = self::get_scheduled_reminders( $user_id );
 		$reminder = [
-			'id'            => wp_generate_uuid4(),
-			'message'       => $normalized_message,
-			'send_at_local' => $scheduled_for->format( 'Y-m-d H:i:s' ),
-			'send_at_utc'   => $scheduled_for_utc->format( 'Y-m-d H:i:s' ),
-			'timezone'      => $timezone,
-			'status'        => 'scheduled',
-			'created_at'    => current_time( 'mysql', true ),
-			'sent_at'       => '',
+			'id'                   => wp_generate_uuid4(),
+			'message'              => $normalized_message,
+			'send_at_local'        => $scheduled_for->format( 'Y-m-d H:i:s' ),
+			'send_at_utc'          => $scheduled_for_utc->format( 'Y-m-d H:i:s' ),
+			'timezone'             => $timezone,
+			'status'               => 'scheduled',
+			'created_at'           => current_time( 'mysql', true ),
+			'sent_at'              => '',
+			'canceled_at'          => '',
+			'clicksend_message_id' => (string) ( $schedule_result['message_id'] ?? '' ),
 		];
 
 		$reminders[] = $reminder;
@@ -109,7 +123,6 @@ class SmsService {
 		}
 
 		self::save_scheduled_reminders( $user_id, $reminders );
-		wp_schedule_single_event( $scheduled_for_utc->getTimestamp(), 'jf_send_scheduled_sms_reminder', [ $user_id, $reminder['id'] ] );
 
 		return $reminder;
 	}
@@ -131,9 +144,17 @@ class SmsService {
 				return new \WP_Error( 'invalid_status', 'Only scheduled reminders can be canceled.' );
 			}
 
-			$next_event = wp_next_scheduled( 'jf_send_scheduled_sms_reminder', [ $user_id, $reminder_id ] );
-			if ( $next_event ) {
-				wp_unschedule_event( $next_event, 'jf_send_scheduled_sms_reminder', [ $user_id, $reminder_id ] );
+			$clicksend_message_id = sanitize_text_field( (string) ( $reminder['clicksend_message_id'] ?? '' ) );
+			if ( '' !== $clicksend_message_id ) {
+				$canceled = self::cancel_with_clicksend( $clicksend_message_id );
+				if ( is_wp_error( $canceled ) ) {
+					return $canceled;
+				}
+			} else {
+				$next_event = wp_next_scheduled( 'jf_send_scheduled_sms_reminder', [ $user_id, $reminder_id ] );
+				if ( $next_event ) {
+					wp_unschedule_event( $next_event, 'jf_send_scheduled_sms_reminder', [ $user_id, $reminder_id ] );
+				}
 			}
 
 			$reminder['status'] = 'canceled';
@@ -381,6 +402,124 @@ class SmsService {
 		return $status === 'sent';
 	}
 
+	private static function schedule_with_clicksend(
+		int $user_id,
+		string $phone,
+		string $trigger_type,
+		string $message,
+		int $schedule_unix
+	): array|\WP_Error {
+		$username = get_option( 'jf_clicksend_username', '' );
+		$api_key  = get_option( 'jf_clicksend_api_key', '' );
+
+		if ( ! $username || ! $api_key ) {
+			error_log( 'Johnny5k SmsService: ClickSend credentials not configured.' );
+			return new \WP_Error( 'clicksend_not_configured', 'ClickSend credentials are not configured.' );
+		}
+
+		$phone = preg_replace( '/[^+\d]/', '', $phone );
+		if ( strlen( $phone ) < 10 ) {
+			return new \WP_Error( 'invalid_phone', 'Johnny could not schedule that reminder because the phone number is invalid.' );
+		}
+
+		$payload = wp_json_encode( [
+			'messages' => [
+				[
+					'source'   => 'sdk',
+					'body'     => $message,
+					'to'       => $phone,
+					'from'     => get_option( 'jf_clicksend_sender_id', 'Johnny5000' ),
+					'schedule' => $schedule_unix,
+				],
+			],
+		] );
+
+		$response = wp_remote_post(
+			self::API_BASE . '/sms/send',
+			[
+				'headers' => [
+					'Content-Type'  => 'application/json',
+					'Authorization' => 'Basic ' . base64_encode( $username . ':' . $api_key ),
+				],
+				'body'    => $payload,
+				'timeout' => 15,
+			]
+		);
+
+		if ( is_wp_error( $response ) ) {
+			return new \WP_Error( 'clicksend_schedule_failed', $response->get_error_message() );
+		}
+
+		$body = json_decode( wp_remote_retrieve_body( $response ), true );
+		$http = wp_remote_retrieve_response_code( $response );
+		$message_data = $body['data']['messages'][0] ?? [];
+		$api_status = (string) ( $message_data['status'] ?? '' );
+		$message_id = sanitize_text_field( (string) ( $message_data['message_id'] ?? '' ) );
+		$accepted = 200 === $http && in_array( $api_status, [ 'SUCCESS', 'QUEUED' ], true ) && '' !== $message_id;
+
+		global $wpdb;
+		$wpdb->insert( $wpdb->prefix . 'fit_sms_logs', [
+			'user_id'              => $user_id ?: null,
+			'phone'                => $phone,
+			'trigger_type'         => $trigger_type,
+			'message_preview'      => mb_substr( $message, 0, 255 ),
+			'status'               => $accepted ? 'scheduled' : 'failed',
+			'cost_usd'             => (float) ( $message_data['message_price'] ?? 0 ),
+			'clicksend_message_id' => $message_id ?: null,
+			'sent_at'              => null,
+		] );
+
+		if ( ! $accepted ) {
+			$error_message = sanitize_text_field( (string) ( $message_data['status_text'] ?? '' ) );
+			if ( '' === $error_message ) {
+				$error_message = 'ClickSend did not accept the scheduled SMS reminder.';
+			}
+			return new \WP_Error( 'clicksend_schedule_failed', $error_message );
+		}
+
+		return [
+			'message_id' => $message_id,
+			'status'     => $api_status,
+		];
+	}
+
+	private static function cancel_with_clicksend( string $message_id ): bool|\WP_Error {
+		$username = get_option( 'jf_clicksend_username', '' );
+		$api_key  = get_option( 'jf_clicksend_api_key', '' );
+
+		if ( ! $username || ! $api_key ) {
+			return new \WP_Error( 'clicksend_not_configured', 'ClickSend credentials are not configured.' );
+		}
+
+		$response = wp_remote_request(
+			self::API_BASE . '/sms/' . rawurlencode( $message_id ) . '/cancel',
+			[
+				'method'  => 'PUT',
+				'headers' => [
+					'Content-Type'  => 'application/json',
+					'Authorization' => 'Basic ' . base64_encode( $username . ':' . $api_key ),
+				],
+				'timeout' => 15,
+			]
+		);
+
+		if ( is_wp_error( $response ) ) {
+			return new \WP_Error( 'clicksend_cancel_failed', $response->get_error_message() );
+		}
+
+		$http = wp_remote_retrieve_response_code( $response );
+		if ( $http < 200 || $http >= 300 ) {
+			$body = json_decode( wp_remote_retrieve_body( $response ), true );
+			$error_message = sanitize_text_field( (string) ( $body['response_msg'] ?? $body['message'] ?? '' ) );
+			if ( '' === $error_message ) {
+				$error_message = 'ClickSend could not cancel that scheduled reminder.';
+			}
+			return new \WP_Error( 'clicksend_cancel_failed', $error_message );
+		}
+
+		return true;
+	}
+
 	// ── Helper ────────────────────────────────────────────────────────────────
 
 	private static function get_profile( int $user_id ): ?\stdClass {
@@ -412,6 +551,7 @@ class SmsService {
 				'created_at'    => sanitize_text_field( (string) ( $item['created_at'] ?? '' ) ),
 				'sent_at'       => sanitize_text_field( (string) ( $item['sent_at'] ?? '' ) ),
 				'canceled_at'   => sanitize_text_field( (string) ( $item['canceled_at'] ?? '' ) ),
+				'clicksend_message_id' => sanitize_text_field( (string) ( $item['clicksend_message_id'] ?? '' ) ),
 			];
 		}, $stored ) ) );
 	}
@@ -459,6 +599,34 @@ class SmsService {
 			'sent_at'       => sanitize_text_field( (string) ( $reminder['sent_at'] ?? '' ) ),
 			'canceled_at'   => sanitize_text_field( (string) ( $reminder['canceled_at'] ?? '' ) ),
 		];
+	}
+
+	private static function reconcile_scheduled_reminders( int $user_id, array $reminders ): array {
+		if ( empty( $reminders ) ) {
+			return [];
+		}
+
+		$now_utc = UserTime::now( $user_id )->setTimezone( new \DateTimeZone( 'UTC' ) )->format( 'Y-m-d H:i:s' );
+		$updated = false;
+
+		foreach ( $reminders as &$reminder ) {
+			if ( 'scheduled' !== ( $reminder['status'] ?? '' ) ) {
+				continue;
+			}
+
+			$send_at_utc = sanitize_text_field( (string) ( $reminder['send_at_utc'] ?? '' ) );
+			if ( '' !== $send_at_utc && $send_at_utc <= $now_utc ) {
+				$reminder['status'] = 'queued';
+				$updated = true;
+			}
+		}
+		unset( $reminder );
+
+		if ( $updated ) {
+			self::save_scheduled_reminders( $user_id, $reminders );
+		}
+
+		return $reminders;
 	}
 
 	private static function send_trigger_message( int $user_id, string $trigger_type, array $context = [] ): bool {

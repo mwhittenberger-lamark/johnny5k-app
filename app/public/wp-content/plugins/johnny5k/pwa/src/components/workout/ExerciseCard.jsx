@@ -42,7 +42,6 @@ function ExerciseCard({
   const activeSetSignature = (exercise?.sets ?? []).map(set => `${set.id}:${set.weight}:${set.reps}:${set.rir ?? ''}:${set.completed}`).join('|')
   const coachingCues = parseCoachingCues(exercise?.coaching_cues ?? exercise?.coaching_cues_json)
   const secondaryMuscles = parseStringList(exercise?.secondary_muscles ?? exercise?.secondary_muscles_json)
-  const splitTags = parseStringList(exercise?.day_types ?? exercise?.day_types_json)
   const librarySlots = parseStringList(exercise?.slot_types ?? exercise?.slot_types_json)
   const nextRowKey = getNewRowKey(exercise)
 
@@ -462,19 +461,6 @@ function ExerciseCard({
           <span className="exercise-card-label">Prescription</span>
           <strong>{formatTargetSummary(exercise)}</strong>
           <span className="exercise-card-target-note">{exercise.planned_sets} planned sets in the {humanizeToken(exercise.slot_type || librarySlots[0] || 'accessory')} slot.</span>
-        </div>
-      </div>
-
-      <div className="exercise-library-strip">
-        {splitTags.length ? (
-          <div className="exercise-library-strip-block">
-            <span className="exercise-card-label">Split fit</span>
-            <strong>{splitTags.slice(0, 3).map(humanizeToken).join(' · ')}</strong>
-          </div>
-        ) : null}
-        <div className="exercise-library-strip-block">
-          <span className="exercise-card-label">Setup</span>
-          <strong>{[exercise.equipment, exercise.difficulty, exercise.movement_pattern].filter(Boolean).map(humanizeToken).join(' · ')}</strong>
         </div>
       </div>
 

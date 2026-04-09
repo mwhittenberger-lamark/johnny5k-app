@@ -141,8 +141,11 @@ class AiService {
 
 		// ── Parse structured actions if model returned JSON ───────────────────
 		$parsed_reply = self::parse_structured_chat_reply( $raw_reply );
-		$reply        = $parsed_reply['reply'];
-		$actions      = $parsed_reply['actions'];
+		$reply        = trim( (string) $parsed_reply['reply'] );
+		if ( '' === $reply ) {
+			$reply = self::build_tool_action_fallback_reply( $result['action_results'] ?? [], $result['used_tools'] ?? [] );
+		}
+		$actions      = self::enrich_structured_actions( $parsed_reply['actions'] );
 		$why          = $parsed_reply['why'];
 		$context_used = $parsed_reply['context_used'];
 		$confidence   = $parsed_reply['confidence'];
@@ -241,7 +244,7 @@ class AiService {
 
 		return [
 			'reply'           => $parsed_reply['reply'],
-			'actions'         => $parsed_reply['actions'],
+			'actions'         => self::enrich_structured_actions( $parsed_reply['actions'] ),
 			'why'             => $parsed_reply['why'],
 			'context_used'    => $parsed_reply['context_used'],
 			'confidence'      => $parsed_reply['confidence'],
@@ -302,12 +305,13 @@ class AiService {
 
 		if ( 'food_label' === $context ) {
 			$parsed = self::normalise_label_analysis( $parsed );
-		} else {
-			$parsed = self::normalise_meal_analysis( $parsed );
-			$parsed = NutritionSourceService::enrich_meal_analysis( $parsed );
+			return self::resolve_label_analysis_with_sources( $user_id, $parsed, $context_data );
 		}
 
-		return $parsed;
+		$parsed = self::normalise_meal_analysis( $parsed );
+		$parsed = NutritionSourceService::enrich_meal_analysis( $parsed );
+
+		return self::resolve_meal_analysis_with_web_search( $user_id, $parsed, $context_data );
 	}
 
 	/**
@@ -353,7 +357,240 @@ class AiService {
 			return new \WP_Error( 'ai_parse_error', 'Could not parse AI food analysis response.' );
 		}
 
-		return NutritionSourceService::enrich_food_analysis( self::normalise_food_analysis( $parsed ) );
+		$analysis = self::normalise_food_analysis( $parsed );
+		$resolved = NutritionSourceService::enrich_food_analysis( $analysis );
+		if ( ! self::should_fallback_food_analysis_to_web( $resolved ) ) {
+			return $resolved;
+		}
+
+		$web_resolved = self::analyse_food_text_with_web_search( $user_id, $food_text, $context_data, $resolved );
+		if ( ! is_wp_error( $web_resolved ) && ! empty( $web_resolved['food_name'] ) ) {
+			return $web_resolved;
+		}
+
+		return $resolved;
+	}
+
+	private static function should_fallback_food_analysis_to_web( array $analysis ): bool {
+		$source = is_array( $analysis['source'] ?? null ) ? $analysis['source'] : [];
+		if ( (string) ( $source['provider'] ?? '' ) === 'usda' ) {
+			return false;
+		}
+
+		$status = (string) ( $source['resolution_status'] ?? '' );
+		if ( in_array( $status, [ 'no_match', 'detail_lookup_failed' ], true ) ) {
+			return true;
+		}
+
+		return empty( $source );
+	}
+
+	private static function analyse_food_text_with_web_search( int $user_id, string $food_text, array $context_data, array $baseline_analysis = [] ) {
+		$baseline_summary = wp_json_encode( [
+			'food_name'    => (string) ( $baseline_analysis['food_name'] ?? '' ),
+			'brand'        => (string) ( $baseline_analysis['brand'] ?? '' ),
+			'serving_size' => (string) ( $baseline_analysis['serving_size'] ?? '' ),
+			'serving_grams'=> (float) ( $baseline_analysis['serving_grams'] ?? 0 ),
+			'calories'     => (int) ( $baseline_analysis['calories'] ?? 0 ),
+			'protein_g'    => (float) ( $baseline_analysis['protein_g'] ?? 0 ),
+			'carbs_g'      => (float) ( $baseline_analysis['carbs_g'] ?? 0 ),
+			'fat_g'        => (float) ( $baseline_analysis['fat_g'] ?? 0 ),
+			'notes'        => (string) ( $baseline_analysis['notes'] ?? '' ),
+		] );
+
+		$messages = [
+			[
+				'role'    => 'system',
+				'content' => 'You are a precise sports nutrition researcher. Use web search when available. Prefer official manufacturer nutrition pages first, then reputable retailer or product pages. Return valid JSON and nothing else.',
+			],
+			[
+				'role'    => 'user',
+				'content' => sprintf(
+					'Find nutrition details online for this typed food or meal entry: "%1$s". The user goal is %2$s, daily calories %3$s, protein target %4$s. The first-pass local estimate was: %5$s. Use web search to find the best available nutrition facts. Prefer branded or packaged product nutrition labels when available. If multiple sources conflict, prefer the official manufacturer. Return only valid JSON with this exact shape: {food_name, brand, serving_size, serving_grams, calories, protein_g, carbs_g, fat_g, fiber_g, sugar_g, sodium_mg, micros:[{key,label,amount,unit}], confidence, notes}. Keep notes to one short sentence that mentions the basis you used.',
+					$food_text,
+					$context_data['goal_type'] ?: 'maintain',
+					$context_data['target_calories'] ?: 'unknown',
+					$context_data['target_protein_g'] ?: 'unknown',
+					$baseline_summary
+				),
+			],
+		];
+
+		$result = self::call_openai( $messages, 'gpt-4o-mini', [ 'web_search' => true ] );
+		if ( is_wp_error( $result ) ) {
+			return $result;
+		}
+
+		CostTracker::log_openai( $user_id, 'gpt-4o-mini', '/v1/responses', $result['tokens_in'], $result['tokens_out'], [
+			'context'         => 'food_text_web_search',
+			'used_web_search' => $result['used_web_search'] ? 1 : 0,
+		] );
+
+		$parsed = self::decode_json_reply( (string) $result['reply'] );
+		if ( ! is_array( $parsed ) ) {
+			return new \WP_Error( 'ai_parse_error', 'Could not parse AI food web lookup response.' );
+		}
+
+		$analysis = self::normalise_food_analysis( $parsed );
+		$analysis['source'] = [
+			'type'               => 'web_lookup',
+			'provider'           => 'web_search',
+			'resolution_status'  => 'web_search_match',
+			'query'              => $food_text,
+			'matched_name'       => (string) ( $analysis['food_name'] ?? '' ),
+			'brand'              => (string) ( $analysis['brand'] ?? '' ),
+			'serving_amount'     => 1,
+			'serving_unit'       => (string) ( $analysis['serving_size'] ?? 'serving' ),
+			'estimated_grams'    => round( (float) ( $analysis['serving_grams'] ?? 0 ), 2 ),
+			'food_confidence'    => (float) ( $analysis['confidence'] ?? 0 ),
+			'portion_confidence' => (float) ( $analysis['confidence'] ?? 0 ),
+			'web_sources'        => array_values( array_filter( array_map( static function( array $source ): array {
+				$url = esc_url_raw( (string) ( $source['url'] ?? '' ) );
+				$title = sanitize_text_field( (string) ( $source['title'] ?? '' ) );
+				if ( '' === $url || '' === $title ) {
+					return [];
+				}
+
+				return [
+					'title' => $title,
+					'url'   => $url,
+				];
+			}, array_slice( $result['sources'] ?? [], 0, 3 ) ) ) ),
+		];
+
+		return $analysis;
+	}
+
+	private static function resolve_label_analysis_with_sources( int $user_id, array $analysis, array $context_data ): array {
+		$lookup_seed = self::normalise_food_analysis( [
+			'food_name'     => (string) ( $analysis['food_name'] ?? '' ),
+			'brand'         => (string) ( $analysis['brand'] ?? '' ),
+			'serving_size'  => (string) ( $analysis['serving_size'] ?? '1 serving' ),
+			'calories'      => (int) ( $analysis['calories'] ?? 0 ),
+			'protein_g'     => (float) ( $analysis['protein_g'] ?? 0 ),
+			'carbs_g'       => (float) ( $analysis['carbs_g'] ?? 0 ),
+			'fat_g'         => (float) ( $analysis['fat_g'] ?? 0 ),
+			'fiber_g'       => (float) ( $analysis['fiber_g'] ?? 0 ),
+			'sugar_g'       => (float) ( $analysis['sugar_g'] ?? 0 ),
+			'sodium_mg'     => (float) ( $analysis['sodium_mg'] ?? 0 ),
+			'micros'        => is_array( $analysis['micros'] ?? null ) ? $analysis['micros'] : [],
+			'confidence'    => 0.9,
+		] );
+
+		$resolved = NutritionSourceService::enrich_food_analysis( $lookup_seed );
+		if ( self::should_fallback_food_analysis_to_web( $resolved ) ) {
+			$query = trim( implode( ' ', array_filter( [
+				(string) ( $analysis['brand'] ?? '' ),
+				(string) ( $analysis['food_name'] ?? '' ),
+				(string) ( $analysis['serving_size'] ?? '' ),
+			] ) ) );
+			$web_resolved = self::analyse_food_text_with_web_search( $user_id, $query, $context_data, $resolved );
+			if ( ! is_wp_error( $web_resolved ) && ! empty( $web_resolved['food_name'] ) ) {
+				$resolved = $web_resolved;
+			}
+		}
+
+		$analysis['food_name'] = (string) ( $resolved['food_name'] ?? $analysis['food_name'] ?? '' );
+		$analysis['brand'] = (string) ( $resolved['brand'] ?? $analysis['brand'] ?? '' );
+		$analysis['serving_size'] = (string) ( $resolved['serving_size'] ?? $analysis['serving_size'] ?? '1 serving' );
+		$analysis['calories'] = (int) ( $resolved['calories'] ?? $analysis['calories'] ?? 0 );
+		$analysis['protein_g'] = round( (float) ( $resolved['protein_g'] ?? $analysis['protein_g'] ?? 0 ), 2 );
+		$analysis['carbs_g'] = round( (float) ( $resolved['carbs_g'] ?? $analysis['carbs_g'] ?? 0 ), 2 );
+		$analysis['fat_g'] = round( (float) ( $resolved['fat_g'] ?? $analysis['fat_g'] ?? 0 ), 2 );
+		$analysis['fiber_g'] = round( (float) ( $resolved['fiber_g'] ?? $analysis['fiber_g'] ?? 0 ), 2 );
+		$analysis['sugar_g'] = round( (float) ( $resolved['sugar_g'] ?? $analysis['sugar_g'] ?? 0 ), 2 );
+		$analysis['sodium_mg'] = round( (float) ( $resolved['sodium_mg'] ?? $analysis['sodium_mg'] ?? 0 ), 2 );
+		$analysis['micros'] = is_array( $resolved['micros'] ?? null ) ? $resolved['micros'] : ( is_array( $analysis['micros'] ?? null ) ? $analysis['micros'] : [] );
+		$analysis['source'] = is_array( $resolved['source'] ?? null ) ? $resolved['source'] : null;
+		$analysis['sources'] = self::extract_sources_from_analysis_source( $analysis['source'] );
+		$analysis['used_web_search'] = (string) ( $analysis['source']['provider'] ?? '' ) === 'web_search';
+
+		return $analysis;
+	}
+
+	private static function resolve_meal_analysis_with_web_search( int $user_id, array $analysis, array $context_data ): array {
+		$items = is_array( $analysis['items'] ?? null ) ? $analysis['items'] : [];
+		$used_web_search = false;
+		$sources = [];
+
+		foreach ( $items as $index => $item ) {
+			$item = is_array( $item ) ? $item : [];
+			if ( ! self::should_fallback_food_analysis_to_web( [ 'source' => $item['source'] ?? null ] ) ) {
+				continue;
+			}
+
+			$query = self::build_item_lookup_query( $item );
+			$web_resolved = self::analyse_food_text_with_web_search( $user_id, $query, $context_data, $item );
+			if ( is_wp_error( $web_resolved ) || empty( $web_resolved['food_name'] ) ) {
+				continue;
+			}
+
+			$items[ $index ] = array_merge( $item, [
+				'food_name'       => (string) ( $web_resolved['food_name'] ?? $item['food_name'] ?? '' ),
+				'estimated_grams' => round( (float) ( $web_resolved['serving_grams'] ?? $item['estimated_grams'] ?? 0 ), 2 ),
+				'calories'        => (int) ( $web_resolved['calories'] ?? $item['calories'] ?? 0 ),
+				'protein_g'       => round( (float) ( $web_resolved['protein_g'] ?? $item['protein_g'] ?? 0 ), 2 ),
+				'carbs_g'         => round( (float) ( $web_resolved['carbs_g'] ?? $item['carbs_g'] ?? 0 ), 2 ),
+				'fat_g'           => round( (float) ( $web_resolved['fat_g'] ?? $item['fat_g'] ?? 0 ), 2 ),
+				'fiber_g'         => round( (float) ( $web_resolved['fiber_g'] ?? $item['fiber_g'] ?? 0 ), 2 ),
+				'sugar_g'         => round( (float) ( $web_resolved['sugar_g'] ?? $item['sugar_g'] ?? 0 ), 2 ),
+				'sodium_mg'       => round( (float) ( $web_resolved['sodium_mg'] ?? $item['sodium_mg'] ?? 0 ), 2 ),
+				'micros'          => is_array( $web_resolved['micros'] ?? null ) ? $web_resolved['micros'] : ( is_array( $item['micros'] ?? null ) ? $item['micros'] : [] ),
+				'source'          => is_array( $web_resolved['source'] ?? null ) ? $web_resolved['source'] : ( is_array( $item['source'] ?? null ) ? $item['source'] : null ),
+			] );
+			foreach ( self::extract_sources_from_analysis_source( $items[ $index ]['source'] ?? null ) as $source ) {
+				$sources[ (string) ( $source['url'] ?? '' ) ] = $source;
+			}
+			$used_web_search = true;
+		}
+
+		$analysis['items'] = array_values( $items );
+		$analysis['total_calories'] = (int) round( array_sum( array_map( static fn( array $item ): float => (float) ( $item['calories'] ?? 0 ), $analysis['items'] ) ) );
+		$analysis['total_protein_g'] = round( array_sum( array_map( static fn( array $item ): float => (float) ( $item['protein_g'] ?? 0 ), $analysis['items'] ) ), 2 );
+		$analysis['total_carbs_g'] = round( array_sum( array_map( static fn( array $item ): float => (float) ( $item['carbs_g'] ?? 0 ), $analysis['items'] ) ), 2 );
+		$analysis['total_fat_g'] = round( array_sum( array_map( static fn( array $item ): float => (float) ( $item['fat_g'] ?? 0 ), $analysis['items'] ) ), 2 );
+		$analysis['sources'] = array_values( $sources );
+		$analysis['used_web_search'] = $used_web_search;
+
+		return $analysis;
+	}
+
+	private static function build_item_lookup_query( array $item ): string {
+		return trim( implode( ' ', array_filter( [
+			isset( $item['serving_amount'] ) ? rtrim( rtrim( (string) $item['serving_amount'], '0' ), '.' ) : '',
+			(string) ( $item['serving_unit'] ?? '' ),
+			(string) ( $item['food_name'] ?? '' ),
+		] ) ) );
+	}
+
+	private static function extract_sources_from_analysis_source( $source ): array {
+		if ( ! is_array( $source ) ) {
+			return [];
+		}
+
+		return self::format_web_sources( is_array( $source['web_sources'] ?? null ) ? $source['web_sources'] : [], 3 );
+	}
+
+	private static function format_web_sources( array $sources, int $limit = 3 ): array {
+		$formatted = [];
+		foreach ( array_slice( $sources, 0, max( 1, $limit ) ) as $source ) {
+			if ( ! is_array( $source ) ) {
+				continue;
+			}
+
+			$url = esc_url_raw( (string) ( $source['url'] ?? '' ) );
+			$title = sanitize_text_field( (string) ( $source['title'] ?? '' ) );
+			if ( '' === $url || '' === $title ) {
+				continue;
+			}
+
+			$formatted[] = [
+				'title' => $title,
+				'url'   => $url,
+			];
+		}
+
+		return array_values( $formatted );
 	}
 
 	/**
@@ -373,31 +610,40 @@ class AiService {
 		$messages = [
 			[
 				'role'    => 'system',
-				'content' => 'You are a precise pantry extraction assistant. Always return valid JSON and nothing else.',
+				'content' => 'You are a precise pantry extraction assistant. Use web search when helpful for branded or ambiguous grocery items. Return valid JSON and nothing else.',
 			],
 			[
 				'role'    => 'user',
 				'content' => sprintf(
-					'Extract pantry items from this spoken or typed list: "%1$s". The user goal is %2$s. Return only valid JSON with this exact shape: {items:[{item_name, quantity, unit, notes}], notes}. Keep item_name short and grocery-friendly. quantity should be numeric when clearly stated, otherwise null. unit should be empty when unclear. notes should be short. notes at the top level should be one brief sentence.',
+					'Extract pantry items from this spoken or typed list: "%1$s". The user goal is %2$s. When branded or packaged products appear, use web search if helpful to normalize them into grocery-friendly pantry item names. Return only valid JSON with this exact shape: {items:[{item_name, quantity, unit, notes, category_override}], notes}. Keep item_name short and grocery-friendly. quantity should be numeric when clearly stated, otherwise null. unit should be empty when unclear. category_override may be one of proteins, produce, dairy-eggs, grains, staples, frozen, snacks, drinks, other, or empty when uncertain. notes should be short. notes at the top level should be one brief sentence.',
 					$pantry_text,
 					$context_data['goal_type'] ?: 'maintain'
 				),
 			],
 		];
 
-		$result = self::call_openai( $messages, 'gpt-4o-mini' );
+		$result = self::call_openai( $messages, 'gpt-4o-mini', [ 'web_search' => true ] );
 		if ( is_wp_error( $result ) ) {
 			return $result;
 		}
 
-		CostTracker::log_openai( $user_id, 'gpt-4o-mini', '/v1/responses', $result['tokens_in'], $result['tokens_out'], [ 'context' => 'pantry_text' ] );
+		CostTracker::log_openai( $user_id, 'gpt-4o-mini', '/v1/responses', $result['tokens_in'], $result['tokens_out'], [
+			'context'         => 'pantry_text',
+			'used_web_search' => $result['used_web_search'] ? 1 : 0,
+		] );
 
 		$parsed = self::decode_json_reply( (string) $result['reply'] );
 		if ( ! is_array( $parsed ) ) {
 			return new \WP_Error( 'ai_parse_error', 'Could not parse AI pantry response.' );
 		}
 
-		return self::normalise_pantry_analysis( $parsed );
+		return array_merge(
+			self::normalise_pantry_analysis( $parsed ),
+			[
+				'sources'         => self::format_web_sources( $result['sources'] ?? [], 3 ),
+				'used_web_search' => (bool) ( $result['used_web_search'] ?? false ),
+			]
+		);
 	}
 
 	/**
@@ -844,6 +1090,72 @@ PROMPT;
 	}
 
 	/**
+	 * Discover and cache one inspiring real-world health or physique transformation story.
+	 *
+	 * @param int  $user_id
+	 * @param bool $force
+	 * @return array<string,mixed>|\WP_Error
+	 */
+	public static function dashboard_real_success_story( int $user_id, bool $force = false ) {
+		$cached = get_user_meta( $user_id, 'jf_dashboard_real_success_story', true );
+
+		if ( ! $force && is_array( $cached ) && ! empty( $cached['story'] ) ) {
+			$story = self::normalise_dashboard_real_success_story_payload( (array) $cached['story'] );
+			$story['cached'] = true;
+			$story['generated_at'] = $cached['generated_at'] ?? current_time( 'mysql' );
+			return $story;
+		}
+
+		$messages = [
+			[
+				'role'    => 'system',
+				'content' => 'You are a fitness inspiration researcher for a dashboard card. Use web search, prefer Men\'s Health, Women\'s Health, Muscle & Fitness, Runner\'s World, Prevention, Shape, Self, Today, or similarly reputable mainstream health and fitness publishers. Return valid JSON only.',
+			],
+			[
+				'role'    => 'user',
+				'content' => 'Find one recent inspiring success-story article about a real person who made a meaningful life change and got healthy, lost major weight, transformed their fitness, or got ripped. Prefer Men\'s Health or Women\'s Health when there is a strong recent fit, otherwise use a similar reputable publication. Return only valid JSON in this exact shape: {story:{title, publication, url, summary, excitement_line}, notes}. Rules: use the actual article title and link. summary must be 2 concise energetic sentences written for a dashboard card, not copied verbatim from the source. excitement_line must be a short motivating hook. Pick only one story.',
+			],
+		];
+
+		$result = self::call_openai( $messages, self::DEFAULT_MODEL, [ 'web_search' => true ] );
+		if ( is_wp_error( $result ) ) {
+			return $result;
+		}
+
+		CostTracker::log_openai( $user_id, self::DEFAULT_MODEL, '/v1/responses', $result['tokens_in'], $result['tokens_out'], [
+			'context'         => 'dashboard_real_success_story',
+			'used_web_search' => $result['used_web_search'] ? 1 : 0,
+		] );
+
+		$parsed = self::decode_json_reply( (string) $result['reply'] );
+		if ( ! is_array( $parsed ) ) {
+			return new \WP_Error( 'ai_parse_error', 'Could not parse AI success story response.' );
+		}
+
+		$story = self::normalise_dashboard_real_success_story_payload( (array) ( $parsed['story'] ?? [] ) );
+		if ( '' === $story['title'] || '' === $story['url'] ) {
+			$source = is_array( $result['sources'][0] ?? null ) ? $result['sources'][0] : [];
+			$story['title'] = $story['title'] ?: sanitize_text_field( (string) ( $source['title'] ?? '' ) );
+			$story['url'] = $story['url'] ?: esc_url_raw( (string) ( $source['url'] ?? '' ) );
+			$story['publication'] = $story['publication'] ?: sanitize_text_field( (string) ( wp_parse_url( $story['url'], PHP_URL_HOST ) ?: '' ) );
+		}
+
+		if ( '' === $story['title'] || '' === $story['url'] ) {
+			return new \WP_Error( 'ai_parse_error', 'Could not build a usable success story.' );
+		}
+
+		$story['cached'] = false;
+		$story['generated_at'] = current_time( 'mysql' );
+
+		update_user_meta( $user_id, 'jf_dashboard_real_success_story', [
+			'generated_at' => $story['generated_at'],
+			'story'        => $story,
+		] );
+
+		return $story;
+	}
+
+	/**
 	 * Generate a post-workout summary narrative.
 	 *
 	 * @param  int   $user_id
@@ -1029,7 +1341,7 @@ PROMPT;
 		$ctx_block = $ctx_lines ? "\n\nUser context:\n" . implode( "\n", $ctx_lines ) : '';
 		$memory_block = self::format_durable_memory_block( $user_id );
 		$follow_up_block = self::format_follow_up_history_block( $user_id );
-		$tool_note = "\n\nYou may use Johnny5k backend tools to read live user data and perform supported actions. Before answering about meal count, what the user ate for dinner, exact serving amounts or units, pantry inventory, available recipes, exact workout reps or sets, or whether today's workout already happened, read the live data with the relevant tools instead of guessing from memory. When the user clearly asks you to log steps, log food, update pantry, adjust a workout, create a training plan, or schedule a text reminder, do it with the available tools instead of only describing what they should do. If a required detail is missing or the request is materially ambiguous, ask one short follow-up question instead of guessing. Never claim an action succeeded unless a tool confirmed it. Never create or edit a workout plan when the user is asking about meals, recipes, pantry, groceries, or macros. When the user says today, yesterday, tomorrow, tonight, or last night, resolve that against the current local date and time above. Do not invent a calendar date for relative time references. If the user did not provide a literal YYYY-MM-DD date, omit the date argument and let the backend resolve it from the user's local date. If you estimate food or recovery details, say plainly that it is an estimate and tell the user what detail would make it more accurate.";
+		$tool_note = "\n\nYou may use Johnny5k backend tools to read live user data and perform supported actions. Before answering about meal count, what the user ate for dinner, exact serving amounts or units, pantry inventory, available recipes, exact workout reps or sets, or whether today's workout already happened, read the live data with the relevant tools instead of guessing from memory. When the user clearly asks you to log steps, log food, update pantry, adjust a workout, add an exercise to their custom exercise library, create a training plan, or schedule a text reminder, do it with the available tools instead of only describing what they should do. If a required detail is missing or the request is materially ambiguous, ask one short follow-up question instead of guessing. Never claim an action succeeded unless a tool confirmed it. Never create or edit a workout plan when the user is asking about meals, recipes, pantry, groceries, or macros. When the user says today, yesterday, tomorrow, tonight, or last night, resolve that against the current local date and time above. Do not invent a calendar date for relative time references. If the user did not provide a literal YYYY-MM-DD date, omit the date argument and let the backend resolve it from the user's local date. If you estimate food or recovery details, say plainly that it is an estimate and tell the user what detail would make it more accurate.";
 		$format_note = "\n\nResponse format rules: default to one short paragraph or two short paragraphs. Do not use markdown headings. Do not produce canned sections like \"Next steps:\" or label-heavy templates like \"Calorie Target:\" unless the user explicitly asks for a breakdown. Do not pad with generic advice like \"track each meal\" or \"consider a workout\" unless it is specifically grounded in the user's current data. Prefer one concrete next move over a five-point plan. Do not end with an upsell question like \"Would you like recipe suggestions?\" unless the user asked for recipes, meal ideas, or options.";
 
 		$mode_block = '';
@@ -2207,6 +2519,28 @@ RULES;
 		];
 	}
 
+	/**
+	 * @param array<string,mixed> $story
+	 * @return array<string,mixed>
+	 */
+	private static function normalise_dashboard_real_success_story_payload( array $story ): array {
+		$title = sanitize_text_field( (string) ( $story['title'] ?? '' ) );
+		$publication = sanitize_text_field( (string) ( $story['publication'] ?? '' ) );
+		$url = esc_url_raw( (string) ( $story['url'] ?? '' ) );
+		$summary = sanitize_textarea_field( (string) ( $story['summary'] ?? '' ) );
+		$excitement_line = sanitize_text_field( (string) ( $story['excitement_line'] ?? '' ) );
+
+		return [
+			'title'           => $title,
+			'publication'     => $publication,
+			'url'             => $url,
+			'summary'         => $summary,
+			'excitement_line' => $excitement_line,
+			'cached'          => false,
+			'generated_at'    => null,
+		];
+	}
+
 	private static function dashboard_review_metrics( array $snapshot ): array {
 		$goal = $snapshot['goal'] ?? (object) [];
 		$steps = $snapshot['steps'] ?? [];
@@ -2470,6 +2804,50 @@ RULES;
 					'additionalProperties' => false,
 				],
 			],
+			'create_custom_workout' => [
+				'read_only'   => false,
+				'enabled'     => true,
+				'description' => 'Create a named one-off custom workout draft for the user and queue it on the workout screen. Use when the user wants Johnny to build a specific custom workout for today instead of editing the full weekly plan.',
+				'parameters'  => [
+					'type'                 => 'object',
+					'properties'           => [
+						'name'           => [ 'type' => 'string', 'description' => 'The custom workout name Johnny wants the user to see.' ],
+						'day_type'       => [ 'type' => 'string', 'description' => 'Optional base day type: push, pull, legs, arms_shoulders, cardio, or rest.' ],
+						'exercise_names' => [
+							'type'  => 'array',
+							'items' => [ 'type' => 'string' ],
+							'description' => 'Ordered list of exercise names Johnny selected for this custom workout.',
+						],
+						'coach_note'     => [ 'type' => 'string', 'description' => 'Optional short note about why Johnny built this workout.' ],
+					],
+					'required'             => [ 'name', 'exercise_names' ],
+					'additionalProperties' => false,
+				],
+			],
+			'create_personal_exercise' => [
+				'read_only'   => false,
+				'enabled'     => true,
+				'description' => 'Add an exercise to the user’s personal exercise library. Use when the user asks Johnny to save, add, or create a custom exercise in their library.',
+				'parameters'  => [
+					'type'                 => 'object',
+					'properties'           => [
+						'name'                => [ 'type' => 'string', 'description' => 'Exercise name to save in the personal library.' ],
+						'description'         => [ 'type' => 'string' ],
+						'primary_muscle'      => [ 'type' => 'string' ],
+						'movement_pattern'    => [ 'type' => 'string' ],
+						'equipment'           => [ 'type' => 'string' ],
+						'difficulty'          => [ 'type' => 'string', 'description' => 'beginner, intermediate, or advanced' ],
+						'default_rep_min'     => [ 'type' => 'integer' ],
+						'default_rep_max'     => [ 'type' => 'integer' ],
+						'default_sets'        => [ 'type' => 'integer' ],
+						'day_types'           => [ 'type' => 'array', 'items' => [ 'type' => 'string' ] ],
+						'slot_types'          => [ 'type' => 'array', 'items' => [ 'type' => 'string' ] ],
+						'coaching_cues'       => [ 'type' => 'array', 'items' => [ 'type' => 'string' ] ],
+					],
+					'required'             => [ 'name' ],
+					'additionalProperties' => false,
+				],
+			],
 			'log_sleep' => [
 				'read_only'   => false,
 				'enabled'     => true,
@@ -2613,7 +2991,7 @@ RULES;
 
 	private static function tool_allowed_for_request( string $tool_name, array $request_context ): bool {
 		return match ( $tool_name ) {
-			'create_training_plan', 'swap_workout_exercise' => ! empty( $request_context['workout_mutation_allowed'] ),
+			'create_training_plan', 'create_custom_workout', 'create_personal_exercise', 'swap_workout_exercise' => ! empty( $request_context['workout_mutation_allowed'] ),
 			default => true,
 		};
 	}
@@ -2647,6 +3025,8 @@ RULES;
 			'log_steps'             => self::tool_log_steps( $user_id, $arguments ),
 			'log_food_from_description' => self::tool_log_food_from_description( $user_id, $arguments ),
 			'create_training_plan'  => self::tool_create_training_plan( $user_id, $arguments ),
+			'create_custom_workout' => self::tool_create_custom_workout( $user_id, $arguments ),
+			'create_personal_exercise' => self::tool_create_personal_exercise( $user_id, $arguments ),
 			'log_sleep'             => self::tool_log_sleep( $user_id, $arguments ),
 			'add_pantry_items'      => self::tool_add_pantry_items( $user_id, $arguments ),
 			'add_grocery_gap_items' => self::tool_add_grocery_gap_items( $user_id, $arguments ),
@@ -2657,6 +3037,13 @@ RULES;
 	}
 
 	private static function normalise_tool_arguments_from_user_message( int $user_id, string $tool_name, array $arguments, string $user_message ): array {
+		if ( 'create_custom_workout' === $tool_name ) {
+			$arguments = self::hydrate_custom_workout_arguments_from_message( $user_id, $arguments, $user_message );
+		}
+		if ( 'create_personal_exercise' === $tool_name ) {
+			$arguments = self::hydrate_personal_exercise_arguments_from_message( $arguments, $user_message );
+		}
+
 		if ( '' === trim( $user_message ) ) {
 			return $arguments;
 		}
@@ -2671,6 +3058,456 @@ RULES;
 		}
 
 		return $arguments;
+	}
+
+	private static function hydrate_personal_exercise_arguments_from_message( array $arguments, string $user_message ): array {
+		$name = sanitize_text_field( (string) ( $arguments['name'] ?? '' ) );
+		if ( '' === $name ) {
+			if ( preg_match( '/(?:add|save|create)\s+(.+?)\s+(?:to|into|in)\s+(?:my|the)\s+(?:custom\s+)?exercise library/i', $user_message, $matches ) ) {
+				$name = sanitize_text_field( trim( (string) ( $matches[1] ?? '' ), " \t\n\r\0\x0B\"'“”" ) );
+			}
+		}
+		if ( '' === $name ) {
+			if ( preg_match( '/(?:add|save|create)\s+(.+?)\s*$/i', trim( $user_message ), $matches ) ) {
+				$name = sanitize_text_field( trim( (string) ( $matches[1] ?? '' ), " \t\n\r\0\x0B\"'“”" ) );
+			}
+		}
+		if ( '' === $name ) {
+			return $arguments;
+		}
+
+		$arguments['name'] = $name;
+		$exercise_key = strtolower( $name );
+		$primary_muscle = sanitize_key( (string) ( $arguments['primary_muscle'] ?? '' ) );
+		if ( '' === $primary_muscle ) {
+			$arguments['primary_muscle'] = self::infer_personal_exercise_primary_muscle( $exercise_key );
+		}
+
+		if ( '' === sanitize_text_field( (string) ( $arguments['movement_pattern'] ?? '' ) ) ) {
+			$arguments['movement_pattern'] = self::infer_personal_exercise_movement_pattern( $exercise_key );
+		}
+
+		if ( '' === sanitize_text_field( (string) ( $arguments['equipment'] ?? '' ) ) ) {
+			$arguments['equipment'] = self::infer_personal_exercise_equipment( $exercise_key );
+		}
+
+		if ( '' === sanitize_text_field( (string) ( $arguments['difficulty'] ?? '' ) ) ) {
+			$arguments['difficulty'] = 'beginner';
+		}
+
+		if ( empty( $arguments['default_rep_min'] ) ) {
+			$arguments['default_rep_min'] = 8;
+		}
+		if ( empty( $arguments['default_rep_max'] ) ) {
+			$arguments['default_rep_max'] = 12;
+		}
+		if ( empty( $arguments['default_sets'] ) ) {
+			$arguments['default_sets'] = 3;
+		}
+
+		if ( empty( $arguments['description'] ) ) {
+			$arguments['description'] = sprintf( '%s saved by Johnny 5000 for your custom exercise library.', $name );
+		}
+
+		if ( empty( $arguments['day_types'] ) ) {
+			$arguments['day_types'] = self::infer_personal_exercise_day_types(
+				sanitize_key( (string) ( $arguments['primary_muscle'] ?? '' ) ),
+				sanitize_text_field( (string) ( $arguments['movement_pattern'] ?? '' ) )
+			);
+		}
+
+		if ( empty( $arguments['slot_types'] ) ) {
+			$arguments['slot_types'] = [ self::infer_personal_exercise_slot_type( $exercise_key ) ];
+		}
+
+		return $arguments;
+	}
+
+	private static function infer_personal_exercise_primary_muscle( string $exercise_key ): string {
+		if ( self::message_contains_any( $exercise_key, [ 'curl', 'bicep', 'biceps' ] ) ) return 'biceps';
+		if ( self::message_contains_any( $exercise_key, [ 'pushdown', 'tricep', 'triceps', 'skull crusher', 'skullcrusher', 'extension', 'dip' ] ) ) return 'triceps';
+		if ( self::message_contains_any( $exercise_key, [ 'lateral raise', 'rear delt', 'front raise', 'overhead press', 'shoulder', 'delt' ] ) ) return 'shoulders';
+		if ( self::message_contains_any( $exercise_key, [ 'bench', 'press', 'fly', 'pec', 'chest' ] ) ) return 'chest';
+		if ( self::message_contains_any( $exercise_key, [ 'row', 'pulldown', 'pull-up', 'pullup', 'chin-up', 'chinup', 'back', 'lat' ] ) ) return 'back';
+		if ( self::message_contains_any( $exercise_key, [ 'squat', 'split squat', 'lunge', 'leg press', 'quad', 'quads' ] ) ) return 'quads';
+		if ( self::message_contains_any( $exercise_key, [ 'rdl', 'romanian deadlift', 'deadlift', 'hamstring', 'leg curl' ] ) ) return 'hamstrings';
+		if ( self::message_contains_any( $exercise_key, [ 'hip thrust', 'bridge', 'glute' ] ) ) return 'glutes';
+		if ( self::message_contains_any( $exercise_key, [ 'calf', 'calves' ] ) ) return 'calves';
+		if ( self::message_contains_any( $exercise_key, [ 'crunch', 'plank', 'ab', 'abs', 'core', 'sit-up', 'situp' ] ) ) return 'abs';
+		return 'general';
+	}
+
+	private static function infer_personal_exercise_movement_pattern( string $exercise_key ): string {
+		if ( self::message_contains_any( $exercise_key, [ 'squat', 'leg press' ] ) ) return 'squat';
+		if ( self::message_contains_any( $exercise_key, [ 'lunge', 'split squat', 'step-up', 'step up' ] ) ) return 'lunge';
+		if ( self::message_contains_any( $exercise_key, [ 'deadlift', 'rdl', 'hip hinge', 'good morning' ] ) ) return 'hinge';
+		if ( self::message_contains_any( $exercise_key, [ 'row', 'pulldown', 'pull-up', 'pullup', 'chin-up', 'chinup', 'curl' ] ) ) return 'pull';
+		if ( self::message_contains_any( $exercise_key, [ 'press', 'push-up', 'pushup', 'dip', 'extension' ] ) ) return 'push';
+		if ( self::message_contains_any( $exercise_key, [ 'raise' ] ) ) return 'raise';
+		if ( self::message_contains_any( $exercise_key, [ 'carry' ] ) ) return 'carry';
+		return 'accessory';
+	}
+
+	private static function infer_personal_exercise_equipment( string $exercise_key ): string {
+		if ( self::message_contains_any( $exercise_key, [ 'dumbbell', 'db ' ] ) ) return 'dumbbell';
+		if ( self::message_contains_any( $exercise_key, [ 'barbell', 'ez bar', 'ez-bar', 'smith' ] ) ) return 'barbell';
+		if ( self::message_contains_any( $exercise_key, [ 'cable', 'rope' ] ) ) return 'cable';
+		if ( self::message_contains_any( $exercise_key, [ 'machine' ] ) ) return 'machine';
+		if ( self::message_contains_any( $exercise_key, [ 'band', 'bands' ] ) ) return 'band';
+		if ( self::message_contains_any( $exercise_key, [ 'kettlebell', 'kb ' ] ) ) return 'kettlebell';
+		if ( self::message_contains_any( $exercise_key, [ 'bodyweight', 'push-up', 'pushup', 'pull-up', 'pullup', 'chin-up', 'chinup', 'dip' ] ) ) return 'bodyweight';
+		return 'other';
+	}
+
+	private static function infer_personal_exercise_day_types( string $primary_muscle, string $movement_pattern ): array {
+		return match ( $primary_muscle ) {
+			'biceps', 'triceps', 'shoulders' => [ 'arms_shoulders' ],
+			'chest'                          => [ 'push' ],
+			'back'                           => [ 'pull' ],
+			'quads', 'hamstrings', 'glutes', 'calves' => [ 'legs' ],
+			'abs'                            => [ 'arms_shoulders', 'legs', 'push', 'pull' ],
+			default                          => 'push' === $movement_pattern
+				? [ 'push' ]
+				: ( 'pull' === $movement_pattern
+					? [ 'pull' ]
+					: [ 'arms_shoulders' ] ),
+		};
+	}
+
+	private static function infer_personal_exercise_slot_type( string $exercise_key ): string {
+		if ( self::message_contains_any( $exercise_key, [ 'bench', 'squat', 'deadlift', 'overhead press', 'barbell row' ] ) ) return 'main';
+		if ( self::message_contains_any( $exercise_key, [ 'raise' ] ) ) return 'shoulders';
+		if ( self::message_contains_any( $exercise_key, [ 'crunch', 'plank', 'ab', 'abs', 'core' ] ) ) return 'abs';
+		return 'accessory';
+	}
+
+	private static function hydrate_custom_workout_arguments_from_message( int $user_id, array $arguments, string $user_message ): array {
+		$message = strtolower( trim( $user_message ) );
+		if ( '' === $message ) {
+			return $arguments;
+		}
+
+		$day_type = self::normalise_custom_workout_day_type( (string) ( $arguments['day_type'] ?? '' ) );
+		if ( '' === $day_type ) {
+			$day_type = self::infer_custom_workout_day_type_from_message( $message );
+		}
+		if ( '' !== $day_type ) {
+			$arguments['day_type'] = $day_type;
+		}
+
+		$name = sanitize_text_field( (string) ( $arguments['name'] ?? '' ) );
+		if ( '' === $name ) {
+			$name = self::infer_custom_workout_name_from_message( $user_message, $day_type );
+			if ( '' !== $name ) {
+				$arguments['name'] = $name;
+			}
+		}
+
+		$exercise_names = array_values( array_filter( array_map( 'sanitize_text_field', (array) ( $arguments['exercise_names'] ?? [] ) ) ) );
+		if ( empty( $exercise_names ) ) {
+			$targets = self::infer_custom_workout_targets_from_message( $message, $day_type );
+			$exercise_names = self::select_custom_workout_exercise_names( $user_id, $day_type ?: 'arms_shoulders', $targets );
+			if ( ! empty( $exercise_names ) ) {
+				$arguments['exercise_names'] = $exercise_names;
+			}
+		}
+
+		$coach_note = sanitize_textarea_field( (string) ( $arguments['coach_note'] ?? '' ) );
+		if ( '' === $coach_note ) {
+			$arguments['coach_note'] = 'Johnny picked the closest-fit exercises already available in your exercise library for this one-off session.';
+		}
+
+		return $arguments;
+	}
+
+	private static function normalise_custom_workout_day_type( string $value ): string {
+		$value = sanitize_key( $value );
+		return in_array( $value, [ 'push', 'pull', 'legs', 'arms_shoulders', 'cardio', 'rest' ], true ) ? $value : '';
+	}
+
+	private static function infer_custom_workout_day_type_from_message( string $message ): string {
+		if ( self::message_contains_any( $message, [ 'arms', 'arm day', 'biceps', 'bicep', 'triceps', 'tricep', 'shoulders', 'shoulder', 'delts', 'delt' ] ) ) {
+			return 'arms_shoulders';
+		}
+		if ( self::message_contains_any( $message, [ 'pull', 'back day', 'lats', 'rows' ] ) ) {
+			return 'pull';
+		}
+		if ( self::message_contains_any( $message, [ 'push', 'chest day', 'pecs', 'bench' ] ) ) {
+			return 'push';
+		}
+		if ( self::message_contains_any( $message, [ 'legs', 'leg day', 'quads', 'hamstrings', 'glutes', 'calves' ] ) ) {
+			return 'legs';
+		}
+		if ( self::message_contains_any( $message, [ 'cardio', 'conditioning' ] ) ) {
+			return 'cardio';
+		}
+		if ( self::message_contains_any( $message, [ 'rest day', 'recover' ] ) ) {
+			return 'rest';
+		}
+
+		return 'arms_shoulders';
+	}
+
+	private static function infer_custom_workout_name_from_message( string $user_message, string $day_type ): string {
+		if ( preg_match( '/["“](.+?)["”]/u', $user_message, $matches ) ) {
+			return sanitize_text_field( trim( (string) $matches[1] ) );
+		}
+
+		return match ( $day_type ) {
+			'push'            => 'Push Builder',
+			'pull'            => 'Pull Builder',
+			'legs'            => 'Leg Builder',
+			'cardio'          => 'Cardio Builder',
+			'rest'            => 'Recovery Day',
+			default           => 'Custom Arms Workout',
+		};
+	}
+
+	private static function infer_custom_workout_targets_from_message( string $message, string $day_type ): array {
+		$targets = [];
+		$pattern = '/\b(one|two|three|four|five|six|seven|eight|nine|ten|\d+)\s+(?:more\s+)?(bi|bicep|biceps|tri|tricep|triceps|shoulder|shoulders|delt|delts|chest|pec|pecs|back|lat|lats|quad|quads|hamstring|hamstrings|glute|glutes|calf|calves|ab|abs|core)\b/';
+
+		if ( preg_match_all( $pattern, $message, $matches, PREG_SET_ORDER ) ) {
+			foreach ( $matches as $match ) {
+				$count = self::parse_custom_workout_count_token( (string) ( $match[1] ?? '0' ) );
+				$muscle = self::normalise_custom_workout_target_key( (string) ( $match[2] ?? '' ) );
+				if ( $count > 0 && '' !== $muscle ) {
+					$targets[] = [
+						'muscle' => $muscle,
+						'count'  => $count,
+					];
+				}
+			}
+		}
+
+		if ( ! empty( $targets ) ) {
+			return $targets;
+		}
+
+		return match ( $day_type ) {
+			'push' => [
+				[ 'muscle' => 'chest', 'count' => 2 ],
+				[ 'muscle' => 'shoulders', 'count' => 2 ],
+				[ 'muscle' => 'triceps', 'count' => 2 ],
+			],
+			'pull' => [
+				[ 'muscle' => 'back', 'count' => 4 ],
+				[ 'muscle' => 'biceps', 'count' => 2 ],
+			],
+			'legs' => [
+				[ 'muscle' => 'quads', 'count' => 2 ],
+				[ 'muscle' => 'hamstrings', 'count' => 2 ],
+				[ 'muscle' => 'glutes', 'count' => 1 ],
+				[ 'muscle' => 'calves', 'count' => 1 ],
+			],
+			default => [
+				[ 'muscle' => 'biceps', 'count' => 3 ],
+				[ 'muscle' => 'triceps', 'count' => 3 ],
+			],
+		};
+	}
+
+	private static function parse_custom_workout_count_token( string $token ): int {
+		$token = strtolower( trim( $token ) );
+		if ( is_numeric( $token ) ) {
+			return max( 1, (int) $token );
+		}
+
+		return match ( $token ) {
+			'one'   => 1,
+			'two'   => 2,
+			'three' => 3,
+			'four'  => 4,
+			'five'  => 5,
+			'six'   => 6,
+			'seven' => 7,
+			'eight' => 8,
+			'nine'  => 9,
+			'ten'   => 10,
+			default => 0,
+		};
+	}
+
+	private static function normalise_custom_workout_target_key( string $token ): string {
+		$token = strtolower( trim( $token ) );
+
+		return match ( $token ) {
+			'bi', 'bicep', 'biceps' => 'biceps',
+			'tri', 'tricep', 'triceps' => 'triceps',
+			'shoulder', 'shoulders', 'delt', 'delts' => 'shoulders',
+			'pec', 'pecs', 'chest' => 'chest',
+			'back', 'lat', 'lats' => 'back',
+			'quad', 'quads' => 'quads',
+			'hamstring', 'hamstrings' => 'hamstrings',
+			'glute', 'glutes' => 'glutes',
+			'calf', 'calves' => 'calves',
+			'ab', 'abs', 'core' => 'core',
+			default => '',
+		};
+	}
+
+	private static function select_custom_workout_exercise_names( int $user_id, string $day_type, array $targets ): array {
+		$candidates = self::get_custom_workout_library_candidates( $user_id, $day_type );
+		if ( empty( $candidates ) ) {
+			return [];
+		}
+
+		$selected = [];
+		$used_ids = [];
+
+		foreach ( $targets as $target ) {
+			$muscle = sanitize_key( (string) ( $target['muscle'] ?? '' ) );
+			$count = max( 1, (int) ( $target['count'] ?? 0 ) );
+			$target_candidates = self::rank_custom_workout_candidates_for_target( $candidates, $muscle );
+
+			foreach ( $target_candidates as $candidate ) {
+				$candidate_id = (int) ( $candidate['id'] ?? 0 );
+				if ( $candidate_id <= 0 || isset( $used_ids[ $candidate_id ] ) ) {
+					continue;
+				}
+
+				$selected[] = (string) ( $candidate['name'] ?? '' );
+				$used_ids[ $candidate_id ] = true;
+				$count--;
+
+				if ( $count <= 0 ) {
+					break;
+				}
+			}
+		}
+
+		if ( count( $selected ) < 6 ) {
+			foreach ( $candidates as $candidate ) {
+				$candidate_id = (int) ( $candidate['id'] ?? 0 );
+				if ( $candidate_id <= 0 || isset( $used_ids[ $candidate_id ] ) ) {
+					continue;
+				}
+
+				$selected[] = (string) ( $candidate['name'] ?? '' );
+				$used_ids[ $candidate_id ] = true;
+
+				if ( count( $selected ) >= 6 ) {
+					break;
+				}
+			}
+		}
+
+		return array_values( array_filter( array_map( 'sanitize_text_field', $selected ) ) );
+	}
+
+	private static function get_custom_workout_library_candidates( int $user_id, string $day_type ): array {
+		global $wpdb;
+		$p = $wpdb->prefix;
+		$exercise_access_where = ExerciseLibraryService::accessible_exercise_where( '', $user_id );
+		$day_json = '"' . esc_sql( $day_type ) . '"';
+
+		$rows = $wpdb->get_results( $wpdb->prepare(
+			"SELECT id, user_id, name, primary_muscle, equipment, difficulty, movement_pattern
+			 FROM {$p}fit_exercises
+			 WHERE active = 1
+			   AND {$exercise_access_where}
+			   AND JSON_CONTAINS(day_types_json, %s)
+			 ORDER BY CASE WHEN user_id = %d THEN 0 ELSE 1 END, name ASC
+			 LIMIT 120",
+			$day_json,
+			$user_id
+		), ARRAY_A );
+
+		return is_array( $rows ) ? array_values( $rows ) : [];
+	}
+
+	private static function rank_custom_workout_candidates_for_target( array $candidates, string $target ): array {
+		$needles = self::custom_workout_target_needles( $target );
+		if ( empty( $needles ) ) {
+			return $candidates;
+		}
+
+		$scored = [];
+		foreach ( $candidates as $candidate ) {
+			$haystack = strtolower( trim( implode( ' ', array_filter( [
+				(string) ( $candidate['primary_muscle'] ?? '' ),
+				(string) ( $candidate['name'] ?? '' ),
+				(string) ( $candidate['movement_pattern'] ?? '' ),
+			] ) ) ) );
+			$primary = strtolower( trim( (string) ( $candidate['primary_muscle'] ?? '' ) ) );
+			$score = 0;
+
+			foreach ( $needles as $needle ) {
+				if ( '' === $needle ) {
+					continue;
+				}
+				if ( $primary === $needle ) {
+					$score += 6;
+				} elseif ( false !== strpos( $primary, $needle ) ) {
+					$score += 4;
+				}
+
+				if ( false !== strpos( $haystack, $needle ) ) {
+					$score += 2;
+				}
+			}
+
+			if ( $score > 0 ) {
+				$candidate['_score'] = $score;
+				$scored[] = $candidate;
+			}
+		}
+
+		usort( $scored, static function( array $left, array $right ): int {
+			$score_compare = ( (int) ( $right['_score'] ?? 0 ) ) <=> ( (int) ( $left['_score'] ?? 0 ) );
+			if ( 0 !== $score_compare ) {
+				return $score_compare;
+			}
+
+			$left_user = (int) ( $left['user_id'] ?? 0 );
+			$right_user = (int) ( $right['user_id'] ?? 0 );
+			if ( $left_user !== $right_user ) {
+				return $right_user <=> $left_user;
+			}
+
+			return strcmp( (string) ( $left['name'] ?? '' ), (string) ( $right['name'] ?? '' ) );
+		} );
+
+		return $scored;
+	}
+
+	private static function custom_workout_target_needles( string $target ): array {
+		return match ( $target ) {
+			'biceps'     => [ 'biceps', 'bicep', 'curl' ],
+			'triceps'    => [ 'triceps', 'tricep', 'extension', 'pushdown', 'dip' ],
+			'shoulders'  => [ 'shoulder', 'shoulders', 'delt', 'delts', 'lateral raise', 'press' ],
+			'chest'      => [ 'chest', 'pec', 'pecs', 'press', 'fly' ],
+			'back'       => [ 'back', 'lat', 'lats', 'row', 'pulldown', 'pullup', 'pull-up' ],
+			'quads'      => [ 'quad', 'quads', 'knee extension', 'squat', 'split squat', 'lunge' ],
+			'hamstrings' => [ 'hamstring', 'hamstrings', 'hinge', 'curl', 'romanian deadlift', 'rdl' ],
+			'glutes'     => [ 'glute', 'glutes', 'hip thrust', 'bridge' ],
+			'calves'     => [ 'calf', 'calves', 'raise' ],
+			'core'       => [ 'core', 'abs', 'ab', 'crunch', 'plank', 'carry' ],
+			default      => [],
+		};
+	}
+
+	private static function build_tool_action_fallback_reply( array $action_results, array $used_tools = [] ): string {
+		if ( ! empty( $action_results[0]['summary'] ) ) {
+			return sanitize_text_field( (string) $action_results[0]['summary'] );
+		}
+
+		if ( ! empty( $action_results ) ) {
+			$action_name = sanitize_key( (string) ( $action_results[0]['action'] ?? $action_results[0]['tool_name'] ?? '' ) );
+			return match ( $action_name ) {
+				'create_custom_workout' => 'Johnny queued a custom workout for you on the workout page.',
+				'create_personal_exercise' => 'Johnny added that exercise to your custom exercise library.',
+				'create_training_plan'  => 'Johnny created a new training plan.',
+				'swap_workout_exercise' => 'Johnny updated the current workout.',
+				default                 => 'Johnny completed that action.',
+			};
+		}
+
+		if ( ! empty( $used_tools ) ) {
+			return 'Johnny attempted that action, but needs a more specific request to finish it cleanly.';
+		}
+
+		return '';
 	}
 
 	private static function extract_relative_tool_date_from_message( int $user_id, string $tool_name, string $user_message ): ?string {
@@ -3426,6 +4263,96 @@ RULES;
 			];
 		}
 
+		private static function tool_create_custom_workout( int $user_id, array $arguments = [] ): array {
+			$name = sanitize_text_field( (string) ( $arguments['name'] ?? '' ) );
+			$exercise_names = array_values( array_filter( array_map( 'sanitize_text_field', (array) ( $arguments['exercise_names'] ?? [] ) ) ) );
+
+			if ( '' === $name ) {
+				return [ 'error' => 'A custom workout name is required.' ];
+			}
+
+			if ( empty( $exercise_names ) ) {
+				return [ 'error' => 'At least one exercise name is required to build a custom workout.' ];
+			}
+
+			$request = new \WP_REST_Request( 'POST', '/fit/v1/workout/custom-draft' );
+			$request->set_param( 'name', $name );
+			$request->set_param( 'day_type', sanitize_text_field( (string) ( $arguments['day_type'] ?? 'arms_shoulders' ) ) );
+			$request->set_param( 'coach_note', sanitize_textarea_field( (string) ( $arguments['coach_note'] ?? '' ) ) );
+			$request->set_param( 'exercises', array_map( static function( string $exercise_name ): array {
+				return [ 'exercise_name' => $exercise_name ];
+			}, $exercise_names ) );
+
+			$response = \Johnny5k\REST\WorkoutController::save_custom_draft( $request );
+			$data = $response->get_data();
+			$status = (int) $response->get_status();
+
+			if ( $status >= 400 ) {
+				return [ 'error' => (string) ( $data['message'] ?? 'Could not build that custom workout.' ) ];
+			}
+
+			$draft = is_array( $data['custom_workout_draft'] ?? null ) ? $data['custom_workout_draft'] : [];
+			$exercise_count = count( is_array( $draft['exercises'] ?? null ) ? $draft['exercises'] : [] );
+			$day_type = (string) ( $draft['day_type'] ?? 'arms_shoulders' );
+
+			return [
+				'ok'                 => true,
+				'action'             => 'create_custom_workout',
+				'custom_workout_id'  => sanitize_text_field( (string) ( $draft['id'] ?? '' ) ),
+				'name'               => (string) ( $draft['name'] ?? $name ),
+				'day_type'           => $day_type,
+				'exercise_count'     => $exercise_count,
+				'exercise_names'     => array_values( array_filter( array_map( static fn( array $item ): string => sanitize_text_field( (string) ( $item['exercise_name'] ?? '' ) ), is_array( $draft['exercises'] ?? null ) ? $draft['exercises'] : [] ) ) ),
+				'coach_note'         => sanitize_textarea_field( (string) ( $draft['coach_note'] ?? '' ) ),
+				'summary'            => sprintf( 'Queued %s as a custom %s workout with %d exercises on the workout page.', (string) ( $draft['name'] ?? $name ), str_replace( '_', ' ', $day_type ), $exercise_count ),
+			];
+		}
+
+		private static function tool_create_personal_exercise( int $user_id, array $arguments = [] ): array {
+			$name = sanitize_text_field( (string) ( $arguments['name'] ?? '' ) );
+			if ( '' === $name ) {
+				return [ 'error' => 'An exercise name is required to add something to the custom exercise library.' ];
+			}
+
+			$request = new \WP_REST_Request( 'POST', '/fit/v1/training/exercises/personal' );
+			$request->set_param( 'name', $name );
+			$request->set_param( 'description', sanitize_textarea_field( (string) ( $arguments['description'] ?? '' ) ) );
+			$request->set_param( 'primary_muscle', sanitize_key( (string) ( $arguments['primary_muscle'] ?? '' ) ) );
+			$request->set_param( 'movement_pattern', sanitize_text_field( (string) ( $arguments['movement_pattern'] ?? '' ) ) );
+			$request->set_param( 'equipment', sanitize_key( (string) ( $arguments['equipment'] ?? '' ) ) );
+			$request->set_param( 'difficulty', sanitize_key( (string) ( $arguments['difficulty'] ?? 'beginner' ) ) );
+			$request->set_param( 'default_rep_min', max( 1, (int) ( $arguments['default_rep_min'] ?? 8 ) ) );
+			$request->set_param( 'default_rep_max', max( 1, (int) ( $arguments['default_rep_max'] ?? 12 ) ) );
+			$request->set_param( 'default_sets', max( 1, (int) ( $arguments['default_sets'] ?? 3 ) ) );
+			$request->set_param( 'day_types', array_values( array_filter( array_map( 'sanitize_key', (array) ( $arguments['day_types'] ?? [] ) ) ) ) );
+			$request->set_param( 'slot_types', array_values( array_filter( array_map( 'sanitize_key', (array) ( $arguments['slot_types'] ?? [] ) ) ) ) );
+			$request->set_param( 'coaching_cues', array_values( array_filter( array_map( 'sanitize_text_field', (array) ( $arguments['coaching_cues'] ?? [] ) ) ) ) );
+
+			$response = \Johnny5k\REST\TrainingController::save_personal_exercise( $request );
+			$data = $response->get_data();
+			$status = (int) $response->get_status();
+
+			if ( $status >= 400 ) {
+				return [ 'error' => (string) ( $data['message'] ?? 'Could not save that exercise to the custom library.' ) ];
+			}
+
+			$created = ! empty( $data['created'] );
+
+			return [
+				'ok'              => true,
+				'action'          => 'create_personal_exercise',
+				'exercise_id'     => (int) ( $data['id'] ?? 0 ),
+				'name'            => $name,
+				'created'         => $created,
+				'primary_muscle'  => sanitize_key( (string) ( $arguments['primary_muscle'] ?? '' ) ),
+				'equipment'       => sanitize_key( (string) ( $arguments['equipment'] ?? '' ) ),
+				'difficulty'      => sanitize_key( (string) ( $arguments['difficulty'] ?? 'beginner' ) ),
+				'summary'         => $created
+					? sprintf( 'Saved %s to your custom exercise library.', $name )
+					: sprintf( '%s was already in your custom exercise library, so Johnny kept the existing version.', $name ),
+			];
+		}
+
 		private static function tool_log_sleep( int $user_id, array $arguments = [] ): array {
 			$hours_sleep = isset( $arguments['hours_sleep'] ) ? (float) $arguments['hours_sleep'] : 0;
 			if ( $hours_sleep <= 0 || $hours_sleep > 24 ) {
@@ -4039,6 +4966,64 @@ RULES;
 		];
 	}
 
+	private static function resolve_exercise_demo_payload( array $payload ): array {
+		if ( ! empty( $payload['url'] ) ) {
+			return $payload;
+		}
+
+		$exercise_name = sanitize_text_field( (string) ( $payload['exercise_name'] ?? '' ) );
+		$query = sanitize_text_field( (string) ( $payload['query'] ?? '' ) );
+		$lookup_query = trim( $query ?: $exercise_name );
+		if ( '' === $lookup_query ) {
+			return $payload;
+		}
+
+		$messages = [
+			[
+				'role'    => 'system',
+				'content' => 'You find one high-quality exercise tutorial source. Prefer reputable coaching or publisher sites and official YouTube videos. Return valid JSON only.',
+			],
+			[
+				'role'    => 'user',
+				'content' => sprintf(
+					'Find one useful exercise tutorial for "%s". Return only valid JSON with this exact shape: {source_title, url}.',
+					$lookup_query
+				),
+			],
+		];
+
+		$result = self::call_openai( $messages, 'gpt-4o-mini', [ 'web_search' => true ] );
+		if ( is_wp_error( $result ) ) {
+			return $payload;
+		}
+
+		$decoded = self::decode_json_reply( (string) $result['reply'] );
+		$url = '';
+		$title = '';
+		if ( is_array( $decoded ) ) {
+			$url = esc_url_raw( (string) ( $decoded['url'] ?? '' ) );
+			$title = sanitize_text_field( (string) ( $decoded['source_title'] ?? '' ) );
+		}
+
+		if ( '' === $url && ! empty( $result['sources'][0]['url'] ) ) {
+			$url = esc_url_raw( (string) $result['sources'][0]['url'] );
+		}
+		if ( '' === $title && ! empty( $result['sources'][0]['title'] ) ) {
+			$title = sanitize_text_field( (string) $result['sources'][0]['title'] );
+		}
+
+		if ( '' === $url ) {
+			return $payload;
+		}
+
+		$payload['url'] = $url;
+		if ( '' !== $title ) {
+			$payload['source_title'] = $title;
+		}
+
+		return $payload;
+	}
+
 	private static function should_enable_web_search( string $message ): bool {
 		$message = strtolower( trim( $message ) );
 		if ( $message === '' ) {
@@ -4052,6 +5037,8 @@ RULES;
 			'/\b(score|scores|standings|schedule|odds|injury report)\b/',
 			'/\b(stock|stocks|market|price of|price for|price today|bitcoin|btc|ethereum|eth)\b/',
 			'/\b(who is|who won|what happened|when is|when does)\b.*\b(today|now|currently|this week|this month|this year)\b/',
+			'/\b(2025|2026)\b/',
+			'/\b(president|vice president|prime minister|ceo|governor|senator|mayor|secretary of state|speaker of the house|supreme court)\b/',
 		];
 
 		foreach ( $patterns as $pattern ) {
@@ -4144,6 +5131,30 @@ RULES;
 		return array_values( $clean );
 	}
 
+	private static function enrich_structured_actions( array $actions ): array {
+		$enriched = [];
+
+		foreach ( $actions as $action ) {
+			if ( ! is_array( $action ) ) {
+				continue;
+			}
+
+			$type = sanitize_key( (string) ( $action['type'] ?? '' ) );
+			$payload = is_array( $action['payload'] ?? null ) ? $action['payload'] : [];
+
+			if ( 'open_exercise_demo' === $type ) {
+				$payload = self::resolve_exercise_demo_payload( $payload );
+			}
+
+			$enriched[] = [
+				'type'    => $type,
+				'payload' => $payload,
+			];
+		}
+
+		return $enriched;
+	}
+
 	/**
 	 * @param array<string,mixed> $payload
 	 * @return array<string,mixed>|null
@@ -4167,8 +5178,10 @@ RULES;
 			case 'open_exercise_demo':
 				$exercise_name = sanitize_text_field( (string) ( $payload['exercise_name'] ?? '' ) );
 				$query = sanitize_text_field( (string) ( $payload['query'] ?? '' ) );
+				$url = esc_url_raw( (string) ( $payload['url'] ?? '' ) );
+				$source_title = sanitize_text_field( (string) ( $payload['source_title'] ?? '' ) );
 
-				if ( '' === $exercise_name && '' === $query ) {
+				if ( '' === $exercise_name && '' === $query && '' === $url ) {
 					return null;
 				}
 
@@ -4179,6 +5192,8 @@ RULES;
 				return array_filter([
 					'exercise_name' => $exercise_name,
 					'query' => $query,
+					'url' => $url,
+					'source_title' => $source_title,
 				], static fn( $value ) => '' !== $value );
 
 			case 'show_nutrition_summary':
@@ -4500,10 +5515,11 @@ RULES;
 			}
 
 			$items[] = [
-				'item_name' => $item_name,
-				'quantity'  => null !== $quantity ? round( $quantity, 2 ) : null,
-				'unit'      => sanitize_text_field( (string) ( $item['unit'] ?? '' ) ),
-				'notes'     => sanitize_text_field( (string) ( $item['notes'] ?? '' ) ),
+				'item_name'          => $item_name,
+				'quantity'           => null !== $quantity ? round( $quantity, 2 ) : null,
+				'unit'               => sanitize_text_field( (string) ( $item['unit'] ?? '' ) ),
+				'notes'              => sanitize_text_field( (string) ( $item['notes'] ?? '' ) ),
+				'category_override'  => sanitize_key( (string) ( $item['category_override'] ?? '' ) ),
 			];
 		}
 

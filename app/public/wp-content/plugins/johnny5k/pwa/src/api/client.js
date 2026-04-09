@@ -186,6 +186,12 @@ export const onboardingApi = {
   getSmsReminders: ()   => api.get('/onboarding/sms-reminders'),
   cancelSmsReminder: (id) => api.del(`/onboarding/sms-reminders/${id}`),
   recalculate: ()       => api.post('/onboarding/recalculate', {}),
+  uploadHeadshot: (form) => api.upload('/onboarding/headshot', form),
+  deleteHeadshot: ()    => api.del('/onboarding/headshot', {}),
+  headshotBlob: ()      => api.blob('/onboarding/headshot'),
+  getGeneratedImages: () => api.get('/onboarding/generated-images'),
+  generateImages: (data) => api.post('/onboarding/generated-images', data),
+  generatedImageBlob: (id) => api.blob(`/onboarding/generated-images/${id}`),
 }
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
@@ -193,6 +199,7 @@ export const dashboardApi = {
   snapshot:    ()       => api.get('/dashboard'),
   awards:      ()       => api.get('/dashboard/awards'),
   johnnyReview: (force = false) => api.get(`/dashboard/johnny-review${force ? '?force=1' : ''}`),
+  realSuccessStory: (force = false) => api.get(`/dashboard/real-success-story${force ? '?force=1' : ''}`),
   photosList:  ()       => api.get('/dashboard/photos'),
   photoUpload: (form)   => api.upload('/dashboard/photo', form),
   deletePhoto: (id)     => api.del(`/dashboard/photo/${id}`),
@@ -248,6 +255,8 @@ export const trainingApi = {
 // ── Workout (active session) ──────────────────────────────────────────────────
 export const workoutApi = {
   current:   ()              => api.get('/workout/current'),
+  saveCustomDraft: (data)    => api.post('/workout/custom-draft', data),
+  clearCustomDraft: ()       => api.del('/workout/custom-draft', {}),
   getHistory: (days = 3, limit = 10) => api.get(`/workout/history?days=${days}&limit=${limit}`),
   preview:   (data)          => api.post('/workout/preview', data),
   start:     (data)          => api.post('/workout/start', data),

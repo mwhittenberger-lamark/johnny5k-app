@@ -18,6 +18,8 @@ use Johnny5k\Services\UserTime;
  * POST /fit/v1/onboarding/restart  — mark onboarding incomplete so user can walk it again
  */
 class OnboardingController {
+	private const HEADSHOT_META_KEY = 'jf_user_headshot_attachment_id';
+	private const GENERATED_IMAGES_META_KEY = 'jf_user_gemini_generated_images';
 
 	public static function register_routes(): void {
 		$ns = JF_REST_NAMESPACE;
@@ -82,6 +84,45 @@ class OnboardingController {
 			'callback'            => [ __CLASS__, 'cancel_sms_reminder' ],
 			'permission_callback' => $auth,
 		] );
+
+		register_rest_route( $ns, '/onboarding/headshot', [
+			[
+				'methods'             => 'POST',
+				'callback'            => [ __CLASS__, 'upload_headshot' ],
+				'permission_callback' => $auth,
+			],
+			[
+				'methods'             => 'GET',
+				'callback'            => [ __CLASS__, 'serve_headshot' ],
+				'permission_callback' => $auth,
+			],
+			[
+				'methods'             => 'DELETE',
+				'callback'            => [ __CLASS__, 'delete_headshot' ],
+				'permission_callback' => $auth,
+			],
+		] );
+
+		register_rest_route( $ns, '/onboarding/generated-images', [
+			[
+				'methods'             => 'GET',
+				'callback'            => [ __CLASS__, 'list_generated_images' ],
+				'permission_callback' => $auth,
+			],
+			[
+				'methods'             => 'POST',
+				'callback'            => [ __CLASS__, 'generate_personalized_images' ],
+				'permission_callback' => $auth,
+			],
+		] );
+
+		register_rest_route( $ns, '/onboarding/generated-images/(?P<id>[a-z0-9\-]+)', [
+			[
+				'methods'             => 'GET',
+				'callback'            => [ __CLASS__, 'serve_generated_image' ],
+				'permission_callback' => $auth,
+			],
+		] );
 	}
 
 	// ── GET /onboarding ───────────────────────────────────────────────────────
@@ -120,9 +161,157 @@ class OnboardingController {
 			'live_workout_frames' => AdminApiController::get_live_workout_frames_config(),
 			'health_flags'        => $health_flags,
 			'progress_photos'     => $progress_photos,
+			'headshot'            => self::get_headshot_payload( $user_id ),
+			'generated_images'    => self::get_generated_images_payload( $user_id ),
 			'completion_ready'    => empty( $missing_fields ),
 			'missing_profile_fields' => $missing_fields,
 		] );
+	}
+
+	public static function upload_headshot( \WP_REST_Request $req ): \WP_REST_Response {
+		$user_id = get_current_user_id();
+		$files = $req->get_file_params();
+
+		if ( empty( $files['headshot'] ) ) {
+			return new \WP_REST_Response( [ 'message' => 'No headshot file provided.' ], 400 );
+		}
+
+		require_once ABSPATH . 'wp-admin/includes/file.php';
+		require_once ABSPATH . 'wp-admin/includes/image.php';
+		require_once ABSPATH . 'wp-admin/includes/media.php';
+
+		wp_set_current_user( $user_id );
+		$attachment_id = media_handle_upload( 'headshot', 0 );
+		if ( is_wp_error( $attachment_id ) ) {
+			return new \WP_REST_Response( [ 'message' => $attachment_id->get_error_message() ], 500 );
+		}
+
+		$previous_attachment_id = (int) get_user_meta( $user_id, self::HEADSHOT_META_KEY, true );
+		update_post_meta( $attachment_id, 'jf_private_photo', 1 );
+		update_post_meta( $attachment_id, 'jf_owner_user_id', $user_id );
+		update_user_meta( $user_id, self::HEADSHOT_META_KEY, $attachment_id );
+
+		if ( $previous_attachment_id && $previous_attachment_id !== $attachment_id ) {
+			wp_delete_attachment( $previous_attachment_id, true );
+		}
+
+		return new \WP_REST_Response( [
+			'saved'    => true,
+			'headshot' => self::get_headshot_payload( $user_id ),
+		], 201 );
+	}
+
+	public static function serve_headshot( \WP_REST_Request $req ): mixed {
+		$user_id = get_current_user_id();
+		$attachment_id = (int) get_user_meta( $user_id, self::HEADSHOT_META_KEY, true );
+
+		if ( ! $attachment_id ) {
+			return new \WP_REST_Response( [ 'message' => 'Headshot not found.' ], 404 );
+		}
+
+		return self::stream_private_attachment( $attachment_id );
+	}
+
+	public static function delete_headshot( \WP_REST_Request $req ): \WP_REST_Response {
+		$user_id = get_current_user_id();
+		$attachment_id = (int) get_user_meta( $user_id, self::HEADSHOT_META_KEY, true );
+		if ( ! $attachment_id ) {
+			return new \WP_REST_Response( [ 'deleted' => true ], 200 );
+		}
+
+		delete_user_meta( $user_id, self::HEADSHOT_META_KEY );
+		wp_delete_attachment( $attachment_id, true );
+
+		return new \WP_REST_Response( [ 'deleted' => true ], 200 );
+	}
+
+	public static function list_generated_images( \WP_REST_Request $req ): \WP_REST_Response {
+		return new \WP_REST_Response( [
+			'generated_images' => self::get_generated_images_payload( get_current_user_id() ),
+		] );
+	}
+
+	public static function serve_generated_image( \WP_REST_Request $req ): mixed {
+		$user_id = get_current_user_id();
+		$image_id = sanitize_text_field( (string) $req->get_param( 'id' ) );
+		$items = self::get_generated_images_payload( $user_id );
+		$match = null;
+		foreach ( $items as $item ) {
+			if ( (string) ( $item['id'] ?? '' ) === $image_id ) {
+				$match = $item;
+				break;
+			}
+		}
+
+		if ( ! $match || empty( $match['attachment_id'] ) ) {
+			return new \WP_REST_Response( [ 'message' => 'Generated image not found.' ], 404 );
+		}
+
+		return self::stream_private_attachment( (int) $match['attachment_id'] );
+	}
+
+	public static function generate_personalized_images( \WP_REST_Request $req ): \WP_REST_Response {
+		$user_id = get_current_user_id();
+		$headshot_attachment_id = (int) get_user_meta( $user_id, self::HEADSHOT_META_KEY, true );
+		$johnny_reference_attachment_id = (int) get_option( 'jf_johnny_reference_attachment_id', 0 );
+
+		if ( ! $headshot_attachment_id ) {
+			return new \WP_REST_Response( [ 'message' => 'Upload a headshot before generating images.' ], 400 );
+		}
+
+		if ( ! $johnny_reference_attachment_id ) {
+			return new \WP_REST_Response( [ 'message' => 'Johnny reference image is not configured in plugin settings.' ], 400 );
+		}
+
+		$custom_prompt = sanitize_textarea_field( (string) ( $req->get_param( 'prompt' ) ?: '' ) );
+		$scenarios = self::get_generation_scenarios();
+		$progress_photo_data_urls = self::get_latest_progress_photo_data_urls( $user_id, 3 );
+		$headshot_data_url = self::attachment_to_ai_data_url( $headshot_attachment_id );
+		if ( is_wp_error( $headshot_data_url ) ) {
+			return new \WP_REST_Response( [ 'message' => $headshot_data_url->get_error_message() ], 500 );
+		}
+
+		$johnny_data_url = self::attachment_to_ai_data_url( $johnny_reference_attachment_id );
+		if ( is_wp_error( $johnny_data_url ) ) {
+			return new \WP_REST_Response( [ 'message' => $johnny_data_url->get_error_message() ], 500 );
+		}
+
+		$reference_images = array_merge( [ $headshot_data_url, $johnny_data_url ], $progress_photo_data_urls );
+		$created_items = [];
+
+		foreach ( $scenarios as $scenario ) {
+			$prompt = self::build_personalized_image_prompt( $custom_prompt, $scenario, $user_id );
+			$result = \Johnny5k\Services\GeminiImageService::generate_image( $user_id, $prompt, $reference_images, [
+				'aspect_ratio' => '1:1',
+				'image_size'   => '2K',
+			] );
+
+			if ( is_wp_error( $result ) ) {
+				return new \WP_REST_Response( [ 'message' => $result->get_error_message() ], 500 );
+			}
+
+			$attachment_id = self::create_private_generated_attachment( $user_id, $result['mime_type'], $result['data'], $scenario['slug'] );
+			if ( is_wp_error( $attachment_id ) ) {
+				return new \WP_REST_Response( [ 'message' => $attachment_id->get_error_message() ], 500 );
+			}
+
+			$created_items[] = [
+				'id'            => wp_generate_uuid4(),
+				'attachment_id' => (int) $attachment_id,
+				'scenario'      => sanitize_text_field( $scenario['label'] ),
+				'prompt'        => $prompt,
+				'created_at'    => current_time( 'mysql' ),
+			];
+		}
+
+		$existing_items = get_user_meta( $user_id, self::GENERATED_IMAGES_META_KEY, true );
+		$existing_items = is_array( $existing_items ) ? $existing_items : [];
+		$merged_items = array_slice( array_merge( $created_items, $existing_items ), 0, 24 );
+		update_user_meta( $user_id, self::GENERATED_IMAGES_META_KEY, $merged_items );
+
+		return new \WP_REST_Response( [
+			'generated_images' => self::get_generated_images_payload( $user_id ),
+		], 201 );
 	}
 
 	// ── POST /onboarding/profile ──────────────────────────────────────────────
@@ -419,6 +608,191 @@ class OnboardingController {
 		), 200 );
 	}
 
+	private static function get_headshot_payload( int $user_id ): array {
+		$attachment_id = (int) get_user_meta( $user_id, self::HEADSHOT_META_KEY, true );
+		if ( ! $attachment_id ) {
+			return [ 'configured' => false ];
+		}
+
+		$attachment = get_post( $attachment_id );
+		return [
+			'configured'    => true,
+			'attachment_id' => $attachment_id,
+			'updated_at'    => $attachment ? (string) ( $attachment->post_modified_gmt ?: $attachment->post_date_gmt ) : '',
+		];
+	}
+
+	private static function get_generated_images_payload( int $user_id ): array {
+		$items = get_user_meta( $user_id, self::GENERATED_IMAGES_META_KEY, true );
+		$items = is_array( $items ) ? $items : [];
+		$payload = [];
+
+		foreach ( $items as $item ) {
+			if ( ! is_array( $item ) ) {
+				continue;
+			}
+
+			$attachment_id = (int) ( $item['attachment_id'] ?? 0 );
+			if ( ! $attachment_id || ! get_post( $attachment_id ) ) {
+				continue;
+			}
+
+			$payload[] = [
+				'id'            => sanitize_text_field( (string) ( $item['id'] ?? '' ) ),
+				'attachment_id' => $attachment_id,
+				'scenario'      => sanitize_text_field( (string) ( $item['scenario'] ?? '' ) ),
+				'prompt'        => sanitize_textarea_field( (string) ( $item['prompt'] ?? '' ) ),
+				'created_at'    => sanitize_text_field( (string) ( $item['created_at'] ?? '' ) ),
+			];
+		}
+
+		return $payload;
+	}
+
+	private static function get_generation_scenarios(): array {
+		$defaults = [
+			[ 'label' => 'Gym dumbbell session', 'prompt' => 'Johnny and the user training side by side with dumbbells in a modern gym.' ],
+			[ 'label' => 'Park run', 'prompt' => 'Johnny and the user running together through a bright city park trail.' ],
+			[ 'label' => 'Mobility cooldown', 'prompt' => 'Johnny and the user stretching and cooling down on gym mats after training.' ],
+			[ 'label' => 'Bench workout', 'prompt' => 'Johnny spotting the user during a strong upper-body workout in the gym.' ],
+		];
+
+		$raw_scenarios = get_option( 'jf_gemini_image_scenarios', $defaults );
+		$raw_scenarios = is_array( $raw_scenarios ) ? $raw_scenarios : [];
+		$scenarios = [];
+
+		foreach ( $defaults as $index => $default ) {
+			$current = isset( $raw_scenarios[ $index ] ) && is_array( $raw_scenarios[ $index ] ) ? $raw_scenarios[ $index ] : [];
+			$label = sanitize_text_field( (string) ( $current['label'] ?? $default['label'] ) );
+			$prompt = sanitize_textarea_field( (string) ( $current['prompt'] ?? $default['prompt'] ) );
+
+			$label = '' !== $label ? $label : $default['label'];
+			$prompt = '' !== $prompt ? $prompt : $default['prompt'];
+
+			$scenarios[] = [
+				'slug'   => self::build_generation_scenario_slug( $label, $index ),
+				'label'  => $label,
+				'prompt' => $prompt,
+			];
+		}
+
+		return $scenarios;
+	}
+
+	private static function build_generation_scenario_slug( string $label, int $index ): string {
+		$slug = sanitize_title( $label );
+		if ( '' === $slug ) {
+			$slug = 'scene-' . ( $index + 1 );
+		}
+
+		return $slug;
+	}
+
+	private static function build_personalized_image_prompt( string $custom_prompt, array $scenario, int $user_id ): string {
+		global $wpdb;
+		$profile = $wpdb->get_row( $wpdb->prepare(
+			"SELECT first_name, current_goal FROM {$wpdb->prefix}fit_user_profiles WHERE user_id = %d",
+			$user_id
+		) );
+		$first_name = sanitize_text_field( (string) ( $profile->first_name ?? 'the user' ) );
+		$goal = sanitize_text_field( (string) ( $profile->current_goal ?? 'recomp' ) );
+		$scenario_prompt = sanitize_text_field( (string) ( $scenario['prompt'] ?? '' ) );
+		$custom_prompt = trim( $custom_prompt );
+
+		$base_prompt = "Create a photorealistic square image featuring Johnny and {$first_name}. The user must match the uploaded headshot and progress-photo references. Johnny must match the uploaded Johnny reference image. Show both people together in the same scene, with realistic anatomy, natural skin texture, and believable gym or outdoor sports photography. Keep the user recognizable and flattering without changing identity. The user's fitness goal is {$goal}. Scene: {$scenario_prompt}";
+
+		if ( '' !== $custom_prompt ) {
+			$base_prompt .= ' Additional direction: ' . $custom_prompt;
+		}
+
+		$base_prompt .= ' Use a premium editorial fitness-photo style, crisp detail, energetic but realistic lighting, no text, no watermark overlays, and no collage layout.';
+
+		return $base_prompt;
+	}
+
+	private static function get_latest_progress_photo_data_urls( int $user_id, int $limit = 3 ): array {
+		global $wpdb;
+		$rows = $wpdb->get_results( $wpdb->prepare(
+			"SELECT attachment_id FROM {$wpdb->prefix}fit_progress_photos WHERE user_id = %d ORDER BY photo_date DESC, id DESC LIMIT %d",
+			$user_id,
+			$limit
+		) );
+
+		$images = [];
+		foreach ( is_array( $rows ) ? $rows : [] as $row ) {
+			$data_url = self::attachment_to_ai_data_url( (int) ( $row->attachment_id ?? 0 ) );
+			if ( ! is_wp_error( $data_url ) ) {
+				$images[] = $data_url;
+			}
+		}
+
+		return $images;
+	}
+
+	private static function attachment_to_ai_data_url( int $attachment_id ): string|\WP_Error {
+		$file_path = get_attached_file( $attachment_id );
+		if ( ! $file_path || ! file_exists( $file_path ) ) {
+			return new \WP_Error( 'attachment_missing', 'One of the reference images could not be found.' );
+		}
+
+		$mime = mime_content_type( $file_path ) ?: 'image/jpeg';
+		$contents = file_get_contents( $file_path ); // phpcs:ignore WordPress.WP.AlternativeFunctions
+		if ( false === $contents ) {
+			return new \WP_Error( 'attachment_read_failed', 'One of the reference images could not be read.' );
+		}
+
+		return 'data:' . $mime . ';base64,' . base64_encode( $contents ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode
+	}
+
+	private static function create_private_generated_attachment( int $user_id, string $mime_type, string $binary_data, string $slug ): int|\WP_Error {
+		require_once ABSPATH . 'wp-admin/includes/file.php';
+		require_once ABSPATH . 'wp-admin/includes/image.php';
+
+		$extension_map = [
+			'image/jpeg' => 'jpg',
+			'image/png'  => 'png',
+			'image/webp' => 'webp',
+		];
+		$extension = $extension_map[ $mime_type ] ?? 'png';
+		$filename = sanitize_file_name( 'johnny-scene-' . $slug . '-' . time() . '.' . $extension );
+		$upload = wp_upload_bits( $filename, null, $binary_data );
+		if ( ! empty( $upload['error'] ) ) {
+			return new \WP_Error( 'generated_image_upload_failed', (string) $upload['error'] );
+		}
+
+		$wp_filetype = wp_check_filetype( $upload['file'], null );
+		$attachment_id = wp_insert_attachment( [
+			'post_mime_type' => $wp_filetype['type'] ?: $mime_type,
+			'post_title'     => 'Johnny personalized image',
+			'post_status'    => 'inherit',
+		], $upload['file'] );
+
+		if ( is_wp_error( $attachment_id ) ) {
+			return $attachment_id;
+		}
+
+		$metadata = wp_generate_attachment_metadata( $attachment_id, $upload['file'] );
+		wp_update_attachment_metadata( $attachment_id, $metadata );
+		update_post_meta( $attachment_id, 'jf_private_photo', 1 );
+		update_post_meta( $attachment_id, 'jf_owner_user_id', $user_id );
+
+		return (int) $attachment_id;
+	}
+
+	private static function stream_private_attachment( int $attachment_id ): mixed {
+		$file_path = get_attached_file( $attachment_id );
+		if ( ! $file_path || ! file_exists( $file_path ) ) {
+			return new \WP_REST_Response( [ 'message' => 'Image file not found.' ], 404 );
+		}
+
+		$mime = mime_content_type( $file_path ) ?: 'image/jpeg';
+		header( 'Content-Type: ' . $mime );
+		header( 'Content-Length: ' . filesize( $file_path ) );
+		header( 'Cache-Control: private, max-age=300' );
+		readfile( $file_path ); // phpcs:ignore WordPress.WP.AlternativeFunctions
+		exit;
+	}
+
 	public static function restart( \WP_REST_Request $req ): \WP_REST_Response {
 		$user_id = get_current_user_id();
 		global $wpdb;
@@ -580,7 +954,7 @@ class OnboardingController {
 					continue;
 				}
 
-				self::copy_template_day_exercises( $template_day_map[ $day_type ]->id, $user_day_id );
+				self::copy_template_day_exercises( $user_id, $day_type, (int) $template_day_map[ $day_type ]->id, $user_day_id );
 			}
 
 			return;
@@ -595,7 +969,7 @@ class OnboardingController {
 			] );
 			$user_day_id = (int) $wpdb->insert_id;
 
-			self::copy_template_day_exercises( $td->id, $user_day_id );
+			self::copy_template_day_exercises( $user_id, (string) $td->day_type, (int) $td->id, $user_day_id );
 		}
 	}
 
@@ -655,7 +1029,7 @@ class OnboardingController {
 				continue;
 			}
 
-			self::copy_template_day_exercises( (int) $template_day_map[ $day_type ]->id, $user_day_id );
+			self::copy_template_day_exercises( $profile->user_id ?? 0, $day_type, (int) $template_day_map[ $day_type ]->id, $user_day_id );
 		}
 
 		$unused_day_ids = array_values( array_diff( array_map( fn( $day ) => (int) $day->id, $current_days ), $used_day_ids ) );
@@ -674,7 +1048,7 @@ class OnboardingController {
 		) );
 	}
 
-	private static function copy_template_day_exercises( int $template_day_id, int $user_day_id ): void {
+	private static function copy_template_day_exercises( int $user_id, string $day_type, int $template_day_id, int $user_day_id ): void {
 		global $wpdb;
 		$p = $wpdb->prefix;
 
@@ -683,10 +1057,23 @@ class OnboardingController {
 			$template_day_id
 		) );
 
+		$selected_exercise_ids = [];
 		foreach ( $template_exercises as $te ) {
+			$resolved = TrainingEngine::resolve_day_exercise_candidate(
+				$user_id,
+				$day_type,
+				(string) $te->slot_type,
+				(int) $te->exercise_id,
+				$selected_exercise_ids
+			);
+			$resolved_exercise_id = (int) ( $resolved['exercise_id'] ?? 0 );
+			if ( ! empty( $resolved['blocked'] ) || $resolved_exercise_id <= 0 ) {
+				continue;
+			}
+
 			$wpdb->insert( $p . 'fit_user_training_day_exercises', [
 				'training_day_id' => $user_day_id,
-				'exercise_id'     => $te->exercise_id,
+				'exercise_id'     => $resolved_exercise_id,
 				'slot_type'       => $te->slot_type,
 				'rep_min'         => $te->rep_min,
 				'rep_max'         => $te->rep_max,
@@ -695,6 +1082,7 @@ class OnboardingController {
 				'sort_order'      => $te->priority,
 				'active'          => 1,
 			] );
+			$selected_exercise_ids[] = $resolved_exercise_id;
 		}
 	}
 

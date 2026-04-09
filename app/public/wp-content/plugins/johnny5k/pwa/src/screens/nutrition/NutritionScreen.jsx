@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { aiApi, nutritionApi } from '../../api/client'
 import AppIcon from '../../components/ui/AppIcon'
@@ -97,7 +97,7 @@ export default function NutritionScreen() {
   const [showPantryVoice, setShowPantryVoice] = useState(false)
   const [showGroceryGapForm, setShowGroceryGapForm] = useState(false)
   const [showGroceryGapVoice, setShowGroceryGapVoice] = useState(false)
-  const [analysing, setAnalysing] = useState(false)
+  const [analyzing, setAnalyzing] = useState(false)
   const [aiMealDraft, setAiMealDraft] = useState(null)
   const [labelReview, setLabelReview] = useState(null)
   const [labelReviewAction, setLabelReviewAction] = useState('')
@@ -114,6 +114,11 @@ export default function NutritionScreen() {
   const [recipeCollectionFilter, setRecipeCollectionFilter] = useState(() => loadStoredRecipeFilterState().collectionFilter)
   const [recipeSearchQuery, setRecipeSearchQuery] = useState(() => loadStoredRecipeFilterState().searchQuery)
   const [recipeFiltersOpen, setRecipeFiltersOpen] = useState(() => loadStoredRecipeFilterState().filtersOpen)
+  const [planningAccordions, setPlanningAccordions] = useState({
+    pantry: false,
+    groceryGap: false,
+    recipes: false,
+  })
   const [pantrySearchQuery, setPantrySearchQuery] = useState('')
   const [pantryCategoryFilter, setPantryCategoryFilter] = useState('all')
   const [pantrySortMode, setPantrySortMode] = useState('name')
@@ -169,9 +174,11 @@ export default function NutritionScreen() {
     [checkedGapItemSet, displayedGroceryGap.missing_items],
   )
   const mergedMeals = useMemo(() => mergeDailyMealsByType(meals), [meals])
+  const orderedSavedFoods = useMemo(() => sortSavedFoodsAlphabetically(savedFoods), [savedFoods])
+  const orderedSavedMeals = useMemo(() => sortSavedMealsAlphabetically(savedMeals), [savedMeals])
   const visibleMeals = useMemo(() => getVisibleItems(mergedMeals, expandedSections.meals, 4), [expandedSections.meals, mergedMeals])
-  const visibleSavedFoods = useMemo(() => getVisibleItems(savedFoods, expandedSections.savedFoods, 4), [expandedSections.savedFoods, savedFoods])
-  const visibleSavedMeals = useMemo(() => getVisibleItems(savedMeals, expandedSections.savedMeals, 4), [expandedSections.savedMeals, savedMeals])
+  const visibleSavedFoods = useMemo(() => getVisibleItems(orderedSavedFoods, expandedSections.savedFoods, 4), [expandedSections.savedFoods, orderedSavedFoods])
+  const visibleSavedMeals = useMemo(() => getVisibleItems(orderedSavedMeals, expandedSections.savedMeals, 4), [expandedSections.savedMeals, orderedSavedMeals])
   const pantryCategories = useMemo(() => groupPantryItemsByCategory(pantry), [pantry])
   const pantryCategoryOptions = useMemo(() => buildPantryCategoryOptions(pantry), [pantry])
   const filteredPantryItems = useMemo(
@@ -244,8 +251,28 @@ export default function NutritionScreen() {
     })
   }, [filteredPantryCategories, pantryCategoryFilter])
 
-  function showToast(message, tone = 'success') {
-    setToastQueue(current => [...current, { id: Date.now() + Math.random(), message, tone }])
+  function showToast(message, tone = 'success', options = {}) {
+    const payload = typeof message === 'object' && message !== null
+      ? message
+      : { message, tone, ...options }
+
+    setToastQueue(current => {
+      const nextToast = {
+        id: Date.now() + Math.random(),
+        title: payload.title || '',
+        message: payload.message || '',
+        details: Array.isArray(payload.details) ? payload.details.filter(Boolean) : [],
+        tone: payload.tone || tone,
+        persistent: Boolean(payload.persistent),
+        kind: payload.kind || '',
+      }
+
+      const nextQueue = nextToast.kind
+        ? current.filter(toast => toast.kind !== nextToast.kind)
+        : current
+
+      return [...nextQueue, nextToast]
+    })
   }
 
   function dismissToast(toastId) {
@@ -314,7 +341,7 @@ export default function NutritionScreen() {
   }, [])
 
   useEffect(() => {
-    if (!activeToast?.id) {
+    if (!activeToast?.id || activeToast.persistent) {
       return
     }
 
@@ -340,6 +367,9 @@ export default function NutritionScreen() {
 
     if (['savedMeals', 'pantry', 'recipes', 'groceryGap'].includes(focusSection)) {
       setExpandedSections(current => ({ ...current, [focusSection]: true }))
+    }
+    if (['pantry', 'recipes', 'groceryGap'].includes(focusSection)) {
+      setPlanningAccordions(current => ({ ...current, [focusSection]: true }))
     }
 
     if (location.state?.openSavedMealForm || location.state?.savedMealDraft) {
@@ -449,7 +479,7 @@ export default function NutritionScreen() {
     const file = event.target.files?.[0]
     if (!file) return
     setActiveView('today')
-    setAnalysing(true)
+    setAnalyzing(true)
     setAiMealDraft(null)
     setLabelReview(null)
     const reader = new FileReader()
@@ -460,12 +490,12 @@ export default function NutritionScreen() {
           mealType: 'lunch',
           items: normaliseMealItems(result?.items ?? []),
         })
-        showToast('Meal draft ready. Review it before logging.')
+        showToast(buildAiMealValidationToast(result))
       } catch (err) {
         setError(err.message)
         showErrorToast(err, 'Photo analysis failed.')
       } finally {
-        setAnalysing(false)
+        setAnalyzing(false)
       }
     }
     reader.readAsDataURL(file)
@@ -475,7 +505,7 @@ export default function NutritionScreen() {
     const file = event.target.files?.[0]
     if (!file) return
     setActiveView('today')
-    setAnalysing(true)
+    setAnalyzing(true)
     setAiMealDraft(null)
     setLabelReview(null)
     const reader = new FileReader()
@@ -483,12 +513,15 @@ export default function NutritionScreen() {
       try {
         const result = await aiApi.analyseLabel(reader.result)
         setLabelReview(buildLabelReview(result, summary?.targets))
-        showToast('Label draft ready. Review it before saving or logging.')
+        showToast(buildAiFoodValidationToast(result?.food_name || 'Nutrition label', {
+          ...result,
+          confidence: result?.used_web_search ? 0.82 : 0.96,
+        }, 'food-label'))
       } catch (err) {
         setError(err.message)
         showErrorToast(err, 'Label analysis failed.')
       } finally {
-        setAnalysing(false)
+        setAnalyzing(false)
       }
     }
     reader.readAsDataURL(file)
@@ -694,6 +727,10 @@ export default function NutritionScreen() {
     setCheckedGapItems([])
   }
 
+  function togglePlanningAccordion(sectionKey) {
+    setPlanningAccordions(current => ({ ...current, [sectionKey]: !current[sectionKey] }))
+  }
+
   async function handleClearSelectedRecipes() {
     await persistRecipeCookbook([])
   }
@@ -771,6 +808,34 @@ export default function NutritionScreen() {
 
     if (deleted) {
       showToast(`${item.item_name} removed from grocery gap.`)
+    }
+  }
+
+  async function handleDeleteCheckedGapItems() {
+    const selectedGapItems = displayedGroceryGap.missing_items.filter(item => checkedGapItems.includes(item.key))
+    const payload = selectedGapItems
+      .map(item => ({ item_name: item.item_name }))
+      .filter(item => item.item_name)
+
+    if (!payload.length) {
+      showErrorToast('Check off the grocery items you want to remove first.')
+      return
+    }
+
+    const deleted = await runAction(
+      () => nutritionApi.deleteGroceryGapItems(payload),
+      '',
+      {
+        onSuccess: async () => {
+          setCheckedGapItems([])
+          await refreshPlanning()
+        },
+      },
+    )
+
+    if (deleted) {
+      const count = payload.length
+      showToast(`${count} grocery ${count === 1 ? 'item' : 'items'} removed.`)
     }
   }
 
@@ -983,6 +1048,7 @@ export default function NutritionScreen() {
           <div ref={pantryVoiceRef} className="dash-card nutrition-planning-card nutrition-pantry-utility-card">
             <PantryVoiceCapture
               onError={showErrorToast}
+              onToast={showToast}
               onAddItems={handleBulkPantryImport}
               onCancel={() => setShowPantryVoice(false)}
             />
@@ -1028,12 +1094,7 @@ export default function NutritionScreen() {
           </div>
         )}
 
-        {activeToast ? (
-          <div className={`app-toast ${activeToast.tone || 'success'}`} role="status" aria-live="polite">
-            <p>{activeToast.message}</p>
-            <button type="button" className="app-toast-dismiss" onClick={() => dismissToast(activeToast.id)} aria-label="Dismiss toast">×</button>
-          </div>
-        ) : null}
+        {activeToast ? <AppToast toast={activeToast} onDismiss={() => dismissToast(activeToast.id)} /> : null}
       </div>
     )
   }
@@ -1091,7 +1152,7 @@ export default function NutritionScreen() {
         </button>
       </div>
 
-      {analysing ? <p className="ai-thinking">Analysing photo…</p> : null}
+      {analyzing ? <p className="ai-thinking">Analyzing photo…</p> : null}
 
       {aiMealDraft ? (
         <AiMealReviewCard
@@ -1385,7 +1446,7 @@ export default function NutritionScreen() {
           {showSavedFoodForm ? (
             <div ref={savedFoodFormRef}>
               <SavedFoodForm
-                savedFoods={savedFoods}
+                savedFoods={orderedSavedFoods}
                 onError={showErrorToast}
                 onLogExisting={async foodId => {
                   await handleLogSavedFood(foodId)
@@ -1417,7 +1478,7 @@ export default function NutritionScreen() {
               <SavedMealRow
                 key={meal.id}
                 meal={meal}
-                savedFoods={savedFoods}
+                savedFoods={orderedSavedFoods}
                 onError={showErrorToast}
                 onLog={handleLogSavedMeal}
                 onSave={async data => runAction(() => nutritionApi.updateSavedMeal(meal.id, data), 'Saved meal updated.', { onSuccess: refreshPlanning })}
@@ -1437,7 +1498,7 @@ export default function NutritionScreen() {
             <div ref={savedMealFormRef}>
               <SavedMealForm
                 initialValues={location.state?.savedMealDraft || null}
-                savedFoods={savedFoods}
+                savedFoods={orderedSavedFoods}
                 onError={showErrorToast}
                 onToast={showToast}
                 onSave={async data => runAction(() => nutritionApi.createSavedMeal(data), 'Saved meal created.', {
@@ -1465,44 +1526,40 @@ export default function NutritionScreen() {
           </div>
 
       <section className="dashboard-section dashboard-two-col nutrition-planning-grid">
-        <div className="dash-card nutrition-planning-card">
-          <div className="dashboard-card-head">
-            <span className="dashboard-chip workout">Pantry</span>
-            <div className="nutrition-card-actions">
-              <button className="btn-secondary small" onClick={openPantryPage}>Open pantry</button>
-            </div>
-          </div>
-          <h3>Pantry on hand</h3>
-          <p>Use what you already have before creating shopping friction. You can remove pantry items here fast, or open the pantry page for editing and category cleanup.</p>
+        <PlanningAccordionCard
+          innerRef={pantrySectionRef}
+          open={planningAccordions.pantry}
+          onToggle={() => togglePlanningAccordion('pantry')}
+          chip={<span className="dashboard-chip workout">Pantry</span>}
+          title="Pantry on hand"
+          description="Use what you already have before creating shopping friction. You can remove pantry items here fast, or open the pantry page for editing and category cleanup."
+          meta={<span className="dashboard-chip subtle">{pantry.length ? `${pantry.length} items` : 'No items yet'}</span>}
+          actions={<button className="btn-secondary small" onClick={openPantryPage}>Open pantry</button>}
+        >
           <div className="nutrition-pantry-preview-list">
             {pantry.map(item => (
-              <div key={item.id} className="nutrition-item-row nutrition-pantry-preview-row">
-                <div>
-                  <strong>{item.item_name}</strong>
-                  <p>{getPantryCategoryLabel(item)}{item.quantity != null || item.unit ? ` · ${formatGroceryGapAmount(item.quantity, item.unit)}` : ''}{item.notes ? ` · ${item.notes}` : ''}</p>
-                </div>
-                <div className="nutrition-row-actions">
-                  <span className="nutrition-inline-badge pantry-category">{getPantryCategoryLabel(item)}</span>
-                  <button type="button" className="btn-ghost small" onClick={() => handleDeletePantryItem(item)}>Remove</button>
-                </div>
-              </div>
+              <PantryDisplayRow
+                key={item.id}
+                item={item}
+                actionLabel="Remove"
+                onAction={() => handleDeletePantryItem(item)}
+              />
             ))}
             {!pantry.length ? <p className="empty-state">No pantry items yet. Add your staples and Johnny5k can suggest meals around them.</p> : null}
           </div>
           {pantry.length ? <p className="nutrition-list-note">Grouped into {pantryCategories.length} food type {pantryCategories.length === 1 ? 'category' : 'categories'} so planning stays readable on mobile.</p> : null}
-        </div>
+        </PlanningAccordionCard>
       </section>
 
       <section ref={groceryGapSectionRef} className="dashboard-section dashboard-two-col nutrition-planning-grid">
-        <div className="dash-card nutrition-planning-card">
-          <div className="dashboard-card-head">
-            <span className="dashboard-chip awards">Grocery gap</span>
-            <div className="nutrition-card-actions">
-              <span className="dashboard-chip subtle">{displayedGroceryGap.recipe_items.length ? `${displayedGroceryGap.recipe_items.length} recipe-driven` : 'Planning'}</span>
-            </div>
-          </div>
-          <h3>Missing staples</h3>
-          <p>Check items off as you grab them at the store. Your checklist stays put after a refresh, and checked items drop to the bottom until you add them into pantry.</p>
+        <PlanningAccordionCard
+          open={planningAccordions.groceryGap}
+          onToggle={() => togglePlanningAccordion('groceryGap')}
+          chip={<span className="dashboard-chip awards">Grocery gap</span>}
+          title="Missing staples"
+          description="Check items off as you grab them at the store. Your checklist stays put after a refresh, and checked items drop to the bottom until you add them into pantry."
+          meta={<span className="dashboard-chip subtle">{displayedGroceryGap.recipe_items.length ? `${displayedGroceryGap.recipe_items.length} recipe-driven` : 'Planning'}</span>}
+        >
           <div className="nutrition-gap-toolbar">
             <button className="btn-secondary small" onClick={() => setShowGroceryGapVoice(current => !current)}>{showGroceryGapVoice ? 'Close voice' : 'Speak list'}</button>
             <button className="btn-secondary small" onClick={() => setShowGroceryGapForm(current => !current)}>{showGroceryGapForm ? 'Close add' : 'Add item'}</button>
@@ -1515,7 +1572,7 @@ export default function NutritionScreen() {
                 onClick={handleSelectAllGapItems}
                 disabled={allGapItemsChecked}
               >
-                Select all
+                Check all
               </button>
               <button
                 type="button"
@@ -1523,7 +1580,15 @@ export default function NutritionScreen() {
                 onClick={handleClearCheckedGapItems}
                 disabled={!checkedGapItems.length}
               >
-                Clear
+                Clear checks
+              </button>
+              <button
+                type="button"
+                className="btn-ghost small"
+                onClick={handleDeleteCheckedGapItems}
+                disabled={!checkedGapItems.length}
+              >
+                Delete checked{checkedGapItems.length ? ` (${checkedGapItems.length})` : ''}
               </button>
               <button
                 type="button"
@@ -1539,6 +1604,7 @@ export default function NutritionScreen() {
             <div ref={groceryGapVoiceRef}>
               <GroceryGapVoiceCapture
                 onError={showErrorToast}
+                onToast={showToast}
                 onAddItems={handleBulkGroceryGapImport}
                 onCancel={() => setShowGroceryGapVoice(false)}
               />
@@ -1556,7 +1622,6 @@ export default function NutritionScreen() {
           <div className="nutrition-gap-list nutrition-gap-checklist">
             {visibleGapItems.map(item => {
               const checked = checkedGapItemSet.has(item.key)
-              const canDelete = Array.isArray(item.sources) && item.sources.includes('manual')
 
               return (
                 <div key={item.key} className={`nutrition-gap-check-item${checked ? ' checked' : ''}`}>
@@ -1576,15 +1641,13 @@ export default function NutritionScreen() {
                       ) : null}
                     </span>
                   </label>
-                  {canDelete ? (
-                    <button
-                      type="button"
-                      className="btn-ghost small nutrition-gap-delete"
-                      onClick={() => handleDeleteGroceryGapItem(item)}
-                    >
-                      Remove
-                    </button>
-                  ) : null}
+                  <button
+                    type="button"
+                    className="btn-ghost small nutrition-gap-delete"
+                    onClick={() => handleDeleteGroceryGapItem(item)}
+                  >
+                    Remove
+                  </button>
                 </div>
               )
             })}
@@ -1609,15 +1672,20 @@ export default function NutritionScreen() {
             label="items"
             onToggle={() => toggleSection('groceryGap')}
           />
-        </div>
+        </PlanningAccordionCard>
       </section>
 
       <section className="dashboard-section nutrition-planning-grid">
-        <div ref={recipesSectionRef} className="dash-card nutrition-planning-card">
-          <div className="dashboard-card-head">
-            <span className="dashboard-chip coach">Recipe ideas</span>
-            <div className="nutrition-card-actions">
-              <span className="dashboard-chip subtle">{selectedRecipeKeys.length} selected</span>
+        <PlanningAccordionCard
+          innerRef={recipesSectionRef}
+          open={planningAccordions.recipes}
+          onToggle={() => togglePlanningAccordion('recipes')}
+          chip={<span className="dashboard-chip coach">Recipe ideas</span>}
+          title="What you can make next"
+          description="Select recipes to feed the grocery gap above. Use My cook book to focus only on the recipes you already picked."
+          meta={<span className="dashboard-chip subtle">{selectedRecipeKeys.length} selected</span>}
+          actions={(
+            <>
               {selectedRecipeKeys.length ? <button type="button" className="btn-ghost small" onClick={handleClearSelectedRecipes}>Clear</button> : null}
               <button className="btn-secondary small" onClick={async () => {
                 const refreshed = await refreshPlanning({ recipeRefreshToken: String(Date.now()) })
@@ -1625,10 +1693,9 @@ export default function NutritionScreen() {
                   showToast('Recipe ideas refreshed.')
                 }
               }} disabled={loadingExtras}>{loadingExtras ? 'Refreshing…' : 'Refresh'}</button>
-            </div>
-          </div>
-          <h3>What you can make next</h3>
-          <p>Select recipes to feed the grocery gap above. Use My cook book to focus only on the recipes you already picked.</p>
+            </>
+          )}
+        >
           <details className="nutrition-filter-accordion" open={recipeFiltersOpen} onToggle={event => setRecipeFiltersOpen(event.currentTarget.open)}>
             <summary>
               <span>Search and filters</span>
@@ -1712,17 +1779,29 @@ export default function NutritionScreen() {
             onToggle={() => toggleSection('recipes')}
           />
           {filteredRecipes.length > RECIPE_CARD_VISIBLE_LIMIT ? <p className="nutrition-list-note">Showing 5 of {filteredRecipes.length} recipe ideas on the dashboard.</p> : null}
-        </div>
+        </PlanningAccordionCard>
       </section>
         </section>
       ) : null}
 
-      {activeToast ? (
-        <div className={`app-toast ${activeToast.tone || 'success'}`} role="status" aria-live="polite">
-          <p>{activeToast.message}</p>
-          <button type="button" className="app-toast-dismiss" onClick={() => dismissToast(activeToast.id)} aria-label="Dismiss toast">×</button>
-        </div>
-      ) : null}
+      {activeToast ? <AppToast toast={activeToast} onDismiss={() => dismissToast(activeToast.id)} /> : null}
+    </div>
+  )
+}
+
+function AppToast({ toast, onDismiss }) {
+  return (
+    <div className={`app-toast ${toast.tone || 'success'}`} role="status" aria-live="polite">
+      <div className="app-toast-copy">
+        {toast.title ? <p className="app-toast-title">{toast.title}</p> : null}
+        {toast.message ? <p className="app-toast-message">{toast.message}</p> : null}
+        {toast.details?.length ? (
+          <div className="app-toast-details">
+            {toast.details.map((detail, index) => <p key={`${toast.id}-${index}`}>{detail}</p>)}
+          </div>
+        ) : null}
+      </div>
+      <button type="button" className="app-toast-dismiss" onClick={onDismiss} aria-label="Dismiss toast">×</button>
     </div>
   )
 }
@@ -1843,7 +1922,11 @@ function RecipeIdeaCard({ recipe, selected, onToggle }) {
   const onHand = dedupeIngredientList(recipe?.on_hand_ingredients)
   const missing = dedupeIngredientList(recipe?.missing_ingredients)
   const ingredients = dedupeIngredientList(recipe?.ingredients)
-  const sourceLabel = recipe?.source === 'admin_library' ? 'Admin recipe' : 'Generated'
+  const sourceLabel = recipe?.source === 'admin_library'
+    ? 'Admin recipe'
+    : recipe?.source === 'ai_discovery'
+      ? 'Web recipe'
+      : 'Generated'
 
   return (
     <div className={`nutrition-recipe-card nutrition-recipe-idea${selected ? ' selected' : ''}`}>
@@ -1861,6 +1944,16 @@ function RecipeIdeaCard({ recipe, selected, onToggle }) {
         <span className="nutrition-inline-badge on-hand">{onHand.length} on hand</span>
         <span className="nutrition-inline-badge missing">{missing.length} need pickup</span>
       </div>
+      {recipe?.source_title ? (
+        <p className="nutrition-recipe-source">
+          <strong>Source:</strong>{' '}
+          {recipe?.source_url ? (
+            <a href={recipe.source_url} target="_blank" rel="noreferrer">{recipe.source_title}</a>
+          ) : (
+            <span>{recipe.source_title}</span>
+          )}
+        </p>
+      ) : null}
       {recipe.why_this_works ? <p className="nutrition-recipe-note">{recipe.why_this_works}</p> : null}
       <details className="nutrition-recipe-details" open={detailsOpen} onToggle={event => setDetailsOpen(event.currentTarget.open)}>
         <summary>{detailsOpen ? 'Hide details' : 'Show details'}</summary>
@@ -1885,7 +1978,7 @@ function AiMealReviewCard({ draft, caloriesRemaining, onChange, onConfirm, onCan
       const nextItems = current.items.map((item, itemIndex) => {
         if (itemIndex !== index) return item
         const nextItem = { ...item, [field]: numericField(field) ? Number(value) || 0 : value }
-        return recomputeMealDraftItem(nextItem, field)
+        return recomputeMealDraftItem(item, nextItem, field)
       })
 
       return {
@@ -1936,9 +2029,9 @@ function AiMealReviewCard({ draft, caloriesRemaining, onChange, onConfirm, onCan
               <FieldLabel label="Unit / size"><input value={item.serving_unit} onChange={event => updateItem(index, 'serving_unit', event.target.value)} placeholder="bowl" /></FieldLabel>
               <FieldLabel label="Estimated grams"><input type="number" min="0" step="1" value={item.estimated_grams} onChange={event => updateItem(index, 'estimated_grams', event.target.value)} placeholder="0" /></FieldLabel>
               <FieldLabel label="Calories"><input type="number" value={item.calories} onChange={event => updateItem(index, 'calories', event.target.value)} placeholder="0" /></FieldLabel>
-              <FieldLabel label="Protein"><input type="number" step="0.1" value={item.protein_g} onChange={event => updateItem(index, 'protein_g', event.target.value)} placeholder="0" /></FieldLabel>
-              <FieldLabel label="Carbs"><input type="number" step="0.1" value={item.carbs_g} onChange={event => updateItem(index, 'carbs_g', event.target.value)} placeholder="0" /></FieldLabel>
-              <FieldLabel label="Fat"><input type="number" step="0.1" value={item.fat_g} onChange={event => updateItem(index, 'fat_g', event.target.value)} placeholder="0" /></FieldLabel>
+              <FieldLabel label="Protein"><input type="number" min="0" step="0.01" inputMode="decimal" value={item.protein_g} onChange={event => updateItem(index, 'protein_g', event.target.value)} placeholder="0" /></FieldLabel>
+              <FieldLabel label="Carbs"><input type="number" min="0" step="0.01" inputMode="decimal" value={item.carbs_g} onChange={event => updateItem(index, 'carbs_g', event.target.value)} placeholder="0" /></FieldLabel>
+              <FieldLabel label="Fat"><input type="number" min="0" step="0.01" inputMode="decimal" value={item.fat_g} onChange={event => updateItem(index, 'fat_g', event.target.value)} placeholder="0" /></FieldLabel>
             </div>
             <div className="nutrition-item-meta">
               {item.portion_description ? <p className="empty-state">{item.portion_description}</p> : null}
@@ -2046,7 +2139,7 @@ function SavedFoodForm({ initialValues = null, savedFoods = [], submitLabel = 'S
         source: result?.source || current.source,
       }))
       setAiNote(result?.notes || 'AI draft ready. Check the name and macros before saving.')
-      onToast?.('AI food draft ready. Review and save it.')
+      onToast?.(buildAiFoodValidationToast(query, result, 'saved-food'))
     } catch (err) {
       setAiError(err.message)
       onError?.(err)
@@ -2091,7 +2184,7 @@ function SavedFoodForm({ initialValues = null, savedFoods = [], submitLabel = 'S
           {aiError ? <p className="error">{aiError}</p> : null}
           {aiNote ? <p className="empty-state">{aiNote}</p> : null}
           {form.source?.provider === 'usda' ? <p className="empty-state">USDA match: {form.source.matched_name || form.canonical_name}</p> : null}
-          <button type="button" className="btn-secondary" onClick={handleAnalyseDescription} disabled={aiBusy || submitting}>{aiBusy ? 'Analysing…' : 'Analyze with AI'}</button>
+          <button type="button" className="btn-secondary" onClick={handleAnalyseDescription} disabled={aiBusy || submitting}>{aiBusy ? 'Analyzing…' : 'Analyze with AI'}</button>
         </div>
       ) : null}
       {duplicateMatches.length ? (
@@ -2127,14 +2220,14 @@ function SavedFoodForm({ initialValues = null, savedFoods = [], submitLabel = 'S
       </FieldLabel>
       <div className="macro-inputs">
         <FieldLabel label="Calories"><input type="number" placeholder="0" value={form.calories} onChange={event => update('calories', event.target.value)} /></FieldLabel>
-        <FieldLabel label="Protein"><input type="number" placeholder="0" value={form.protein_g} onChange={event => update('protein_g', event.target.value)} /></FieldLabel>
-        <FieldLabel label="Carbs"><input type="number" placeholder="0" value={form.carbs_g} onChange={event => update('carbs_g', event.target.value)} /></FieldLabel>
-        <FieldLabel label="Fat"><input type="number" placeholder="0" value={form.fat_g} onChange={event => update('fat_g', event.target.value)} /></FieldLabel>
+        <FieldLabel label="Protein"><input type="number" min="0" step="0.01" inputMode="decimal" placeholder="0" value={form.protein_g} onChange={event => update('protein_g', event.target.value)} /></FieldLabel>
+        <FieldLabel label="Carbs"><input type="number" min="0" step="0.01" inputMode="decimal" placeholder="0" value={form.carbs_g} onChange={event => update('carbs_g', event.target.value)} /></FieldLabel>
+        <FieldLabel label="Fat"><input type="number" min="0" step="0.01" inputMode="decimal" placeholder="0" value={form.fat_g} onChange={event => update('fat_g', event.target.value)} /></FieldLabel>
       </div>
       <div className="macro-inputs">
-        <FieldLabel label="Fiber"><input type="number" placeholder="0" value={form.fiber_g} onChange={event => update('fiber_g', event.target.value)} /></FieldLabel>
-        <FieldLabel label="Sugar"><input type="number" placeholder="0" value={form.sugar_g} onChange={event => update('sugar_g', event.target.value)} /></FieldLabel>
-        <FieldLabel label="Sodium mg"><input type="number" placeholder="0" value={form.sodium_mg} onChange={event => update('sodium_mg', event.target.value)} /></FieldLabel>
+        <FieldLabel label="Fiber"><input type="number" min="0" step="0.01" inputMode="decimal" placeholder="0" value={form.fiber_g} onChange={event => update('fiber_g', event.target.value)} /></FieldLabel>
+        <FieldLabel label="Sugar"><input type="number" min="0" step="0.01" inputMode="decimal" placeholder="0" value={form.sugar_g} onChange={event => update('sugar_g', event.target.value)} /></FieldLabel>
+        <FieldLabel label="Sodium mg"><input type="number" min="0" step="0.01" inputMode="decimal" placeholder="0" value={form.sodium_mg} onChange={event => update('sodium_mg', event.target.value)} /></FieldLabel>
       </div>
       {form.micros?.length ? <p className="empty-state">{formatMicroList(form.micros, 4)}</p> : null}
       {submitting ? <p className="empty-state">Saving food…</p> : null}
@@ -2358,6 +2451,7 @@ function ParsedItemVoiceCapture({
   onAddItems,
   onCancel,
   onError,
+  onToast,
 }) {
   const [transcript, setTranscript] = useState('')
   const [listening, setListening] = useState(false)
@@ -2428,6 +2522,9 @@ function ParsedItemVoiceCapture({
       }
       setParsedItems(items)
       setNotes(result?.notes || successNote)
+      if (result?.used_web_search || (Array.isArray(result?.sources) && result.sources.length)) {
+        onToast?.(buildAiSourceToast('Pantry validation', result?.notes || 'Johnny checked branded or ambiguous pantry items online.', result?.sources || []))
+      }
     } catch (err) {
       onError?.(err)
     } finally {
@@ -2499,7 +2596,7 @@ function ParsedItemVoiceCapture({
   )
 }
 
-function PantryVoiceCapture({ onAddItems, onCancel, onError }) {
+function PantryVoiceCapture({ onAddItems, onCancel, onError, onToast }) {
   return (
     <ParsedItemVoiceCapture
       title="Speak your pantry items"
@@ -2512,11 +2609,12 @@ function PantryVoiceCapture({ onAddItems, onCancel, onError }) {
       onAddItems={onAddItems}
       onCancel={onCancel}
       onError={onError}
+      onToast={onToast}
     />
   )
 }
 
-function GroceryGapVoiceCapture({ onAddItems, onCancel, onError }) {
+function GroceryGapVoiceCapture({ onAddItems, onCancel, onError, onToast }) {
   return (
     <ParsedItemVoiceCapture
       title="Speak your grocery items"
@@ -2528,6 +2626,7 @@ function GroceryGapVoiceCapture({ onAddItems, onCancel, onError }) {
       onAddItems={onAddItems}
       onCancel={onCancel}
       onError={onError}
+      onToast={onToast}
     />
   )
 }
@@ -2581,15 +2680,57 @@ function PantryRow({ item, onSave, onDelete }) {
   }
 
   return (
-    <div className="nutrition-item-row pantry-row">
-      <div className="pantry-row-copy">
+    <PantryDisplayRow
+      item={item}
+      categoryLabel={categoryLabel}
+      detailText={`${item.quantity ? `${item.quantity} ${item.unit || ''}` : 'No quantity set'}${item.expires_on ? ` · expires ${item.expires_on}` : ''}${item.notes ? ` · ${item.notes}` : ''}`}
+      actionLabel="Delete"
+      secondaryAction={<button className="btn-secondary small" onClick={() => setEditing(true)}>Edit</button>}
+      onAction={onDelete}
+    />
+  )
+}
+
+function PlanningAccordionCard({ innerRef = null, open, onToggle, chip, title, description, meta = null, actions = null, children }) {
+  return (
+    <div ref={innerRef} className={`dash-card nutrition-planning-card nutrition-plan-accordion-card${open ? ' open' : ''}`}>
+      <div className="nutrition-plan-accordion-head">
+        <button type="button" className="nutrition-plan-accordion-trigger" onClick={onToggle} aria-expanded={open}>
+          <div className="nutrition-plan-accordion-copy">
+            <div className="nutrition-plan-accordion-kicker">
+              {chip}
+              {meta}
+            </div>
+            <h3>{title}</h3>
+            <p>{description}</p>
+          </div>
+          <span className="nutrition-plan-accordion-icon" aria-hidden="true">{open ? '-' : '+'}</span>
+        </button>
+        {actions ? <div className="nutrition-card-actions nutrition-plan-accordion-actions">{actions}</div> : null}
+      </div>
+      {open ? <div className="nutrition-plan-accordion-body">{children}</div> : null}
+    </div>
+  )
+}
+
+function PantryDisplayRow({ item, categoryLabel = '', detailText = '', actionLabel, secondaryAction = null, onAction }) {
+  const resolvedCategory = categoryLabel || getPantryCategoryLabel(item)
+  const detail = detailText || `${item.quantity != null || item.unit ? formatGroceryGapAmount(item.quantity, item.unit) : 'No quantity set'}${item.notes ? ` · ${item.notes}` : ''}`
+
+  return (
+    <div className="nutrition-item-row pantry-row pantry-row-table">
+      <div className="pantry-row-name">
         <strong>{item.item_name}</strong>
-        <p>{item.quantity ? `${item.quantity} ${item.unit || ''}` : 'No quantity set'}{item.expires_on ? ` · expires ${item.expires_on}` : ''}{item.notes ? ` · ${item.notes}` : ''}</p>
+      </div>
+      <div className="pantry-row-category">
+        <span className="nutrition-inline-badge pantry-category">{resolvedCategory}</span>
+      </div>
+      <div className="pantry-row-detail">
+        <p>{detail}</p>
       </div>
       <div className="nutrition-row-actions pantry-row-actions">
-        <span className="nutrition-inline-badge pantry-category">{categoryLabel}</span>
-        <button className="btn-secondary small" onClick={() => setEditing(true)}>Edit</button>
-        <button className="btn-ghost small" onClick={onDelete}>Delete</button>
+        {secondaryAction}
+        <button className="btn-secondary small pantry-row-remove-button" onClick={onAction}>{actionLabel}</button>
       </div>
     </div>
   )
@@ -2630,6 +2771,7 @@ function MealComposerForm({ title, savedFoods, requireName = false, submitLabel,
   const [name, setName] = useState(initialValues?.name || '')
   const [mealDate, setMealDate] = useState(() => getMealDateInputValue(initialValues?.meal_datetime))
   const [mealTime, setMealTime] = useState(() => getMealTimeInputValue(initialValues?.meal_datetime))
+  const [savedFoodQuery, setSavedFoodQuery] = useState('')
   const [items, setItems] = useState(() => {
     if (initialValues?.items?.length) {
       return normaliseMealItems(initialValues.items)
@@ -2641,7 +2783,24 @@ function MealComposerForm({ title, savedFoods, requireName = false, submitLabel,
   const [submitAction, setSubmitAction] = useState('')
   const [error, setError] = useState('')
   const formRef = useAutoScrollWhenActive(true)
-  const showNameField = requireName || Boolean(secondaryLabel)
+  const savedFoodListId = useId()
+  const savedFoodOptions = useMemo(
+    () => (Array.isArray(savedFoods) ? savedFoods.map(food => ({
+      key: food?.id != null ? `saved-food-${food.id}` : buildSavedFoodOptionLabel(food),
+      label: buildSavedFoodOptionLabel(food),
+      food,
+    })) : []),
+    [savedFoods],
+  )
+  const selectedSavedFood = useMemo(() => {
+    const query = savedFoodQuery.trim().toLowerCase()
+    if (!query) {
+      return null
+    }
+
+    const match = savedFoodOptions.find(option => option.label.toLowerCase() === query)
+    return match?.food ?? null
+  }, [savedFoodOptions, savedFoodQuery])
 
   const totals = useMemo(() => items.reduce((carry, item) => ({
     calories: carry.calories + (Number(item.calories) || 0),
@@ -2651,11 +2810,36 @@ function MealComposerForm({ title, savedFoods, requireName = false, submitLabel,
   }), { calories: 0, protein_g: 0, carbs_g: 0, fat_g: 0 }), [items])
 
   function updateItem(index, patch) {
-    setItems(current => current.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item))
+    setItems(current => current.map((item, itemIndex) => {
+      if (itemIndex !== index) {
+        return item
+      }
+
+      const nextItem = { ...item, ...patch }
+      const changedFields = Object.keys(patch)
+      const changedField = changedFields.length === 1 ? changedFields[0] : ''
+      return recomputeMealDraftItem(item, nextItem, changedField)
+    }))
   }
 
   function addItem(prefill = null) {
-    setItems(current => [...current, prefill ? applyFoodSuggestion(createEmptyMealItem(), prefill) : createEmptyMealItem()])
+    setItems(current => {
+      const nextItem = prefill ? applyFoodSuggestion(createEmptyMealItem(), prefill) : createEmptyMealItem()
+      return [...current, recomputeMealDraftItem(null, nextItem, '')]
+    })
+  }
+
+  function addSavedFoodSelection() {
+    if (!selectedSavedFood) {
+      setError('Choose a saved food from the list first.')
+      onError?.('Choose a saved food from the list first.')
+      return
+    }
+
+    setError('')
+    addItem(selectedSavedFood)
+    setSavedFoodQuery('')
+    onToast?.(`${formatFoodDisplayName(selectedSavedFood)} added to the meal.`)
   }
 
   function removeItem(index) {
@@ -2681,7 +2865,7 @@ function MealComposerForm({ title, savedFoods, requireName = false, submitLabel,
     try {
       const result = await aiApi.analyseFoodText(query)
       updateItem(index, applyFoodSuggestion(items[index], result))
-      onToast?.('AI fill applied. Review the numbers before saving.')
+      onToast?.(buildAiFoodValidationToast(query, result, 'meal-item'))
     } catch (err) {
       setError(err.message)
       onError?.(err)
@@ -2752,9 +2936,9 @@ function MealComposerForm({ title, savedFoods, requireName = false, submitLabel,
       <h3>{title}</h3>
       <p className="settings-subtitle">Type a food, pick a saved or recent match, or let AI fill the nutrition for you.</p>
       {error ? <p className="error">{error}</p> : null}
-      {showNameField ? (
-        <FieldLabel label={requireName ? 'Meal name' : 'Meal name'}>
-          <input placeholder={requireName ? 'High-protein lunch' : 'Optional meal name'} value={name} onChange={event => setName(event.target.value)} required={requireName} />
+      {requireName ? (
+        <FieldLabel label="Meal name">
+          <input placeholder="High-protein lunch" value={name} onChange={event => setName(event.target.value)} required />
         </FieldLabel>
       ) : null}
       {includeMealDateTime ? (
@@ -2776,11 +2960,29 @@ function MealComposerForm({ title, savedFoods, requireName = false, submitLabel,
       )}
 
       {savedFoods?.length ? (
-        <div className="nutrition-gap-list nutrition-quick-picks">
-          {savedFoods.slice(0, 6).map(food => (
-            <button key={food.id} type="button" className="onboarding-chip active" onClick={() => addItem(food)}>{formatFoodDisplayName(food)}</button>
-          ))}
-        </div>
+        <FieldLabel label="Saved Foods" className="nutrition-saved-food-field">
+          <div className="nutrition-gap-list nutrition-quick-picks nutrition-saved-food-picker">
+            <input
+              type="search"
+              list={savedFoodListId}
+              placeholder="Select or start typing a saved food"
+              value={savedFoodQuery}
+              onChange={event => setSavedFoodQuery(event.target.value)}
+              onKeyDown={event => {
+                if (event.key === 'Enter' && selectedSavedFood) {
+                  event.preventDefault()
+                  addSavedFoodSelection()
+                }
+              }}
+            />
+            <datalist id={savedFoodListId}>
+              {savedFoodOptions.map(option => <option key={option.key} value={option.label} />)}
+            </datalist>
+            <button type="button" className="btn-secondary" onClick={addSavedFoodSelection} disabled={!selectedSavedFood}>
+              Add Food
+            </button>
+          </div>
+        </FieldLabel>
       ) : null}
 
       {items.length ? (
@@ -2824,21 +3026,11 @@ function MealComposerItemRow({ item, busy, onChange, onSelectSuggestion, onAutof
   const [suggestions, setSuggestions] = useState([])
   const [loadingSuggestions, setLoadingSuggestions] = useState(false)
   const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(-1)
-  const suggestionRefs = useRef([])
   const rowIdRef = useRef(`nutrition-row-${Math.random().toString(36).slice(2, 9)}`)
 
   useEffect(() => {
-    suggestionRefs.current = []
-    setActiveSuggestionIndex(suggestions.length ? 0 : -1)
+    setActiveSuggestionIndex(-1)
   }, [suggestions])
-
-  useEffect(() => {
-    if (activeSuggestionIndex < 0) {
-      return
-    }
-
-    suggestionRefs.current[activeSuggestionIndex]?.focus()
-  }, [activeSuggestionIndex])
 
   useEffect(() => {
     const query = item.food_name?.trim() || ''
@@ -2930,9 +3122,6 @@ function MealComposerItemRow({ item, busy, onChange, onSelectSuggestion, onAutof
               <button
                 key={`${suggestion.match_type}-${suggestion.id}-${suggestion.canonical_name}`}
                 id={`${rowIdRef.current}-suggestion-${index}`}
-                ref={element => {
-                  suggestionRefs.current[index] = element
-                }}
                 type="button"
                 role="option"
                 aria-selected={activeSuggestionIndex === index}
@@ -2979,14 +3168,14 @@ function MealComposerItemRow({ item, busy, onChange, onSelectSuggestion, onAutof
           <FieldLabel label="Servings"><input type="number" min="0" step="0.25" placeholder="1" value={item.serving_amount} onChange={event => onChange({ serving_amount: event.target.value })} /></FieldLabel>
           <FieldLabel label="Serving unit"><input placeholder="bowl" value={item.serving_unit} onChange={event => onChange({ serving_unit: event.target.value })} /></FieldLabel>
           <FieldLabel label="Calories"><input type="number" min="0" placeholder="0" value={item.calories} onChange={event => onChange({ calories: event.target.value })} /></FieldLabel>
-          <FieldLabel label="Protein"><input type="number" min="0" step="0.1" placeholder="0" value={item.protein_g} onChange={event => onChange({ protein_g: event.target.value })} /></FieldLabel>
-          <FieldLabel label="Carbs"><input type="number" min="0" step="0.1" placeholder="0" value={item.carbs_g} onChange={event => onChange({ carbs_g: event.target.value })} /></FieldLabel>
-          <FieldLabel label="Fat"><input type="number" min="0" step="0.1" placeholder="0" value={item.fat_g} onChange={event => onChange({ fat_g: event.target.value })} /></FieldLabel>
+          <FieldLabel label="Protein"><input type="number" min="0" step="0.01" inputMode="decimal" placeholder="0" value={item.protein_g} onChange={event => onChange({ protein_g: event.target.value })} /></FieldLabel>
+          <FieldLabel label="Carbs"><input type="number" min="0" step="0.01" inputMode="decimal" placeholder="0" value={item.carbs_g} onChange={event => onChange({ carbs_g: event.target.value })} /></FieldLabel>
+          <FieldLabel label="Fat"><input type="number" min="0" step="0.01" inputMode="decimal" placeholder="0" value={item.fat_g} onChange={event => onChange({ fat_g: event.target.value })} /></FieldLabel>
         </div>
         <div className="macro-inputs nutrition-item-editor nutrition-item-editor-secondary">
-          <FieldLabel label="Fiber"><input type="number" min="0" step="0.1" placeholder="0" value={item.fiber_g} onChange={event => onChange({ fiber_g: event.target.value })} /></FieldLabel>
-          <FieldLabel label="Sugar"><input type="number" min="0" step="0.1" placeholder="0" value={item.sugar_g} onChange={event => onChange({ sugar_g: event.target.value })} /></FieldLabel>
-          <FieldLabel label="Sodium mg"><input type="number" min="0" step="1" placeholder="0" value={item.sodium_mg} onChange={event => onChange({ sodium_mg: event.target.value })} /></FieldLabel>
+          <FieldLabel label="Fiber"><input type="number" min="0" step="0.01" inputMode="decimal" placeholder="0" value={item.fiber_g} onChange={event => onChange({ fiber_g: event.target.value })} /></FieldLabel>
+          <FieldLabel label="Sugar"><input type="number" min="0" step="0.01" inputMode="decimal" placeholder="0" value={item.sugar_g} onChange={event => onChange({ sugar_g: event.target.value })} /></FieldLabel>
+          <FieldLabel label="Sodium mg"><input type="number" min="0" step="0.01" inputMode="decimal" placeholder="0" value={item.sodium_mg} onChange={event => onChange({ sodium_mg: event.target.value })} /></FieldLabel>
         </div>
         {item.micros?.length ? <p className="empty-state">{formatMicroList(item.micros, 4)}</p> : null}
         {item.notes ? <p className="empty-state">{item.notes}</p> : null}
@@ -2996,7 +3185,7 @@ function MealComposerItemRow({ item, busy, onChange, onSelectSuggestion, onAutof
 }
 
 function normaliseMealItems(items) {
-  return items.map(item => ({
+  return items.map(item => recomputeMealDraftItem(null, {
     food_name: item.food_name || 'Food item',
     serving_amount: Number(item.serving_amount ?? 1),
     serving_unit: item.serving_unit || 'serving',
@@ -3311,6 +3500,50 @@ function applyFoodSuggestion(currentItem, suggestion) {
   }
 }
 
+function hasMealItemNutritionData(item) {
+  return (
+    Number(item?.estimated_grams ?? 0) > 0 ||
+    ['calories', 'protein_g', 'carbs_g', 'fat_g', 'fiber_g', 'sugar_g', 'sodium_mg'].some(field => Number(item?.[field] ?? 0) !== 0)
+  )
+}
+
+function buildMealItemNutritionBasis(item) {
+  const servingAmount = Number(item?.serving_amount ?? 1)
+  const divisor = servingAmount > 0 ? servingAmount : 1
+
+  return {
+    calories: (Number(item?.calories ?? 0) || 0) / divisor,
+    protein_g: roundTo((Number(item?.protein_g ?? 0) || 0) / divisor, 4),
+    carbs_g: roundTo((Number(item?.carbs_g ?? 0) || 0) / divisor, 4),
+    fat_g: roundTo((Number(item?.fat_g ?? 0) || 0) / divisor, 4),
+    fiber_g: roundTo((Number(item?.fiber_g ?? 0) || 0) / divisor, 4),
+    sugar_g: roundTo((Number(item?.sugar_g ?? 0) || 0) / divisor, 4),
+    sodium_mg: roundTo((Number(item?.sodium_mg ?? 0) || 0) / divisor, 4),
+    estimated_grams: roundTo((Number(item?.estimated_grams ?? 0) || 0) / divisor, 4),
+  }
+}
+
+function syncMealItemSource(previousItem, nextItem, changedField) {
+  const source = nextItem?.source ? { ...nextItem.source } : null
+  if (!source && !hasMealItemNutritionData(nextItem)) {
+    return null
+  }
+
+  const preserveNutritionBasis = changedField === 'serving_amount' || changedField === 'estimated_grams'
+  const existingNutritionBasis = source?.nutrition_basis || previousItem?.source?.nutrition_basis || null
+  const nutritionBasis = preserveNutritionBasis && existingNutritionBasis
+    ? existingNutritionBasis
+    : buildMealItemNutritionBasis(nextItem)
+
+  return {
+    ...(source || {}),
+    ...(nutritionBasis ? { nutrition_basis: nutritionBasis } : {}),
+    serving_amount: Number(nextItem?.serving_amount ?? source?.serving_amount ?? 1) || 0,
+    serving_unit: nextItem?.serving_unit || source?.serving_unit || 'serving',
+    estimated_grams: roundTo(Number(nextItem?.estimated_grams ?? source?.estimated_grams ?? 0) || 0, 2),
+  }
+}
+
 function buildMealItemPayload(item) {
   return {
     food_id: item.food_id || null,
@@ -3330,10 +3563,42 @@ function buildMealItemPayload(item) {
   }
 }
 
-function recomputeMealDraftItem(item, changedField) {
-  const source = item?.source
-  if (!source || source.provider !== 'usda' || !source.per_100g) {
+function recomputeMealDraftItem(previousItem, nextItem = previousItem, changedField = '') {
+  const source = syncMealItemSource(previousItem, nextItem, changedField)
+  const item = {
+    ...nextItem,
+    source,
+  }
+
+  if (!source) {
     return item
+  }
+
+  if (source.provider !== 'usda' || !source.per_100g) {
+    if (changedField !== 'serving_amount' || !source.nutrition_basis) {
+      return item
+    }
+
+    const servingAmount = Number(item.serving_amount) || 0
+    const nextEstimatedGrams = roundTo((Number(source.nutrition_basis.estimated_grams ?? 0) || 0) * servingAmount, 2)
+
+    return {
+      ...item,
+      estimated_grams: nextEstimatedGrams,
+      calories: Math.round((Number(source.nutrition_basis.calories ?? 0) || 0) * servingAmount),
+      protein_g: roundTo((Number(source.nutrition_basis.protein_g ?? 0) || 0) * servingAmount, 2),
+      carbs_g: roundTo((Number(source.nutrition_basis.carbs_g ?? 0) || 0) * servingAmount, 2),
+      fat_g: roundTo((Number(source.nutrition_basis.fat_g ?? 0) || 0) * servingAmount, 2),
+      fiber_g: roundTo((Number(source.nutrition_basis.fiber_g ?? 0) || 0) * servingAmount, 2),
+      sugar_g: roundTo((Number(source.nutrition_basis.sugar_g ?? 0) || 0) * servingAmount, 2),
+      sodium_mg: roundTo((Number(source.nutrition_basis.sodium_mg ?? 0) || 0) * servingAmount, 2),
+      source: {
+        ...source,
+        serving_amount: servingAmount,
+        serving_unit: item.serving_unit || source.serving_unit || 'serving',
+        estimated_grams: nextEstimatedGrams,
+      },
+    }
   }
 
   const currentGrams = Number(item.estimated_grams ?? source.estimated_grams ?? 0)
@@ -3352,7 +3617,23 @@ function recomputeMealDraftItem(item, changedField) {
   }
 
   if (nextGrams <= 0) {
-    return item
+    return {
+      ...item,
+      estimated_grams: 0,
+      calories: 0,
+      protein_g: 0,
+      carbs_g: 0,
+      fat_g: 0,
+      fiber_g: 0,
+      sugar_g: 0,
+      sodium_mg: 0,
+      source: {
+        ...source,
+        estimated_grams: 0,
+        serving_amount: Number(item.serving_amount) || 0,
+        serving_unit: item.serving_unit || source.serving_unit || 'serving',
+      },
+    }
   }
 
   const factor = nextGrams / 100
@@ -3378,6 +3659,107 @@ function recomputeMealDraftItem(item, changedField) {
 function roundTo(value, digits = 0) {
   const multiplier = 10 ** digits
   return Math.round((Number(value) || 0) * multiplier) / multiplier
+}
+
+function buildAiMealValidationToast(result) {
+  const items = Array.isArray(result?.items) ? result.items : []
+  const unresolvedCount = items.filter(item => item?.source?.provider !== 'usda').length
+  const sourceTitles = collectSourceTitles(result?.sources)
+
+  return {
+    kind: 'ai-meal-validation',
+    title: 'Meal Scan Validation',
+    message: `Parsed ${items.length} item${items.length === 1 ? '' : 's'} for ${Math.round(Number(result?.total_calories) || 0)} Calories.`,
+    details: [
+      unresolvedCount ? `${unresolvedCount} item${unresolvedCount === 1 ? '' : 's'} used estimate or web fallback.` : 'All items resolved through structured matches.',
+      sourceTitles.length ? `Sources: ${sourceTitles.join(' | ')}` : '',
+    ].filter(Boolean),
+    tone: unresolvedCount ? 'info' : 'success',
+    persistent: true,
+  }
+}
+
+function buildAiSourceToast(title, message, sources = []) {
+  const sourceTitles = collectSourceTitles(sources)
+
+  return {
+    kind: `source-toast-${title.toLowerCase().replace(/\s+/g, '-')}`,
+    title,
+    message,
+    details: sourceTitles.length ? [`Sources: ${sourceTitles.join(' | ')}`] : [],
+    tone: 'info',
+    persistent: true,
+  }
+}
+
+function collectSourceTitles(sources) {
+  return (Array.isArray(sources) ? sources : [])
+    .map(source => String(source?.title || '').trim())
+    .filter(Boolean)
+    .slice(0, 2)
+}
+
+function buildAiFoodValidationToast(query, result, context = 'meal-item') {
+  const source = typeof result?.source === 'object' && result.source ? result.source : null
+  const sourceProvider = source?.provider === 'usda'
+    ? 'USDA FoodData Central match'
+    : source?.provider === 'web_search'
+      ? 'Web nutrition lookup'
+      : 'AI estimate'
+  const resolutionStatus = formatAiResolutionStatus(source?.resolution_status)
+  const matchedName = [source?.matched_name, source?.brand].filter(Boolean).join(' · ')
+  const confidencePct = Math.round(Math.max(0, Math.min(1, Number(result?.confidence ?? source?.food_confidence ?? 0))) * 100)
+  const servingGrams = Number(result?.serving_grams ?? source?.estimated_grams ?? 0)
+  const dataType = formatAiDataType(source?.data_type)
+  const referenceId = source?.fdc_id ? `FDC ${source.fdc_id}` : ''
+  const webSourceTitles = Array.isArray(source?.web_sources)
+    ? source.web_sources.map(entry => entry?.title).filter(Boolean).slice(0, 2)
+    : []
+  const details = [
+    `Lookup: ${sourceProvider}${resolutionStatus ? ` · ${resolutionStatus}` : ''}`,
+    matchedName ? `Matched food: ${matchedName}` : '',
+    dataType || referenceId ? `Reference: ${[dataType, referenceId].filter(Boolean).join(' · ')}` : '',
+    webSourceTitles.length ? `Web sources: ${webSourceTitles.join(' | ')}` : '',
+    servingGrams > 0 ? `Portion basis: ${result?.serving_size || '1 serving'}${servingGrams > 0 ? ` · ${roundTo(servingGrams, 2)}g` : ''}` : '',
+    confidencePct > 0 ? `Confidence: ${confidencePct}%` : '',
+    result?.notes ? `AI note: ${result.notes}` : '',
+    query ? `Input: ${query}` : '',
+  ].filter(Boolean)
+
+  return {
+    kind: `ai-food-validation-${context}`,
+    title: 'AI Fill Validation',
+    message: `Filled ${result?.food_name || 'food'} with ${Math.round(Number(result?.calories) || 0)} Calories, ${roundTo(Number(result?.protein_g) || 0, 2)}g protein, ${roundTo(Number(result?.carbs_g) || 0, 2)}g carbs, and ${roundTo(Number(result?.fat_g) || 0, 2)}g fat.`,
+    details,
+    tone: source?.provider === 'usda' ? 'success' : 'info',
+    persistent: true,
+  }
+}
+
+function formatAiResolutionStatus(value) {
+  switch (String(value || '').trim()) {
+    case 'no_match':
+      return 'no database match'
+    case 'detail_lookup_failed':
+      return 'database detail lookup failed'
+    case 'web_search_match':
+      return 'resolved from web sources'
+    default:
+      return ''
+  }
+}
+
+function formatAiDataType(value) {
+  const normalized = String(value || '').trim()
+  if (!normalized) {
+    return ''
+  }
+
+  return normalized
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/_/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
 }
 
 function aggregateMealMicros(meals) {
@@ -3787,10 +4169,11 @@ function pantryContainsIngredient(pantry, ingredient) {
 function buildRecipeAwareGroceryGap(baseGap, recipes, pantry, selectedRecipeKeys) {
   const gapItems = new Map()
   const recipeItems = new Map()
+  const hiddenItemKeys = new Set(Array.isArray(baseGap?.hidden_item_keys) ? baseGap.hidden_item_keys : [])
 
   function registerGapItem(item, source) {
     const nextItem = buildGroceryGapItem(item, source)
-    if (!nextItem || pantryContainsIngredient(pantry, nextItem.item_name)) {
+    if (!nextItem || hiddenItemKeys.has(nextItem.key) || pantryContainsIngredient(pantry, nextItem.item_name)) {
       return
     }
 
@@ -3812,7 +4195,7 @@ function buildRecipeAwareGroceryGap(baseGap, recipes, pantry, selectedRecipeKeys
       ;(Array.isArray(recipe?.ingredients) ? recipe.ingredients : []).forEach(ingredient => {
         const name = String(ingredient || '').trim()
         const key = normalisePantryMatchText(name)
-        if (!name || !key || pantryContainsIngredient(pantry, name)) {
+        if (!name || !key || hiddenItemKeys.has(key) || pantryContainsIngredient(pantry, name)) {
           return
         }
 
@@ -4044,6 +4427,27 @@ function formatFoodDisplayName(food) {
     return primary
   }
   return String(food?.brand || 'Saved food').trim()
+}
+
+function sortSavedFoodsAlphabetically(foods) {
+  return [...(Array.isArray(foods) ? foods : [])].sort((left, right) => compareSavedItemLabels(formatFoodDisplayName(left), formatFoodDisplayName(right)))
+}
+
+function sortSavedMealsAlphabetically(meals) {
+  return [...(Array.isArray(meals) ? meals : [])].sort((left, right) => compareSavedItemLabels(left?.name, right?.name))
+}
+
+function compareSavedItemLabels(left, right) {
+  return String(left || '').localeCompare(String(right || ''), undefined, { sensitivity: 'base', numeric: true })
+}
+
+function buildSavedFoodOptionLabel(food) {
+  const name = formatFoodDisplayName(food)
+  const brand = String(food?.brand || '').trim()
+  if (brand && brand.toLowerCase() !== name.toLowerCase()) {
+    return `${name} (${brand})`
+  }
+  return name
 }
 
 function formatMicroAmount(micro) {

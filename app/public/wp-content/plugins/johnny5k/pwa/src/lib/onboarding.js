@@ -18,6 +18,7 @@ const DEFAULT_BODY_FORM = {
 const DEFAULT_GOALS_FORM = {
   target_steps: 8000,
   target_sleep_hours: 7.5,
+  add_exercise_calories_to_target: false,
 }
 
 const WEEKDAY_ORDER = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
@@ -51,6 +52,7 @@ const DEFAULT_FOOD_FORM = {
 const DEFAULT_HABITS_FORM = {
   target_steps: 8000,
   target_sleep_hours: 7.5,
+  add_exercise_calories_to_target: false,
   cardio_frequency: '1-2x',
   notifications_enabled: false,
   phone: '',
@@ -245,6 +247,7 @@ export function goalsFormFromState(goal) {
   return {
     target_steps: Number(goal.target_steps ?? DEFAULT_GOALS_FORM.target_steps),
     target_sleep_hours: Number(goal.target_sleep_hours ?? DEFAULT_GOALS_FORM.target_sleep_hours),
+    add_exercise_calories_to_target: DEFAULT_GOALS_FORM.add_exercise_calories_to_target,
   }
 }
 
@@ -335,6 +338,7 @@ export function settingsFormFromState(profile, prefs, goal) {
     ...notificationsFormFromState(profile, prefs),
     weekly_schedule: training.weekly_schedule,
     color_scheme: preferenceMeta?.color_scheme ?? 'classic',
+    add_exercise_calories_to_target: Boolean(preferenceMeta?.add_exercise_calories_to_target),
     preference_meta: preferenceMeta,
   }
 }

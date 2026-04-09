@@ -26,6 +26,7 @@ use Johnny5k\Services\UserTime;
  */
 class AiController {
 	private const GROCERY_GAP_ITEMS_META_KEY = 'jf_nutrition_grocery_gap_items';
+	private const GROCERY_GAP_HIDDEN_ITEMS_META_KEY = 'jf_nutrition_grocery_gap_hidden_items';
 	private const PANTRY_CATEGORY_OVERRIDES_META_KEY = 'johnny5k_pantry_category_overrides';
 	private const RECIPE_COOKBOOK_META_KEY = 'johnny5k_recipe_cookbook';
 
@@ -680,6 +681,8 @@ class AiController {
 			 FROM {$p}fit_user_goals WHERE user_id = %d AND active = 1 ORDER BY created_at DESC LIMIT 1",
 			$user_id
 		) );
+		$goal = \Johnny5k\Services\ExerciseCalorieService::apply_exercise_calorie_target_adjustment( $user_id, $date, $goal );
+		$exercise_calories = \Johnny5k\Services\ExerciseCalorieService::get_daily_exercise_calories( $user_id, $date );
 
 		$micro_rows = $wpdb->get_results( $wpdb->prepare(
 			"SELECT mi.micros_json, mi.serving_amount, f.micros_json AS saved_food_micros_json
@@ -713,6 +716,7 @@ class AiController {
 			'date'   => $date,
 			'totals' => $totals,
 			'targets' => $goal,
+			'exercise_calories' => $exercise_calories,
 			'micros' => array_values( $micros ),
 		] );
 	}
@@ -1155,6 +1159,16 @@ class AiController {
 		) );
 		$prefs = self::get_user_food_preferences( $user_id );
 		$suggestions = self::build_recipe_suggestions( $pantry_rows, $prefs, $refresh_token );
+		$should_discover_online = '' !== $refresh_token || count( $suggestions ) < 4 || count( $pantry_rows ) < 3;
+		if ( $should_discover_online ) {
+			$discovered = \Johnny5k\Services\AiService::discover_recipe_library_items( $user_id, [
+				'query' => self::build_user_recipe_discovery_query( $pantry_rows, $prefs ),
+				'count' => 4,
+			] );
+			if ( ! is_wp_error( $discovered ) && ! empty( $discovered['recipes'] ) && is_array( $discovered['recipes'] ) ) {
+				$suggestions = self::merge_recipe_suggestion_sets( $suggestions, $discovered['recipes'] );
+			}
+		}
 
 		$wpdb->delete( $p . 'fit_recipe_suggestions', [ 'user_id' => $user_id, 'is_cookbook' => 0 ] );
 		foreach ( $suggestions as $suggestion ) {
@@ -1167,6 +1181,45 @@ class AiController {
 	public static function get_recipe_cookbook( \WP_REST_Request $req ): \WP_REST_Response {
 		$user_id = get_current_user_id();
 		return new \WP_REST_Response( self::get_recipe_cookbook_items( $user_id ) );
+	}
+
+	private static function build_user_recipe_discovery_query( array $pantry_rows, array $prefs ): string {
+		$pantry_items = array_values( array_filter( array_map( static function( $row ): string {
+			return self::normalise_food_name( (string) ( is_object( $row ) ? ( $row->item_name ?? '' ) : ( $row['item_name'] ?? '' ) ) );
+		}, $pantry_rows ) ) );
+		$pantry_slice = array_slice( $pantry_items, 0, 6 );
+		$prefs_slice = array_slice( array_values( array_filter( array_map( 'sanitize_text_field', (array) ( $prefs['preferred_foods'] ?? [] ) ) ) ), 0, 4 );
+
+		$parts = [
+			'high protein practical meal ideas',
+			$pantry_slice ? 'using ' . implode( ', ', $pantry_slice ) : '',
+			$prefs_slice ? 'favouring ' . implode( ', ', $prefs_slice ) : '',
+		];
+
+		return trim( implode( ' ', array_filter( $parts ) ) );
+	}
+
+	private static function merge_recipe_suggestion_sets( array $base, array $incoming ): array {
+		$merged = [];
+		$seen = [];
+
+		foreach ( array_merge( $incoming, $base ) as $recipe ) {
+			$recipe = is_array( $recipe ) ? $recipe : [];
+			$name = sanitize_text_field( (string) ( $recipe['recipe_name'] ?? '' ) );
+			if ( '' === $name ) {
+				continue;
+			}
+
+			$key = strtolower( sanitize_title( $name ) . '|' . sanitize_key( (string) ( $recipe['meal_type'] ?? '' ) ) );
+			if ( isset( $seen[ $key ] ) ) {
+				continue;
+			}
+
+			$seen[ $key ] = true;
+			$merged[] = $recipe;
+		}
+
+		return array_values( $merged );
 	}
 
 	public static function update_recipe_cookbook( \WP_REST_Request $req ): \WP_REST_Response {
@@ -1193,7 +1246,8 @@ class AiController {
 		) );
 		$prefs = self::get_user_food_preferences( $user_id );
 		$manual_items = self::get_manual_grocery_gap_items( $user_id );
-		$gaps = self::build_grocery_gap( $pantry_rows, $prefs, $manual_items );
+		$hidden_item_keys = self::get_hidden_grocery_gap_item_keys( $user_id );
+		$gaps = self::build_grocery_gap( $pantry_rows, $prefs, $manual_items, $hidden_item_keys );
 
 		return new \WP_REST_Response( $gaps );
 	}
@@ -1261,6 +1315,13 @@ class AiController {
 		}
 
 		self::save_manual_grocery_gap_items( $user_id, array_values( $items_by_key ) );
+		self::remove_hidden_grocery_gap_item_keys(
+			$user_id,
+			array_map(
+				static fn( array $item ): string => (string) ( $item['item_name'] ?? '' ),
+				array_values( $items_by_key )
+			)
+		);
 
 		return new \WP_REST_Response( [
 			'items'         => $results,
@@ -1305,6 +1366,7 @@ class AiController {
 		}
 
 		self::save_manual_grocery_gap_items( $user_id, $remaining_items );
+		self::add_hidden_grocery_gap_item_keys( $user_id, array_keys( $keys_to_remove ) );
 
 		return new \WP_REST_Response( [
 			'deleted'       => true,
@@ -1941,8 +2003,9 @@ class AiController {
 		return (string) $pool[ $index % count( $pool ) ];
 	}
 
-	private static function build_grocery_gap( array $pantry_rows, array $prefs, array $manual_items = [] ): array {
+	private static function build_grocery_gap( array $pantry_rows, array $prefs, array $manual_items = [], array $hidden_item_keys = [] ): array {
 		$pantry = array_map( static fn( $row ) => self::normalise_food_name( (string) $row->item_name ), $pantry_rows );
+		$hidden_lookup = array_fill_keys( array_filter( array_map( [ __CLASS__, 'normalise_food_name' ], $hidden_item_keys ) ), true );
 		$preferred_foods = array_filter( array_map( 'trim', explode( ',', (string) ( $prefs['food_preferences']['preferred_foods'] ?? '' ) ) ) );
 		$common_meals = array_filter( array_map( 'trim', [
 			(string) ( $prefs['common_meals']['breakfasts'] ?? '' ),
@@ -1950,14 +2013,19 @@ class AiController {
 		] ) );
 
 		$staples = array_unique( array_filter( array_merge( [ 'chicken', 'eggs', 'rice', 'oats', 'berries', 'greek yogurt', 'spinach' ], $preferred_foods ) ) );
-		$missing = array_values( array_filter( $staples, fn( $item ) => ! self::pantry_has_ingredient( $pantry, (string) $item ) ) );
-		$manual_missing = array_values( array_filter( self::merge_grocery_gap_items( $manual_items ), static function( array $item ) use ( $pantry ): bool {
-			return ! self::pantry_has_ingredient( $pantry, (string) ( $item['item_name'] ?? '' ) );
+		$missing = array_values( array_filter( $staples, static function( $item ) use ( $hidden_lookup, $pantry ): bool {
+			$key = self::normalise_food_name( (string) $item );
+			return '' !== $key && ! isset( $hidden_lookup[ $key ] ) && ! self::pantry_has_ingredient( $pantry, (string) $item );
+		} ) );
+		$manual_missing = array_values( array_filter( self::merge_grocery_gap_items( $manual_items ), static function( array $item ) use ( $hidden_lookup, $pantry ): bool {
+			$key = self::normalise_food_name( (string) ( $item['item_name'] ?? '' ) );
+			return '' !== $key && ! isset( $hidden_lookup[ $key ] ) && ! self::pantry_has_ingredient( $pantry, (string) ( $item['item_name'] ?? '' ) );
 		} ) );
 
 		return [
 			'missing_items' => array_slice( $missing, 0, 8 ),
 			'manual_items'  => $manual_missing,
+			'hidden_item_keys' => array_values( array_keys( $hidden_lookup ) ),
 			'pantry_count'  => count( $pantry ),
 			'context'       => [
 				'preferred_foods' => array_slice( $preferred_foods, 0, 5 ),
@@ -2157,6 +2225,47 @@ class AiController {
 		}
 
 		update_user_meta( $user_id, self::GROCERY_GAP_ITEMS_META_KEY, array_values( $items ) );
+	}
+
+	private static function get_hidden_grocery_gap_item_keys( int $user_id ): array {
+		$stored = get_user_meta( $user_id, self::GROCERY_GAP_HIDDEN_ITEMS_META_KEY, true );
+		$stored_items = is_array( $stored ) ? $stored : [];
+
+		return array_values( array_filter( array_unique( array_map( [ __CLASS__, 'normalise_food_name' ], $stored_items ) ) ) );
+	}
+
+	private static function save_hidden_grocery_gap_item_keys( int $user_id, array $keys ): void {
+		$keys = array_values( array_filter( array_unique( array_map( [ __CLASS__, 'normalise_food_name' ], $keys ) ) ) );
+
+		if ( empty( $keys ) ) {
+			delete_user_meta( $user_id, self::GROCERY_GAP_HIDDEN_ITEMS_META_KEY );
+			return;
+		}
+
+		update_user_meta( $user_id, self::GROCERY_GAP_HIDDEN_ITEMS_META_KEY, $keys );
+	}
+
+	private static function add_hidden_grocery_gap_item_keys( int $user_id, array $keys ): void {
+		$current = self::get_hidden_grocery_gap_item_keys( $user_id );
+		self::save_hidden_grocery_gap_item_keys( $user_id, array_merge( $current, $keys ) );
+	}
+
+	private static function remove_hidden_grocery_gap_item_keys( int $user_id, array $keys ): void {
+		$keys_to_remove = array_fill_keys(
+			array_filter( array_map( [ __CLASS__, 'normalise_food_name' ], $keys ) ),
+			true
+		);
+
+		if ( empty( $keys_to_remove ) ) {
+			return;
+		}
+
+		$remaining = array_values( array_filter(
+			self::get_hidden_grocery_gap_item_keys( $user_id ),
+			static fn( string $key ): bool => ! isset( $keys_to_remove[ $key ] )
+		) );
+
+		self::save_hidden_grocery_gap_item_keys( $user_id, $remaining );
 	}
 
 	private static function get_recipe_cookbook_items( int $user_id ): array {

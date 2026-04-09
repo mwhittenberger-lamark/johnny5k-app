@@ -39,6 +39,12 @@ class DashboardController {
 			'permission_callback' => $auth,
 		] );
 
+		register_rest_route( $ns, '/dashboard/real-success-story', [
+			'methods'             => 'GET',
+			'callback'            => [ __CLASS__, 'get_real_success_story' ],
+			'permission_callback' => $auth,
+		] );
+
 		register_rest_route( $ns, '/dashboard/photo', [
 			'methods'             => 'POST',
 			'callback'            => [ __CLASS__, 'upload_progress_photo' ],
@@ -99,6 +105,18 @@ class DashboardController {
 		return new \WP_REST_Response( $result );
 	}
 
+	public static function get_real_success_story( \WP_REST_Request $req ): \WP_REST_Response {
+		$user_id = get_current_user_id();
+		$force   = rest_sanitize_boolean( $req->get_param( 'force' ) );
+		$result  = AiService::dashboard_real_success_story( $user_id, (bool) $force );
+
+		if ( is_wp_error( $result ) ) {
+			return new \WP_REST_Response( [ 'message' => $result->get_error_message() ], 500 );
+		}
+
+		return new \WP_REST_Response( $result );
+	}
+
 	public static function get_daily_snapshot_data( int $user_id ): array {
 		global $wpdb;
 		$p       = $wpdb->prefix;
@@ -112,6 +130,8 @@ class DashboardController {
 			 FROM {$p}fit_user_goals WHERE user_id = %d AND active = 1 ORDER BY created_at DESC LIMIT 1",
 			$user_id
 		) );
+		$goal = \Johnny5k\Services\ExerciseCalorieService::apply_exercise_calorie_target_adjustment( $user_id, $today, $goal );
+		$exercise_calories = \Johnny5k\Services\ExerciseCalorieService::get_daily_exercise_calories( $user_id, $today );
 
 		$meals_today = $wpdb->get_results( $wpdb->prepare(
 			"SELECT m.id, m.meal_type, m.meal_datetime,
@@ -147,7 +167,7 @@ class DashboardController {
 		) );
 
 		$session = $wpdb->get_row( $wpdb->prepare(
-			"SELECT id, session_date, planned_day_type, actual_day_type, completed, skip_requested, time_tier
+			"SELECT id, session_date, planned_day_type, actual_day_type, completed, skip_requested, time_tier, estimated_calories
 			 FROM {$p}fit_workout_sessions
 			 WHERE user_id = %d AND session_date = %s
 			 ORDER BY id DESC
@@ -158,7 +178,7 @@ class DashboardController {
 		$training_status = self::get_today_training_status_data( $user_id, $today, $today_schedule, $session );
 
 		$tomorrow_preview = $wpdb->get_row( $wpdb->prepare(
-			"SELECT id, session_date, planned_day_type, actual_day_type, completed, skip_requested, time_tier
+			"SELECT id, session_date, planned_day_type, actual_day_type, completed, skip_requested, time_tier, estimated_calories
 			 FROM {$p}fit_workout_sessions
 			 WHERE user_id = %d AND session_date = %s
 			 ORDER BY id DESC
@@ -216,6 +236,7 @@ class DashboardController {
 		return [
 			'date'             => $today,
 			'goal'             => $goal,
+			'exercise_calories' => $exercise_calories,
 			'nutrition_totals' => $nutrition_totals,
 			'micronutrient_totals' => $micronutrient_totals,
 			'meals_today'      => $meals_today,
@@ -245,7 +266,7 @@ class DashboardController {
 		$scheduled_time_tier = (string) ( $today_schedule->time_tier ?? $latest_session->time_tier ?? 'medium' );
 
 		$active_session = $wpdb->get_row( $wpdb->prepare(
-			"SELECT id, session_date, planned_day_type, actual_day_type, completed, skip_requested, time_tier, duration_minutes, started_at, completed_at
+			"SELECT id, session_date, planned_day_type, actual_day_type, completed, skip_requested, time_tier, duration_minutes, estimated_calories, started_at, completed_at
 			 FROM {$p}fit_workout_sessions
 			 WHERE user_id = %d AND session_date = %s AND completed = 0 AND skip_requested = 0
 			 ORDER BY id DESC
@@ -255,7 +276,7 @@ class DashboardController {
 		) );
 
 		$completed_session = $wpdb->get_row( $wpdb->prepare(
-			"SELECT id, session_date, planned_day_type, actual_day_type, completed, skip_requested, time_tier, duration_minutes, started_at, completed_at
+			"SELECT id, session_date, planned_day_type, actual_day_type, completed, skip_requested, time_tier, duration_minutes, estimated_calories, started_at, completed_at
 			 FROM {$p}fit_workout_sessions
 			 WHERE user_id = %d AND session_date = %s AND completed = 1 AND skip_requested = 0
 			 ORDER BY completed_at DESC, id DESC
@@ -347,6 +368,7 @@ class DashboardController {
 			'skip_requested' => ! empty( $session->skip_requested ),
 			'time_tier' => (string) ( $session->time_tier ?? '' ),
 			'duration_minutes' => isset( $session->duration_minutes ) ? (int) $session->duration_minutes : 0,
+			'estimated_calories' => isset( $session->estimated_calories ) ? (int) $session->estimated_calories : 0,
 			'started_at' => (string) ( $session->started_at ?? '' ),
 			'completed_at' => (string) ( $session->completed_at ?? '' ),
 		];

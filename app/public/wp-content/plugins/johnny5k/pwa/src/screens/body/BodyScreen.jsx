@@ -290,19 +290,6 @@ export default function BodyScreen() {
         <SummaryCard label="Steps today" value={Number(todaySteps).toLocaleString()} meta={`Target ${Number(stepTarget).toLocaleString()} • ${stepPct}%`} accent="pink" />
       </section>
 
-      <section className="dash-card body-progress-card">
-        <div className="body-progress-header">
-          <div>
-            <h3>Movement Progress</h3>
-            <p>{Number(todaySteps).toLocaleString()} of {Number(stepTarget).toLocaleString()} steps</p>
-          </div>
-          <strong>{stepPct}%</strong>
-        </div>
-        <div className="bar-track body-progress-track">
-          <div className="bar-fill body-progress-fill" style={{ width: `${stepPct}%` }} />
-        </div>
-      </section>
-
       <section className="dash-card progress-photos-entry-card">
         <div className="body-progress-header">
           <div>
@@ -620,6 +607,7 @@ export default function BodyScreen() {
     {tab === 'workouts' && (
     <WorkoutHistoryTab
       workoutLogs={workoutLogs}
+      currentWeight={Number(latestWeight) || null}
       invalidate={invalidate}
       onRefreshSnapshot={() => loadSnapshot(true)}
       onRefreshBodyData={refreshBodyData}
@@ -630,15 +618,33 @@ export default function BodyScreen() {
   )
 }
 
-function WorkoutHistoryTab({ workoutLogs, invalidate, onRefreshSnapshot, onRefreshBodyData, onFlash }) {
+function WorkoutHistoryTab({ workoutLogs, currentWeight, invalidate, onRefreshSnapshot, onRefreshBodyData, onFlash }) {
   const [editingWorkoutId, setEditingWorkoutId] = useState(null)
-  const [form, setForm] = useState({ session_date: todayInputValue(), actual_day_type: 'push', duration_minutes: '', time_tier: 'medium' })
+  const [form, setForm] = useState({ session_date: todayInputValue(), actual_day_type: 'push', duration_minutes: '', time_tier: 'medium', estimated_calories: '' })
+  const [caloriesDirty, setCaloriesDirty] = useState(false)
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState('')
   const workoutFormRef = useRef(null)
 
   const totalMinutes = (workoutLogs ?? []).reduce((sum, entry) => sum + Number(entry.duration_minutes || 0), 0)
+  const totalCalories = (workoutLogs ?? []).reduce((sum, entry) => sum + Number(entry.estimated_calories || 0), 0)
   const latestWorkout = workoutLogs?.[0] || null
+
+  useEffect(() => {
+    if (caloriesDirty) return
+
+    const estimate = estimateWorkoutCalories({
+      dayType: form.actual_day_type,
+      timeTier: form.time_tier,
+      durationMinutes: form.duration_minutes,
+      weightLb: currentWeight,
+    })
+
+    setForm(current => ({
+      ...current,
+      estimated_calories: estimate ? String(estimate) : '',
+    }))
+  }, [caloriesDirty, currentWeight, form.actual_day_type, form.duration_minutes, form.time_tier])
 
   function scrollToForm() {
     requestAnimationFrame(() => {
@@ -650,18 +656,28 @@ function WorkoutHistoryTab({ workoutLogs, invalidate, onRefreshSnapshot, onRefre
 
   function resetForm() {
     setEditingWorkoutId(null)
-    setForm({ session_date: todayInputValue(), actual_day_type: 'push', duration_minutes: '', time_tier: 'medium' })
+    setForm({ session_date: todayInputValue(), actual_day_type: 'push', duration_minutes: '', time_tier: 'medium', estimated_calories: '' })
+    setCaloriesDirty(false)
   }
 
   function startEdit(entry) {
     setEditingWorkoutId(entry.id)
     setForm({
-    session_date: entry.session_date || todayInputValue(),
-    actual_day_type: entry.actual_day_type || entry.planned_day_type || 'push',
-    duration_minutes: entry.duration_minutes != null ? String(entry.duration_minutes) : '',
-    time_tier: entry.time_tier || 'medium',
+      session_date: entry.session_date || todayInputValue(),
+      actual_day_type: entry.actual_day_type || entry.planned_day_type || 'push',
+      duration_minutes: entry.duration_minutes != null ? String(entry.duration_minutes) : '',
+      time_tier: entry.time_tier || 'medium',
+      estimated_calories: entry.estimated_calories != null ? String(entry.estimated_calories) : '',
     })
+    setCaloriesDirty(entry.estimated_calories != null && entry.estimated_calories !== '')
     scrollToForm()
+  }
+
+  function updateField(key, value) {
+    if (key === 'estimated_calories') {
+      setCaloriesDirty(value !== '')
+    }
+    setForm(current => ({ ...current, [key]: value }))
   }
 
   async function handleSubmit(e) {
@@ -674,6 +690,7 @@ function WorkoutHistoryTab({ workoutLogs, invalidate, onRefreshSnapshot, onRefre
       actual_day_type: form.actual_day_type,
       duration_minutes: Number(form.duration_minutes || 0),
       time_tier: form.time_tier,
+      estimated_calories: form.estimated_calories === '' ? '' : Number(form.estimated_calories || 0),
     })
     setMsg('Workout updated!')
     onFlash?.('Workout updated!')
@@ -707,18 +724,18 @@ function WorkoutHistoryTab({ workoutLogs, invalidate, onRefreshSnapshot, onRefre
     <section className="body-summary-grid cardio-summary-grid">
       <SummaryCard label="Past 3 days" value={workoutLogs.length} meta={workoutLogs.length ? 'Completed workouts you can still edit' : 'No recent workouts to manage'} accent="orange" />
       <SummaryCard label="Logged minutes" value={totalMinutes || '—'} suffix={totalMinutes ? ' min' : ''} meta={totalMinutes ? 'Across recent completed sessions' : 'Duration shows up after you complete a workout'} accent="teal" />
-      <SummaryCard label="Latest workout" value={latestWorkout ? formatDayType(latestWorkout.actual_day_type || latestWorkout.planned_day_type) : '—'} meta={latestWorkout ? `${formatDate(latestWorkout.session_date)} • ${latestWorkout.duration_minutes || 0} min` : 'No workout logged in the last 3 days'} accent="pink" />
+      <SummaryCard label="Estimated burn" value={totalCalories || '—'} suffix={totalCalories ? ' cal' : ''} meta={totalCalories ? 'Across recent completed sessions' : 'Calories appear after workout completion'} accent="pink" />
     </section>
     <section ref={workoutFormRef} className="dash-card body-form-card cardio-card">
       <div className="body-card-header">
       <h3>{editingWorkoutId ? 'Edit workout' : 'Select a recent workout to edit'}</h3>
-      <p>{editingWorkoutId ? 'Adjust the date, split, time tier, or duration. Delete removes the workout and its logged sets.' : 'Use Edit on any workout from the last 3 days to update it here.'}</p>
+      <p>{editingWorkoutId ? 'Adjust the date, split, time tier, duration, or calorie estimate. Delete removes the workout and its logged sets.' : 'Use Edit on any workout from the last 3 days to update it here.'}</p>
       </div>
       {editingWorkoutId ? (
       <form className="body-form-grid two-column cardio-form-grid" onSubmit={handleSubmit}>
         <label>
         Workout type
-        <select value={form.actual_day_type} onChange={e => setForm(current => ({ ...current, actual_day_type: e.target.value }))}>
+        <select value={form.actual_day_type} onChange={e => updateField('actual_day_type', e.target.value)}>
           {['push', 'pull', 'legs', 'arms_shoulders', 'cardio', 'rest'].map(option => (
           <option key={option} value={option}>{formatDayType(option)}</option>
           ))}
@@ -726,7 +743,7 @@ function WorkoutHistoryTab({ workoutLogs, invalidate, onRefreshSnapshot, onRefre
         </label>
         <label>
         Time tier
-        <select value={form.time_tier} onChange={e => setForm(current => ({ ...current, time_tier: e.target.value }))}>
+        <select value={form.time_tier} onChange={e => updateField('time_tier', e.target.value)}>
           {['short', 'medium', 'full'].map(option => (
           <option key={option} value={option}>{formatDayType(option)}</option>
           ))}
@@ -734,13 +751,18 @@ function WorkoutHistoryTab({ workoutLogs, invalidate, onRefreshSnapshot, onRefre
         </label>
         <label>
         Date
-        <input type="date" value={form.session_date} onChange={e => setForm(current => ({ ...current, session_date: e.target.value }))} required />
+        <input type="date" value={form.session_date} onChange={e => updateField('session_date', e.target.value)} required />
         </label>
         <label>
         Duration (minutes)
-        <input type="number" min="0" max="600" value={form.duration_minutes} onChange={e => setForm(current => ({ ...current, duration_minutes: e.target.value }))} required />
+        <input type="number" min="0" max="600" value={form.duration_minutes} onChange={e => updateField('duration_minutes', e.target.value)} required />
+        </label>
+        <label>
+        Estimated calories
+        <input type="number" min="0" max="5000" value={form.estimated_calories} onChange={e => updateField('estimated_calories', e.target.value)} />
         </label>
         <div className="body-form-actions body-form-actions-full">
+        <button className="btn-outline small" type="button" onClick={() => setCaloriesDirty(false)}>Recalculate calories</button>
         <button className="btn-secondary" type="button" onClick={resetForm}>Cancel</button>
         <button className="btn-primary" type="submit" disabled={saving}>{saving ? 'Saving…' : 'Update Workout'}</button>
         </div>
@@ -753,7 +775,7 @@ function WorkoutHistoryTab({ workoutLogs, invalidate, onRefreshSnapshot, onRefre
     <section className="dash-card">
       <div className="body-card-header">
       <h3>Recent workouts</h3>
-      <p>{workoutLogs.length ? 'Completed workouts from the last 3 days.' : 'No completed workouts from the last 3 days yet.'}</p>
+      <p>{workoutLogs.length ? 'Completed workouts from the last 3 days with duration and estimated burn.' : 'No completed workouts from the last 3 days yet.'}</p>
       </div>
       <div className="trend-chart body-trend-chart cardio-log-list">
       {workoutLogs.map((entry, index) => (
@@ -766,6 +788,7 @@ function WorkoutHistoryTab({ workoutLogs, invalidate, onRefreshSnapshot, onRefre
         <div className="cardio-row-meta">
           <span className="cardio-intensity-pill moderate">{entry.time_tier || 'medium'}</span>
           <span className="trend-val">{Number(entry.duration_minutes || 0)} min</span>
+          {entry.estimated_calories ? <span className="cardio-calories">{Number(entry.estimated_calories).toLocaleString()} cal</span> : null}
           <RowActions onEdit={() => startEdit(entry)} onDelete={() => handleDelete(entry.id)} />
         </div>
         </div>
@@ -1228,6 +1251,35 @@ function estimateCardioCalories({ cardioType, intensity, durationMinutes, weight
   const met = getCardioMet(cardioType, intensity)
   const calories = (met * 3.5 * weightKg / 200) * minutes
   return Math.max(1, Math.round(calories))
+}
+
+function estimateWorkoutCalories({ dayType, timeTier, durationMinutes, weightLb }) {
+  const minutes = Number(durationMinutes)
+  if (!Number.isFinite(minutes) || minutes <= 0) return null
+
+  const weightKg = Number.isFinite(weightLb) && weightLb > 0 ? weightLb * 0.453592 : 81.6
+  const met = getWorkoutMet(dayType, timeTier)
+  if (!Number.isFinite(met) || met <= 0) return null
+  const calories = met * weightKg * (minutes / 60)
+
+  return Math.max(1, Math.round(calories))
+}
+
+function getWorkoutMet(dayType, timeTier) {
+  const normalizedDayType = String(dayType || '').trim().toLowerCase()
+  const normalizedTimeTier = String(timeTier || '').trim().toLowerCase()
+
+  if (normalizedDayType === 'rest') {
+    return 0
+  }
+
+  if (normalizedDayType === 'cardio') {
+    const cardioMap = { short: 6.5, medium: 7.3, full: 8.0 }
+    return cardioMap[normalizedTimeTier] || cardioMap.medium
+  }
+
+  const strengthMap = { short: 4.8, medium: 5.4, full: 6.0 }
+  return strengthMap[normalizedTimeTier] || strengthMap.medium
 }
 
 function getCardioMet(cardioType, intensity) {

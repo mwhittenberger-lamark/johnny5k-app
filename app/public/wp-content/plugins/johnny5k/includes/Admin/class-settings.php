@@ -19,6 +19,7 @@ class Settings {
 	/** Option keys managed by this page. */
 	private const FIELDS = [
 		'jf_openai_api_key'      => [ 'label' => 'OpenAI API Key',          'type' => 'password', 'placeholder' => 'sk-…'        ],
+		'jf_gemini_api_key'      => [ 'label' => 'Gemini API Key',          'type' => 'password', 'placeholder' => 'AIza...'       ],
 		'jf_usda_api_key'        => [ 'label' => 'USDA API Key',            'type' => 'password', 'placeholder' => 'DEMO_KEY or your key' ],
 		'jf_clicksend_username'  => [ 'label' => 'ClickSend Username',       'type' => 'text',     'placeholder' => 'you@email.com' ],
 		'jf_clicksend_api_key'   => [ 'label' => 'ClickSend API Key',        'type' => 'password', 'placeholder' => ''             ],
@@ -70,6 +71,18 @@ class Settings {
 				);
 			}
 
+			if ( isset( $_POST['jf_johnny_reference_attachment_id'] ) ) {
+				update_option( 'jf_johnny_reference_attachment_id', absint( wp_unslash( $_POST['jf_johnny_reference_attachment_id'] ) ), false );
+			}
+
+			if ( isset( $_POST['jf_gemini_image_scenarios'] ) ) {
+				update_option(
+					'jf_gemini_image_scenarios',
+					self::sanitize_gemini_image_scenarios( wp_unslash( $_POST['jf_gemini_image_scenarios'] ) ),
+					false
+				);
+			}
+
 			if ( empty( $errors ) ) {
 				$saved = true;
 			}
@@ -95,6 +108,15 @@ class Settings {
 		echo '<tr><th colspan="2"><h2 style="margin:0">OpenAI</h2></th></tr>';
 		self::render_field( 'jf_openai_api_key' );
 		echo '<tr><td></td><td><p class="description">Used for the AI coach (Johnny 5000), meal analysis, and workout summaries. Get your key at <strong>platform.openai.com/api-keys</strong>.</p></td></tr>';
+		echo '<tr><th colspan="2"><h2 style="margin:0;padding-top:16px">Gemini Image Generation</h2></th></tr>';
+		self::render_field( 'jf_gemini_api_key' );
+		echo '<tr><td></td><td><p class="description">Used for Gemini image generation with Nano Banana Pro via <strong>gemini-3-pro-image-preview</strong>. Create a key in <strong>Google AI Studio</strong>.</p></td></tr>';
+		echo '<tr><th scope="row">Johnny Reference Image</th><td>';
+		self::render_johnny_reference_editor();
+		echo '</td></tr>';
+		echo '<tr><th scope="row">Image Scene Prompts</th><td>';
+		self::render_gemini_image_scenarios_editor();
+		echo '</td></tr>';
 		echo '<tr><th colspan="2"><h2 style="margin:0;padding-top:16px">Nutrition Sources</h2></th></tr>';
 		self::render_field( 'jf_usda_api_key' );
 		echo '<tr><td></td><td><p class="description">Used to improve meal-photo nutrition accuracy with USDA FoodData Central. Leave blank to fall back to USDA demo access.</p></td></tr>';
@@ -243,6 +265,97 @@ class Settings {
 
 	private static function format_trigger_label( string $trigger_type ): string {
 		return ucwords( str_replace( '_', ' ', $trigger_type ) );
+	}
+
+	private static function render_johnny_reference_editor(): void {
+		$attachment_id = (int) get_option( 'jf_johnny_reference_attachment_id', 0 );
+		$image_url = $attachment_id ? wp_get_attachment_image_url( $attachment_id, 'medium' ) : '';
+
+		echo '<input type="hidden" id="jf_johnny_reference_attachment_id" name="jf_johnny_reference_attachment_id" value="' . esc_attr( (string) $attachment_id ) . '">';
+		echo '<div class="jf-johnny-reference-editor" style="display:grid;gap:12px;max-width:640px">';
+		echo '<div id="jf-johnny-reference-preview" style="display:flex;align-items:center;justify-content:center;min-height:200px;border:1px solid #d0d7de;border-radius:14px;background:#f6f7f7;overflow:hidden">';
+		if ( $image_url ) {
+			echo '<img src="' . esc_url( $image_url ) . '" alt="Johnny reference" style="display:block;width:100%;max-height:260px;object-fit:cover">';
+		} else {
+			echo '<span style="color:#666">No Johnny reference image selected</span>';
+		}
+		echo '</div>';
+		echo '<div style="display:flex;gap:8px;flex-wrap:wrap">';
+		echo '<button type="button" class="button" id="jf-johnny-reference-pick">Choose from Media Library</button>';
+		echo '<button type="button" class="button-link" id="jf-johnny-reference-clear">Clear image</button>';
+		echo '</div>';
+		echo '<p class="description" style="margin:0">This image is used as Johnny\'s visual reference whenever personalized training images are generated for users.</p>';
+		echo '</div>';
+	}
+
+	private static function render_gemini_image_scenarios_editor(): void {
+		$scenarios = get_option( 'jf_gemini_image_scenarios', self::default_gemini_image_scenarios() );
+		$scenarios = self::sanitize_gemini_image_scenarios( is_array( $scenarios ) ? $scenarios : [] );
+
+		echo '<div style="display:grid;gap:14px;max-width:920px">';
+		echo '<p class="description" style="margin:0">These four prompts define the scenes Gemini generates from the user headshot, recent progress photos, and Johnny reference image.</p>';
+
+		foreach ( $scenarios as $index => $scenario ) {
+			$label = esc_attr( (string) ( $scenario['label'] ?? '' ) );
+			$prompt = esc_textarea( (string) ( $scenario['prompt'] ?? '' ) );
+			$number = $index + 1;
+
+			echo '<div style="display:grid;gap:10px;padding:14px;border:1px solid #d0d7de;border-radius:14px;background:#fff">';
+			echo '<strong>Scene ' . esc_html( (string) $number ) . '</strong>';
+			echo '<label style="display:grid;gap:6px">';
+			echo '<span>Scene label</span>';
+			echo '<input class="regular-text" style="max-width:420px" name="jf_gemini_image_scenarios[' . esc_attr( (string) $index ) . '][label]" value="' . $label . '">';
+			echo '</label>';
+			echo '<label style="display:grid;gap:6px">';
+			echo '<span>Prompt</span>';
+			echo '<textarea rows="3" style="width:100%;max-width:840px" name="jf_gemini_image_scenarios[' . esc_attr( (string) $index ) . '][prompt]">' . $prompt . '</textarea>';
+			echo '</label>';
+			echo '</div>';
+		}
+
+		echo '</div>';
+	}
+
+	private static function default_gemini_image_scenarios(): array {
+		return [
+			[
+				'label'  => 'Gym dumbbell session',
+				'prompt' => 'Johnny and the user training side by side with dumbbells in a modern gym.',
+			],
+			[
+				'label'  => 'Park run',
+				'prompt' => 'Johnny and the user running together through a bright city park trail.',
+			],
+			[
+				'label'  => 'Mobility cooldown',
+				'prompt' => 'Johnny and the user stretching and cooling down on gym mats after training.',
+			],
+			[
+				'label'  => 'Bench workout',
+				'prompt' => 'Johnny spotting the user during a strong upper-body workout in the gym.',
+			],
+		];
+	}
+
+	private static function sanitize_gemini_image_scenarios( $raw_scenarios ): array {
+		$defaults = self::default_gemini_image_scenarios();
+		$sanitized = [];
+
+		foreach ( $defaults as $index => $default ) {
+			$current = is_array( $raw_scenarios ) && isset( $raw_scenarios[ $index ] ) && is_array( $raw_scenarios[ $index ] )
+				? $raw_scenarios[ $index ]
+				: [];
+
+			$label = sanitize_text_field( (string) ( $current['label'] ?? $default['label'] ) );
+			$prompt = sanitize_textarea_field( (string) ( $current['prompt'] ?? $default['prompt'] ) );
+
+			$sanitized[] = [
+				'label'  => '' !== $label ? $label : $default['label'],
+				'prompt' => '' !== $prompt ? $prompt : $default['prompt'],
+			];
+		}
+
+		return $sanitized;
 	}
 
 	private static function render_color_schemes_editor(): void {
@@ -626,6 +739,52 @@ class Settings {
 				const card = event.target.closest('.jf-live-workout-frame-card');
 				if (!card) return;
 				updatePreview(card, event.target.value.trim());
+			});
+		})();
+
+		(function initJohnnyReferencePicker() {
+			const input = document.getElementById('jf_johnny_reference_attachment_id');
+			const preview = document.getElementById('jf-johnny-reference-preview');
+			const pickButton = document.getElementById('jf-johnny-reference-pick');
+			const clearButton = document.getElementById('jf-johnny-reference-clear');
+			if (!input || !preview || !pickButton) return;
+
+			function setPreview(imageUrl) {
+				if (imageUrl) {
+					preview.innerHTML = `<img src="${imageUrl}" alt="Johnny reference" style="display:block;width:100%;max-height:260px;object-fit:cover">`;
+					return;
+				}
+				preview.innerHTML = '<span style="color:#666">No Johnny reference image selected</span>';
+			}
+
+			function createMediaFrame() {
+				if (typeof wp === 'undefined' || !wp.media) return null;
+				return wp.media({
+					title: 'Select Johnny reference image',
+					button: { text: 'Use this image' },
+					multiple: false,
+					library: { type: 'image' },
+				});
+			}
+
+			pickButton.addEventListener('click', function() {
+				const mediaFrame = createMediaFrame();
+				if (!mediaFrame) return;
+
+				mediaFrame.on('select', function() {
+					const selection = mediaFrame.state().get('selection').first();
+					const attachment = selection ? selection.toJSON() : null;
+					if (!attachment) return;
+					input.value = String(attachment.id || '');
+					setPreview(attachment.url || '');
+				});
+
+				mediaFrame.open();
+			});
+
+			clearButton?.addEventListener('click', function() {
+				input.value = '0';
+				setPreview('');
 			});
 		})();
 		</script>

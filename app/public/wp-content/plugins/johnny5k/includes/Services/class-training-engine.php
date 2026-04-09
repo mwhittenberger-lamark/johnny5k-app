@@ -330,6 +330,7 @@ class TrainingEngine {
 			'swaps' => [],
 			'order' => [],
 		];
+		$avoid_terms = self::get_user_exercise_avoidance_terms( $user_id );
 		if ( $day ) {
 			$slot_limit = self::slot_limits_for_tier( $time_tier );
 			$plan_exercises = $wpdb->get_results( $wpdb->prepare(
@@ -348,6 +349,7 @@ class TrainingEngine {
 			$variation_strategy = self::build_day_variation_strategy( $user_id, $next_day_type, $selected_exercises, $exercise_swaps, $exercise_order );
 
 			$slot_counts = [];
+			$selected_exercise_ids = [];
 			foreach ( $selected_exercises as $exercise ) {
 				$slot = (string) $exercise->slot_type;
 				if ( isset( $slot_limit[ $slot ] ) ) {
@@ -361,9 +363,14 @@ class TrainingEngine {
 					$user_id,
 					$next_day_type,
 					$exercise,
-					(int) ( $exercise_swaps[ (int) $exercise->id ] ?? $variation_strategy['swaps'][ (int) $exercise->id ] ?? 0 )
+					(int) ( $exercise_swaps[ (int) $exercise->id ] ?? $variation_strategy['swaps'][ (int) $exercise->id ] ?? 0 ),
+					$selected_exercise_ids,
+					$avoid_terms
 				);
 				$resolved_exercise_id = (int) ( $resolved_exercise['exercise_id'] ?? (int) $exercise->exercise_id );
+				if ( ! empty( $resolved_exercise['blocked'] ) || $resolved_exercise_id <= 0 ) {
+					continue;
+				}
 				$prog = self::recommended_progression( $user_id, $resolved_exercise_id );
 
 				$planned_sets = $maintenance_mode ? self::maintenance_set_target( $slot, (int) $exercise->sets_target ) : (int) $exercise->sets_target;
@@ -387,6 +394,7 @@ class TrainingEngine {
 					'suggestion_note'     => $maintenance_mode ? 'Maintenance mode: clean reps and leave gas in the tank.' : $prog['note'],
 					'was_swapped'         => ! empty( $resolved_exercise['was_swapped'] ),
 				];
+				$selected_exercise_ids[] = $resolved_exercise_id;
 			}
 		}
 
@@ -623,52 +631,209 @@ class TrainingEngine {
 		return [];
 	}
 
-	private static function resolve_session_exercise_selection( int $user_id, string $day_type, object $plan_exercise, int $swap_exercise_id ): array {
+	public static function get_user_exercise_avoidance_terms( int $user_id ): array {
 		global $wpdb;
-		$p = $wpdb->prefix;
 
-		$selected = [
-			'exercise_id'    => (int) $plan_exercise->exercise_id,
-			'exercise_name'  => (string) $plan_exercise->exercise_name,
-			'primary_muscle' => (string) ( $plan_exercise->primary_muscle ?? '' ),
-			'equipment'      => (string) ( $plan_exercise->equipment ?? '' ),
-			'difficulty'     => (string) ( $plan_exercise->difficulty ?? '' ),
-			'was_swapped'    => false,
-		];
+		if ( $user_id <= 0 ) {
+			return [];
+		}
+
+		$raw_json = $wpdb->get_var( $wpdb->prepare(
+			"SELECT exercise_avoid_json FROM {$wpdb->prefix}fit_user_preferences WHERE user_id = %d LIMIT 1",
+			$user_id
+		) );
+		$decoded = json_decode( (string) $raw_json, true );
+		if ( ! is_array( $decoded ) ) {
+			return [];
+		}
+
+		$terms = [];
+		foreach ( $decoded as $value ) {
+			$normalized = self::normalize_avoidance_term( (string) $value );
+			if ( '' !== $normalized ) {
+				$terms[] = $normalized;
+			}
+		}
+
+		return array_values( array_unique( $terms ) );
+	}
+
+	public static function resolve_day_exercise_candidate( int $user_id, string $day_type, string $slot_type, int $exercise_id, array $excluded_ids = [] ): array {
+		return self::resolve_exercise_candidate(
+			$user_id,
+			$day_type,
+			$slot_type,
+			$exercise_id,
+			$excluded_ids,
+			self::get_user_exercise_avoidance_terms( $user_id )
+		);
+	}
+
+	private static function resolve_session_exercise_selection( int $user_id, string $day_type, object $plan_exercise, int $swap_exercise_id, array $excluded_ids = [], array $avoid_terms = [] ): array {
+		$selected = self::resolve_exercise_candidate(
+			$user_id,
+			$day_type,
+			(string) $plan_exercise->slot_type,
+			(int) $plan_exercise->exercise_id,
+			$excluded_ids,
+			$avoid_terms,
+			[
+				'exercise_name'  => (string) $plan_exercise->exercise_name,
+				'primary_muscle' => (string) ( $plan_exercise->primary_muscle ?? '' ),
+				'equipment'      => (string) ( $plan_exercise->equipment ?? '' ),
+				'difficulty'     => (string) ( $plan_exercise->difficulty ?? '' ),
+			]
+		);
 
 		if ( $swap_exercise_id <= 0 || $swap_exercise_id === (int) $plan_exercise->exercise_id ) {
 			return $selected;
 		}
 
-		$day_json = '"' . esc_sql( $day_type ) . '"';
-		$slot_json = '"' . esc_sql( (string) $plan_exercise->slot_type ) . '"';
-		$exercise_access_where = ExerciseLibraryService::accessible_exercise_where( '', $user_id );
-		$override = $wpdb->get_row( $wpdb->prepare(
-			"SELECT id, name, primary_muscle, equipment, difficulty
-			 FROM {$p}fit_exercises
-			 WHERE id = %d
-			   AND active = 1
-			   AND {$exercise_access_where}
-			   AND JSON_CONTAINS(day_types_json, %s)
-			   AND JSON_CONTAINS(slot_types_json, %s)
-			 LIMIT 1",
+		$override = self::resolve_exercise_candidate(
+			$user_id,
+			$day_type,
+			(string) $plan_exercise->slot_type,
 			$swap_exercise_id,
-			$day_json,
-			$slot_json
-		) );
+			$excluded_ids,
+			$avoid_terms
+		);
 
-		if ( ! $override ) {
+		if ( ! empty( $override['blocked'] ) || (int) ( $override['exercise_id'] ?? 0 ) <= 0 ) {
 			return $selected;
 		}
 
+		$override['was_swapped'] = true;
+		return $override;
+	}
+
+	private static function resolve_exercise_candidate( int $user_id, string $day_type, string $slot_type, int $exercise_id, array $excluded_ids = [], array $avoid_terms = [], array $fallback = [] ): array {
+		$exercise = ExerciseLibraryService::get_exercise( $user_id, $exercise_id, 'id, slug, name, primary_muscle, equipment, difficulty' );
+		if ( ! $exercise ) {
+			return [
+				'exercise_id' => 0,
+				'blocked'     => true,
+				'was_swapped' => false,
+			];
+		}
+
+		if ( ! self::exercise_matches_avoidance( $exercise, $avoid_terms ) ) {
+			return [
+				'exercise_id'    => (int) $exercise->id,
+				'exercise_name'  => (string) ( $exercise->name ?? ( $fallback['exercise_name'] ?? '' ) ),
+				'primary_muscle' => (string) ( $exercise->primary_muscle ?? ( $fallback['primary_muscle'] ?? '' ) ),
+				'equipment'      => (string) ( $exercise->equipment ?? ( $fallback['equipment'] ?? '' ) ),
+				'difficulty'     => (string) ( $exercise->difficulty ?? ( $fallback['difficulty'] ?? '' ) ),
+				'was_swapped'    => false,
+				'blocked'        => false,
+			];
+		}
+
+		$replacement = self::find_non_avoided_exercise_candidate( $user_id, $day_type, $slot_type, $exercise, $excluded_ids, $avoid_terms );
+		if ( $replacement ) {
+			return [
+				'exercise_id'    => (int) $replacement->id,
+				'exercise_name'  => (string) $replacement->name,
+				'primary_muscle' => (string) ( $replacement->primary_muscle ?? '' ),
+				'equipment'      => (string) ( $replacement->equipment ?? '' ),
+				'difficulty'     => (string) ( $replacement->difficulty ?? '' ),
+				'was_swapped'    => true,
+				'blocked'        => false,
+			];
+		}
+
 		return [
-			'exercise_id'    => (int) $override->id,
-			'exercise_name'  => (string) $override->name,
-			'primary_muscle' => (string) ( $override->primary_muscle ?? '' ),
-			'equipment'      => (string) ( $override->equipment ?? '' ),
-			'difficulty'     => (string) ( $override->difficulty ?? '' ),
-			'was_swapped'    => true,
+			'exercise_id'    => 0,
+			'exercise_name'  => '',
+			'primary_muscle' => '',
+			'equipment'      => '',
+			'difficulty'     => '',
+			'was_swapped'    => false,
+			'blocked'        => true,
 		];
+	}
+
+	private static function find_non_avoided_exercise_candidate( int $user_id, string $day_type, string $slot_type, object $exercise, array $excluded_ids, array $avoid_terms ): ?object {
+		global $wpdb;
+		$p = $wpdb->prefix;
+
+		$exercise_access_where = ExerciseLibraryService::accessible_exercise_where( 'e', $user_id );
+		$day_json = '"' . esc_sql( $day_type ) . '"';
+		$slot_json = '"' . esc_sql( $slot_type ) . '"';
+		$primary_muscle = sanitize_text_field( (string) ( $exercise->primary_muscle ?? '' ) );
+		$equipment = sanitize_text_field( (string) ( $exercise->equipment ?? '' ) );
+
+		$sql = "
+			SELECT e.id, e.slug, e.name, e.primary_muscle, e.equipment, e.difficulty
+			FROM {$p}fit_exercises e
+			WHERE e.active = 1
+			  AND {$exercise_access_where}
+			  AND e.id != %d
+			  AND JSON_CONTAINS(e.day_types_json, %s)
+			  AND JSON_CONTAINS(e.slot_types_json, %s)";
+		$params = [
+			(int) $exercise->id,
+			$day_json,
+			$slot_json,
+		];
+
+		$excluded_ids = array_values( array_unique( array_filter( array_map( 'intval', $excluded_ids ) ) ) );
+		if ( ! empty( $excluded_ids ) ) {
+			$placeholders = implode( ',', array_fill( 0, count( $excluded_ids ), '%d' ) );
+			$sql .= " AND e.id NOT IN ({$placeholders})";
+			$params = array_merge( $params, $excluded_ids );
+		}
+
+		$sql .= "
+			ORDER BY
+			  CASE WHEN e.primary_muscle = %s THEN 0 ELSE 1 END,
+			  CASE WHEN e.equipment = %s THEN 0 ELSE 1 END,
+			  CASE WHEN e.user_id = %d THEN 0 ELSE 1 END,
+			  e.id ASC
+			LIMIT 25";
+		$params[] = $primary_muscle;
+		$params[] = $equipment;
+		$params[] = $user_id;
+
+		$candidates = $wpdb->get_results( $wpdb->prepare( $sql, $params ) );
+		foreach ( $candidates as $candidate ) {
+			if ( ! self::exercise_matches_avoidance( $candidate, $avoid_terms ) ) {
+				return $candidate;
+			}
+		}
+
+		return null;
+	}
+
+	private static function exercise_matches_avoidance( object $exercise, array $avoid_terms ): bool {
+		if ( empty( $avoid_terms ) ) {
+			return false;
+		}
+
+		$name = self::normalize_avoidance_term( (string) ( $exercise->name ?? '' ) );
+		$slug = self::normalize_avoidance_term( (string) ( $exercise->slug ?? '' ) );
+
+		foreach ( $avoid_terms as $term ) {
+			if ( '' === $term ) {
+				continue;
+			}
+
+			if ( '' !== $name && ( str_contains( $name, $term ) || str_contains( $term, $name ) ) ) {
+				return true;
+			}
+
+			if ( '' !== $slug && ( str_contains( $slug, $term ) || str_contains( $term, $slug ) ) ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	private static function normalize_avoidance_term( string $value ): string {
+		$value = strtolower( wp_strip_all_tags( $value ) );
+		$value = preg_replace( '/[^a-z0-9]+/', ' ', $value );
+		$value = preg_replace( '/\s+/', ' ', (string) $value );
+		return trim( (string) $value );
 	}
 
 	/**

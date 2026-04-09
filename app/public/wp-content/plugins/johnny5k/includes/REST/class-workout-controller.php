@@ -21,6 +21,8 @@ use Johnny5k\Services\AwardEngine;
  * POST   /fit/v1/workout/{id}/complete     — complete the session
  */
 class WorkoutController {
+	private const CUSTOM_WORKOUT_DRAFT_META = 'jf_custom_workout_draft';
+	private const CUSTOM_WORKOUT_SESSION_TITLES_META = 'jf_custom_workout_session_titles';
 
 	public static function register_routes(): void {
 		$ns   = JF_REST_NAMESPACE;
@@ -42,6 +44,19 @@ class WorkoutController {
 			'methods'             => 'GET',
 			'callback'            => [ __CLASS__, 'get_current_session' ],
 			'permission_callback' => $auth,
+		] );
+
+		register_rest_route( $ns, '/workout/custom-draft', [
+			[
+				'methods'             => 'POST',
+				'callback'            => [ __CLASS__, 'save_custom_draft' ],
+				'permission_callback' => $auth,
+			],
+			[
+				'methods'             => 'DELETE',
+				'callback'            => [ __CLASS__, 'delete_custom_draft' ],
+				'permission_callback' => $auth,
+			],
 		] );
 
 		register_rest_route( $ns, '/workout/history', [
@@ -178,6 +193,7 @@ class WorkoutController {
 		$user_id   = get_current_user_id();
 		$time_tier = sanitize_text_field( $req->get_param( 'time_tier' ) ?: 'medium' );
 		$day_type  = self::normalize_day_type( $req->get_param( 'day_type' ) );
+		$custom_workout_draft_id = sanitize_text_field( (string) ( $req->get_param( 'custom_workout_draft_id' ) ?: '' ) );
 		$readiness = $req->get_param( 'readiness_score' ) !== null ? max( 1, min( 10, (int) $req->get_param( 'readiness_score' ) ) ) : null;
 		$effective_time_tier = self::effective_time_tier( $time_tier, $readiness );
 		$exercise_swaps = self::normalise_exercise_swaps( $req->get_param( 'exercise_swaps' ) );
@@ -195,7 +211,7 @@ class WorkoutController {
 		) );
 
 		if ( $existing ) {
-			$requested_prepared_plan = ! empty( $exercise_swaps ) || ! empty( $exercise_order );
+			$requested_prepared_plan = ! empty( $exercise_swaps ) || ! empty( $exercise_order ) || '' !== $custom_workout_draft_id;
 			$requested_day_change    = null !== $day_type && $day_type !== (string) $existing->planned_day_type;
 
 			if ( $requested_prepared_plan || $requested_day_change ) {
@@ -226,7 +242,16 @@ class WorkoutController {
 			return self::get_session( $req );
 		}
 
-		$result = TrainingEngine::build_session( $user_id, $effective_time_tier, self::is_maintenance_readiness( $readiness ), $day_type, $exercise_swaps, $exercise_order );
+		if ( '' !== $custom_workout_draft_id ) {
+			$draft = self::get_custom_workout_draft( $user_id );
+			if ( empty( $draft['id'] ) || $custom_workout_draft_id !== (string) $draft['id'] ) {
+				return new \WP_REST_Response( [ 'message' => 'That custom workout is no longer available.' ], 404 );
+			}
+
+			$result = self::build_custom_session( $user_id, $draft, $effective_time_tier, $readiness, $exercise_order );
+		} else {
+			$result = TrainingEngine::build_session( $user_id, $effective_time_tier, self::is_maintenance_readiness( $readiness ), $day_type, $exercise_swaps, $exercise_order );
+		}
 
 		if ( is_wp_error( $result ) ) {
 			return new \WP_REST_Response( [ 'message' => $result->get_error_message() ], 400 );
@@ -242,6 +267,11 @@ class WorkoutController {
 			[ 'id' => $result['session_id'] ]
 		);
 
+		if ( '' !== $custom_workout_draft_id ) {
+			self::store_custom_workout_session_title( $user_id, (int) $result['session_id'], (string) ( $draft['name'] ?? 'Custom workout' ) );
+			self::delete_custom_workout_draft_for_user( $user_id );
+		}
+
 		return new \WP_REST_Response( $result, 201 );
 	}
 
@@ -249,18 +279,32 @@ class WorkoutController {
 		$user_id   = get_current_user_id();
 		$time_tier = sanitize_text_field( $req->get_param( 'time_tier' ) ?: 'medium' );
 		$day_type  = self::normalize_day_type( $req->get_param( 'day_type' ) );
+		$custom_workout_draft_id = sanitize_text_field( (string) ( $req->get_param( 'custom_workout_draft_id' ) ?: '' ) );
 		$readiness = $req->get_param( 'readiness_score' ) !== null ? max( 1, min( 10, (int) $req->get_param( 'readiness_score' ) ) ) : null;
 		$effective_time_tier = self::effective_time_tier( $time_tier, $readiness );
 		$exercise_swaps = self::normalise_exercise_swaps( $req->get_param( 'exercise_swaps' ) );
 		$exercise_order = self::normalise_exercise_order( $req->get_param( 'exercise_order' ) );
 
-		$result = TrainingEngine::preview_session( $user_id, $effective_time_tier, self::is_maintenance_readiness( $readiness ), $day_type, $exercise_swaps, $exercise_order );
+		if ( '' !== $custom_workout_draft_id ) {
+			$draft = self::get_custom_workout_draft( $user_id );
+			if ( empty( $draft['id'] ) || $custom_workout_draft_id !== (string) $draft['id'] ) {
+				return new \WP_REST_Response( [ 'message' => 'That custom workout is no longer available.' ], 404 );
+			}
+
+			$result = self::build_custom_preview( $draft, $effective_time_tier, $readiness, $exercise_order );
+		} else {
+			$result = TrainingEngine::preview_session( $user_id, $effective_time_tier, self::is_maintenance_readiness( $readiness ), $day_type, $exercise_swaps, $exercise_order );
+		}
 		if ( is_wp_error( $result ) ) {
 			return new \WP_REST_Response( [ 'message' => $result->get_error_message() ], 400 );
 		}
 
 		$preview_day_type = (string) ( $result['day_type'] ?? $day_type ?? '' );
-		$result['exercises'] = array_map( static function( array $exercise ) use ( $preview_day_type, $user_id ): array {
+		$result['exercises'] = array_map( static function( array $exercise ) use ( $preview_day_type, $user_id, $custom_workout_draft_id ): array {
+			if ( '' !== $custom_workout_draft_id ) {
+				$exercise['swap_options'] = [];
+				return $exercise;
+			}
 			$exercise['swap_options'] = self::get_swap_options_for_day_type( $user_id, $preview_day_type, (object) $exercise );
 			return $exercise;
 		}, is_array( $result['exercises'] ?? null ) ? $result['exercises'] : [] );
@@ -284,6 +328,7 @@ class WorkoutController {
 				'session' => null,
 				'exercises' => [],
 				'session_mode' => 'normal',
+				'custom_workout_draft' => self::get_custom_workout_draft( $user_id ),
 			], 200 );
 		}
 
@@ -301,7 +346,7 @@ class WorkoutController {
 
 		$rows = $wpdb->get_results( $wpdb->prepare(
 			"SELECT s.id, s.session_date, s.planned_day_type, s.actual_day_type, s.time_tier,
-			        s.readiness_score, s.duration_minutes, s.completed_at,
+			        s.readiness_score, s.duration_minutes, s.estimated_calories, s.completed_at,
 			        COUNT(DISTINCT wse.id) AS exercise_count,
 			        COALESCE(SUM(CASE WHEN ws.completed = 1 THEN 1 ELSE 0 END), 0) AS completed_sets
 			 FROM {$p}fit_workout_sessions s
@@ -338,6 +383,7 @@ class WorkoutController {
 		if ( ! $session ) {
 			return new \WP_REST_Response( [ 'message' => 'Session not found.' ], 404 );
 		}
+		$session->custom_title = self::get_custom_workout_session_title( $user_id, $sess_id );
 
 		if ( ! $session->completed && ! $session->skip_requested && empty( $session->started_at ) ) {
 			$session->started_at = current_time( 'mysql', true );
@@ -383,6 +429,25 @@ class WorkoutController {
 			'exercises' => $exercises,
 			'session_mode' => $session_mode,
 		] );
+	}
+
+	public static function save_custom_draft( \WP_REST_Request $req ): \WP_REST_Response {
+		$user_id = get_current_user_id();
+		$result = self::save_custom_workout_draft_for_user( $user_id, $req->get_json_params() ?: $req->get_params() );
+
+		if ( is_wp_error( $result ) ) {
+			return new \WP_REST_Response( [ 'message' => $result->get_error_message() ], 400 );
+		}
+
+		return new \WP_REST_Response( [
+			'saved' => true,
+			'custom_workout_draft' => $result,
+		], 200 );
+	}
+
+	public static function delete_custom_draft( \WP_REST_Request $req ): \WP_REST_Response {
+		self::delete_custom_workout_draft_for_user( get_current_user_id() );
+		return new \WP_REST_Response( [ 'deleted' => true ], 200 );
 	}
 
 	// ── POST /workout/{id}/set ────────────────────────────────────────────────
@@ -948,18 +1013,26 @@ class WorkoutController {
 		$started_dt      = new \DateTime( $started_at );
 		$completed_dt    = new \DateTime( $completed_at );
 		$duration_min    = (int) round( ( $completed_dt->getTimestamp() - $started_dt->getTimestamp() ) / 60 );
+		$estimated_calories = \Johnny5k\Services\ExerciseCalorieService::estimate_workout_session_calories(
+			$user_id,
+			$duration_min,
+			$actual_day_type,
+			(string) ( $session->time_tier ?? 'medium' )
+		);
 
 		$wpdb->update( $p . 'fit_workout_sessions', [
 			'completed'       => 1,
 			'actual_day_type' => $actual_day_type,
 			'completed_at'    => $completed_at,
 			'duration_minutes'=> $duration_min,
+			'estimated_calories' => $estimated_calories,
 		], [ 'id' => $sess_id ] );
 
 		if ( 'rest' === $actual_day_type ) {
 			return new \WP_REST_Response( [
 				'completed'        => true,
 				'duration_minutes' => 0,
+				'estimated_calories' => 0,
 				'snapshots'        => [],
 				'ai_summary'       => null,
 				'rest_day'         => true,
@@ -982,6 +1055,7 @@ class WorkoutController {
 		return new \WP_REST_Response( [
 			'completed'      => true,
 			'duration_minutes' => $duration_min,
+			'estimated_calories' => $estimated_calories,
 			'snapshots'      => $snapshots,
 			'ai_summary'     => $ai_summary,
 		] );
@@ -1034,9 +1108,31 @@ class WorkoutController {
 			$update['duration_minutes'] = max( 0, min( 600, (int) $req->get_param( 'duration_minutes' ) ) );
 		}
 
+		if ( null !== $req->get_param( 'estimated_calories' ) ) {
+			$raw_estimated_calories = $req->get_param( 'estimated_calories' );
+			$update['estimated_calories'] = '' === (string) $raw_estimated_calories
+				? null
+				: max( 0, min( 5000, (int) $raw_estimated_calories ) );
+		}
+
 		if ( null !== $req->get_param( 'readiness_score' ) ) {
 			$raw_readiness = $req->get_param( 'readiness_score' );
 			$update['readiness_score'] = '' === (string) $raw_readiness ? null : max( 1, min( 10, (int) $raw_readiness ) );
+		}
+
+		if (
+			( isset( $update['duration_minutes'] ) || isset( $update['actual_day_type'] ) || isset( $update['time_tier'] ) )
+			&& ! array_key_exists( 'estimated_calories', $update )
+		) {
+			$duration_for_estimate = isset( $update['duration_minutes'] ) ? (int) $update['duration_minutes'] : (int) ( $session->duration_minutes ?? 0 );
+			$day_type_for_estimate = (string) ( $update['actual_day_type'] ?? $session->actual_day_type ?? $session->planned_day_type ?? 'push' );
+			$time_tier_for_estimate = (string) ( $update['time_tier'] ?? $session->time_tier ?? 'medium' );
+			$update['estimated_calories'] = \Johnny5k\Services\ExerciseCalorieService::estimate_workout_session_calories(
+				$user_id,
+				$duration_for_estimate,
+				$day_type_for_estimate,
+				$time_tier_for_estimate
+			);
 		}
 
 		if ( $update ) {
@@ -1117,7 +1213,7 @@ class WorkoutController {
 
 		$row = $wpdb->get_row( $wpdb->prepare(
 			"SELECT s.id, s.session_date, s.planned_day_type, s.actual_day_type, s.time_tier,
-			        s.readiness_score, s.duration_minutes, s.completed_at,
+			        s.readiness_score, s.duration_minutes, s.estimated_calories, s.completed_at,
 			        COUNT(DISTINCT wse.id) AS exercise_count,
 			        COALESCE(SUM(CASE WHEN ws.completed = 1 THEN 1 ELSE 0 END), 0) AS completed_sets
 			 FROM {$p}fit_workout_sessions s
@@ -1130,6 +1226,287 @@ class WorkoutController {
 		) );
 
 		return $row ?: null;
+	}
+
+	public static function save_custom_workout_draft_for_user( int $user_id, array $payload ) {
+		$draft = self::normalize_custom_workout_draft_payload( $user_id, $payload );
+		if ( is_wp_error( $draft ) ) {
+			return $draft;
+		}
+
+		update_user_meta( $user_id, self::CUSTOM_WORKOUT_DRAFT_META, $draft );
+		return $draft;
+	}
+
+	public static function delete_custom_workout_draft_for_user( int $user_id ): void {
+		delete_user_meta( $user_id, self::CUSTOM_WORKOUT_DRAFT_META );
+	}
+
+	private static function get_custom_workout_draft( int $user_id ): ?array {
+		$draft = get_user_meta( $user_id, self::CUSTOM_WORKOUT_DRAFT_META, true );
+		if ( ! is_array( $draft ) ) {
+			return null;
+		}
+
+		$id = sanitize_text_field( (string) ( $draft['id'] ?? '' ) );
+		$name = sanitize_text_field( (string) ( $draft['name'] ?? '' ) );
+		$day_type = self::normalize_day_type( $draft['day_type'] ?? '' ) ?: 'arms_shoulders';
+		$coach_note = sanitize_textarea_field( (string) ( $draft['coach_note'] ?? '' ) );
+		$created_at = sanitize_text_field( (string) ( $draft['created_at'] ?? '' ) );
+		$items = is_array( $draft['exercises'] ?? null ) ? array_values( array_filter( array_map( static function( $item ) {
+			$payload = is_array( $item ) ? $item : (array) $item;
+			$plan_exercise_id = isset( $payload['plan_exercise_id'] ) ? (int) $payload['plan_exercise_id'] : 0;
+			$exercise_id = isset( $payload['exercise_id'] ) ? (int) $payload['exercise_id'] : 0;
+			if ( $plan_exercise_id <= 0 || $exercise_id <= 0 ) {
+				return null;
+			}
+
+			return [
+				'plan_exercise_id' => $plan_exercise_id,
+				'exercise_id'      => $exercise_id,
+				'exercise_name'    => sanitize_text_field( (string) ( $payload['exercise_name'] ?? '' ) ),
+				'primary_muscle'   => sanitize_text_field( (string) ( $payload['primary_muscle'] ?? '' ) ),
+				'equipment'        => sanitize_text_field( (string) ( $payload['equipment'] ?? '' ) ),
+				'difficulty'       => sanitize_text_field( (string) ( $payload['difficulty'] ?? '' ) ),
+				'slot_type'        => sanitize_key( (string) ( $payload['slot_type'] ?? 'accessory' ) ) ?: 'accessory',
+				'rep_min'          => max( 1, (int) ( $payload['rep_min'] ?? 8 ) ),
+				'rep_max'          => max( 1, (int) ( $payload['rep_max'] ?? 12 ) ),
+				'sets'             => max( 1, (int) ( $payload['sets'] ?? 3 ) ),
+				'was_swapped'      => false,
+			];
+		}, $draft['exercises'] ) ) ) : [];
+
+		if ( '' === $id || '' === $name || empty( $items ) ) {
+			return null;
+		}
+
+		return [
+			'id'         => $id,
+			'name'       => $name,
+			'day_type'   => $day_type,
+			'coach_note' => $coach_note,
+			'created_at' => $created_at,
+			'exercises'  => $items,
+		];
+	}
+
+	private static function normalize_custom_workout_draft_payload( int $user_id, array $payload ) {
+		$name = sanitize_text_field( (string) ( $payload['name'] ?? '' ) );
+		if ( '' === $name ) {
+			return new \WP_Error( 'missing_custom_workout_name', 'A workout name is required.' );
+		}
+
+		$day_type = self::normalize_day_type( $payload['day_type'] ?? '' ) ?: 'arms_shoulders';
+		$coach_note = sanitize_textarea_field( (string) ( $payload['coach_note'] ?? '' ) );
+		$raw_exercises = is_array( $payload['exercises'] ?? null ) ? $payload['exercises'] : [];
+		$resolved_exercises = [];
+		$used_exercise_ids = [];
+		$plan_exercise_id = 1;
+
+		foreach ( $raw_exercises as $exercise_payload ) {
+			$exercise_payload = is_array( $exercise_payload ) ? $exercise_payload : (array) $exercise_payload;
+			$resolved = self::resolve_custom_draft_exercise( $user_id, $exercise_payload, $day_type, $used_exercise_ids );
+			if ( is_wp_error( $resolved ) ) {
+				return $resolved;
+			}
+
+			if ( empty( $resolved ) ) {
+				continue;
+			}
+
+			$resolved_exercises[] = array_merge( $resolved, [ 'plan_exercise_id' => $plan_exercise_id ] );
+			$used_exercise_ids[] = (int) $resolved['exercise_id'];
+			$plan_exercise_id++;
+		}
+
+		if ( empty( $resolved_exercises ) ) {
+			return new \WP_Error( 'missing_custom_workout_exercises', 'Add at least one valid exercise to build a custom workout.' );
+		}
+
+		return [
+			'id'         => sanitize_text_field( (string) ( $payload['id'] ?? 'custom_' . wp_generate_uuid4() ) ),
+			'name'       => $name,
+			'day_type'   => $day_type,
+			'coach_note' => $coach_note,
+			'created_at' => current_time( 'mysql', true ),
+			'exercises'  => $resolved_exercises,
+		];
+	}
+
+	private static function resolve_custom_draft_exercise( int $user_id, array $payload, string $day_type, array $used_exercise_ids ) {
+		$exercise_id = isset( $payload['exercise_id'] ) ? (int) $payload['exercise_id'] : 0;
+		$exercise_name = sanitize_text_field( (string) ( $payload['exercise_name'] ?? '' ) );
+
+		$exercise = null;
+		if ( $exercise_id > 0 ) {
+			$exercise = ExerciseLibraryService::get_exercise( $user_id, $exercise_id, 'id, name, primary_muscle, equipment, difficulty, default_rep_min, default_rep_max, default_sets' );
+		} elseif ( '' !== $exercise_name ) {
+			$exercise = self::find_custom_workout_exercise_by_name( $user_id, $exercise_name, $day_type, $used_exercise_ids );
+		}
+
+		if ( ! $exercise ) {
+			return new \WP_Error( 'custom_workout_exercise_not_found', sprintf( 'Could not find "%s" in the exercise library.', $exercise_name ?: 'that exercise' ) );
+		}
+
+		if ( in_array( (int) $exercise->id, $used_exercise_ids, true ) ) {
+			return [];
+		}
+
+		return [
+			'exercise_id'    => (int) $exercise->id,
+			'exercise_name'  => sanitize_text_field( (string) ( $exercise->name ?? '' ) ),
+			'primary_muscle' => sanitize_text_field( (string) ( $exercise->primary_muscle ?? '' ) ),
+			'equipment'      => sanitize_text_field( (string) ( $exercise->equipment ?? '' ) ),
+			'difficulty'     => sanitize_text_field( (string) ( $exercise->difficulty ?? '' ) ),
+			'slot_type'      => sanitize_key( (string) ( $payload['slot_type'] ?? 'accessory' ) ) ?: 'accessory',
+			'rep_min'        => max( 1, (int) ( $payload['rep_min'] ?? $exercise->default_rep_min ?? 8 ) ),
+			'rep_max'        => max( 1, (int) ( $payload['rep_max'] ?? $exercise->default_rep_max ?? 12 ) ),
+			'sets'           => max( 1, (int) ( $payload['sets'] ?? $exercise->default_sets ?? 3 ) ),
+		];
+	}
+
+	private static function find_custom_workout_exercise_by_name( int $user_id, string $exercise_name, string $day_type, array $used_exercise_ids ): ?object {
+		global $wpdb;
+		$p = $wpdb->prefix;
+		$exercise_access_where = ExerciseLibraryService::accessible_exercise_where( '', $user_id );
+		$day_json = '"' . esc_sql( $day_type ) . '"';
+		$like = '%' . $wpdb->esc_like( $exercise_name ) . '%';
+		$slug_query = sanitize_title( $exercise_name );
+		$slug_like = '%' . $wpdb->esc_like( $slug_query ) . '%';
+		$excluded_sql = '';
+		$params = [ $exercise_name, $slug_query, $like, $slug_like ];
+
+		if ( ! empty( $used_exercise_ids ) ) {
+			$placeholders = implode( ',', array_fill( 0, count( $used_exercise_ids ), '%d' ) );
+			$excluded_sql = " AND id NOT IN ({$placeholders})";
+			$params = array_merge( $params, array_map( 'intval', $used_exercise_ids ) );
+		}
+
+		$params[] = $day_json;
+		$params[] = $user_id;
+
+		$sql = "
+			SELECT id, name, primary_muscle, equipment, difficulty, default_rep_min, default_rep_max, default_sets
+			FROM {$p}fit_exercises
+			WHERE active = 1
+			  AND {$exercise_access_where}
+			  AND (LOWER(name) = LOWER(%s) OR slug = %s OR name LIKE %s OR slug LIKE %s)
+			  {$excluded_sql}
+			  AND JSON_CONTAINS(day_types_json, %s)
+			ORDER BY
+			  CASE WHEN LOWER(name) = LOWER(%s) THEN 0 ELSE 1 END,
+			  CASE WHEN user_id = %d THEN 0 ELSE 1 END,
+			  CHAR_LENGTH(name),
+			  name
+			LIMIT 1";
+
+		$final_params = array_merge( $params, [ $exercise_name, $user_id ] );
+		return $wpdb->get_row( $wpdb->prepare( $sql, ...$final_params ) );
+	}
+
+	private static function build_custom_preview( array $draft, string $time_tier, ?int $readiness, array $exercise_order ): array {
+		$ordered_exercises = self::order_custom_draft_exercises( is_array( $draft['exercises'] ?? null ) ? $draft['exercises'] : [], $exercise_order );
+
+		return [
+			'day_type'            => (string) ( $draft['day_type'] ?? 'arms_shoulders' ),
+			'custom_title'        => (string) ( $draft['name'] ?? 'Custom workout' ),
+			'coach_note'          => (string) ( $draft['coach_note'] ?? '' ),
+			'time_tier'           => $time_tier,
+			'session_mode'        => self::session_mode_from_readiness( $readiness ),
+			'plan_exercise_count' => count( $ordered_exercises ),
+			'exercises'           => $ordered_exercises,
+		];
+	}
+
+	private static function build_custom_session( int $user_id, array $draft, string $time_tier, ?int $readiness, array $exercise_order ) {
+		global $wpdb;
+		$p = $wpdb->prefix;
+		$ordered_exercises = self::order_custom_draft_exercises( is_array( $draft['exercises'] ?? null ) ? $draft['exercises'] : [], $exercise_order );
+
+		if ( empty( $ordered_exercises ) ) {
+			return new \WP_Error( 'custom_workout_empty', 'That custom workout does not have any valid exercises left.' );
+		}
+
+		$wpdb->insert( $p . 'fit_workout_sessions', [
+			'user_id'             => $user_id,
+			'session_date'        => UserTime::today( $user_id ),
+			'planned_day_type'    => (string) ( $draft['day_type'] ?? 'arms_shoulders' ),
+			'time_tier'           => $time_tier,
+			'completed'           => 0,
+			'skip_requested'      => 0,
+			'is_optional_session' => 0,
+		] );
+		$session_id = (int) $wpdb->insert_id;
+
+		foreach ( $ordered_exercises as $index => $exercise ) {
+			$wpdb->insert( $p . 'fit_workout_session_exercises', [
+				'session_id'          => $session_id,
+				'exercise_id'         => (int) ( $exercise['exercise_id'] ?? 0 ),
+				'slot_type'           => (string) ( $exercise['slot_type'] ?? 'accessory' ),
+				'planned_rep_min'     => (int) ( $exercise['rep_min'] ?? 8 ),
+				'planned_rep_max'     => (int) ( $exercise['rep_max'] ?? 12 ),
+				'planned_sets'        => (int) ( $exercise['sets'] ?? 3 ),
+				'sort_order'          => $index + 1,
+				'was_swapped'         => 0,
+				'original_exercise_id'=> null,
+			] );
+		}
+
+		return [
+			'session_id'   => $session_id,
+			'day_type'     => (string) ( $draft['day_type'] ?? 'arms_shoulders' ),
+			'exercises'    => $ordered_exercises,
+			'skip_count'   => TrainingEngine::rolling_skip_count( $user_id ),
+			'skip_warning' => TrainingEngine::rolling_skip_count( $user_id ) >= 3,
+		];
+	}
+
+	private static function order_custom_draft_exercises( array $exercises, array $exercise_order ): array {
+		if ( empty( $exercise_order ) ) {
+			return array_values( $exercises );
+		}
+
+		$order_index = [];
+		foreach ( $exercise_order as $position => $plan_exercise_id ) {
+			$plan_exercise_id = (int) $plan_exercise_id;
+			if ( $plan_exercise_id > 0 ) {
+				$order_index[ $plan_exercise_id ] = $position;
+			}
+		}
+
+		usort( $exercises, static function( array $left, array $right ) use ( $order_index ): int {
+			$left_index = $order_index[ (int) ( $left['plan_exercise_id'] ?? 0 ) ] ?? PHP_INT_MAX;
+			$right_index = $order_index[ (int) ( $right['plan_exercise_id'] ?? 0 ) ] ?? PHP_INT_MAX;
+
+			if ( $left_index === $right_index ) {
+				return ( (int) ( $left['plan_exercise_id'] ?? 0 ) ) <=> ( (int) ( $right['plan_exercise_id'] ?? 0 ) );
+			}
+
+			return $left_index <=> $right_index;
+		} );
+
+		return array_values( $exercises );
+	}
+
+	private static function get_custom_workout_session_title( int $user_id, int $session_id ): string {
+		$session_titles = get_user_meta( $user_id, self::CUSTOM_WORKOUT_SESSION_TITLES_META, true );
+		if ( ! is_array( $session_titles ) ) {
+			return '';
+		}
+
+		return sanitize_text_field( (string) ( $session_titles[ $session_id ] ?? '' ) );
+	}
+
+	private static function store_custom_workout_session_title( int $user_id, int $session_id, string $title ): void {
+		$session_titles = get_user_meta( $user_id, self::CUSTOM_WORKOUT_SESSION_TITLES_META, true );
+		$session_titles = is_array( $session_titles ) ? $session_titles : [];
+		$session_titles[ $session_id ] = sanitize_text_field( $title );
+
+		if ( count( $session_titles ) > 30 ) {
+			$session_titles = array_slice( $session_titles, -30, null, true );
+		}
+
+		update_user_meta( $user_id, self::CUSTOM_WORKOUT_SESSION_TITLES_META, $session_titles );
 	}
 
 	private static function delete_session_records( int $session_id, int $user_id ): void {

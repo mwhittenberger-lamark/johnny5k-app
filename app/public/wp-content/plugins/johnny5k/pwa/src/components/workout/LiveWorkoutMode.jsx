@@ -444,7 +444,13 @@ export default function LiveWorkoutMode({
     window.open(`https://www.youtube.com/results?search_query=${query}`, '_blank', 'noopener,noreferrer')
   }
 
-  function openDemoSearch(query, exerciseName = activeExercise.exercise_name) {
+  function openDemoSearch(query, exerciseName = activeExercise.exercise_name, url = '') {
+    const directUrl = String(url || '').trim()
+    if (directUrl) {
+      window.open(directUrl, '_blank', 'noopener,noreferrer')
+      return
+    }
+
     const normalizedQuery = String(query || '').trim() || `${exerciseName} exercise tutorial`
     window.open(`https://www.youtube.com/results?search_query=${encodeURIComponent(normalizedQuery)}`, '_blank', 'noopener,noreferrer')
   }
@@ -453,8 +459,12 @@ export default function LiveWorkoutMode({
     if (!action || typeof action !== 'object') return
 
     if (action.type === 'open_exercise_demo') {
-      openDemoSearch(action.payload?.query, action.payload?.exercise_name || activeExercise.exercise_name)
-      setCoachStatus(options.auto ? 'Johnny opened a demo for the current exercise.' : 'Opened the exercise demo Johnny suggested.')
+      openDemoSearch(action.payload?.query, action.payload?.exercise_name || activeExercise.exercise_name, action.payload?.url)
+      const sourceTitle = String(action.payload?.source_title || '').trim()
+      const message = sourceTitle
+        ? `Opened ${sourceTitle}.`
+        : (options.auto ? 'Johnny opened a demo for the current exercise.' : 'Opened the exercise demo Johnny suggested.')
+      setCoachStatus(message)
     }
   }
 
@@ -695,7 +705,6 @@ export default function LiveWorkoutMode({
             <section ref={johnnyCardRef} className="dash-card live-workout-johnny-card">
               <div className="live-workout-section-head">
                 <span className="dashboard-chip coach">Johnny live</span>
-                <span className="dashboard-chip subtle">Every workout change updates him</span>
               </div>
 
               <div className="live-workout-johnny-hero">

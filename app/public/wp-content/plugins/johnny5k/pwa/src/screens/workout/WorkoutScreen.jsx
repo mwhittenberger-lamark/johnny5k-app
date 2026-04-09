@@ -7,17 +7,13 @@ import { onboardingApi, trainingApi, workoutApi } from '../../api/client'
 import { formatUsShortDate, formatUsWeekday } from '../../lib/dateFormat'
 import { useWorkoutStore } from '../../store/workoutStore'
 
-const QUICK_ADD_OPTIONS = [
-  { slot: 'abs', label: 'Quick abs add-on' },
-  { slot: 'challenge', label: 'Quick challenge' },
-]
-
 export default function WorkoutScreen() {
   const {
     session,
     loading,
     error,
     bootstrapped,
+    customWorkoutDraft,
     timeTier,
     readinessScore,
     sessionMode,
@@ -37,12 +33,12 @@ export default function WorkoutScreen() {
     dismissUndoToast,
     bootstrapSession,
     startSession,
+    clearCustomWorkoutDraft,
     logSet,
     updateSet,
     deleteSet,
     saveExerciseNote,
     swapExercise,
-    quickAdd,
     removeExercise,
     undoLastReversibleAction,
     completeSession,
@@ -61,14 +57,12 @@ export default function WorkoutScreen() {
   const [previewError, setPreviewError] = useState('')
   const [swapDrawerExercise, setSwapDrawerExercise] = useState(null)
   const [draggedPlanExerciseId, setDraggedPlanExerciseId] = useState(0)
-  const [addingSlot, setAddingSlot] = useState('')
   const [undoing, setUndoing] = useState(false)
   const [restarting, setRestarting] = useState(false)
   const [exiting, setExiting] = useState(false)
   const [takingRestDay, setTakingRestDay] = useState(false)
   const [restartNotice, setRestartNotice] = useState('')
   const [restartError, setRestartError] = useState('')
-  const [addonsExpanded, setAddonsExpanded] = useState(false)
   const [liveModeOpen, setLiveModeOpen] = useState(false)
   const [liveWorkoutFrames, setLiveWorkoutFrames] = useState([])
   const [timerNow, setTimerNow] = useState(() => Date.now())
@@ -81,7 +75,8 @@ export default function WorkoutScreen() {
   const todaysOrder = Number(todayContext?.weekday_order) || weekdayOrderForDate()
   const scheduledPlan = plan?.days?.find(day => Number(day.day_order) === todaysOrder) ?? plan?.days?.[0]
   const scheduledDayType = scheduledPlan?.day_type || ''
-  const previewDayType = session?.session?.planned_day_type || selectedDayType || scheduledDayType
+  const hasCustomWorkoutDraft = !session && Boolean(customWorkoutDraft?.id)
+  const previewDayType = session?.session?.planned_day_type || (hasCustomWorkoutDraft ? customWorkoutDraft?.day_type : '') || selectedDayType || scheduledDayType
   const currentPreviewDraft = previewDayType ? (previewDrafts?.[previewDayType] ?? { exerciseSwaps: {}, exerciseOrder: [] }) : { exerciseSwaps: {}, exerciseOrder: [] }
   const previewExerciseSwaps = currentPreviewDraft.exerciseSwaps ?? {}
   const previewExerciseOrder = currentPreviewDraft.exerciseOrder ?? []
@@ -90,8 +85,11 @@ export default function WorkoutScreen() {
     : plan?.days?.find(day => day.day_type === previewDayType) ?? scheduledPlan
   const todayLabel = todayContext?.weekday_label || weekdayLabelForDate()
   const previewSwapPayload = buildPreviewExerciseSwapPayload(previewExerciseSwaps)
-  const previewExercises = orderPreviewExercises(previewSession?.exercises ?? [], previewExerciseOrder)
+  const previewExercises = hasCustomWorkoutDraft
+    ? (previewSession?.exercises ?? [])
+    : orderPreviewExercises(previewSession?.exercises ?? [], previewExerciseOrder)
   const displayDayType = session?.session?.planned_day_type || previewDayType || plannedDayReference?.day_type
+  const displaySessionTitle = session?.session?.custom_title || previewSession?.custom_title || (hasCustomWorkoutDraft ? customWorkoutDraft?.name : '')
   const splitOptions = [
     ...(plan?.days ?? [])
     .map(day => ({ dayType: day.day_type, dayOrder: Number(day.day_order), weekdayLabel: day.weekday_label }))
@@ -103,6 +101,12 @@ export default function WorkoutScreen() {
   const isRestSelection = previewDayType === 'rest'
   const activeSessionStartedAt = session?.session?.started_at || null
   const activeSessionTimerLabel = formatWorkoutElapsedTime(activeSessionStartedAt, timerNow)
+  const readinessOptions = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+  const timeTierOptions = [
+    { id: 'short', label: 'Short', detail: 'Fast, focused session' },
+    { id: 'medium', label: 'Medium', detail: 'Normal training day' },
+    { id: 'full', label: 'Full', detail: 'Longest version today' },
+  ]
   const johnnyReview = buildJohnnyReview({
     todayLabel,
     scheduledDayType,
@@ -111,11 +115,11 @@ export default function WorkoutScreen() {
   })
 
   useEffect(() => {
-    if (session || selectedDayType) return
+    if (session || selectedDayType || hasCustomWorkoutDraft) return
     if (scheduledPlan?.day_type) {
       setPreviewDayType(scheduledPlan.day_type)
     }
-  }, [scheduledPlan?.day_type, selectedDayType, session, setPreviewDayType])
+  }, [hasCustomWorkoutDraft, scheduledPlan?.day_type, selectedDayType, session, setPreviewDayType])
 
   useEffect(() => {
     bootstrapSession()
@@ -155,7 +159,7 @@ export default function WorkoutScreen() {
   useEffect(() => {
     if (session) return undefined
 
-    const requestedDayType = selectedDayType || scheduledDayType
+    const requestedDayType = hasCustomWorkoutDraft ? customWorkoutDraft?.day_type : (selectedDayType || scheduledDayType)
     if (!requestedDayType) {
       setPreviewSession(null)
       setPreviewError('')
@@ -197,6 +201,7 @@ export default function WorkoutScreen() {
       time_tier: timeTier,
       readiness_score: readinessScore,
       day_type: requestedDayType,
+      ...(hasCustomWorkoutDraft ? { custom_workout_draft_id: customWorkoutDraft?.id } : {}),
       ...(previewSwapPayload.length ? { exercise_swaps: previewSwapPayload } : {}),
       ...(previewExerciseOrder.length ? { exercise_order: previewExerciseOrder } : {}),
     })
@@ -205,7 +210,9 @@ export default function WorkoutScreen() {
         const nextExercises = Array.isArray(data?.exercises) ? data.exercises : []
         const nextIds = nextExercises.map(exercise => Number(exercise.plan_exercise_id)).filter(Boolean)
         setPreviewSession(data)
+        if (!hasCustomWorkoutDraft) {
           syncPreviewExerciseOrder(requestedDayType, nextIds)
+        }
         setSwapDrawerExercise(current => {
           if (!current?.plan_exercise_id) return null
           return nextExercises.find(exercise => Number(exercise.plan_exercise_id) === Number(current.plan_exercise_id)) ?? null
@@ -223,7 +230,7 @@ export default function WorkoutScreen() {
       })
 
     return () => { active = false }
-  }, [session, scheduledDayType, selectedDayType, timeTier, readinessScore, JSON.stringify(previewSwapPayload), JSON.stringify(previewExerciseOrder), syncPreviewExerciseOrder])
+  }, [customWorkoutDraft?.id, customWorkoutDraft?.day_type, hasCustomWorkoutDraft, session, scheduledDayType, selectedDayType, timeTier, readinessScore, JSON.stringify(previewSwapPayload), JSON.stringify(previewExerciseOrder), syncPreviewExerciseOrder])
 
   useEffect(() => {
     if (!exercises.length && activeExerciseIdx !== 0) {
@@ -296,15 +303,6 @@ export default function WorkoutScreen() {
     navigate('/dashboard')
   }
 
-  async function handleQuickAdd(slot) {
-    setAddingSlot(slot)
-    try {
-      await quickAdd(slot)
-    } finally {
-      setAddingSlot('')
-    }
-  }
-
   async function handleUndoAction() {
     setUndoing(true)
     try {
@@ -332,9 +330,12 @@ export default function WorkoutScreen() {
     }
 
     await startSession({
-      dayType: selectedDayType || scheduledDayType,
-      exerciseSwaps: previewSwapPayload,
-      exerciseOrder: previewExercises.map(exercise => Number(exercise.plan_exercise_id)).filter(Boolean),
+      dayType: previewDayType || scheduledDayType,
+      ...(hasCustomWorkoutDraft ? { customWorkoutDraftId: customWorkoutDraft.id } : {}),
+      ...(!hasCustomWorkoutDraft ? {
+        exerciseSwaps: previewSwapPayload,
+        exerciseOrder: previewExercises.map(exercise => Number(exercise.plan_exercise_id)).filter(Boolean),
+      } : {}),
     })
   }
 
@@ -406,6 +407,17 @@ export default function WorkoutScreen() {
     setPreviewExerciseOrder(previewDayType, movePreviewExerciseOrder(previewExerciseOrder, planExerciseId, direction, previewExercises))
   }
 
+  async function handleUseScheduledSplit() {
+    try {
+      await clearCustomWorkoutDraft()
+      setPreviewDayType(scheduledDayType || '')
+      setRestartNotice('Johnny’s custom workout was cleared. You are back on your scheduled split.')
+      setRestartError('')
+    } catch (error) {
+      setRestartError(error?.message || 'Could not clear the queued custom workout.')
+    }
+  }
+
   const isMaintenanceMode = (sessionMode || session?.session_mode) === 'maintenance' || Number(session?.session?.readiness_score ?? readinessScore) <= 3
 
   if (!bootstrapped || loading) return <div className="screen-loading">Loading workout...</div>
@@ -417,86 +429,114 @@ export default function WorkoutScreen() {
           <p className="dashboard-eyebrow">Training</p>
           <h1>Start today with a readiness check</h1>
           <p className="settings-subtitle">Pick your available time, mark how ready you feel, and review the next session before you start.</p>
+          {restartNotice ? <p className="settings-subtitle">{restartNotice}</p> : null}
+          {restartError ? <p className="error">{restartError}</p> : null}
 
-          <div className="workout-readiness-card">
-            <div>
-              <strong>Readiness</strong>
-              <p>{readinessCopy(readinessScore)}</p>
-              {isMaintenanceMode ? <p className="workout-maintenance-note">Tired mode will shift this session into bare minimum maintenance work.</p> : null}
-            </div>
-            <div className="readiness-scale" role="group" aria-label="Workout readiness">
-              {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(value => (
-                <button
-                  key={value}
-                  type="button"
-                  className={`readiness-pill ${readinessScore === value ? 'active' : ''}`}
-                  onClick={() => setReadinessScore(value)}
-                >
-                  {value}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="time-tier-picker">
-            {['short', 'medium', 'full'].map(tier => (
-              <button
-                key={tier}
-                className={`tier-btn ${timeTier === tier ? 'active' : ''}`}
-                onClick={() => setTimeTier(tier)}
-              >
-                {tier === 'short' ? 'Short session' : tier === 'medium' ? 'Medium session' : 'Full session'}
-                <span>{isMaintenanceMode ? '~20-30 min maintenance' : tier === 'short' ? '~30 min' : tier === 'medium' ? '~45 min' : '~60 min'}</span>
-              </button>
-            ))}
-          </div>
-
-          {splitOptions.length ? (
-            <div className="workout-daytype-card">
-              <div>
-                <strong>Split for today</strong>
-                <p>
-                  {todayLabel} is scheduled as {formatDayType(scheduledDayType)} based on your saved schedule.
-                  {previewDayType && scheduledDayType && previewDayType !== scheduledDayType ? ` You are overriding it to ${formatDayType(previewDayType)}.` : ''}
-                </p>
-                {todayContext?.timezone ? <p className="settings-subtitle">Using your local time: {todayLabel} in {todayContext.timezone}.</p> : null}
-                {restartNotice ? <p className="success-msg">{restartNotice}</p> : null}
-                {restartError ? <p className="error">{restartError}</p> : null}
-                {isRestSelection ? (
-                  <div className="workout-cardio-callout">
-                    <strong>Rest day override selected.</strong>
-                    <p>Johnny will log today as an intentional recovery day instead of your scheduled split.</p>
-                  </div>
-                ) : null}
-                {isCardioSelection ? (
-                  <div className="workout-cardio-callout">
-                    <strong>Cardio is the default for today.</strong>
-                    <p>Log your conditioning directly in Progress, or pick a strength split below if you want to lift instead.</p>
-                    <button type="button" className="btn-outline small" onClick={handleLogCardio}>Log cardio in Progress</button>
-                  </div>
-                ) : null}
+          {!isRestSelection ? (
+            <div className="workout-launchpad-section">
+              <div className="dashboard-card-head">
+                <span className="dashboard-chip subtle">Available time</span>
+                <span className="dashboard-chip subtle">{timeTier} session</span>
               </div>
-              <div className="workout-daytype-grid" role="group" aria-label="Workout split type">
-                {splitOptions.map(option => (
+              <div className="workout-daytype-grid">
+                {timeTierOptions.map(option => (
                   <button
-                    key={option.dayType}
+                    key={option.id}
                     type="button"
-                    className={`daytype-pill ${selectedDayType === option.dayType ? 'active' : ''}`}
-                    onClick={() => setPreviewDayType(option.dayType)}
+                    className={`tier-btn${timeTier === option.id ? ' active' : ''}`}
+                    onClick={() => setTimeTier(option.id)}
                   >
-                    <span>{formatDayType(option.dayType)}</span>
-                    <small>
-                      {option.dayType === 'rest'
-                        ? 'Intentional recovery'
-                        : option.dayOrder === todaysOrder
-                          ? 'Scheduled today'
-                          : option.weekdayLabel || 'Available'}
-                    </small>
+                    <strong>{option.label}</strong>
+                    <span>{option.detail}</span>
                   </button>
                 ))}
               </div>
             </div>
           ) : null}
+
+          {!isRestSelection ? (
+            <div className="workout-launchpad-section">
+              <div className="dashboard-card-head">
+                <span className="dashboard-chip subtle">Readiness</span>
+                <span className="dashboard-chip subtle">{readinessScore}/10</span>
+              </div>
+              <p className="settings-subtitle workout-launchpad-helper">
+                Pick a number so today&apos;s session matches how ready you actually feel.
+              </p>
+              <div className="readiness-scale" role="group" aria-label="Workout readiness score">
+                {readinessOptions.map(score => (
+                  <button
+                    key={score}
+                    type="button"
+                    className={`readiness-pill${readinessScore === score ? ' active' : ''}`}
+                    onClick={() => setReadinessScore(score)}
+                    aria-pressed={readinessScore === score}
+                  >
+                    {score}
+                  </button>
+                ))}
+              </div>
+              {readinessScore <= 3 ? (
+                <p className="settings-subtitle workout-launchpad-helper">
+                  Low readiness shifts today into maintenance mode and keeps the built session shorter.
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+
+          <div className="workout-launchpad-section">
+            <div className="dashboard-card-head">
+              <span className="dashboard-chip workout">Today&apos;s split</span>
+              {hasCustomWorkoutDraft
+                ? <span className="dashboard-chip subtle">Johnny queued this</span>
+                : scheduledDayType
+                ? <span className="dashboard-chip subtle">Scheduled: {formatDayType(scheduledDayType)}</span>
+                : null}
+            </div>
+            {hasCustomWorkoutDraft ? (
+              <div className="daytype-pill active">
+                <strong>{customWorkoutDraft?.name || 'Custom workout'}</strong>
+                <small>
+                  {previewExercises.length
+                    ? `${previewExercises.length} exercises queued as a ${formatDayType(customWorkoutDraft?.day_type)} workout.`
+                    : `Johnny queued a ${formatDayType(customWorkoutDraft?.day_type)} workout for you.`}
+                </small>
+                {customWorkoutDraft?.coach_note ? <small>{customWorkoutDraft.coach_note}</small> : null}
+                <div className="settings-actions">
+                  <button type="button" className="btn-outline small" onClick={handleUseScheduledSplit}>
+                    Use scheduled split instead
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="workout-daytype-grid">
+                {splitOptions.map(option => {
+                  const isActive = previewDayType === option.dayType
+                  const isOverride = Boolean(scheduledDayType && option.dayType !== scheduledDayType)
+
+                  return (
+                    <button
+                      key={option.dayType}
+                      type="button"
+                      className={`daytype-pill${isActive ? ' active' : ''}`}
+                      onClick={() => setPreviewDayType(option.dayType)}
+                    >
+                      <strong>{option.dayType === 'rest' ? 'Rest day' : formatDayType(option.dayType)}</strong>
+                      <small>
+                        {option.dayType === 'rest'
+                          ? 'Skip the build and recover on purpose.'
+                          : option.dayType === 'cardio'
+                          ? 'Conditioning instead of a lift.'
+                          : isOverride
+                          ? `Override to ${formatDayType(option.dayType)}.`
+                          : `${option.weekdayLabel || todayLabel} split.`}
+                      </small>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
 
           {error ? <p className="error">{error}</p> : null}
           <div className="settings-actions">
@@ -524,7 +564,13 @@ export default function WorkoutScreen() {
             ) : (
               <>
                 <button className="btn-primary" onClick={handleStartSession} disabled={loading}>
-                  {loading ? 'Building session...' : isMaintenanceMode ? 'Start Maintenance Workout' : 'Start Workout'}
+                  {loading
+                    ? 'Building session...'
+                    : hasCustomWorkoutDraft
+                    ? `Start ${customWorkoutDraft?.name || 'Custom Workout'}`
+                    : isMaintenanceMode
+                    ? 'Start Maintenance Workout'
+                    : 'Start Workout'}
                 </button>
                 <button className="btn-secondary" onClick={() => navigate('/activity-log')}>Activity Log</button>
                 <button className="btn-secondary" onClick={() => navigate('/workout/library')}>My exercise library</button>
@@ -543,14 +589,17 @@ export default function WorkoutScreen() {
           {!planLoading && planError ? <p className="error">{planError}</p> : null}
           {!planLoading && !planError && previewSession ? (
             <>
-              <h3>{todayLabel} • {formatDayType(previewSession.day_type)} day</h3>
+              <h3>{displaySessionTitle || `${todayLabel} • ${formatDayType(previewSession.day_type)} day`}</h3>
               <p>
                 {isRestSelection
                   ? 'Today is being treated as a recovery day. No workout will be built unless you switch back to cardio or a lifting split.'
                   : isCardioSelection
                   ? 'Today is set up as cardio. Use the Progress screen to log your conditioning, or override to a lift day if you want a full strength session instead.'
+                  : hasCustomWorkoutDraft
+                  ? `${previewExercises.length} exercises are queued in this Johnny-built custom workout. Start it as-is when you are ready.`
                   : `${previewExercises.length} exercises will actually be built for this ${previewSession.time_tier} session. Drag to reorder them or swap one before you start.`}
               </p>
+              {previewSession?.coach_note ? <p className="settings-subtitle workout-plan-helper">{previewSession.coach_note}</p> : null}
               {!isCardioSelection && !isRestSelection && previewSession.plan_exercise_count > previewExercises.length ? (
                 <p className="settings-subtitle workout-plan-helper">Johnny trimmed this session from {previewSession.plan_exercise_count} programmed slots based on your current time tier and readiness.</p>
               ) : null}
@@ -563,20 +612,24 @@ export default function WorkoutScreen() {
                       <div
                         key={exercise.plan_exercise_id}
                         className={`workout-plan-row workout-preview-row ${draggedPlanExerciseId === exercise.plan_exercise_id ? 'dragging' : ''}`}
-                        draggable
-                        onDragStart={() => handlePreviewDragStart(exercise.plan_exercise_id)}
-                        onDragOver={event => event.preventDefault()}
-                        onDrop={() => handlePreviewDrop(exercise.plan_exercise_id)}
-                        onDragEnd={() => setDraggedPlanExerciseId(0)}
+                        draggable={!hasCustomWorkoutDraft}
+                        onDragStart={() => !hasCustomWorkoutDraft && handlePreviewDragStart(exercise.plan_exercise_id)}
+                        onDragOver={event => !hasCustomWorkoutDraft && event.preventDefault()}
+                        onDrop={() => !hasCustomWorkoutDraft && handlePreviewDrop(exercise.plan_exercise_id)}
+                        onDragEnd={() => !hasCustomWorkoutDraft && setDraggedPlanExerciseId(0)}
                       >
+                        {exercise.primary_muscle ? <small className="workout-preview-muscle">{exercise.primary_muscle.replace(/_/g, ' ')}</small> : null}
                         <div className="workout-preview-row-main">
-                          <button type="button" className="workout-preview-handle" aria-label={`Drag ${exercise.exercise_name}`}>
-                            ↕
-                          </button>
-                          <span>
-                            {exercise.exercise_name}
+                          {!hasCustomWorkoutDraft ? (
+                            <button type="button" className="workout-preview-handle" aria-label={`Drag ${exercise.exercise_name}`}>
+                              ↕
+                            </button>
+                          ) : null}
+                          <span className="workout-preview-copy">
+                            <span className="workout-preview-copy-top">
+                              <strong className="workout-preview-name">{exercise.exercise_name}</strong>
+                            </span>
                             {exercise.was_swapped && exercise.original_exercise_name ? <small className="workout-plan-detail">Replacing {exercise.original_exercise_name}</small> : null}
-                            {exercise.primary_muscle ? <small className="workout-plan-detail">{exercise.primary_muscle.replace(/_/g, ' ')}</small> : null}
                           </span>
                         </div>
                         <div className="workout-preview-actions">
@@ -587,11 +640,15 @@ export default function WorkoutScreen() {
                           >
                             Demo
                           </button>
-                          <div className="workout-preview-order-buttons">
-                            <button type="button" className="btn-ghost small" onClick={() => handlePreviewMove(exercise.plan_exercise_id, -1)} disabled={index === 0}>↑</button>
-                            <button type="button" className="btn-ghost small" onClick={() => handlePreviewMove(exercise.plan_exercise_id, 1)} disabled={index === previewExercises.length - 1}>↓</button>
-                          </div>
-                          <button type="button" className="btn-outline small" onClick={() => setSwapDrawerExercise(exercise)}>Swap</button>
+                          {!hasCustomWorkoutDraft ? (
+                            <>
+                              <div className="workout-preview-order-buttons">
+                                <button type="button" className="btn-ghost small" onClick={() => handlePreviewMove(exercise.plan_exercise_id, -1)} disabled={index === 0}>↑</button>
+                                <button type="button" className="btn-ghost small" onClick={() => handlePreviewMove(exercise.plan_exercise_id, 1)} disabled={index === previewExercises.length - 1}>↓</button>
+                              </div>
+                              <button type="button" className="btn-outline small" onClick={() => setSwapDrawerExercise(exercise)}>Swap</button>
+                            </>
+                          ) : null}
                         </div>
                       </div>
                     ))}
@@ -604,11 +661,15 @@ export default function WorkoutScreen() {
               <div className="workout-johnny-review">
                 <div className="dashboard-card-head">
                   <span className="dashboard-chip coach">Johnny&apos;s review</span>
-                  {previewDayType && scheduledDayType && previewDayType !== scheduledDayType ? <span className="dashboard-chip subtle">Override active</span> : null}
+                  {hasCustomWorkoutDraft
+                    ? <span className="dashboard-chip subtle">Custom workout</span>
+                    : previewDayType && scheduledDayType && previewDayType !== scheduledDayType
+                    ? <span className="dashboard-chip subtle">Override active</span>
+                    : null}
                 </div>
-                <p>{johnnyReview.message}</p>
-                {johnnyReview.lastSessionLabel ? <p className="settings-subtitle">{johnnyReview.lastSessionLabel}</p> : null}
-                {johnnyReview.exerciseLines.length ? (
+                <p>{hasCustomWorkoutDraft ? `Johnny built ${displaySessionTitle || 'a custom workout'} for exactly what you asked for. Start it now, or clear it and go back to your scheduled split.` : johnnyReview.message}</p>
+                {!hasCustomWorkoutDraft && johnnyReview.lastSessionLabel ? <p className="settings-subtitle">{johnnyReview.lastSessionLabel}</p> : null}
+                {!hasCustomWorkoutDraft && johnnyReview.exerciseLines.length ? (
                   <div className="workout-history-list">
                     {johnnyReview.exerciseLines.map(line => (
                       <div key={line} className="workout-plan-row">
@@ -642,7 +703,7 @@ export default function WorkoutScreen() {
             <p className="dashboard-eyebrow">Today</p>
             {activeSessionTimerLabel ? <span className="dashboard-chip subtle workout-session-timer">{activeSessionTimerLabel}</span> : null}
           </div>
-          <h1>{todayLabel} • {formatDayType(displayDayType)} day</h1>
+          <h1>{displaySessionTitle || `${todayLabel} • ${formatDayType(displayDayType)} day`}</h1>
           <div className="workout-session-header-summary">
             <span className="dashboard-chip subtle">Readiness {session?.session?.readiness_score ?? readinessScore}/10</span>
             <span className="dashboard-chip subtle">{session?.session?.time_tier} session</span>
@@ -661,81 +722,6 @@ export default function WorkoutScreen() {
           </button>
         </div>
       </header>
-
-      <section className="workout-top-grid dashboard-two-col">
-        <div className="dash-card workout-plan-card">
-          <div className="dashboard-card-head">
-            <span className="dashboard-chip workout">Prepared workout</span>
-            <span className="dashboard-chip subtle">{exercises.length} exercises</span>
-          </div>
-          <p>{exercises.length ? 'This is the exact order that was carried over from your launch preview. Tap any row to jump to that exercise.' : 'Your active session is ready.'}</p>
-          <div className="workout-plan-list compact active-session-plan-list">
-            {exercises.map((exercise, index) => (
-              <button key={exercise.id} className={`workout-plan-row action ${index === activeExerciseIdx ? 'active' : ''}`} onClick={() => setActiveExerciseIdx(index)}>
-                <span>
-                  <small className="workout-plan-step">Exercise {index + 1}</small>
-                  {exercise.exercise_name}
-                  {exercise.was_swapped && exercise.original_exercise_name ? <small className="workout-plan-detail">Replacing {exercise.original_exercise_name}</small> : null}
-                  {exercise.primary_muscle ? <small className="workout-plan-detail">{exercise.primary_muscle.replace(/_/g, ' ')}</small> : null}
-                </span>
-                <span>{formatSlotType(exercise.slot_type)}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="dash-card workout-quickadd-card">
-          <button
-            type="button"
-            className="workout-accordion-toggle"
-            onClick={() => setAddonsExpanded(current => !current)}
-            aria-expanded={addonsExpanded}
-            aria-controls="workout-addons-panel"
-          >
-            <div className="dashboard-card-head">
-              <span className="dashboard-chip coach">Add-ons</span>
-              <div className="workout-accordion-meta">
-                <span className="dashboard-chip subtle">Optional</span>
-                <span className={`workout-accordion-icon ${addonsExpanded ? 'expanded' : ''}`} aria-hidden="true">
-                  <span className="workout-accordion-icon-bar horizontal" />
-                  <span className="workout-accordion-icon-bar vertical" />
-                </span>
-              </div>
-            </div>
-          </button>
-          <div
-            id="workout-addons-panel"
-            className={`workout-accordion-panel ${addonsExpanded ? 'expanded' : ''}`}
-            aria-hidden={addonsExpanded ? 'false' : 'true'}
-          >
-            <div className="workout-accordion-panel-inner">
-              {isMaintenanceMode ? (
-                <>
-                  <h3>Maintenance mode is keeping this session minimal</h3>
-                  <p>Abs and challenge work are hidden so you can hit the bare minimum and keep momentum.</p>
-                </>
-              ) : (
-                <>
-                  <h3>Add abs or a challenge</h3>
-                  <p>Add one extra slot without leaving the session.</p>
-                  <div className="workout-quickadd-grid">
-                    {QUICK_ADD_OPTIONS.map(option => (
-                      <button
-                        key={option.slot}
-                        className="btn-secondary"
-                        onClick={() => handleQuickAdd(option.slot)}
-                        disabled={addingSlot === option.slot}
-                      >
-                        {addingSlot === option.slot ? 'Adding...' : option.label}
-                      </button>
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-      </section>
 
       <div className="ex-tabs">
         {exercises.map((exercise, index) => (
@@ -925,22 +911,6 @@ function formatDayType(value) {
     .split('_')
     .map(part => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ')
-}
-
-function formatSlotType(value) {
-  if (!value) return 'Accessory'
-  return String(value)
-    .split('_')
-    .filter(Boolean)
-    .map(part => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ')
-}
-
-function readinessCopy(score) {
-  if (score <= 3) return 'Low readiness. This will become a bare minimum maintenance session.'
-  if (score <= 6) return 'Moderate readiness. Stay crisp and avoid grinding reps.'
-  if (score <= 8) return 'Good readiness. Normal working sets should feel solid today.'
-  return 'High readiness. Good day to push performance if technique stays clean.'
 }
 
 function weekdayOrderForDate() {

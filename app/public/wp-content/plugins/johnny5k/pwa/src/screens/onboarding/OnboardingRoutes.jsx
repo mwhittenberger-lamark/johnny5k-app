@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Navigate, Route, Routes, useNavigate } from 'react-router-dom'
+import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { dashboardApi, onboardingApi } from '../../api/client'
 import { useAuthStore } from '../../store/authStore'
 import {
@@ -34,6 +34,32 @@ const DAY_TYPE_OPTIONS = [
 ]
 const TIMEZONE_REGIONS = getTimezoneRegions()
 const REMINDER_HOUR_OPTIONS = reminderHourOptions()
+const COMMON_EXERCISE_AVOIDS = [
+  'Upright rows',
+  'Overhead pressing',
+  'Deep lunges',
+  'Back squats',
+  'Deadlifts',
+  'Pull-ups',
+  'Dips',
+  'Running',
+]
+const ONBOARDING_STEPS = [
+  { key: 'welcome', label: 'Welcome' },
+  { key: 'profile', label: 'Body basics' },
+  { key: 'body', label: 'Goal' },
+  { key: 'training', label: 'Training' },
+  { key: 'injuries', label: 'Limits' },
+  { key: 'equipment', label: 'Equipment' },
+  { key: 'food', label: 'Food' },
+  { key: 'habits', label: 'Habits' },
+  { key: 'photos', label: 'Photos' },
+  { key: 'complete', label: 'Review' },
+]
+const ONBOARDING_STEP_INDEX = ONBOARDING_STEPS.reduce((map, step, index) => {
+  map[step.key] = index
+  return map
+}, {})
 
 function useLoadedOnboardingState() {
   const [loading, setLoading] = useState(true)
@@ -60,12 +86,50 @@ function useLoadedOnboardingState() {
   return { loading, state, error, setState }
 }
 
-function StepLayout({ title, subtitle, children }) {
+function StepLayout({ stepKey, title, subtitle, why, children }) {
+  const location = useLocation()
+  const fallbackKey = location.pathname.split('/').filter(Boolean).pop() || 'welcome'
+  const resolvedStepKey = stepKey || fallbackKey
+  const currentIndex = ONBOARDING_STEP_INDEX[resolvedStepKey] ?? 0
+  const totalTransitions = Math.max(1, ONBOARDING_STEPS.length - 1)
+  const percentComplete = Math.round((currentIndex / totalTransitions) * 100)
+
   return (
     <div className="onboarding-screen">
+      <div className="dash-card onboarding-progress-card">
+        <div className="onboarding-progress-top">
+          <span>{percentComplete}% complete</span>
+          <span>{ONBOARDING_STEPS[currentIndex]?.label || 'Setup'}</span>
+        </div>
+        <div className="onboarding-progress-track" aria-hidden="true">
+          <span className="onboarding-progress-fill" style={{ width: `${percentComplete}%` }} />
+        </div>
+        <div className="onboarding-progress-steps" aria-hidden="true">
+          {ONBOARDING_STEPS.map((step, index) => (
+            <span key={step.key} className={`onboarding-progress-step ${index <= currentIndex ? 'active' : ''}`} />
+          ))}
+        </div>
+      </div>
       <h2>{title}</h2>
       {subtitle ? <p className="settings-subtitle">{subtitle}</p> : null}
+      {why ? (
+        <div className="dash-card onboarding-why-card">
+          <strong>Why we ask</strong>
+          <p>{why}</p>
+        </div>
+      ) : null}
       {children}
+    </div>
+  )
+}
+
+function StepUnlock({ text }) {
+  if (!text) return null
+
+  return (
+    <div className="dash-card onboarding-unlock-card">
+      <strong>What this unlocks</strong>
+      <p>{text}</p>
     </div>
   )
 }
@@ -74,7 +138,13 @@ function Welcome() {
   const navigate = useNavigate()
 
   return (
-    <StepLayout title="Welcome to Johnny5k" subtitle="We’ll set up your body data, training background, food preferences, and recovery defaults in a few quick steps.">
+    <StepLayout
+      stepKey="welcome"
+      title="Welcome to Johnny 5000"
+      subtitle="We’ll set up your body data, training background, food preferences, and recovery defaults in a few quick steps."
+      why="This setup gives Johnny enough context to build a first plan that fits your body, schedule, food preferences, and recovery needs."
+    >
+      <StepUnlock text="The next step builds the body and timing profile Johnny uses everywhere else in the app." />
       <button className="btn-primary" onClick={() => navigate('/onboarding/profile')}>Start setup</button>
     </StepLayout>
   )
@@ -117,60 +187,67 @@ function ProfileStep() {
   if (loading) return <div className="screen-loading">Loading…</div>
 
   return (
-    <form className="onboarding-screen onboarding-step-form" onSubmit={next}>
-      <h2>Body basics</h2>
-      <div className="onboarding-form">
-        <label>First name<input value={form.first_name} onChange={e => update('first_name', e.target.value)} required /></label>
-        <label>Last name<input value={form.last_name} onChange={e => update('last_name', e.target.value)} /></label>
-        <label>Date of birth<input type="date" value={form.date_of_birth} onChange={e => update('date_of_birth', e.target.value)} required /></label>
-        <label>Sex
-          <select value={form.sex} onChange={e => update('sex', e.target.value)}>
-            <option value="male">Male</option>
-            <option value="female">Female</option>
-            <option value="other">Other</option>
-            <option value="prefer_not_to_say">Prefer not to say</option>
-          </select>
-        </label>
-        <label>
-          Height
-          <div className="height-row">
-            <label className="onboarding-subfield">Feet
-              <div className="height-field">
-                <input type="number" min="4" max="7" value={form.height_ft} onChange={e => update('height_ft', e.target.value)} required />
-                <span className="height-unit">ft</span>
-              </div>
-            </label>
-            <label className="onboarding-subfield">Inches
-              <div className="height-field">
-                <input type="number" min="0" max="11" value={form.height_in_part} onChange={e => update('height_in_part', e.target.value)} />
-                <span className="height-unit">in</span>
-              </div>
-            </label>
-          </div>
-        </label>
-        <label>Timezone
-          <div className="timezone-picker">
-            <label className="onboarding-subfield">Region
-              <select value={timezoneRegion} onChange={e => {
-                const nextRegion = e.target.value
-                const nextZones = getTimezonesForRegion(nextRegion)
-                setTimezoneRegion(nextRegion)
-                update('timezone', nextZones.includes(form.timezone) ? form.timezone : nextZones[0] || form.timezone)
-              }}>
-                {TIMEZONE_REGIONS.map(region => <option key={region} value={region}>{region}</option>)}
-              </select>
-            </label>
-            <label className="onboarding-subfield">Timezone
-              <select value={form.timezone} onChange={e => update('timezone', e.target.value)}>
-                {regionTimezones.map(zone => <option key={zone} value={zone}>{zone}</option>)}
-              </select>
-            </label>
-          </div>
-        </label>
-        {(error || loadError) && <p className="error">{error || loadError}</p>}
-        <button className="btn-primary" type="submit">Next</button>
-      </div>
-    </form>
+    <StepLayout
+      stepKey="profile"
+      title="Body basics"
+      subtitle="Start with the details Johnny uses to estimate targets and schedule messages at the right time."
+      why="Age, sex, height, and timezone all affect your calorie math, pacing, and when reminders should hit."
+    >
+      <form className="onboarding-step-form" onSubmit={next}>
+        <div className="onboarding-form">
+          <label>First name<input value={form.first_name} onChange={e => update('first_name', e.target.value)} required /></label>
+          <label>Last name<input value={form.last_name} onChange={e => update('last_name', e.target.value)} /></label>
+          <label>Date of birth<input type="date" value={form.date_of_birth} onChange={e => update('date_of_birth', e.target.value)} required /></label>
+          <label>Sex
+            <select value={form.sex} onChange={e => update('sex', e.target.value)}>
+              <option value="male">Male</option>
+              <option value="female">Female</option>
+              <option value="other">Other</option>
+              <option value="prefer_not_to_say">Prefer not to say</option>
+            </select>
+          </label>
+          <label>
+            Height
+            <div className="height-row">
+              <label className="onboarding-subfield">Feet
+                <div className="height-field">
+                  <input type="number" min="4" max="7" value={form.height_ft} onChange={e => update('height_ft', e.target.value)} required />
+                  <span className="height-unit">ft</span>
+                </div>
+              </label>
+              <label className="onboarding-subfield">Inches
+                <div className="height-field">
+                  <input type="number" min="0" max="11" value={form.height_in_part} onChange={e => update('height_in_part', e.target.value)} />
+                  <span className="height-unit">in</span>
+                </div>
+              </label>
+            </div>
+          </label>
+          <label>Timezone
+            <div className="timezone-picker">
+              <label className="onboarding-subfield">Region
+                <select value={timezoneRegion} onChange={e => {
+                  const nextRegion = e.target.value
+                  const nextZones = getTimezonesForRegion(nextRegion)
+                  setTimezoneRegion(nextRegion)
+                  update('timezone', nextZones.includes(form.timezone) ? form.timezone : nextZones[0] || form.timezone)
+                }}>
+                  {TIMEZONE_REGIONS.map(region => <option key={region} value={region}>{region}</option>)}
+                </select>
+              </label>
+              <label className="onboarding-subfield">Timezone
+                <select value={form.timezone} onChange={e => update('timezone', e.target.value)}>
+                  {regionTimezones.map(zone => <option key={zone} value={zone}>{zone}</option>)}
+                </select>
+              </label>
+            </div>
+          </label>
+          {(error || loadError) && <p className="error">{error || loadError}</p>}
+          <StepUnlock text="Next, Johnny will set your goal direction and starting calorie math." />
+          <button className="btn-primary" type="submit">Next</button>
+        </div>
+      </form>
+    </StepLayout>
   )
 }
 
@@ -203,36 +280,43 @@ function BodyStep() {
   if (loading) return <div className="screen-loading">Loading…</div>
 
   return (
-    <form className="onboarding-screen onboarding-step-form" onSubmit={next}>
-      <h2>Goal</h2>
-      <label>Current weight (lbs)<input type="number" min="80" max="600" step="0.1" value={form.starting_weight_lb} onChange={e => update('starting_weight_lb', e.target.value)} required /></label>
-      <label>Goal
-        <select value={form.current_goal} onChange={e => update('current_goal', e.target.value)}>
-          <option value="cut">Lose fat</option>
-          <option value="maintain">Maintain</option>
-          <option value="gain">Gain muscle</option>
-          <option value="recomp">Recomposition</option>
-        </select>
-      </label>
-      <label>Target pace
-        <select value={form.goal_rate} onChange={e => update('goal_rate', e.target.value)}>
-          <option value="slow">Slow</option>
-          <option value="moderate">Moderate</option>
-          <option value="aggressive">Aggressive</option>
-        </select>
-      </label>
-      <label>Activity level
-        <select value={form.activity_level} onChange={e => update('activity_level', e.target.value)}>
-          <option value="sedentary">Sedentary</option>
-          <option value="light">Light</option>
-          <option value="moderate">Moderate</option>
-          <option value="high">High</option>
-          <option value="athlete">Athlete</option>
-        </select>
-      </label>
-      {error && <p className="error">{error}</p>}
-      <button className="btn-primary" type="submit">Next</button>
-    </form>
+    <StepLayout
+      stepKey="body"
+      title="Goal"
+      subtitle="Set the outcome and pace Johnny should optimize for."
+      why="Current weight, goal, and daily activity tell Johnny how aggressive your calorie target should be and how hard to push the plan."
+    >
+      <form className="onboarding-step-form" onSubmit={next}>
+        <label>Current weight (lbs)<input type="number" min="80" max="600" step="0.1" value={form.starting_weight_lb} onChange={e => update('starting_weight_lb', e.target.value)} required /></label>
+        <label>Goal
+          <select value={form.current_goal} onChange={e => update('current_goal', e.target.value)}>
+            <option value="cut">Lose fat</option>
+            <option value="maintain">Maintain</option>
+            <option value="gain">Gain muscle</option>
+            <option value="recomp">Recomposition</option>
+          </select>
+        </label>
+        <label>Target pace
+          <select value={form.goal_rate} onChange={e => update('goal_rate', e.target.value)}>
+            <option value="slow">Slow</option>
+            <option value="moderate">Moderate</option>
+            <option value="aggressive">Aggressive</option>
+          </select>
+        </label>
+        <label>Activity level
+          <select value={form.activity_level} onChange={e => update('activity_level', e.target.value)}>
+            <option value="sedentary">Sedentary</option>
+            <option value="light">Light</option>
+            <option value="moderate">Moderate</option>
+            <option value="high">High</option>
+            <option value="athlete">Athlete</option>
+          </select>
+        </label>
+        {error && <p className="error">{error}</p>}
+        <StepUnlock text="Next, Johnny will build a realistic training week around your schedule and experience." />
+        <button className="btn-primary" type="submit">Next</button>
+      </form>
+    </StepLayout>
   )
 }
 
@@ -290,49 +374,56 @@ function TrainingStep() {
   if (loading) return <div className="screen-loading">Loading…</div>
 
   return (
-    <form className="onboarding-screen onboarding-step-form" onSubmit={next}>
-      <h2>Training background</h2>
-      <label>Experience
-        <select value={form.training_experience} onChange={e => setForm(current => ({ ...current, training_experience: e.target.value }))}>
-          <option value="beginner">Beginner</option>
-          <option value="intermediate">Intermediate</option>
-          <option value="advanced">Advanced</option>
-        </select>
-      </label>
-      <label>Typical session length
-        <select value={form.available_time_default} onChange={e => setForm(current => ({ ...current, available_time_default: e.target.value }))}>
-          <option value="short">Short</option>
-          <option value="medium">Medium</option>
-          <option value="full">Full</option>
-        </select>
-      </label>
-      <label>Confidence with lifting
-        <select value={form.workout_confidence} onChange={e => setForm(current => ({ ...current, workout_confidence: e.target.value }))}>
-          <option value="building">Still building confidence</option>
-          <option value="comfortable">Comfortable</option>
-          <option value="strong">Very comfortable</option>
-        </select>
-      </label>
-      <div className="dash-card settings-section onboarding-split-card">
-        <strong>Set your week</strong>
-        <p className="settings-subtitle">Choose what each day should do. Use rest on days you want protected off-days.</p>
-        <div className="onboarding-schedule-list">
-          {WORKOUT_DAYS.map(day => {
-            const scheduled = form.weekly_schedule.find(entry => entry.day === day) || { day, day_type: 'rest' }
-            return (
-              <label key={day} className="onboarding-schedule-row onboarding-schedule-field">
-                <span>{day}</span>
-                <select value={scheduled.day_type} onChange={e => updateSchedule(day, e.target.value)}>
-                  {DAY_TYPE_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-                </select>
-              </label>
-            )
-          })}
+    <StepLayout
+      stepKey="training"
+      title="Training background"
+      subtitle="Tell Johnny how much lifting experience you have and what a realistic training week looks like."
+      why="This controls your starting split, time tier, and how ambitious Johnny should be with exercise selection and progression."
+    >
+      <form className="onboarding-step-form" onSubmit={next}>
+        <label>Experience
+          <select value={form.training_experience} onChange={e => setForm(current => ({ ...current, training_experience: e.target.value }))}>
+            <option value="beginner">Beginner</option>
+            <option value="intermediate">Intermediate</option>
+            <option value="advanced">Advanced</option>
+          </select>
+        </label>
+        <label>Typical session length
+          <select value={form.available_time_default} onChange={e => setForm(current => ({ ...current, available_time_default: e.target.value }))}>
+            <option value="short">Short</option>
+            <option value="medium">Medium</option>
+            <option value="full">Full</option>
+          </select>
+        </label>
+        <label>Confidence with lifting
+          <select value={form.workout_confidence} onChange={e => setForm(current => ({ ...current, workout_confidence: e.target.value }))}>
+            <option value="building">Still building confidence</option>
+            <option value="comfortable">Comfortable</option>
+            <option value="strong">Very comfortable</option>
+          </select>
+        </label>
+        <div className="dash-card settings-section onboarding-split-card">
+          <strong>Set your week</strong>
+          <p className="settings-subtitle">Choose what each day should do. Use rest on days you want protected off-days.</p>
+          <div className="onboarding-schedule-list">
+            {WORKOUT_DAYS.map(day => {
+              const scheduled = form.weekly_schedule.find(entry => entry.day === day) || { day, day_type: 'rest' }
+              return (
+                <label key={day} className="onboarding-schedule-row onboarding-schedule-field">
+                  <span>{day}</span>
+                  <select value={scheduled.day_type} onChange={e => updateSchedule(day, e.target.value)}>
+                    {DAY_TYPE_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                  </select>
+                </label>
+              )
+            })}
+          </div>
         </div>
-      </div>
-      {error && <p className="error">{error}</p>}
-      <button className="btn-primary" type="submit">Next</button>
-    </form>
+        {error && <p className="error">{error}</p>}
+        <StepUnlock text="Next, Johnny will use your limits to work around problem movements before equipment gets layered in." />
+        <button className="btn-primary" type="submit">Next</button>
+      </form>
+    </StepLayout>
   )
 }
 
@@ -340,6 +431,7 @@ function InjuriesStep() {
   const navigate = useNavigate()
   const { loading, state } = useLoadedOnboardingState()
   const [form, setForm] = useState(injuriesFormFromState())
+  const [customAvoid, setCustomAvoid] = useState('')
   const [error, setError] = useState('')
 
   useEffect(() => {
@@ -353,6 +445,34 @@ function InjuriesStep() {
     })
     return map
   }, [form.flags])
+  const selectedAvoids = useMemo(() => parseCommaList(form.exercise_avoid), [form.exercise_avoid])
+
+  function setAvoids(nextValues) {
+    setForm(current => ({ ...current, exercise_avoid: nextValues.join(', ') }))
+  }
+
+  function addAvoidTerm(term) {
+    const nextTerm = String(term ?? '').trim()
+    if (!nextTerm) return
+    if (selectedAvoids.some(item => item.toLowerCase() === nextTerm.toLowerCase())) {
+      setCustomAvoid('')
+      return
+    }
+    setAvoids([...selectedAvoids, nextTerm])
+    setCustomAvoid('')
+  }
+
+  function removeAvoidTerm(term) {
+    setAvoids(selectedAvoids.filter(item => item.toLowerCase() !== String(term).toLowerCase()))
+  }
+
+  function toggleAvoidTerm(term) {
+    if (selectedAvoids.some(item => item.toLowerCase() === String(term).toLowerCase())) {
+      removeAvoidTerm(term)
+      return
+    }
+    addAvoidTerm(term)
+  }
 
   function toggleFlag(area) {
     setForm(current => {
@@ -403,30 +523,80 @@ function InjuriesStep() {
   if (loading) return <div className="screen-loading">Loading…</div>
 
   return (
-    <form className="onboarding-screen onboarding-step-form" onSubmit={next}>
-      <h2>Injuries and limits</h2>
-      <label>Exercises to avoid<textarea value={form.exercise_avoid} onChange={e => setForm(current => ({ ...current, exercise_avoid: e.target.value }))} placeholder="Example: upright rows, deep lunges" /></label>
-      <div className="onboarding-chip-grid">
-        {BODY_AREAS.map(area => (
-          <button key={area} type="button" className={`onboarding-chip ${flagMap.get(area)?.active ? 'active' : ''}`} onClick={() => toggleFlag(area)}>{area}</button>
-        ))}
-      </div>
-      {form.flags.filter(flag => flag.active).map(flag => (
-        <div key={flag.body_area} className="dash-card settings-section">
-          <strong>{flag.body_area}</strong>
-          <label>Severity
-            <select value={flag.severity} onChange={e => updateFlag(flag.body_area, 'severity', e.target.value)}>
-              <option value="low">Low</option>
-              <option value="medium">Medium</option>
-              <option value="high">High</option>
-            </select>
-          </label>
-          <label>Notes<input value={flag.notes} onChange={e => updateFlag(flag.body_area, 'notes', e.target.value)} placeholder="What tends to flare it up?" /></label>
+    <StepLayout
+      stepKey="injuries"
+      title="Injuries and limits"
+      subtitle="Flag movements and body areas Johnny should work around from day one."
+      why="Johnny uses this to avoid suggesting exercises that are likely to aggravate a known issue and to steer recovery decisions more carefully."
+    >
+      <form className="onboarding-step-form" onSubmit={next}>
+        <div className="dash-card settings-section">
+          <strong>Exercises to avoid</strong>
+          <p className="settings-subtitle">Pick common movement patterns or search and add your own. Johnny will use these later when suggesting exercises.</p>
+          <div className="onboarding-chip-grid onboarding-chip-grid-compact">
+            {COMMON_EXERCISE_AVOIDS.map(item => (
+              <button
+                key={item}
+                type="button"
+                className={`onboarding-chip ${selectedAvoids.some(value => value.toLowerCase() === item.toLowerCase()) ? 'active' : ''}`}
+                onClick={() => toggleAvoidTerm(item)}
+              >
+                {item}
+              </button>
+            ))}
+          </div>
+          <div className="onboarding-inline-action">
+            <input
+              list="onboarding-exercise-avoid-suggestions"
+              value={customAvoid}
+              onChange={e => setCustomAvoid(e.target.value)}
+              onKeyDown={event => {
+                if (event.key === 'Enter') {
+                  event.preventDefault()
+                  addAvoidTerm(customAvoid)
+                }
+              }}
+              placeholder="Search or add a custom movement"
+            />
+            <button type="button" className="btn-secondary" onClick={() => addAvoidTerm(customAvoid)}>Add</button>
+          </div>
+          <datalist id="onboarding-exercise-avoid-suggestions">
+            {COMMON_EXERCISE_AVOIDS.map(item => <option key={item} value={item} />)}
+          </datalist>
+          {selectedAvoids.length ? (
+            <div className="onboarding-token-list">
+              {selectedAvoids.map(item => (
+                <button key={item} type="button" className="onboarding-token" onClick={() => removeAvoidTerm(item)}>
+                  <span>{item}</span>
+                  <span className="onboarding-token-remove">Remove</span>
+                </button>
+              ))}
+            </div>
+          ) : null}
         </div>
-      ))}
-      {error && <p className="error">{error}</p>}
-      <button className="btn-primary" type="submit">Next</button>
-    </form>
+        <div className="onboarding-chip-grid">
+          {BODY_AREAS.map(area => (
+            <button key={area} type="button" className={`onboarding-chip ${flagMap.get(area)?.active ? 'active' : ''}`} onClick={() => toggleFlag(area)}>{area}</button>
+          ))}
+        </div>
+        {form.flags.filter(flag => flag.active).map(flag => (
+          <div key={flag.body_area} className="dash-card settings-section">
+            <strong>{flag.body_area}</strong>
+            <label>Severity
+              <select value={flag.severity} onChange={e => updateFlag(flag.body_area, 'severity', e.target.value)}>
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+              </select>
+            </label>
+            <label>Notes<input value={flag.notes} onChange={e => updateFlag(flag.body_area, 'notes', e.target.value)} placeholder="What tends to flare it up?" /></label>
+          </div>
+        ))}
+        {error && <p className="error">{error}</p>}
+        <StepUnlock text="Next, Johnny will narrow the exercise pool to what you can actually do with your available equipment." />
+        <button className="btn-primary" type="submit">Next</button>
+      </form>
+    </StepLayout>
   )
 }
 
@@ -464,16 +634,23 @@ function EquipmentStep() {
   if (loading) return <div className="screen-loading">Loading…</div>
 
   return (
-    <form className="onboarding-screen onboarding-step-form" onSubmit={next}>
-      <h2>Equipment</h2>
-      <div className="onboarding-chip-grid">
-        {EQUIPMENT_OPTIONS.map(item => (
-          <button key={item} type="button" className={`onboarding-chip ${form.equipment_available.includes(item) ? 'active' : ''}`} onClick={() => toggleEquipment(item)}>{item}</button>
-        ))}
-      </div>
-      {error && <p className="error">{error}</p>}
-      <button className="btn-primary" type="submit">Next</button>
-    </form>
+    <StepLayout
+      stepKey="equipment"
+      title="Equipment"
+      subtitle="Tell Johnny what you actually have access to."
+      why="This lets Johnny keep the plan realistic instead of suggesting exercises that require equipment you do not have."
+    >
+      <form className="onboarding-step-form" onSubmit={next}>
+        <div className="onboarding-chip-grid">
+          {EQUIPMENT_OPTIONS.map(item => (
+            <button key={item} type="button" className={`onboarding-chip ${form.equipment_available.includes(item) ? 'active' : ''}`} onClick={() => toggleEquipment(item)}>{item}</button>
+          ))}
+        </div>
+        {error && <p className="error">{error}</p>}
+        <StepUnlock text="Next, Johnny will shape meal suggestions around foods you actually like and already eat." />
+        <button className="btn-primary" type="submit">Next</button>
+      </form>
+    </StepLayout>
   )
 }
 
@@ -516,23 +693,30 @@ function FoodStep() {
   if (loading) return <div className="screen-loading">Loading…</div>
 
   return (
-    <form className="onboarding-screen onboarding-step-form" onSubmit={next}>
-      <h2>Food habits</h2>
-      <label>Preferred foods<textarea value={form.preferred_foods} onChange={e => update('preferred_foods', e.target.value)} placeholder="Greek yogurt, eggs, chicken, rice" /></label>
-      <label>Disliked foods<textarea value={form.disliked_foods} onChange={e => update('disliked_foods', e.target.value)} placeholder="Separate with commas" /></label>
-      <label>Common breakfasts<textarea value={form.common_breakfasts} onChange={e => update('common_breakfasts', e.target.value)} placeholder="Protein oats, egg wrap" /></label>
-      <label>Common lunches<textarea value={form.common_lunches} onChange={e => update('common_lunches', e.target.value)} placeholder="Chicken bowl, turkey sandwich" /></label>
-      <label>Meal frequency
-        <select value={form.meal_frequency} onChange={e => update('meal_frequency', e.target.value)}>
-          <option value="2">2 meals</option>
-          <option value="3">3 meals</option>
-          <option value="4">4 meals</option>
-          <option value="5+">5 or more</option>
-        </select>
-      </label>
-      {error && <p className="error">{error}</p>}
-      <button className="btn-primary" type="submit">Next</button>
-    </form>
+    <StepLayout
+      stepKey="food"
+      title="Food habits"
+      subtitle="Give Johnny enough signal to make meal suggestions feel familiar instead of generic."
+      why="Food preferences, dislikes, and common meals shape suggested meals, grocery ideas, and the nudges Johnny gives you later."
+    >
+      <form className="onboarding-step-form" onSubmit={next}>
+        <label>Preferred foods<textarea value={form.preferred_foods} onChange={e => update('preferred_foods', e.target.value)} placeholder="Greek yogurt, eggs, chicken, rice" /></label>
+        <label>Disliked foods<textarea value={form.disliked_foods} onChange={e => update('disliked_foods', e.target.value)} placeholder="Separate with commas" /></label>
+        <label>Common breakfasts<textarea value={form.common_breakfasts} onChange={e => update('common_breakfasts', e.target.value)} placeholder="Protein oats, egg wrap" /></label>
+        <label>Common lunches<textarea value={form.common_lunches} onChange={e => update('common_lunches', e.target.value)} placeholder="Chicken bowl, turkey sandwich" /></label>
+        <label>Meal frequency
+          <select value={form.meal_frequency} onChange={e => update('meal_frequency', e.target.value)}>
+            <option value="2">2 meals</option>
+            <option value="3">3 meals</option>
+            <option value="4">4 meals</option>
+            <option value="5+">5 or more</option>
+          </select>
+        </label>
+        {error && <p className="error">{error}</p>}
+        <StepUnlock text="Next, Johnny will lock in your recovery defaults and notification preferences." />
+        <button className="btn-primary" type="submit">Next</button>
+      </form>
+    </StepLayout>
   )
 }
 
@@ -583,83 +767,90 @@ function HabitsStep() {
   if (loading) return <div className="screen-loading">Loading…</div>
 
   return (
-    <form className="onboarding-screen onboarding-step-form" onSubmit={next}>
-      <h2>Baseline habits</h2>
-      <label>Average steps<input type="number" min="1000" max="30000" step="1" value={form.target_steps} onChange={e => update('target_steps', e.target.value)} /></label>
-      <label>Average sleep<input type="number" min="4" max="12" step="0.5" value={form.target_sleep_hours} onChange={e => update('target_sleep_hours', e.target.value)} /></label>
-      <label>Cardio frequency
-        <select value={form.cardio_frequency} onChange={e => update('cardio_frequency', e.target.value)}>
-          <option value="rarely">Rarely</option>
-          <option value="1-2x">1–2x per week</option>
-          <option value="3-4x">3–4x per week</option>
-          <option value="5+x">5x or more</option>
-        </select>
-      </label>
-      <label className="toggle-row onboarding-toggle-field">
-        <span>SMS reminders</span>
-        <input type="checkbox" checked={form.notifications_enabled} onChange={e => update('notifications_enabled', e.target.checked)} />
-      </label>
-      {form.notifications_enabled ? <label>Phone<input type="tel" value={form.phone} onChange={e => update('phone', e.target.value)} placeholder="+15551234567" /></label> : null}
-      {form.notifications_enabled ? (
-        <div className="settings-grid settings-grid-compact">
-          <div className="reminder-setting-card">
-            <label className="toggle-row">
-              <span>Workout reminder</span>
-              <input type="checkbox" checked={form.workout_reminder_enabled} onChange={e => update('workout_reminder_enabled', e.target.checked)} />
-            </label>
-            {form.workout_reminder_enabled ? (
-              <label>Time
-                <select value={form.workout_reminder_hour} onChange={e => update('workout_reminder_hour', Number(e.target.value))}>
-                  {REMINDER_HOUR_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-                </select>
+    <StepLayout
+      stepKey="habits"
+      title="Baseline habits"
+      subtitle="Set the recovery and notification defaults Johnny should use to coach you."
+      why="Steps, sleep, cardio frequency, and reminder preferences help Johnny set better baselines and decide when to prompt you."
+    >
+      <form className="onboarding-step-form" onSubmit={next}>
+        <label>Average steps<input type="number" min="1000" max="30000" step="1" value={form.target_steps} onChange={e => update('target_steps', e.target.value)} /></label>
+        <label>Average sleep<input type="number" min="4" max="12" step="0.5" value={form.target_sleep_hours} onChange={e => update('target_sleep_hours', e.target.value)} /></label>
+        <label>Cardio frequency
+          <select value={form.cardio_frequency} onChange={e => update('cardio_frequency', e.target.value)}>
+            <option value="rarely">Rarely</option>
+            <option value="1-2x">1–2x per week</option>
+            <option value="3-4x">3–4x per week</option>
+            <option value="5+x">5x or more</option>
+          </select>
+        </label>
+        <label className="toggle-row onboarding-toggle-field">
+          <span>SMS reminders</span>
+          <input type="checkbox" checked={form.notifications_enabled} onChange={e => update('notifications_enabled', e.target.checked)} />
+        </label>
+        {form.notifications_enabled ? <label>Phone<input type="tel" value={form.phone} onChange={e => update('phone', e.target.value)} placeholder="+15551234567" /></label> : null}
+        {form.notifications_enabled ? (
+          <div className="settings-grid settings-grid-compact">
+            <div className="reminder-setting-card">
+              <label className="toggle-row">
+                <span>Workout reminder</span>
+                <input type="checkbox" checked={form.workout_reminder_enabled} onChange={e => update('workout_reminder_enabled', e.target.checked)} />
               </label>
-            ) : null}
-          </div>
-          <div className="reminder-setting-card">
-            <label className="toggle-row">
-              <span>Meal reminder</span>
-              <input type="checkbox" checked={form.meal_reminder_enabled} onChange={e => update('meal_reminder_enabled', e.target.checked)} />
-            </label>
-            {form.meal_reminder_enabled ? (
-              <label>Time
-                <select value={form.meal_reminder_hour} onChange={e => update('meal_reminder_hour', Number(e.target.value))}>
-                  {REMINDER_HOUR_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-                </select>
+              {form.workout_reminder_enabled ? (
+                <label>Time
+                  <select value={form.workout_reminder_hour} onChange={e => update('workout_reminder_hour', Number(e.target.value))}>
+                    {REMINDER_HOUR_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  </select>
+                </label>
+              ) : null}
+            </div>
+            <div className="reminder-setting-card">
+              <label className="toggle-row">
+                <span>Meal reminder</span>
+                <input type="checkbox" checked={form.meal_reminder_enabled} onChange={e => update('meal_reminder_enabled', e.target.checked)} />
               </label>
-            ) : null}
-          </div>
-          <div className="reminder-setting-card">
-            <label className="toggle-row">
-              <span>Sleep reminder</span>
-              <input type="checkbox" checked={form.sleep_reminder_enabled} onChange={e => update('sleep_reminder_enabled', e.target.checked)} />
-            </label>
-            {form.sleep_reminder_enabled ? (
-              <label>Time
-                <select value={form.sleep_reminder_hour} onChange={e => update('sleep_reminder_hour', Number(e.target.value))}>
-                  {REMINDER_HOUR_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-                </select>
+              {form.meal_reminder_enabled ? (
+                <label>Time
+                  <select value={form.meal_reminder_hour} onChange={e => update('meal_reminder_hour', Number(e.target.value))}>
+                    {REMINDER_HOUR_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  </select>
+                </label>
+              ) : null}
+            </div>
+            <div className="reminder-setting-card">
+              <label className="toggle-row">
+                <span>Sleep reminder</span>
+                <input type="checkbox" checked={form.sleep_reminder_enabled} onChange={e => update('sleep_reminder_enabled', e.target.checked)} />
               </label>
-            ) : null}
-          </div>
-          <div className="reminder-setting-card">
-            <label className="toggle-row">
-              <span>Weekly summary</span>
-              <input type="checkbox" checked={form.weekly_summary_enabled} onChange={e => update('weekly_summary_enabled', e.target.checked)} />
-            </label>
-            {form.weekly_summary_enabled ? (
-              <label>Time
-                <select value={form.weekly_summary_hour} onChange={e => update('weekly_summary_hour', Number(e.target.value))}>
-                  {REMINDER_HOUR_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-                </select>
+              {form.sleep_reminder_enabled ? (
+                <label>Time
+                  <select value={form.sleep_reminder_hour} onChange={e => update('sleep_reminder_hour', Number(e.target.value))}>
+                    {REMINDER_HOUR_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  </select>
+                </label>
+              ) : null}
+            </div>
+            <div className="reminder-setting-card">
+              <label className="toggle-row">
+                <span>Weekly summary</span>
+                <input type="checkbox" checked={form.weekly_summary_enabled} onChange={e => update('weekly_summary_enabled', e.target.checked)} />
               </label>
-            ) : null}
+              {form.weekly_summary_enabled ? (
+                <label>Time
+                  <select value={form.weekly_summary_hour} onChange={e => update('weekly_summary_hour', Number(e.target.value))}>
+                    {REMINDER_HOUR_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  </select>
+                </label>
+              ) : null}
+            </div>
           </div>
-        </div>
-      ) : null}
-      {form.notifications_enabled ? <p className="settings-subtitle">Times are sent in your local timezone. Current summary time: {formatReminderHour(form.weekly_summary_hour)} on Mondays.</p> : null}
-      {error && <p className="error">{error}</p>}
-      <button className="btn-primary" type="submit">Next</button>
-    </form>
+        ) : null}
+        {form.notifications_enabled ? <p className="settings-subtitle">Times are sent in your local timezone. Current summary time: {formatReminderHour(form.weekly_summary_hour)} on Mondays.</p> : null}
+        {error && <p className="error">{error}</p>}
+        <StepUnlock text="Next, you can add optional photos so Johnny has a cleaner visual baseline for future check-ins." />
+        <button className="btn-primary" type="submit">Next</button>
+      </form>
+    </StepLayout>
   )
 }
 
@@ -698,17 +889,24 @@ function PhotosStep() {
   if (loading) return <div className="screen-loading">Loading…</div>
 
   return (
-    <form className="onboarding-screen onboarding-step-form" onSubmit={next}>
-      <h2>Optional progress photos</h2>
-      <label>Front photo<input type="file" accept="image/*" capture="environment" onChange={e => setFrontFile(e.target.files?.[0] || null)} /></label>
-      <label>Side photo<input type="file" accept="image/*" capture="environment" onChange={e => setSideFile(e.target.files?.[0] || null)} /></label>
-      {(state?.progress_photos?.length ?? 0) > 0 ? <p className="success-message">{state.progress_photos.length} progress photo(s) already on file.</p> : null}
-      {error && <p className="error">{error}</p>}
-      <div className="settings-actions">
-        <button className="btn-secondary" type="button" onClick={() => navigate('/onboarding/complete')}>Skip for now</button>
-        <button className="btn-primary" type="submit" disabled={saving}>{saving ? 'Uploading…' : 'Continue'}</button>
-      </div>
-    </form>
+    <StepLayout
+      stepKey="photos"
+      title="Optional progress photos"
+      subtitle="You can skip this, but it gives Johnny a cleaner visual baseline."
+      why="Photos make future body-composition check-ins more useful because Johnny can compare against the same starting reference."
+    >
+      <form className="onboarding-step-form" onSubmit={next}>
+        <label>Front photo<input type="file" accept="image/*" capture="environment" onChange={e => setFrontFile(e.target.files?.[0] || null)} /></label>
+        <label>Side photo<input type="file" accept="image/*" capture="environment" onChange={e => setSideFile(e.target.files?.[0] || null)} /></label>
+        {(state?.progress_photos?.length ?? 0) > 0 ? <p className="success-message">{state.progress_photos.length} progress photo(s) already on file.</p> : null}
+        {error && <p className="error">{error}</p>}
+        <StepUnlock text="Next, Johnny will show you the exact plan, split, and preferences he is about to use." />
+        <div className="settings-actions">
+          <button className="btn-secondary" type="button" onClick={() => navigate('/onboarding/complete')}>Skip for now</button>
+          <button className="btn-primary" type="submit" disabled={saving}>{saving ? 'Uploading…' : 'Continue'}</button>
+        </div>
+      </form>
+    </StepLayout>
   )
 }
 
@@ -742,7 +940,12 @@ function CompleteStep() {
     const targets = normalizeTargets(result)
 
     return (
-      <StepLayout title="Start your plan" subtitle="Your targets and first-week split are ready.">
+      <StepLayout
+        stepKey="complete"
+        title="Start your plan"
+        subtitle="Your targets and first-week split are ready."
+        why="This is the personalized starting point Johnny built from the information you just gave him."
+      >
         <div className="dash-card target-preview-card">
           <div className="target-preview-row"><span>Calories</span><strong>{targets.target_calories}</strong></div>
           <div className="target-preview-row"><span>Protein</span><strong>{targets.target_protein_g}g</strong></div>
@@ -766,22 +969,79 @@ function CompleteStep() {
           <h3>Coach note</h3>
           <p>{result.coach_message}</p>
         </div>
+        <StepUnlock text="From here, Johnny will use this setup to drive your dashboard, workout suggestions, nutrition guidance, and reminders." />
         <button className="btn-primary" onClick={() => navigate('/dashboard')}>Open dashboard</button>
       </StepLayout>
     )
   }
 
   const commonMeals = state?.prefs?.common_breakfasts_json ?? {}
+  const preferredSchedule = Array.isArray(state?.prefs?.preferred_workout_days_json) ? state.prefs.preferred_workout_days_json.filter(entry => entry?.day_type !== 'rest') : []
+  const avoidedExercises = Array.isArray(state?.prefs?.exercise_avoid_json) ? state.prefs.exercise_avoid_json : []
+  const equipment = Array.isArray(state?.prefs?.equipment_available_json) ? state.prefs.equipment_available_json : []
+  const foodPrefs = state?.prefs?.food_preferences_json ?? {}
 
   return (
-    <StepLayout title="Summary" subtitle="We’ll calculate your starting targets, generate your first split, and use your preferences to personalize the app.">
-      <div className="dash-card settings-section">
-        <h3>Quick preview</h3>
-        <p>Goal: <strong>{state?.profile?.current_goal || 'recomp'}</strong></p>
-        <p>Experience: <strong>{state?.profile?.training_experience || 'beginner'}</strong></p>
-        <p>Common meals: <strong>{commonMeals.breakfasts || 'Not added yet'}</strong></p>
+    <StepLayout
+      stepKey="complete"
+      title="Summary"
+      subtitle="We’ll calculate your starting targets, generate your first split, and use your preferences to personalize the app."
+      why="This final step turns your onboarding answers into a real plan, starting calories, and the first set of meal suggestions."
+    >
+      <div className="onboarding-review-grid">
+        <div className="dash-card settings-section onboarding-review-card">
+          <div className="onboarding-review-head">
+            <h3>Body and goal</h3>
+            <button type="button" className="btn-secondary small" onClick={() => navigate('/onboarding/body')}>Edit</button>
+          </div>
+          <div className="onboarding-review-list">
+            <div className="onboarding-review-row"><span>Goal</span><strong>{state?.profile?.current_goal || 'recomp'}</strong></div>
+            <div className="onboarding-review-row"><span>Pace</span><strong>{state?.profile?.goal_rate || 'moderate'}</strong></div>
+            <div className="onboarding-review-row"><span>Weight</span><strong>{state?.profile?.starting_weight_lb || 'Not set'}</strong></div>
+          </div>
+        </div>
+        <div className="dash-card settings-section onboarding-review-card">
+          <div className="onboarding-review-head">
+            <h3>Training setup</h3>
+            <button type="button" className="btn-secondary small" onClick={() => navigate('/onboarding/training')}>Edit</button>
+          </div>
+          <div className="onboarding-review-list">
+            <div className="onboarding-review-row"><span>Experience</span><strong>{state?.profile?.training_experience || 'beginner'}</strong></div>
+            <div className="onboarding-review-row"><span>Session length</span><strong>{state?.profile?.available_time_default || 'medium'}</strong></div>
+            <div className="onboarding-review-row"><span>Week</span><strong>{preferredSchedule.length ? preferredSchedule.map(entry => `${entry.day} ${String(entry.day_type).replaceAll('_', ' ')}`).join(', ') : 'Not set'}</strong></div>
+          </div>
+        </div>
+        <div className="dash-card settings-section onboarding-review-card">
+          <div className="onboarding-review-head">
+            <h3>Limits and gear</h3>
+            <div className="onboarding-review-actions">
+              <button type="button" className="btn-secondary small" onClick={() => navigate('/onboarding/injuries')}>Edit limits</button>
+              <button type="button" className="btn-secondary small" onClick={() => navigate('/onboarding/equipment')}>Edit gear</button>
+            </div>
+          </div>
+          <div className="onboarding-review-list">
+            <div className="onboarding-review-row"><span>Avoided exercises</span><strong>{avoidedExercises.length ? avoidedExercises.join(', ') : 'None added'}</strong></div>
+            <div className="onboarding-review-row"><span>Body areas flagged</span><strong>{(state?.health_flags ?? []).filter(flag => flag?.active).map(flag => flag.body_area).join(', ') || 'None flagged'}</strong></div>
+            <div className="onboarding-review-row"><span>Equipment</span><strong>{equipment.length ? equipment.join(', ') : 'No equipment added yet'}</strong></div>
+          </div>
+        </div>
+        <div className="dash-card settings-section onboarding-review-card">
+          <div className="onboarding-review-head">
+            <h3>Food style</h3>
+            <div className="onboarding-review-actions">
+              <button type="button" className="btn-secondary small" onClick={() => navigate('/onboarding/food')}>Edit food</button>
+              <button type="button" className="btn-secondary small" onClick={() => navigate('/onboarding/habits')}>Edit habits</button>
+            </div>
+          </div>
+          <div className="onboarding-review-list">
+            <div className="onboarding-review-row"><span>Preferred foods</span><strong>{foodPrefs.preferred_foods || 'Not added yet'}</strong></div>
+            <div className="onboarding-review-row"><span>Meal frequency</span><strong>{foodPrefs.meal_frequency || '3'}</strong></div>
+            <div className="onboarding-review-row"><span>Common meals</span><strong>{commonMeals.breakfasts || commonMeals.lunches || 'Not added yet'}</strong></div>
+          </div>
+        </div>
       </div>
       {error && <p className="error">{error}</p>}
+      <StepUnlock text="If this looks like your real week, Johnny will now turn it into your first calorie target, split, and meal suggestions." />
       <button className="btn-primary" onClick={finish} disabled={submitting}>{submitting ? 'Building your plan…' : 'Start My Plan'}</button>
     </StepLayout>
   )

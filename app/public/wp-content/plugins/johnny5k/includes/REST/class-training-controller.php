@@ -169,7 +169,7 @@ class TrainingController {
 		] );
 
 		$plan_id = (int) $wpdb->insert_id;
-		$days_created = self::copy_template_days_to_plan( $plan_id, $template_id );
+		$days_created = self::copy_template_days_to_plan( $user_id, $plan_id, $template_id );
 
 		return new \WP_REST_Response( [
 			'plan_id'             => $plan_id,
@@ -449,8 +449,8 @@ class TrainingController {
 		) );
 	}
 
-	private static function copy_template_days_to_plan( int $plan_id, int $template_id ): int {
-		if ( $plan_id <= 0 || $template_id <= 0 ) {
+	private static function copy_template_days_to_plan( int $user_id, int $plan_id, int $template_id ): int {
+		if ( $user_id <= 0 || $plan_id <= 0 || $template_id <= 0 ) {
 			return 0;
 		}
 
@@ -480,13 +480,13 @@ class TrainingController {
 			}
 
 			$days_created += 1;
-			self::copy_template_day_exercises( (int) $template_day->id, $user_day_id );
+			self::copy_template_day_exercises( $user_id, (string) $template_day->day_type, (int) $template_day->id, $user_day_id );
 		}
 
 		return $days_created;
 	}
 
-	private static function copy_template_day_exercises( int $template_day_id, int $user_day_id ): void {
+	private static function copy_template_day_exercises( int $user_id, string $day_type, int $template_day_id, int $user_day_id ): void {
 		global $wpdb;
 		$p = $wpdb->prefix;
 
@@ -495,10 +495,23 @@ class TrainingController {
 			$template_day_id
 		) );
 
+		$selected_exercise_ids = [];
 		foreach ( $template_exercises as $exercise ) {
+			$resolved = TrainingEngine::resolve_day_exercise_candidate(
+				$user_id,
+				$day_type,
+				(string) $exercise->slot_type,
+				(int) $exercise->exercise_id,
+				$selected_exercise_ids
+			);
+			$resolved_exercise_id = (int) ( $resolved['exercise_id'] ?? 0 );
+			if ( ! empty( $resolved['blocked'] ) || $resolved_exercise_id <= 0 ) {
+				continue;
+			}
+
 			$wpdb->insert( $p . 'fit_user_training_day_exercises', [
 				'training_day_id' => $user_day_id,
-				'exercise_id'     => (int) $exercise->exercise_id,
+				'exercise_id'     => $resolved_exercise_id,
 				'slot_type'       => $exercise->slot_type,
 				'rep_min'         => (int) $exercise->rep_min,
 				'rep_max'         => (int) $exercise->rep_max,
@@ -506,6 +519,7 @@ class TrainingController {
 				'sort_order'      => (int) $exercise->priority,
 				'active'          => 1,
 			] );
+			$selected_exercise_ids[] = $resolved_exercise_id;
 		}
 	}
 

@@ -6,6 +6,7 @@ import { workoutApi } from '../api/client'
 export const useWorkoutStore = create(persist((set, get) => ({
   session: null,        // { session, exercises: [{ ...ex, sets: [] }] }
   sessionId: null,
+  customWorkoutDraft: null,
   loading: false,
   bootstrapped: false,
   error: null,
@@ -70,6 +71,10 @@ export const useWorkoutStore = create(persist((set, get) => ({
   }),
   clearPreviewDrafts: () => set({ previewDayType: '', previewDrafts: {} }),
   dismissUndoToast: () => set({ undoToast: null }),
+  clearCustomWorkoutDraft: async () => {
+    await workoutApi.clearCustomDraft()
+    set({ customWorkoutDraft: null })
+  },
 
   markSessionDiscarded: (sessionRecord) => set((state) => {
     const sessionId = Number(sessionRecord?.id || sessionRecord?.session_id || 0)
@@ -117,7 +122,7 @@ export const useWorkoutStore = create(persist((set, get) => ({
     return { discardedSessions: nextDiscarded }
   }),
 
-  clearSessionState: () => set({ session: null, sessionId: null, activeExerciseIdx: 0, wasResumed: false, sessionMode: 'normal', undoToast: null, error: null }),
+  clearSessionState: () => set({ session: null, sessionId: null, customWorkoutDraft: null, activeExerciseIdx: 0, wasResumed: false, sessionMode: 'normal', undoToast: null, error: null }),
 
   bootstrapSession: async () => {
     const { sessionId } = get()
@@ -135,6 +140,7 @@ export const useWorkoutStore = create(persist((set, get) => ({
             set({
               session: full,
               sessionId: full.session.id,
+              customWorkoutDraft: null,
               loading: false,
               bootstrapped: true,
               wasResumed: true,
@@ -159,13 +165,14 @@ export const useWorkoutStore = create(persist((set, get) => ({
       const current = await workoutApi.current()
       if (current?.session?.id) {
         if (isDiscardedSession(get().discardedSessions, current?.session)) {
-          set({ session: null, sessionId: null, loading: false, bootstrapped: true, wasResumed: false, activeExerciseIdx: 0, undoToast: null })
+          set({ session: null, sessionId: null, customWorkoutDraft: current?.custom_workout_draft ?? null, loading: false, bootstrapped: true, wasResumed: false, activeExerciseIdx: 0, undoToast: null })
           return
         }
 
         set({
           session: current,
           sessionId: current.session.id,
+          customWorkoutDraft: null,
           loading: false,
           bootstrapped: true,
           wasResumed: true,
@@ -176,17 +183,18 @@ export const useWorkoutStore = create(persist((set, get) => ({
         return
       }
 
-      set({ session: null, sessionId: null, loading: false, bootstrapped: true, wasResumed: false, activeExerciseIdx: 0, undoToast: null })
+      set({ session: null, sessionId: null, customWorkoutDraft: current?.custom_workout_draft ?? null, loading: false, bootstrapped: true, wasResumed: false, activeExerciseIdx: 0, undoToast: null })
     } catch (err) {
       set({ loading: false, error: err.message, bootstrapped: true })
     }
   },
 
   startSession: async (options = {}) => {
-    const { timeTier, readinessScore } = get()
+    const { timeTier, readinessScore, customWorkoutDraft } = get()
     const selectedTimeTier = options.timeTier ?? timeTier
     const selectedReadiness = options.readinessScore ?? readinessScore
     const selectedDayType = options.dayType ?? null
+    const customWorkoutDraftId = options.customWorkoutDraftId ?? customWorkoutDraft?.id ?? ''
     const selectedExerciseSwaps = Array.isArray(options.exerciseSwaps) ? options.exerciseSwaps : []
     const selectedExerciseOrder = Array.isArray(options.exerciseOrder) ? options.exerciseOrder : []
     set({ loading: true, error: null })
@@ -195,6 +203,7 @@ export const useWorkoutStore = create(persist((set, get) => ({
         time_tier: selectedTimeTier,
         readiness_score: selectedReadiness,
         ...(selectedDayType ? { day_type: selectedDayType } : {}),
+        ...(customWorkoutDraftId ? { custom_workout_draft_id: customWorkoutDraftId } : {}),
         ...(selectedExerciseSwaps.length ? { exercise_swaps: selectedExerciseSwaps } : {}),
         ...(selectedExerciseOrder.length ? { exercise_order: selectedExerciseOrder } : {}),
       })
@@ -208,6 +217,7 @@ export const useWorkoutStore = create(persist((set, get) => ({
           time_tier: selectedTimeTier,
           readiness_score: selectedReadiness,
           ...(selectedDayType ? { day_type: selectedDayType } : {}),
+          ...(customWorkoutDraftId ? { custom_workout_draft_id: customWorkoutDraftId } : {}),
           ...(selectedExerciseSwaps.length ? { exercise_swaps: selectedExerciseSwaps } : {}),
           ...(selectedExerciseOrder.length ? { exercise_order: selectedExerciseOrder } : {}),
         })
@@ -232,6 +242,7 @@ export const useWorkoutStore = create(persist((set, get) => ({
     const maxIndex = Math.max(0, (full?.exercises?.length ?? 1) - 1)
     set({
       session: full,
+      customWorkoutDraft: null,
       activeExerciseIdx: Math.min(get().activeExerciseIdx, maxIndex),
       sessionMode: full.session_mode || (Number(full?.session?.readiness_score ?? 0) <= 3 ? 'maintenance' : 'normal'),
       timeTier: full?.session?.time_tier || get().timeTier,
@@ -505,6 +516,7 @@ function setResolvedSessionState(set, get, sessionData, selectedTimeTier, select
   set({
     session: sessionData,
     sessionId: sessionData.session.id,
+    customWorkoutDraft: null,
     loading: false,
     bootstrapped: true,
     wasResumed: false,
