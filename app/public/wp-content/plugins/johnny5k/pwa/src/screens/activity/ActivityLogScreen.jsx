@@ -1,15 +1,32 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { bodyApi, workoutApi } from '../../api/client'
+import { useLocation, useNavigate } from 'react-router-dom'
+import { bodyApi } from '../../api/modules/body'
+import { workoutApi } from '../../api/modules/workout'
 import { formatUsFriendlyDate, formatUsShortDate } from '../../lib/dateFormat'
 
 const ACTIVITY_LOG_LIMIT = 24
 
 export default function ActivityLogScreen() {
   const navigate = useNavigate()
+  const location = useLocation()
   const [entries, setEntries] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [dismissedActionNoticeKey, setDismissedActionNoticeKey] = useState('')
+  const johnnyActionNotice = location.state?.johnnyActionNotice
+  const actionNoticeKey = String(johnnyActionNotice || '')
+
+  useEffect(() => {
+    const notice = location.state?.johnnyActionNotice
+    if (!notice) {
+      return undefined
+    }
+
+    const nextState = { ...(location.state || {}) }
+    delete nextState.johnnyActionNotice
+    navigate(location.pathname, { replace: true, state: Object.keys(nextState).length ? nextState : null })
+    return undefined
+  }, [location.pathname, location.state, location.state?.johnnyActionNotice, navigate])
 
   useEffect(() => {
     let active = true
@@ -99,6 +116,18 @@ export default function ActivityLogScreen() {
         <SummaryCard label="Workouts" value={entries.filter(entry => entry.type === 'workout').length || '—'} meta="Completed lifting sessions in your log" accent="teal" />
         <SummaryCard label="Cardio" value={entries.filter(entry => entry.type === 'cardio').length || '—'} meta="Conditioning sessions mixed into the same feed" accent="pink" />
       </section>
+
+      {johnnyActionNotice && dismissedActionNoticeKey !== actionNoticeKey ? (
+        <div className="dash-card settings-warning dashboard-notice" role="status">
+          <div>
+            <strong>Johnny opened this screen.</strong>
+            <p>{johnnyActionNotice}</p>
+          </div>
+          <button className="btn-outline small" type="button" onClick={() => setDismissedActionNoticeKey(actionNoticeKey)}>
+            Dismiss
+          </button>
+        </div>
+      ) : null}
 
       {loading ? (
         <section className="dash-card">

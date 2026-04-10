@@ -350,7 +350,7 @@ class SmsService {
 					'source'  => 'sdk',
 					'body'    => $message,
 					'to'      => $phone,
-					'from'    => get_option( 'jf_clicksend_sender_id', 'Johnny5000' ),
+					'from'    => get_option( 'jf_clicksend_sender_id', 'Johnny5k' ),
 				],
 			],
 		] );
@@ -428,7 +428,7 @@ class SmsService {
 					'source'   => 'sdk',
 					'body'     => $message,
 					'to'       => $phone,
-					'from'     => get_option( 'jf_clicksend_sender_id', 'Johnny5000' ),
+					'from'     => get_option( 'jf_clicksend_sender_id', 'Johnny5k' ),
 					'schedule' => $schedule_unix,
 				],
 			],
@@ -686,14 +686,14 @@ class SmsService {
 
 	private static function ensure_johnny_identity( string $message ): string {
 		if ( '' === $message ) {
-			return 'Johnny 5000 here. Stay on it.';
+			return 'Johnny5k here. Stay on it.';
 		}
 
-		if ( preg_match( '/johnny\s*5000/i', $message ) ) {
+		if ( preg_match( '/johnny\s*(?:5000|5k)/i', $message ) ) {
 			return self::normalize_sms_message( $message );
 		}
 
-		$signature = ' - Johnny 5000';
+		$signature = ' - Johnny5k';
 		$available = 220 - mb_strlen( $signature );
 		$base = $message;
 		if ( mb_strlen( $base ) > $available ) {
@@ -740,26 +740,26 @@ class SmsService {
 
 		$templates = match ( $trigger_type ) {
 			'workout_reminder' => [
-				"{$name}, {$weekday} is your {$day_type} day. Show up and stack the win. Johnny 5000's watching your consistency.",
-				"{$name}, you've got {$day_type} on deck today. Get in, do the work, keep momentum rolling. Johnny 5000 says stop negotiating with yourself.",
-				"{$name}, today's {$day_type} session is waiting. One solid workout beats overthinking it. Johnny 5000 wants action, not excuses.",
+				"{$name}, {$weekday} is your {$day_type} day. Show up and stack the win. Johnny5k's watching your consistency.",
+				"{$name}, you've got {$day_type} on deck today. Get in, do the work, keep momentum rolling. Johnny5k says stop negotiating with yourself.",
+				"{$name}, today's {$day_type} session is waiting. One solid workout beats overthinking it. Johnny5k wants action, not excuses.",
 			],
 			'meal_reminder' => [
-				"{$name}, no meals logged yet today. Get something solid in and keep the day on track. Johnny 5000 doesn't want you winging this.",
-				"Quick check, {$name}: nothing logged yet. Start the day strong with a real meal, not guesswork. Johnny 5000 here.",
-				"{$name}, food log is still empty today. Get the first meal in and give yourself a clean start. Johnny 5000 wants the basics handled.",
+				"{$name}, no meals logged yet today. Get something solid in and keep the day on track. Johnny5k doesn't want you winging this.",
+				"Quick check, {$name}: nothing logged yet. Start the day strong with a real meal, not guesswork. Johnny5k here.",
+				"{$name}, food log is still empty today. Get the first meal in and give yourself a clean start. Johnny5k wants the basics handled.",
 			],
 			'sleep_reminder' => [
-				"{$name}, log your sleep before the day wraps. Recovery still counts as work. Johnny 5000 wants the full scoreboard.",
-				"Before you shut it down tonight, {$name}, get your sleep logged. Recovery drives tomorrow. Johnny 5000 here.",
-				"{$name}, don't leave recovery untracked tonight." . ( $target_sleep ? " Shoot for {$target_sleep} hours and log it." : '' ) . ' Johnny 5000 wants you recovered, not fried.',
+				"{$name}, log your sleep before the day wraps. Recovery still counts as work. Johnny5k wants the full scoreboard.",
+				"Before you shut it down tonight, {$name}, get your sleep logged. Recovery drives tomorrow. Johnny5k here.",
+				"{$name}, don't leave recovery untracked tonight." . ( $target_sleep ? " Shoot for {$target_sleep} hours and log it." : '' ) . ' Johnny5k wants you recovered, not fried.',
 			],
 			'weekly_summary' => [
-				"{$name}, weekly check-in from Johnny 5000: {$workouts} workouts done, about {$avg_calories} kcal/day on average." . ( $weight ? " Latest weight: {$weight} lb." : '' ) . " Keep building.",
-				"New week, {$name}. Johnny 5000 here: {$workouts} workouts logged last week and about {$avg_calories} calories per day." . ( $weight ? " You're at {$weight} lb right now." : '' ) . " Stay steady.",
-				"{$name}, Johnny 5000 checking in. Last week gave you {$workouts} completed workouts and roughly {$avg_calories} kcal/day." . ( $weight ? " Scale check: {$weight} lb." : '' ) . " Keep pressing forward.",
+				"{$name}, weekly check-in from Johnny5k: {$workouts} workouts done, about {$avg_calories} kcal/day on average." . ( $weight ? " Latest weight: {$weight} lb." : '' ) . " Keep building.",
+				"New week, {$name}. Johnny5k here: {$workouts} workouts logged last week and about {$avg_calories} calories per day." . ( $weight ? " You're at {$weight} lb right now." : '' ) . " Stay steady.",
+				"{$name}, Johnny5k checking in. Last week gave you {$workouts} completed workouts and roughly {$avg_calories} kcal/day." . ( $weight ? " Scale check: {$weight} lb." : '' ) . " Keep pressing forward.",
 			],
-			default => [ "{$name}, Johnny 5000 checking in. Stay consistent today." ],
+			default => [ "{$name}, Johnny5k checking in. Stay consistent today." ],
 		};
 
 		$index = abs( crc32( $user_id . '|' . $trigger_type . '|' . UserTime::today( $user_id ) ) ) % count( $templates );

@@ -1,6 +1,9 @@
-import { useEffect, useState } from 'react'
-import { adminApi, mediaApi } from '../../api/client'
-import AppIcon, { normalizeAppIconName } from '../../components/ui/AppIcon'
+import { startTransition, useCallback, useEffect, useState } from 'react'
+import { adminApi } from '../../api/modules/admin'
+import { mediaApi } from '../../api/modules/media'
+import AppIcon from '../../components/ui/AppIcon'
+import { normalizeAppIconName } from '../../components/ui/AppIcon.utils'
+import { APP_IMAGE_FIELDS } from '../../lib/appImages'
 import { getColorSchemeOptions, setAvailableColorSchemes } from '../../lib/theme'
 
 const TABS = ['invites', 'costs', 'persona', 'users', 'exercises', 'awards', 'recipes', 'settings']
@@ -18,6 +21,13 @@ function createEmptyColorScheme(index = 0) {
   }
 }
 
+function createEmptyAppImages() {
+  return APP_IMAGE_FIELDS.reduce((acc, field) => {
+    acc[field.key] = ''
+    return acc
+  }, {})
+}
+
 function createEmptyLiveWorkoutFrame(index = 0) {
   return {
     image_url: '',
@@ -27,35 +37,36 @@ function createEmptyLiveWorkoutFrame(index = 0) {
 }
 
 function reorderItems(items, fromIndex, toIndex) {
-  if (!Array.isArray(items) || fromIndex === toIndex || fromIndex < 0 || toIndex < 0 || fromIndex >= items.length || toIndex >= items.length) {
-    return items
-  }
-
-  const nextItems = [...items]
-  const [movedItem] = nextItems.splice(fromIndex, 1)
-  nextItems.splice(toIndex, 0, movedItem)
-  return nextItems
+  if (!Array.isArray(items)) return []
+  if (fromIndex < 0 || fromIndex >= items.length) return items
+  if (toIndex < 0 || toIndex >= items.length) return items
+  const next = [...items]
+  const [moved] = next.splice(fromIndex, 1)
+  next.splice(toIndex, 0, moved)
+  return next
 }
 
 export default function AdminScreen() {
   const [tab, setTab] = useState('invites')
+  const tabLabel = (id) => id.charAt(0).toUpperCase() + id.slice(1)
 
   return (
-    <div className="screen">
-      <header className="screen-header"><h1>Admin</h1></header>
-      <div className="tab-bar admin-tab-bar">
-        {TABS.map(t => (
-          <button key={t} className={`tab-btn ${tab === t ? 'active' : ''}`} onClick={() => setTab(t)}>{t}</button>
+    <div>
+      <div className="row admin-tab-bar">
+        {TABS.map((id) => (
+          <button key={id} type="button" className={tab === id ? 'segment active' : 'segment'} onClick={() => setTab(id)}>
+            {tabLabel(id)}
+          </button>
         ))}
       </div>
-      {tab === 'invites' && <InviteTab />}
-      {tab === 'costs' && <CostTab />}
-      {tab === 'persona' && <PersonaTab />}
-      {tab === 'users' && <UsersTab />}
-      {tab === 'exercises' && <ExercisesTab />}
-      {tab === 'awards' && <AwardsTab />}
-      {tab === 'recipes' && <RecipesTab />}
-      {tab === 'settings' && <SettingsTab />}
+      {tab === 'invites' ? <InviteTab /> : null}
+      {tab === 'costs' ? <CostTab /> : null}
+      {tab === 'persona' ? <PersonaTab /> : null}
+      {tab === 'users' ? <UsersTab /> : null}
+      {tab === 'exercises' ? <ExercisesTab /> : null}
+      {tab === 'awards' ? <AwardsTab /> : null}
+      {tab === 'recipes' ? <RecipesTab /> : null}
+      {tab === 'settings' ? <SettingsTab /> : null}
     </div>
   )
 }
@@ -65,35 +76,52 @@ function InviteTab() {
   const [loading, setLoading] = useState(false)
   const [msg, setMsg] = useState('')
 
-  useEffect(() => { adminApi.inviteCodes().then(setCodes).catch(() => {}) }, [])
+  const loadCodes = useCallback(async () => {
+    try {
+      const data = await adminApi.inviteCodes()
+      setCodes(Array.isArray(data) ? data : [])
+    } catch (err) {
+      setMsg('Error: ' + err.message)
+    }
+  }, [])
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadCodes()
+  }, [loadCodes])
 
   async function generate() {
     setLoading(true)
+    setMsg('')
     try {
-      const data = await adminApi.generateCode()
-      setMsg(`Generated: ${data.code}`)
-      adminApi.inviteCodes().then(setCodes)
-    } catch (err) { setMsg('Error: ' + err.message) }
+      await adminApi.generateCode()
+      await loadCodes()
+    } catch (err) {
+      setMsg('Error: ' + err.message)
+    }
     setLoading(false)
   }
 
   async function deleteCode(id) {
+    setMsg('')
     try {
       await adminApi.deleteCode(id)
-      setCodes(c => c.filter(x => x.id !== id))
-    } catch (err) { setMsg('Error: ' + err.message) }
+      setCodes((current) => current.filter((item) => item.id !== id))
+    } catch (err) {
+      setMsg('Error: ' + err.message)
+    }
   }
 
   return (
     <div className="admin-tab">
-      {msg && <p className="success-msg">{msg}</p>}
-      <button className="btn-primary" onClick={generate} disabled={loading}>Generate Code</button>
+      {msg ? <p className="success-msg">{msg}</p> : null}
+      <button className="btn-primary" type="button" onClick={generate} disabled={loading}>{loading ? 'Generating…' : 'Generate Code'}</button>
       <div className="code-list">
-        {codes.map(c => (
-          <div key={c.id} className="code-row">
-            <code>{c.code}</code>
-            <span className="code-status">{c.used_by ? `Used by ${c.used_by}` : 'Available'}</span>
-            {!c.used_by && <button className="btn-danger small" onClick={() => deleteCode(c.id)}>Delete</button>}
+        {codes.map((item) => (
+          <div key={item.id} className="code-row">
+            <code>{item.code}</code>
+            <span className="code-status">{item.used_by ? `Used by ${item.used_by}` : 'Available'}</span>
+            {!item.used_by ? <button className="btn-danger small" type="button" onClick={() => deleteCode(item.id)}>Delete</button> : null}
           </div>
         ))}
       </div>
@@ -135,14 +163,6 @@ function PersonaTab() {
   const [promptSource, setPromptSource] = useState('default')
   const [contractChecks, setContractChecks] = useState([])
   const [contractResults, setContractResults] = useState([])
-  const [chatMsg, setChatMsg] = useState('')
-  const [chatReply, setChatReply] = useState('')
-  const [chatSources, setChatSources] = useState([])
-  const [chatWhy, setChatWhy] = useState('')
-  const [chatContextUsed, setChatContextUsed] = useState([])
-  const [chatConfidence, setChatConfidence] = useState('')
-  const [timePreviewMsg, setTimePreviewMsg] = useState('Give me a helpful snack suggestion right now.')
-  const [timePreviewResults, setTimePreviewResults] = useState([])
   const [actionPreviewMsg, setActionPreviewMsg] = useState('Look at my nutrition today and take the next best action.')
   const [actionPreviewReply, setActionPreviewReply] = useState('')
   const [actionPreviewActions, setActionPreviewActions] = useState([])
@@ -150,9 +170,7 @@ function PersonaTab() {
   const [actionPreviewContextUsed, setActionPreviewContextUsed] = useState([])
   const [actionPreviewConfidence, setActionPreviewConfidence] = useState('')
   const [saving, setSaving] = useState(false)
-  const [testing, setTesting] = useState(false)
   const [runningContractChecks, setRunningContractChecks] = useState(false)
-  const [previewingTime, setPreviewingTime] = useState(false)
   const [previewingActions, setPreviewingActions] = useState(false)
   const [qaUsers, setQaUsers] = useState([])
   const [followUpQaUserId, setFollowUpQaUserId] = useState('')
@@ -175,9 +193,24 @@ function PersonaTab() {
     }).catch(() => {})
   }, [])
 
+  const loadFollowUpQa = useCallback(async (userId = '') => {
+    setLoadingFollowUpQa(true)
+    try {
+      const data = await adminApi.personaFollowUps(userId || undefined)
+      setFollowUpQa(data)
+    } catch (err) {
+      setMsg('Error: ' + err.message)
+    }
+    setLoadingFollowUpQa(false)
+  }, [])
+
   useEffect(() => {
-    loadFollowUpQa(followUpQaUserId)
-  }, [followUpQaUserId])
+    const timeoutId = window.setTimeout(() => {
+      void loadFollowUpQa(followUpQaUserId)
+    }, 0)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [followUpQaUserId, loadFollowUpQa])
 
   function update(k, v) { setPersona(p => ({ ...p, [k]: v })) }
 
@@ -191,47 +224,6 @@ function PersonaTab() {
       setMsg('Saved!')
     } catch (err) { setMsg('Error: ' + err.message) }
     setSaving(false)
-  }
-
-  async function loadFollowUpQa(userId = '') {
-    setLoadingFollowUpQa(true)
-    try {
-      const data = await adminApi.personaFollowUps(userId || undefined)
-      setFollowUpQa(data)
-    } catch (err) {
-      setMsg('Error: ' + err.message)
-    }
-    setLoadingFollowUpQa(false)
-  }
-
-  async function testChat(e) {
-    e.preventDefault()
-    setTesting(true)
-    setChatReply('')
-    setChatSources([])
-    setChatWhy('')
-    setChatContextUsed([])
-    setChatConfidence('')
-    try {
-      const data = await adminApi.testPersona(chatMsg)
-      setChatReply(data.reply)
-      setChatSources(data.sources ?? [])
-      setChatWhy(data.why || '')
-      setChatContextUsed(Array.isArray(data.context_used) ? data.context_used : [])
-      setChatConfidence(data.confidence || '')
-    } catch (err) { setChatReply('Error: ' + err.message) }
-    setTesting(false)
-  }
-
-  async function testTimePreview(e) {
-    e.preventDefault()
-    setPreviewingTime(true)
-    setTimePreviewResults([])
-    try {
-      const data = await adminApi.previewPersonaTime(timePreviewMsg)
-      setTimePreviewResults(data.scenarios ?? [])
-    } catch (err) { setMsg('Error: ' + err.message) }
-    setPreviewingTime(false)
   }
 
   async function testActionPreview(e) {
@@ -328,74 +320,32 @@ function PersonaTab() {
 
       <h3>Persona Contract QA</h3>
       <p className="settings-subtitle">Run fixed checks for concise coaching, non-corporate tone, data use, and honest next-step guidance.</p>
+      <div className="test-chat-form">
+        <button type="button" className="btn-secondary" onClick={handleRunAllContractChecks} disabled={runningContractChecks}>
+          {runningContractChecks ? 'Running checks…' : 'Run all checks'}
+        </button>
+      </div>
       <div className="chat-sources">
         {contractChecks.map(check => (
           <div key={check.id} className="chat-msg assistant">
             <p><strong>{check.label}</strong></p>
             <p>{check.expectation}</p>
             <p>{check.prompt}</p>
-            <button type="button" className="btn-secondary" disabled={runningContractChecks} onClick={() => handleRunSingleContractCheck(check)}>
-              {runningContractChecks ? '…' : 'Run check'}
+            <button type="button" className="btn-outline small" onClick={() => handleRunSingleContractCheck(check)} disabled={runningContractChecks}>
+              {runningContractChecks ? 'Running…' : 'Run check'}
             </button>
           </div>
         ))}
       </div>
-      {contractChecks.length > 0 ? (
-        <p>
-          <button type="button" className="btn-primary" disabled={runningContractChecks} onClick={handleRunAllContractChecks}>
-            {runningContractChecks ? 'Running checks…' : 'Run all contract checks'}
-          </button>
-        </p>
-      ) : null}
-      {contractResults.length > 0 ? (
+      {contractResults.length > 0 && (
         <div className="chat-sources">
           {contractResults.map(result => (
-            <div key={result.id} className="chat-msg assistant">
+            <div key={`result-${result.id}`} className="chat-msg assistant">
               <p><strong>{result.label}</strong></p>
-              <p><strong>Expectation:</strong> {result.expectation}</p>
               <p><strong>Prompt:</strong> {result.prompt}</p>
-              <p>{result.reply}</p>
-            </div>
-          ))}
-        </div>
-      ) : null}
-
-      <h3>Test Chat</h3>
-      <p className="settings-subtitle">Stateless preview using the current saved persona prompt.</p>
-      <form onSubmit={testChat} className="test-chat-form">
-        <input type="text" value={chatMsg} onChange={e => setChatMsg(e.target.value)} placeholder="Say something…" required />
-        <button type="submit" className="btn-secondary" disabled={testing}>{testing ? '…' : 'Send'}</button>
-      </form>
-      {chatReply && (
-        <div className="chat-msg assistant">
-          <p>{chatReply}</p>
-          {chatWhy ? <p><strong>Why:</strong> {chatWhy}</p> : null}
-          {chatConfidence ? <p><strong>Confidence:</strong> {chatConfidence}</p> : null}
-          {chatContextUsed.length > 0 ? <p><strong>Context used:</strong> {chatContextUsed.join(' | ')}</p> : null}
-          {chatSources.length > 0 && (
-            <div className="chat-sources">
-              {chatSources.map(source => (
-                <a key={source.url} href={source.url} target="_blank" rel="noreferrer">
-                  {source.title || source.url}
-                </a>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      <h3>Time-Aware Preview</h3>
-      <form onSubmit={testTimePreview} className="test-chat-form">
-        <input type="text" value={timePreviewMsg} onChange={e => setTimePreviewMsg(e.target.value)} placeholder="Ask for advice that should change by time of day…" required />
-        <button type="submit" className="btn-secondary" disabled={previewingTime}>{previewingTime ? '…' : 'Compare 8am vs 10:30pm'}</button>
-      </form>
-      {timePreviewResults.length > 0 && (
-        <div className="chat-sources">
-          {timePreviewResults.map(result => (
-            <div key={result.key} className="chat-msg assistant">
-              <p><strong>{result.label}</strong> · {result.preview_datetime}</p>
-              <p>{result.reply}</p>
-              {result.why ? <p><strong>Why:</strong> {result.why}</p> : null}
+              <p><strong>Expectation:</strong> {result.expectation}</p>
+              <p><strong>Reply:</strong> {result.reply || '(No reply)'}</p>
+              {result.sources.length > 0 ? <p><strong>Sources:</strong> {result.sources.join(' | ')}</p> : null}
               {result.confidence ? <p><strong>Confidence:</strong> {result.confidence}</p> : null}
               {Array.isArray(result.context_used) && result.context_used.length ? <p><strong>Context used:</strong> {result.context_used.join(' | ')}</p> : null}
             </div>
@@ -783,18 +733,43 @@ function SettingsTab() {
       progress_photo_compare_debug_enabled: 0,
     },
     feature_flags: {},
+    push_settings: {
+      enabled: 0,
+      vapid_public_key: '',
+      vapid_private_key: '',
+      subject: 'mailto:support@johnny5k.app',
+    },
     color_schemes: getColorSchemeOptions(),
+    app_images: createEmptyAppImages(),
     live_workout_frames: [],
   })
   const [msg, setMsg] = useState('')
+  const [pushTest, setPushTest] = useState({
+    user_id: '',
+    title: 'Johnny test push',
+    body: 'This is a test notification from Johnny.',
+    url: '/dashboard',
+  })
+  const [pushTestBusy, setPushTestBusy] = useState(false)
   const [draggedFrameIndex, setDraggedFrameIndex] = useState(null)
   const [mediaPickerFrameIndex, setMediaPickerFrameIndex] = useState(null)
+  const [mediaPickerAppImageKey, setMediaPickerAppImageKey] = useState('')
 
   useEffect(() => {
     adminApi.settings()
       .then(data => {
         const schemes = setAvailableColorSchemes(data?.color_schemes)
-        setSettings({ ...data, color_schemes: schemes })
+        setSettings({
+          ...data,
+          push_settings: {
+            enabled: data?.push_settings?.enabled ? 1 : 0,
+            vapid_public_key: data?.push_settings?.vapid_public_key ?? '',
+            vapid_private_key: data?.push_settings?.vapid_private_key ?? '',
+            subject: data?.push_settings?.subject ?? 'mailto:support@johnny5k.app',
+          },
+          color_schemes: schemes,
+          app_images: { ...createEmptyAppImages(), ...(data?.app_images ?? {}) },
+        })
       })
       .catch(() => {})
   }, [])
@@ -805,6 +780,17 @@ function SettingsTab() {
 
   function updateFlag(field, checked) {
     setSettings(current => ({ ...current, feature_flags: { ...current.feature_flags, [field]: checked ? 1 : 0 } }))
+  }
+
+  function updatePush(field, value) {
+    setSettings(current => ({ ...current, push_settings: { ...current.push_settings, [field]: value } }))
+  }
+
+  function updateAppImage(field, value) {
+    setSettings(current => ({
+      ...current,
+      app_images: { ...current.app_images, [field]: value },
+    }))
   }
 
   function updateScheme(index, field, value) {
@@ -897,11 +883,41 @@ function SettingsTab() {
     setMediaPickerFrameIndex(null)
   }
 
+  function applyMediaToAppImage(imageKey, media) {
+    if (!imageKey || !media?.source_url) return
+
+    setSettings(current => ({
+      ...current,
+      app_images: {
+        ...current.app_images,
+        [imageKey]: media.source_url,
+      },
+    }))
+    setMediaPickerAppImageKey('')
+  }
+
   async function save(event) {
     event.preventDefault()
     await adminApi.saveSettings(settings)
     setAvailableColorSchemes(settings.color_schemes)
     setMsg('Settings saved.')
+  }
+
+  async function sendPushTest() {
+    setPushTestBusy(true)
+    try {
+      const data = await adminApi.testPush({
+        user_id: Number(pushTest.user_id),
+        title: pushTest.title,
+        body: pushTest.body,
+        url: pushTest.url,
+      })
+      setMsg(`Push sent. ${data?.result?.result?.success_count ?? 0} device(s) accepted it.`)
+    } catch (err) {
+      setMsg(`Push test failed: ${err.message}`)
+    } finally {
+      setPushTestBusy(false)
+    }
   }
 
   return (
@@ -916,6 +932,51 @@ function SettingsTab() {
       {Object.keys(settings.feature_flags ?? {}).map(key => (
         <label key={key} className="toggle-row"><input type="checkbox" checked={!!settings.feature_flags[key]} onChange={e => updateFlag(key, e.target.checked)} /> {key}</label>
       ))}
+      <div className="admin-settings-section">
+        <div className="admin-settings-section-head">
+          <h3>Push notifications</h3>
+        </div>
+        <p className="settings-subtitle">Stores the VAPID values used by the PWA to subscribe this device for browser notifications.</p>
+        <label className="toggle-row"><input type="checkbox" checked={!!settings.push_settings?.enabled} onChange={e => updatePush('enabled', e.target.checked ? 1 : 0)} /> Enable web push</label>
+        <label>
+          <span>VAPID public key</span>
+          <input value={settings.push_settings?.vapid_public_key ?? ''} onChange={e => updatePush('vapid_public_key', e.target.value)} placeholder="BEl..." />
+        </label>
+        <label>
+          <span>VAPID private key</span>
+          <input value={settings.push_settings?.vapid_private_key ?? ''} onChange={e => updatePush('vapid_private_key', e.target.value)} placeholder="y8f..." />
+        </label>
+        <label>
+          <span>Subject</span>
+          <input value={settings.push_settings?.subject ?? ''} onChange={e => updatePush('subject', e.target.value)} placeholder="mailto:support@johnny5k.app" />
+        </label>
+        <div className="admin-live-frame-card">
+          <strong>Send test push</strong>
+          <div className="admin-color-scheme-meta admin-live-frame-meta">
+            <label>
+              <span>User ID</span>
+              <input value={pushTest.user_id} onChange={e => setPushTest(current => ({ ...current, user_id: e.target.value }))} placeholder="123" />
+            </label>
+            <label>
+              <span>Title</span>
+              <input value={pushTest.title} onChange={e => setPushTest(current => ({ ...current, title: e.target.value }))} />
+            </label>
+            <label className="admin-color-scheme-description">
+              <span>Body</span>
+              <input value={pushTest.body} onChange={e => setPushTest(current => ({ ...current, body: e.target.value }))} />
+            </label>
+            <label>
+              <span>Target URL</span>
+              <input value={pushTest.url} onChange={e => setPushTest(current => ({ ...current, url: e.target.value }))} />
+            </label>
+            <div className="admin-live-frame-picker-row">
+              <button className="btn-secondary small" type="button" onClick={sendPushTest} disabled={pushTestBusy || !pushTest.user_id}>
+                {pushTestBusy ? 'Sending…' : 'Send test push'}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
       <div className="admin-settings-section">
         <div className="admin-settings-section-head">
           <h3>Color schemes</h3>
@@ -1012,11 +1073,49 @@ function SettingsTab() {
           ))}
         </div>
       </div>
+      <div className="admin-settings-section">
+        <div className="admin-settings-section-head">
+          <h3>App images</h3>
+        </div>
+        <p className="settings-subtitle">These slots replace the bundled static artwork across the app, including login, navigation, Ask Johnny, and the Live Workout fallback frames.</p>
+        <div className="admin-live-frame-list">
+          {APP_IMAGE_FIELDS.map(field => (
+            <div key={field.key} className="admin-color-scheme-card admin-live-frame-card">
+              <div className="admin-color-scheme-head">
+                <div className="admin-live-frame-headline">
+                  <strong>{field.label}</strong>
+                  <span className="admin-live-frame-drag-hint">{field.description}</span>
+                </div>
+              </div>
+              <div className="admin-live-frame-layout">
+                <div className="admin-live-frame-preview" aria-hidden="true">
+                  {settings.app_images?.[field.key] ? <img src={settings.app_images[field.key]} alt="" /> : <span>No preview</span>}
+                </div>
+                <div className="admin-color-scheme-meta admin-live-frame-meta">
+                  <label className="admin-color-scheme-description">
+                    <span>Image URL</span>
+                    <input value={settings.app_images?.[field.key] ?? ''} onChange={e => updateAppImage(field.key, e.target.value)} placeholder="https://.../image.webp" />
+                  </label>
+                  <div className="admin-live-frame-picker-row">
+                    <button className="btn-secondary small" type="button" onClick={() => setMediaPickerAppImageKey(field.key)}>Choose from media library</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
       <MediaLibraryPicker
         isOpen={mediaPickerFrameIndex != null}
         onClose={() => setMediaPickerFrameIndex(null)}
         onSelect={applyMediaToFrame}
-        frameIndex={mediaPickerFrameIndex}
+        selectionKey={mediaPickerFrameIndex}
+      />
+      <MediaLibraryPicker
+        isOpen={!!mediaPickerAppImageKey}
+        onClose={() => setMediaPickerAppImageKey('')}
+        onSelect={applyMediaToAppImage}
+        selectionKey={mediaPickerAppImageKey}
       />
       {msg ? <p className="success-msg">{msg}</p> : null}
       <button className="btn-primary" type="submit">Save settings</button>
@@ -1024,7 +1123,7 @@ function SettingsTab() {
   )
 }
 
-function MediaLibraryPicker({ isOpen, onClose, onSelect, frameIndex }) {
+function MediaLibraryPicker({ isOpen, onClose, onSelect, selectionKey }) {
   const [items, setItems] = useState([])
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
@@ -1036,8 +1135,10 @@ function MediaLibraryPicker({ isOpen, onClose, onSelect, frameIndex }) {
     if (!isOpen) return
 
     let active = true
-    setLoading(true)
-    setError('')
+    startTransition(() => {
+      setLoading(true)
+      setError('')
+    })
 
     mediaApi.list({ search, page })
       .then(data => {
@@ -1061,10 +1162,12 @@ function MediaLibraryPicker({ isOpen, onClose, onSelect, frameIndex }) {
 
   useEffect(() => {
     if (!isOpen) {
-      setSearch('')
-      setPage(1)
-      setItems([])
-      setError('')
+      startTransition(() => {
+        setSearch('')
+        setPage(1)
+        setItems([])
+        setError('')
+      })
     }
   }, [isOpen])
 
@@ -1081,8 +1184,9 @@ function MediaLibraryPicker({ isOpen, onClose, onSelect, frameIndex }) {
       setPage(1)
     } catch (err) {
       setError(err.message || 'Upload failed.')
+    } finally {
+      setUploading(false)
     }
-    setUploading(false)
   }
 
   if (!isOpen) return null
@@ -1118,7 +1222,7 @@ function MediaLibraryPicker({ isOpen, onClose, onSelect, frameIndex }) {
             const title = item?.title?.rendered || item?.slug || 'Untitled image'
 
             return (
-              <button key={item.id} type="button" className="admin-media-picker-card" onClick={() => onSelect(frameIndex, item)}>
+              <button key={item.id} type="button" className="admin-media-picker-card" onClick={() => onSelect(selectionKey, item)}>
                 <img src={preview} alt="" />
                 <strong>{title}</strong>
                 <span>{item?.media_details?.width && item?.media_details?.height ? `${item.media_details.width} x ${item.media_details.height}` : 'WordPress image'}</span>

@@ -13,6 +13,13 @@ defined( 'ABSPATH' ) || exit;
  *  - Generating the post-workout performance snapshot (personal-record detection)
  */
 class TrainingEngine {
+	private const UNRESTRICTED_EQUIPMENT = '__all__';
+	private const BONUS_FILL_NOTE_MARKER = '[bonus_fill]';
+	private static array $equipment_profile_cache = [];
+
+	public static function bonus_fill_note_marker(): string {
+		return self::BONUS_FILL_NOTE_MARKER;
+	}
 
 	// ── Build Today's Workout ─────────────────────────────────────────────────
 
@@ -24,13 +31,13 @@ class TrainingEngine {
 	 * @param  string $time_tier  'short'|'medium'|'full'
 	* @param  bool   $maintenance_mode
 	* @param  string|null $day_type_override
-	 * @return array{session_id:int, day_type:string, exercises:array, skip_count:int, skip_warning:bool}|WP_Error
+	 * @return array{session_id:int, day_type:string, exercises:array, skip_count:int, skip_warning:bool}|\WP_Error
 	 */
-	public static function build_session( int $user_id, string $time_tier = 'medium', bool $maintenance_mode = false, ?string $day_type_override = null, array $exercise_swaps = [], array $exercise_order = [] ) {
+	public static function build_session( int $user_id, string $time_tier = 'medium', bool $maintenance_mode = false, ?string $day_type_override = null, array $exercise_swaps = [], array $exercise_order = [], array $rep_adjustments = [], array $exercise_removals = [], array $exercise_additions = [] ) {
 		global $wpdb;
 		$p = $wpdb->prefix;
 
-		$blueprint = self::build_session_blueprint( $user_id, $time_tier, $maintenance_mode, $day_type_override, $exercise_swaps, $exercise_order );
+		$blueprint = self::build_session_blueprint( $user_id, $time_tier, $maintenance_mode, $day_type_override, $exercise_swaps, $exercise_order, $exercise_removals, $exercise_additions );
 		if ( is_wp_error( $blueprint ) ) {
 			return $blueprint;
 		}
@@ -38,6 +45,7 @@ class TrainingEngine {
 		$next_day_type = (string) $blueprint['day_type'];
 		$skip_count = (int) $blueprint['skip_count'];
 		$skip_warning = ! empty( $blueprint['skip_warning'] );
+		$blueprint['exercises'] = self::apply_rep_adjustments( (array) ( $blueprint['exercises'] ?? [] ), $rep_adjustments );
 
 		// ── Create session row ────────────────────────────────────────────────
 		$wpdb->insert( $p . 'fit_workout_sessions', [
@@ -65,6 +73,7 @@ class TrainingEngine {
 				'sort_order'          => $order,
 				'was_swapped'         => ! empty( $exercise['was_swapped'] ) ? 1 : 0,
 				'original_exercise_id'=> ! empty( $exercise['was_swapped'] ) ? (int) ( $exercise['original_exercise_id'] ?? 0 ) : null,
+				'notes'               => ! empty( $exercise['is_bonus_fill'] ) ? self::BONUS_FILL_NOTE_MARKER : null,
 			], static fn( $value ): bool => null !== $value ) );
 
 			$exercise['session_exercise_id'] = (int) $wpdb->insert_id;
@@ -80,11 +89,12 @@ class TrainingEngine {
 		];
 	}
 
-	public static function preview_session( int $user_id, string $time_tier = 'medium', bool $maintenance_mode = false, ?string $day_type_override = null, array $exercise_swaps = [], array $exercise_order = [] ) {
-		$blueprint = self::build_session_blueprint( $user_id, $time_tier, $maintenance_mode, $day_type_override, $exercise_swaps, $exercise_order );
+	public static function preview_session( int $user_id, string $time_tier = 'medium', bool $maintenance_mode = false, ?string $day_type_override = null, array $exercise_swaps = [], array $exercise_order = [], array $rep_adjustments = [], array $exercise_removals = [], array $exercise_additions = [] ) {
+		$blueprint = self::build_session_blueprint( $user_id, $time_tier, $maintenance_mode, $day_type_override, $exercise_swaps, $exercise_order, $exercise_removals, $exercise_additions );
 		if ( is_wp_error( $blueprint ) ) {
 			return $blueprint;
 		}
+		$blueprint['exercises'] = self::apply_rep_adjustments( (array) ( $blueprint['exercises'] ?? [] ), $rep_adjustments );
 
 		return [
 			'day_type'           => (string) $blueprint['day_type'],
@@ -300,7 +310,7 @@ class TrainingEngine {
 		return $first_active_day ? (string) $first_active_day : 'rest';
 	}
 
-	private static function build_session_blueprint( int $user_id, string $time_tier, bool $maintenance_mode, ?string $day_type_override, array $exercise_swaps, array $exercise_order ) {
+	private static function build_session_blueprint( int $user_id, string $time_tier, bool $maintenance_mode, ?string $day_type_override, array $exercise_swaps, array $exercise_order, array $exercise_removals = [], array $exercise_additions = [] ) {
 		global $wpdb;
 		$p = $wpdb->prefix;
 
@@ -330,18 +340,38 @@ class TrainingEngine {
 			'swaps' => [],
 			'order' => [],
 		];
+		$slot_limit = self::slot_limits_for_tier( $time_tier );
 		$avoid_terms = self::get_user_exercise_avoidance_terms( $user_id );
+		$allowed_equipment = self::get_allowed_equipment_for_user( $user_id );
 		if ( $day ) {
-			$slot_limit = self::slot_limits_for_tier( $time_tier );
-			$plan_exercises = $wpdb->get_results( $wpdb->prepare(
-				"SELECT ude.*, e.name AS exercise_name, e.default_rep_min, e.default_rep_max, e.default_sets,
-				        e.primary_muscle, e.equipment, e.difficulty
-				 FROM {$p}fit_user_training_day_exercises ude
-				 JOIN {$p}fit_exercises e ON e.id = ude.exercise_id
-				 WHERE ude.training_day_id = %d AND ude.active = 1
-				 ORDER BY ude.sort_order",
-				$day->id
-			) );
+				$plan_exercises = $wpdb->get_results( $wpdb->prepare(
+					"SELECT ude.*, e.name AS exercise_name, e.default_rep_min, e.default_rep_max, e.default_sets,
+					        e.primary_muscle, e.equipment, e.difficulty
+					 FROM {$p}fit_user_training_day_exercises ude
+					 JOIN {$p}fit_exercises e ON e.id = ude.exercise_id
+					 WHERE ude.training_day_id = %d AND ude.active = 1
+					 ORDER BY ude.sort_order",
+					$day->id
+				) );
+				if ( empty( $plan_exercises ) && 'rest' !== $next_day_type ) {
+					self::backfill_user_day_from_template(
+						$user_id,
+						(int) ( $plan->program_template_id ?? 0 ),
+						(int) $day->id,
+						$next_day_type,
+						$avoid_terms,
+						$allowed_equipment
+					);
+					$plan_exercises = $wpdb->get_results( $wpdb->prepare(
+						"SELECT ude.*, e.name AS exercise_name, e.default_rep_min, e.default_rep_max, e.default_sets,
+						        e.primary_muscle, e.equipment, e.difficulty
+						 FROM {$p}fit_user_training_day_exercises ude
+						 JOIN {$p}fit_exercises e ON e.id = ude.exercise_id
+						 WHERE ude.training_day_id = %d AND ude.active = 1
+						 ORDER BY ude.sort_order",
+						$day->id
+					) );
+				}
 
 			$selected_exercises = $maintenance_mode
 				? self::select_maintenance_exercises( $plan_exercises )
@@ -365,7 +395,8 @@ class TrainingEngine {
 					$exercise,
 					(int) ( $exercise_swaps[ (int) $exercise->id ] ?? $variation_strategy['swaps'][ (int) $exercise->id ] ?? 0 ),
 					$selected_exercise_ids,
-					$avoid_terms
+					$avoid_terms,
+					$allowed_equipment
 				);
 				$resolved_exercise_id = (int) ( $resolved_exercise['exercise_id'] ?? (int) $exercise->exercise_id );
 				if ( ! empty( $resolved_exercise['blocked'] ) || $resolved_exercise_id <= 0 ) {
@@ -400,6 +431,19 @@ class TrainingEngine {
 
 		$effective_exercise_order = ! empty( $exercise_order ) ? $exercise_order : (array) ( $variation_strategy['order'] ?? [] );
 		$exercises = self::apply_exercise_order( $exercises, $effective_exercise_order );
+		$exercises = self::apply_exercise_removals( $exercises, $exercise_removals );
+		$exercises = self::append_exercise_additions( $user_id, $exercises, $exercise_additions, $maintenance_mode );
+		if ( 'full' === $time_tier && ! in_array( $next_day_type, [ 'rest', 'cardio' ], true ) ) {
+			$exercises = self::append_full_tier_bonus_exercises(
+				$user_id,
+				$next_day_type,
+				$exercises,
+				$slot_limit,
+				$avoid_terms,
+				$allowed_equipment,
+				$maintenance_mode
+			);
+		}
 
 		return [
 			'day_type'            => $next_day_type,
@@ -408,6 +452,227 @@ class TrainingEngine {
 			'plan_exercise_count' => count( $plan_exercises ),
 			'exercises'           => $exercises,
 		];
+	}
+
+	private static function apply_exercise_removals( array $exercises, array $exercise_removals ): array {
+		if ( empty( $exercises ) || empty( $exercise_removals ) ) {
+			return array_values( $exercises );
+		}
+
+		$remove_lookup = array_flip( array_values( array_filter( array_map( 'intval', $exercise_removals ), static fn( int $id ): bool => $id > 0 ) ) );
+		if ( empty( $remove_lookup ) ) {
+			return array_values( $exercises );
+		}
+
+		return array_values( array_filter( $exercises, static function( array $exercise ) use ( $remove_lookup ): bool {
+			$plan_exercise_id = (int) ( $exercise['plan_exercise_id'] ?? 0 );
+			return $plan_exercise_id <= 0 || ! isset( $remove_lookup[ $plan_exercise_id ] );
+		} ) );
+	}
+
+	private static function append_exercise_additions( int $user_id, array $exercises, array $exercise_additions, bool $maintenance_mode ): array {
+		if ( empty( $exercise_additions ) ) {
+			return array_values( $exercises );
+		}
+
+		$selected_exercise_ids = array_values( array_filter( array_map( static fn( array $exercise ): int => (int) ( $exercise['exercise_id'] ?? 0 ), $exercises ) ) );
+		$next_plan_exercise_id = max( 900000, ...array_map( static fn( array $exercise ): int => (int) ( $exercise['plan_exercise_id'] ?? 0 ), $exercises ) ) + 1;
+		$normalized = array_values( $exercises );
+
+		foreach ( $exercise_additions as $addition ) {
+			$exercise_id = (int) ( $addition['exercise_id'] ?? 0 );
+			if ( $exercise_id <= 0 || in_array( $exercise_id, $selected_exercise_ids, true ) ) {
+				continue;
+			}
+
+			$exercise = ExerciseLibraryService::get_exercise(
+				$user_id,
+				$exercise_id,
+				'id, name, primary_muscle, equipment, difficulty, default_rep_min, default_rep_max, default_sets'
+			);
+			if ( ! $exercise ) {
+				continue;
+			}
+
+			$slot_type = sanitize_key( (string) ( $addition['slot_type'] ?? 'accessory' ) ) ?: 'accessory';
+			$rep_min = max( 3, (int) ( $addition['rep_min'] ?? $exercise->default_rep_min ?? 8 ) );
+			$rep_max = max( $rep_min, (int) ( $addition['rep_max'] ?? $exercise->default_rep_max ?? 12 ) );
+			$sets = max( 1, (int) ( $addition['sets'] ?? $exercise->default_sets ?? 3 ) );
+
+			if ( $maintenance_mode ) {
+				$rep_min = max( 5, $rep_min );
+				$rep_max = max( $rep_min, min( 12, $rep_max ) );
+				$sets = min( $sets, self::maintenance_set_target( $slot_type, $sets ) );
+			}
+
+			$prog = self::recommended_progression( $user_id, $exercise_id );
+			$normalized[] = [
+				'plan_exercise_id'       => $next_plan_exercise_id,
+				'exercise_id'            => (int) $exercise->id,
+				'original_exercise_id'   => (int) $exercise->id,
+				'original_exercise_name' => (string) ( $exercise->name ?? '' ),
+				'exercise_name'          => (string) ( $exercise->name ?? '' ),
+				'primary_muscle'         => (string) ( $exercise->primary_muscle ?? '' ),
+				'equipment'              => (string) ( $exercise->equipment ?? '' ),
+				'difficulty'             => (string) ( $exercise->difficulty ?? '' ),
+				'slot_type'              => $slot_type,
+				'rep_min'                => $rep_min,
+				'rep_max'                => $rep_max,
+				'sets'                   => $sets,
+				'suggested_weight'       => $prog['weight'] ?? null,
+				'suggestion_note'        => $maintenance_mode
+					? 'Maintenance mode: clean reps and leave gas in the tank.'
+					: (string) ( $prog['note'] ?? 'Added as an extra movement for today.' ),
+				'was_swapped'            => false,
+				'is_added'               => true,
+			];
+			$selected_exercise_ids[] = $exercise_id;
+			$next_plan_exercise_id++;
+		}
+
+		return $normalized;
+	}
+
+	private static function append_full_tier_bonus_exercises( int $user_id, string $day_type, array $exercises, array $slot_limit, array $avoid_terms, array $allowed_equipment, bool $maintenance_mode ): array {
+		$normalized = array_values( $exercises );
+		$selected_exercise_ids = array_values( array_filter( array_map( static fn( array $exercise ): int => (int) ( $exercise['exercise_id'] ?? 0 ), $normalized ) ) );
+		$next_plan_exercise_id = max( 900000, ...array_map( static fn( array $exercise ): int => (int) ( $exercise['plan_exercise_id'] ?? 0 ), $normalized ) ) + 1;
+		$bonus_slot_priority = [ 'abs', 'challenge' ];
+		$slot_counts = [];
+		foreach ( $normalized as $exercise ) {
+			$slot_type = (string) ( $exercise['slot_type'] ?? '' );
+			if ( '' === $slot_type ) {
+				continue;
+			}
+			$slot_counts[ $slot_type ] = ( $slot_counts[ $slot_type ] ?? 0 ) + 1;
+		}
+
+		foreach ( $bonus_slot_priority as $slot_type ) {
+			$target_slot_count = (int) ( $slot_limit[ $slot_type ] ?? 0 );
+			$current_slot_count = (int) ( $slot_counts[ $slot_type ] ?? 0 );
+
+			while ( $current_slot_count < $target_slot_count ) {
+				$candidate = self::find_bonus_slot_exercise_candidate(
+					$user_id,
+					$day_type,
+					$slot_type,
+					$selected_exercise_ids,
+					$avoid_terms,
+					$allowed_equipment
+				);
+				if ( ! $candidate ) {
+					break;
+				}
+
+				$rep_min = max( 3, (int) ( $candidate->default_rep_min ?? 8 ) );
+				$rep_max = max( $rep_min, (int) ( $candidate->default_rep_max ?? 12 ) );
+				$sets = max( 1, (int) ( $candidate->default_sets ?? 3 ) );
+
+				if ( $maintenance_mode ) {
+					$rep_min = max( 5, $rep_min );
+					$rep_max = max( $rep_min, min( 12, $rep_max ) );
+					$sets = min( $sets, self::maintenance_set_target( $slot_type, $sets ) );
+				}
+
+				$prog = self::recommended_progression( $user_id, (int) $candidate->id );
+				$normalized[] = [
+					'plan_exercise_id'       => $next_plan_exercise_id,
+					'exercise_id'            => (int) $candidate->id,
+					'original_exercise_id'   => (int) $candidate->id,
+					'original_exercise_name' => (string) ( $candidate->name ?? '' ),
+					'exercise_name'          => (string) ( $candidate->name ?? '' ),
+					'primary_muscle'         => (string) ( $candidate->primary_muscle ?? '' ),
+					'equipment'              => (string) ( $candidate->equipment ?? '' ),
+					'difficulty'             => (string) ( $candidate->difficulty ?? '' ),
+					'slot_type'              => $slot_type,
+					'rep_min'                => $rep_min,
+					'rep_max'                => $rep_max,
+					'sets'                   => $sets,
+					'suggested_weight'       => $prog['weight'] ?? null,
+					'suggestion_note'        => $maintenance_mode
+						? 'Maintenance mode: clean reps and leave gas in the tank.'
+						: sprintf( 'Full session bonus %s added automatically.', $slot_type ),
+					'was_swapped'            => false,
+					'is_added'               => true,
+					'is_bonus_fill'          => true,
+				];
+
+				$selected_exercise_ids[] = (int) $candidate->id;
+				$slot_counts[ $slot_type ] = ( $slot_counts[ $slot_type ] ?? 0 ) + 1;
+				$current_slot_count = (int) $slot_counts[ $slot_type ];
+				$next_plan_exercise_id++;
+			}
+		}
+
+		return $normalized;
+	}
+
+	private static function find_bonus_slot_exercise_candidate( int $user_id, string $day_type, string $slot_type, array $excluded_ids, array $avoid_terms, array $allowed_equipment ): ?object {
+		$day_type_scopes = [ $day_type, '' ];
+
+		foreach ( $day_type_scopes as $day_type_scope ) {
+			$candidate = self::query_bonus_slot_exercise_candidate( $user_id, $day_type_scope, $slot_type, $excluded_ids, $avoid_terms, $allowed_equipment );
+			if ( $candidate ) {
+				return $candidate;
+			}
+		}
+
+		return null;
+	}
+
+	private static function query_bonus_slot_exercise_candidate( int $user_id, string $day_type, string $slot_type, array $excluded_ids, array $avoid_terms, array $allowed_equipment ): ?object {
+		global $wpdb;
+		$p = $wpdb->prefix;
+
+		$exercise_access_where = ExerciseLibraryService::accessible_exercise_where( 'e', $user_id );
+		$slot_json = '"' . esc_sql( $slot_type ) . '"';
+		$excluded_ids = array_values( array_unique( array_filter( array_map( 'intval', $excluded_ids ) ) ) );
+
+		$sql = "
+			SELECT e.id, e.name, e.primary_muscle, e.equipment, e.difficulty, e.default_rep_min, e.default_rep_max, e.default_sets
+			FROM {$p}fit_exercises e
+			WHERE e.active = 1
+			  AND {$exercise_access_where}
+			  AND JSON_CONTAINS(e.slot_types_json, %s)";
+		$params = [ $slot_json ];
+
+		if ( '' !== $day_type ) {
+			$sql .= ' AND JSON_CONTAINS(e.day_types_json, %s)';
+			$params[] = '"' . esc_sql( $day_type ) . '"';
+		}
+
+		if ( ! self::equipment_unrestricted( $allowed_equipment ) ) {
+			$allowed_equipment = array_values( array_unique( array_filter( array_map( static fn( string $item ): string => sanitize_key( $item ), $allowed_equipment ) ) ) );
+			if ( empty( $allowed_equipment ) ) {
+				return null;
+			}
+			$placeholders = implode( ',', array_fill( 0, count( $allowed_equipment ), '%s' ) );
+			$sql .= " AND (e.equipment IN ({$placeholders}) OR e.equipment IN ('', 'none', 'other'))";
+			$params = array_merge( $params, $allowed_equipment );
+		}
+
+		if ( ! empty( $excluded_ids ) ) {
+			$placeholders = implode( ',', array_fill( 0, count( $excluded_ids ), '%d' ) );
+			$sql .= " AND e.id NOT IN ({$placeholders})";
+			$params = array_merge( $params, $excluded_ids );
+		}
+
+		$sql .= "
+			ORDER BY
+			  CASE WHEN e.equipment = 'bodyweight' THEN 0 ELSE 1 END,
+			  CASE WHEN e.user_id = %d THEN 0 ELSE 1 END,
+			  e.id ASC
+			LIMIT 25";
+		$params[] = $user_id;
+
+		$candidates = $wpdb->get_results( $wpdb->prepare( $sql, $params ) );
+		foreach ( $candidates as $candidate ) {
+			if ( ! self::exercise_matches_avoidance( $candidate, $avoid_terms ) && self::exercise_matches_equipment( $candidate, $allowed_equipment ) ) {
+				return $candidate;
+			}
+		}
+
+		return null;
 	}
 
 	private static function build_day_variation_strategy( int $user_id, string $day_type, array $plan_exercises, array $exercise_swaps, array $exercise_order ): array {
@@ -461,6 +726,36 @@ class TrainingEngine {
 
 			return $left_index <=> $right_index;
 		} );
+
+		return array_values( $exercises );
+	}
+
+	private static function apply_rep_adjustments( array $exercises, array $rep_adjustments ): array {
+		if ( empty( $exercises ) || empty( $rep_adjustments ) ) {
+			return array_values( $exercises );
+		}
+
+		foreach ( $exercises as &$exercise ) {
+			$plan_exercise_id = (int) ( $exercise['plan_exercise_id'] ?? 0 );
+			if ( $plan_exercise_id <= 0 ) {
+				continue;
+			}
+
+			$rep_delta = (int) ( $rep_adjustments[ $plan_exercise_id ] ?? 0 );
+			if ( 0 === $rep_delta ) {
+				continue;
+			}
+
+			$base_rep_min = max( 1, (int) ( $exercise['rep_min'] ?? 8 ) );
+			$base_rep_max = max( $base_rep_min, (int) ( $exercise['rep_max'] ?? 12 ) );
+			$adjusted_rep_min = max( 3, $base_rep_min + $rep_delta );
+			$adjusted_rep_max = max( $adjusted_rep_min, $base_rep_max + $rep_delta );
+
+			$exercise['rep_min'] = $adjusted_rep_min;
+			$exercise['rep_max'] = $adjusted_rep_max;
+			$exercise['rep_delta'] = $rep_delta;
+		}
+		unset( $exercise );
 
 		return array_values( $exercises );
 	}
@@ -669,7 +964,7 @@ class TrainingEngine {
 		);
 	}
 
-	private static function resolve_session_exercise_selection( int $user_id, string $day_type, object $plan_exercise, int $swap_exercise_id, array $excluded_ids = [], array $avoid_terms = [] ): array {
+	private static function resolve_session_exercise_selection( int $user_id, string $day_type, object $plan_exercise, int $swap_exercise_id, array $excluded_ids = [], array $avoid_terms = [], array $allowed_equipment = [] ): array {
 		$selected = self::resolve_exercise_candidate(
 			$user_id,
 			$day_type,
@@ -677,6 +972,7 @@ class TrainingEngine {
 			(int) $plan_exercise->exercise_id,
 			$excluded_ids,
 			$avoid_terms,
+			$allowed_equipment,
 			[
 				'exercise_name'  => (string) $plan_exercise->exercise_name,
 				'primary_muscle' => (string) ( $plan_exercise->primary_muscle ?? '' ),
@@ -695,7 +991,8 @@ class TrainingEngine {
 			(string) $plan_exercise->slot_type,
 			$swap_exercise_id,
 			$excluded_ids,
-			$avoid_terms
+			$avoid_terms,
+			$allowed_equipment
 		);
 
 		if ( ! empty( $override['blocked'] ) || (int) ( $override['exercise_id'] ?? 0 ) <= 0 ) {
@@ -706,7 +1003,7 @@ class TrainingEngine {
 		return $override;
 	}
 
-	private static function resolve_exercise_candidate( int $user_id, string $day_type, string $slot_type, int $exercise_id, array $excluded_ids = [], array $avoid_terms = [], array $fallback = [] ): array {
+	private static function resolve_exercise_candidate( int $user_id, string $day_type, string $slot_type, int $exercise_id, array $excluded_ids = [], array $avoid_terms = [], array $allowed_equipment = [], array $fallback = [] ): array {
 		$exercise = ExerciseLibraryService::get_exercise( $user_id, $exercise_id, 'id, slug, name, primary_muscle, equipment, difficulty' );
 		if ( ! $exercise ) {
 			return [
@@ -716,7 +1013,7 @@ class TrainingEngine {
 			];
 		}
 
-		if ( ! self::exercise_matches_avoidance( $exercise, $avoid_terms ) ) {
+		if ( ! self::exercise_matches_avoidance( $exercise, $avoid_terms ) && self::exercise_matches_equipment( $exercise, $allowed_equipment ) ) {
 			return [
 				'exercise_id'    => (int) $exercise->id,
 				'exercise_name'  => (string) ( $exercise->name ?? ( $fallback['exercise_name'] ?? '' ) ),
@@ -728,7 +1025,7 @@ class TrainingEngine {
 			];
 		}
 
-		$replacement = self::find_non_avoided_exercise_candidate( $user_id, $day_type, $slot_type, $exercise, $excluded_ids, $avoid_terms );
+		$replacement = self::find_non_avoided_exercise_candidate( $user_id, $day_type, $slot_type, $exercise, $excluded_ids, $avoid_terms, $allowed_equipment );
 		if ( $replacement ) {
 			return [
 				'exercise_id'    => (int) $replacement->id,
@@ -752,7 +1049,7 @@ class TrainingEngine {
 		];
 	}
 
-	private static function find_non_avoided_exercise_candidate( int $user_id, string $day_type, string $slot_type, object $exercise, array $excluded_ids, array $avoid_terms ): ?object {
+	private static function find_non_avoided_exercise_candidate( int $user_id, string $day_type, string $slot_type, object $exercise, array $excluded_ids, array $avoid_terms, array $allowed_equipment ): ?object {
 		global $wpdb;
 		$p = $wpdb->prefix;
 
@@ -775,6 +1072,16 @@ class TrainingEngine {
 			$day_json,
 			$slot_json,
 		];
+
+		if ( ! self::equipment_unrestricted( $allowed_equipment ) ) {
+			$allowed_equipment = array_values( array_unique( array_filter( array_map( static fn( string $item ): string => sanitize_key( $item ), $allowed_equipment ) ) ) );
+			if ( empty( $allowed_equipment ) ) {
+				return null;
+			}
+			$placeholders = implode( ',', array_fill( 0, count( $allowed_equipment ), '%s' ) );
+			$sql .= " AND e.equipment IN ({$placeholders})";
+			$params = array_merge( $params, $allowed_equipment );
+		}
 
 		$excluded_ids = array_values( array_unique( array_filter( array_map( 'intval', $excluded_ids ) ) ) );
 		if ( ! empty( $excluded_ids ) ) {
@@ -827,6 +1134,168 @@ class TrainingEngine {
 		}
 
 		return false;
+	}
+
+	private static function exercise_matches_equipment( object $exercise, array $allowed_equipment ): bool {
+		if ( self::equipment_unrestricted( $allowed_equipment ) ) {
+			return true;
+		}
+
+		$equipment = sanitize_key( (string) ( $exercise->equipment ?? '' ) );
+		if ( in_array( $equipment, [ '', 'none', 'other' ], true ) ) {
+			return true;
+		}
+		if ( 'dumbbells' === $equipment ) {
+			$equipment = 'dumbbell';
+		}
+
+		return in_array( $equipment, $allowed_equipment, true );
+	}
+
+	private static function equipment_unrestricted( array $allowed_equipment ): bool {
+		return in_array( self::UNRESTRICTED_EQUIPMENT, $allowed_equipment, true );
+	}
+
+	private static function backfill_user_day_from_template( int $user_id, int $program_template_id, int $user_day_id, string $day_type, array $avoid_terms, array $allowed_equipment ): void {
+		global $wpdb;
+		$p = $wpdb->prefix;
+
+		if ( $user_id <= 0 || $user_day_id <= 0 || '' === $day_type ) {
+			return;
+		}
+
+		$active_count = (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT COUNT(*) FROM {$p}fit_user_training_day_exercises WHERE training_day_id = %d AND active = 1",
+			$user_day_id
+		) );
+		if ( $active_count > 0 ) {
+			return;
+		}
+
+		$template_day_id = 0;
+		if ( $program_template_id > 0 ) {
+			$template_day_id = (int) $wpdb->get_var( $wpdb->prepare(
+				"SELECT id
+				 FROM {$p}fit_program_template_days
+				 WHERE program_template_id = %d AND day_type = %s
+				 ORDER BY default_order ASC, id ASC
+				 LIMIT 1",
+				$program_template_id,
+				$day_type
+			) );
+		}
+
+		if ( $template_day_id <= 0 ) {
+			$template_day_id = (int) $wpdb->get_var( $wpdb->prepare(
+				"SELECT id
+				 FROM {$p}fit_program_template_days
+				 WHERE day_type = %s
+				 ORDER BY default_order ASC, id ASC
+				 LIMIT 1",
+				$day_type
+			) );
+		}
+
+		if ( $template_day_id <= 0 ) {
+			return;
+		}
+
+		$template_exercises = $wpdb->get_results( $wpdb->prepare(
+			"SELECT * FROM {$p}fit_program_template_exercises WHERE template_day_id = %d ORDER BY priority ASC, id ASC",
+			$template_day_id
+		) );
+		if ( empty( $template_exercises ) ) {
+			return;
+		}
+
+		$selected_exercise_ids = [];
+		$fallback_sort_order = 1;
+		foreach ( $template_exercises as $template_exercise ) {
+			$resolved = self::resolve_exercise_candidate(
+				$user_id,
+				$day_type,
+				(string) $template_exercise->slot_type,
+				(int) $template_exercise->exercise_id,
+				$selected_exercise_ids,
+				$avoid_terms,
+				$allowed_equipment
+			);
+			$resolved_exercise_id = (int) ( $resolved['exercise_id'] ?? 0 );
+			if ( ! empty( $resolved['blocked'] ) || $resolved_exercise_id <= 0 ) {
+				continue;
+			}
+
+			$wpdb->insert( $p . 'fit_user_training_day_exercises', [
+				'training_day_id' => $user_day_id,
+				'exercise_id'     => $resolved_exercise_id,
+				'slot_type'       => sanitize_key( (string) ( $template_exercise->slot_type ?? 'accessory' ) ),
+				'rep_min'         => (int) ( $template_exercise->rep_min ?? 8 ),
+				'rep_max'         => (int) ( $template_exercise->rep_max ?? 12 ),
+				'sets_target'     => (int) ( $template_exercise->sets_target ?? 3 ),
+				'rir_target'      => isset( $template_exercise->rir_target ) ? (float) $template_exercise->rir_target : null,
+				'sort_order'      => (int) ( $template_exercise->priority ?? $fallback_sort_order ),
+				'active'          => 1,
+			] );
+			$selected_exercise_ids[] = $resolved_exercise_id;
+			$fallback_sort_order++;
+		}
+	}
+
+	public static function get_allowed_equipment_for_user( int $user_id ): array {
+		if ( $user_id <= 0 ) {
+			return [ self::UNRESTRICTED_EQUIPMENT ];
+		}
+
+		if ( isset( self::$equipment_profile_cache[ $user_id ] ) ) {
+			return self::$equipment_profile_cache[ $user_id ];
+		}
+
+		global $wpdb;
+		$raw_json = $wpdb->get_var( $wpdb->prepare(
+			"SELECT equipment_available_json FROM {$wpdb->prefix}fit_user_preferences WHERE user_id = %d LIMIT 1",
+			$user_id
+		) );
+		$decoded = json_decode( (string) $raw_json, true );
+		$options = is_array( $decoded ) ? $decoded : [];
+
+		$normalized = array_values( array_unique( array_filter( array_map(
+			static fn( $value ): string => strtolower( trim( sanitize_text_field( (string) $value ) ) ),
+			$options
+		) ) ) );
+
+		if ( in_array( 'full gym', $normalized, true ) || in_array( 'full_gym', $normalized, true ) || empty( $normalized ) ) {
+			self::$equipment_profile_cache[ $user_id ] = [ self::UNRESTRICTED_EQUIPMENT ];
+			return self::$equipment_profile_cache[ $user_id ];
+		}
+
+		if ( in_array( 'bodyweight only', $normalized, true ) || in_array( 'bodyweight_only', $normalized, true ) ) {
+			self::$equipment_profile_cache[ $user_id ] = [ 'bodyweight' ];
+			return self::$equipment_profile_cache[ $user_id ];
+		}
+
+			$allowed = [ 'bodyweight' ];
+			foreach ( $normalized as $option ) {
+				switch ( $option ) {
+					case 'dumbbells':
+					case 'dumbbell':
+						$allowed[] = 'dumbbell';
+						break;
+					case 'machines':
+					case 'machine':
+						$allowed[] = 'machine';
+						$allowed[] = 'cable';
+						break;
+					case 'home gym':
+					case 'home_gym':
+						$allowed[] = 'dumbbell';
+						$allowed[] = 'barbell';
+						break;
+				}
+			}
+
+		$allowed = array_values( array_unique( array_filter( array_map( static fn( string $item ): string => sanitize_key( $item ), $allowed ) ) ) );
+		self::$equipment_profile_cache[ $user_id ] = ! empty( $allowed ) ? $allowed : [ self::UNRESTRICTED_EQUIPMENT ];
+		return self::$equipment_profile_cache[ $user_id ];
 	}
 
 	private static function normalize_avoidance_term( string $value ): string {

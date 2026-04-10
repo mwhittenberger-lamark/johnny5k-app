@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from 'react'
+import { startTransition, useEffect, useMemo, useState } from 'react'
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
-import { dashboardApi, onboardingApi } from '../../api/client'
+import { dashboardApi } from '../../api/modules/dashboard'
+import { onboardingApi } from '../../api/modules/onboarding'
 import { useAuthStore } from '../../store/authStore'
 import {
   bodyFormFromState,
@@ -134,13 +135,45 @@ function StepUnlock({ text }) {
   )
 }
 
+function formatGoalLabel(value) {
+  const text = String(value || '').trim()
+  if (!text) return 'recomp'
+  return text.replaceAll('_', ' ')
+}
+
+function formatExperienceLabel(value) {
+  const normalized = String(value || '').trim()
+  if (!normalized) return 'new'
+  if (normalized === 'advanced') return 'advanced'
+  if (normalized === 'intermediate') return 'intermediate'
+  return 'new'
+}
+
+function buildOnboardingHypeMessage(state, result) {
+  const profile = state?.profile ?? {}
+  const prefs = state?.prefs ?? {}
+  const goalLabel = formatGoalLabel(profile.current_goal)
+  const experienceLabel = formatExperienceLabel(profile.training_experience)
+  const targetCalories = Number(result?.target_calories ?? 0)
+  const targetProtein = Number(result?.target_protein_g ?? 0)
+  const splitDays = Array.isArray(result?.week_split)
+    ? result.week_split.filter(day => String(day?.day_type || '') !== 'rest').length
+    : 0
+  const preferredFoods = String(prefs?.food_preferences_json?.preferred_foods || '').trim()
+  const mealHint = preferredFoods
+    ? `I already pulled in your food style (${preferredFoods.slice(0, 80)}${preferredFoods.length > 80 ? '…' : ''}) so meals should feel like your real life.`
+    : 'I will shape meals around what you actually stick to, not generic meal templates.'
+
+  return `Huge win. You just completed setup and gave me what I need to coach you like a ${experienceLabel} lifter chasing ${goalLabel}. Starting now, expect a clear daily target (${targetCalories || 'custom'} calories, ${targetProtein || 'custom'}g protein), a ${splitDays || 'custom'}-day training split, and tighter daily guidance that adjusts off your actual logs. ${mealHint} You are officially locked in.`
+}
+
 function Welcome() {
   const navigate = useNavigate()
 
   return (
     <StepLayout
       stepKey="welcome"
-      title="Welcome to Johnny 5000"
+      title="Welcome to Johnny5k"
       subtitle="We’ll set up your body data, training background, food preferences, and recovery defaults in a few quick steps."
       why="This setup gives Johnny enough context to build a first plan that fits your body, schedule, food preferences, and recovery needs."
     >
@@ -160,8 +193,10 @@ function ProfileStep() {
   useEffect(() => {
     if (state) {
       const nextForm = profileFormFromState(state.profile)
-      setForm(nextForm)
-      setTimezoneRegion(getTimezoneRegion(nextForm.timezone))
+      startTransition(() => {
+        setForm(nextForm)
+        setTimezoneRegion(getTimezoneRegion(nextForm.timezone))
+      })
     }
   }, [state])
 
@@ -258,7 +293,11 @@ function BodyStep() {
   const [error, setError] = useState('')
 
   useEffect(() => {
-    if (state) setForm(bodyFormFromState(state.profile))
+    if (state) {
+      startTransition(() => {
+        setForm(bodyFormFromState(state.profile))
+      })
+    }
   }, [state])
 
   function update(field, value) {
@@ -327,7 +366,11 @@ function TrainingStep() {
   const [error, setError] = useState('')
 
   useEffect(() => {
-    if (state) setForm(trainingFormFromState(state.profile, state.prefs))
+    if (state) {
+      startTransition(() => {
+        setForm(trainingFormFromState(state.profile, state.prefs))
+      })
+    }
   }, [state])
 
   function updateSchedule(day, dayType) {
@@ -435,7 +478,11 @@ function InjuriesStep() {
   const [error, setError] = useState('')
 
   useEffect(() => {
-    if (state) setForm(injuriesFormFromState(state.prefs, state.health_flags))
+    if (state) {
+      startTransition(() => {
+        setForm(injuriesFormFromState(state.prefs, state.health_flags))
+      })
+    }
   }, [state])
 
   const flagMap = useMemo(() => {
@@ -607,15 +654,31 @@ function EquipmentStep() {
   const [error, setError] = useState('')
 
   useEffect(() => {
-    if (state) setForm(equipmentFormFromState(state.prefs))
+    if (state) {
+      startTransition(() => {
+        setForm(equipmentFormFromState(state.prefs))
+      })
+    }
   }, [state])
 
   function toggleEquipment(item) {
     setForm(current => ({
       ...current,
-      equipment_available: current.equipment_available.includes(item)
-        ? current.equipment_available.filter(value => value !== item)
-        : [...current.equipment_available, item],
+      equipment_available: (() => {
+        const selected = Array.isArray(current.equipment_available) ? current.equipment_available : []
+        const hasItem = selected.includes(item)
+
+        if (hasItem) {
+          return selected.filter(value => value !== item)
+        }
+
+        if (item === 'Full gym' || item === 'Bodyweight only') {
+          return [item]
+        }
+
+        const withoutExclusive = selected.filter(value => value !== 'Full gym' && value !== 'Bodyweight only')
+        return [...withoutExclusive, item]
+      })(),
     }))
   }
 
@@ -661,7 +724,11 @@ function FoodStep() {
   const [error, setError] = useState('')
 
   useEffect(() => {
-    if (state) setForm(foodFormFromState(state.prefs))
+    if (state) {
+      startTransition(() => {
+        setForm(foodFormFromState(state.prefs))
+      })
+    }
   }, [state])
 
   function update(field, value) {
@@ -727,7 +794,11 @@ function HabitsStep() {
   const [error, setError] = useState('')
 
   useEffect(() => {
-    if (state) setForm(habitsFormFromState(state.profile, state.prefs, state.goal))
+    if (state) {
+      startTransition(() => {
+        setForm(habitsFormFromState(state.profile, state.prefs, state.goal))
+      })
+    }
   }, [state])
 
   function update(field, value) {
@@ -938,6 +1009,7 @@ function CompleteStep() {
 
   if (result) {
     const targets = normalizeTargets(result)
+    const hypeMessage = buildOnboardingHypeMessage(state, result)
 
     return (
       <StepLayout
@@ -946,6 +1018,10 @@ function CompleteStep() {
         subtitle="Your targets and first-week split are ready."
         why="This is the personalized starting point Johnny built from the information you just gave him."
       >
+        <div className="dash-card settings-section">
+          <h3>Johnny&apos;s message</h3>
+          <p>{hypeMessage}</p>
+        </div>
         <div className="dash-card target-preview-card">
           <div className="target-preview-row"><span>Calories</span><strong>{targets.target_calories}</strong></div>
           <div className="target-preview-row"><span>Protein</span><strong>{targets.target_protein_g}g</strong></div>

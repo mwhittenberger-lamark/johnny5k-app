@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { trainingApi } from '../../api/client'
+import { trainingApi } from '../../api/modules/training'
 
 const EMPTY_DRAFT = {
   name: '',

@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
+import { startTransition, useCallback, useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { bodyApi, workoutApi } from '../../api/client'
+import { bodyApi } from '../../api/modules/body'
+import { workoutApi } from '../../api/modules/workout'
 import { formatUsShortDate } from '../../lib/dateFormat'
 import { useDashboardStore } from '../../store/dashboardStore'
 
@@ -27,21 +28,63 @@ export default function BodyScreen() {
   const [editingStepId, setEditingStepId] = useState(null)
   const [saving, setSaving]     = useState(false)
   const [msg, setMsg]           = useState('')
+  const [pendingScrollTarget, setPendingScrollTarget] = useState('')
   const weightFormRef = useRef(null)
   const sleepFormRef = useRef(null)
   const stepsFormRef = useRef(null)
+  const weightListRef = useRef(null)
+  const sleepListRef = useRef(null)
+  const stepsListRef = useRef(null)
   const invalidate = useDashboardStore(s => s.invalidate)
   const snapshot = useDashboardStore(s => s.snapshot)
   const loadSnapshot = useDashboardStore(s => s.loadSnapshot)
 
-  useEffect(() => {
-    refreshBodyData()
-    loadSnapshot()
+  const refreshBodyData = useCallback(async () => {
+    const [weightsResult, sleepResult, stepsResult, cardioResult, workoutsResult, metricsResult] = await Promise.allSettled([
+      bodyApi.getWeight(14),
+      bodyApi.getSleep(7),
+      bodyApi.getSteps(10),
+      bodyApi.getCardio(10),
+      workoutApi.getHistory(3, 10),
+      bodyApi.getMetrics(30),
+    ])
+
+    if (weightsResult.status === 'fulfilled') setWeights(weightsResult.value)
+    if (sleepResult.status === 'fulfilled') setSleepLogs(sleepResult.value)
+    if (stepsResult.status === 'fulfilled') setStepLogs(stepsResult.value)
+    if (cardioResult.status === 'fulfilled') setCardioLogs(cardioResult.value)
+    if (workoutsResult.status === 'fulfilled') setWorkoutLogs(workoutsResult.value)
+    if (metricsResult.status === 'fulfilled') setMetrics(metricsResult.value)
+  }, [])
+
+  const setFlash = useCallback((message) => {
+    setMsg(message)
   }, [])
 
   useEffect(() => {
+    const frameId = window.requestAnimationFrame(() => {
+      void refreshBodyData()
+      void loadSnapshot()
+    })
+
+    return () => window.cancelAnimationFrame(frameId)
+  }, [loadSnapshot, refreshBodyData])
+
+  useEffect(() => {
+    if (!msg || msg.startsWith('Error')) return undefined
+
+    const timer = window.setTimeout(() => {
+      setMsg('')
+    }, 4200)
+
+    return () => window.clearTimeout(timer)
+  }, [msg])
+
+  useEffect(() => {
     if (location.state?.focusTab) {
-      setTab(location.state.focusTab)
+      startTransition(() => {
+        setTab(location.state.focusTab)
+      })
     }
   }, [location.state?.focusTab])
 
@@ -51,25 +94,14 @@ export default function BodyScreen() {
       return undefined
     }
 
-    setFlash(notice)
+    startTransition(() => {
+      setMsg(notice)
+    })
     const nextState = { ...(location.state || {}) }
     delete nextState.johnnyActionNotice
     navigate(location.pathname, { replace: true, state: Object.keys(nextState).length ? nextState : null })
     return undefined
   }, [location.pathname, location.state, location.state?.johnnyActionNotice, navigate])
-
-  function refreshBodyData() {
-    bodyApi.getWeight(14).then(setWeights).catch(() => {})
-    bodyApi.getSleep(7).then(setSleepLogs).catch(() => {})
-    bodyApi.getSteps(10).then(setStepLogs).catch(() => {})
-    bodyApi.getCardio(10).then(setCardioLogs).catch(() => {})
-    workoutApi.getHistory(3, 10).then(setWorkoutLogs).catch(() => {})
-    bodyApi.getMetrics(30).then(setMetrics).catch(() => {})
-  }
-
-  function setFlash(message) {
-    setMsg(message)
-  }
 
   async function logWeight(e) {
     e.preventDefault()
@@ -85,7 +117,8 @@ export default function BodyScreen() {
       resetWeightForm()
       invalidate()
       loadSnapshot(true)
-      refreshBodyData()
+      await refreshBodyData()
+      setPendingScrollTarget('weight')
     } catch (err) { setFlash('Error: ' + err.message) }
     setSaving(false)
   }
@@ -104,7 +137,8 @@ export default function BodyScreen() {
       resetSleepForm()
       invalidate()
       loadSnapshot(true)
-      refreshBodyData()
+      await refreshBodyData()
+      setPendingScrollTarget('sleep')
     } catch (err) { setFlash('Error: ' + err.message) }
     setSaving(false)
   }
@@ -123,7 +157,8 @@ export default function BodyScreen() {
       resetStepsForm()
       invalidate()
       loadSnapshot(true)
-      refreshBodyData()
+      await refreshBodyData()
+      setPendingScrollTarget('steps')
     } catch (err) { setFlash('Error: ' + err.message) }
     setSaving(false)
   }
@@ -179,13 +214,17 @@ export default function BodyScreen() {
   const latestWeight = weights[0]?.weight_lb ?? snapshot?.latest_weight?.weight_lb ?? '—'
   const weightTrend = getWeightTrend(weights)
   const avgSleep = average(sleepLogs.map(item => Number(item.hours_sleep)))
-  const todaySteps = snapshot?.steps?.today ?? latestMetricValue(metrics.steps, 'steps') ?? 0
+  const todayMovement = snapshot?.steps?.total_movement_today ?? snapshot?.steps?.today ?? latestMetricValue(metrics.steps, 'steps') ?? 0
+  const todayActualSteps = snapshot?.steps?.actual_today ?? latestMetricValue(metrics.steps, 'steps') ?? 0
+  const todayCardioEquivalentSteps = snapshot?.steps?.cardio_equivalent_today ?? 0
   const stepTarget = snapshot?.steps?.target ?? 8000
   const sleepTarget = Number(snapshot?.goal?.target_sleep_hours ?? 8)
-  const stepPct = stepTarget ? Math.min(100, Math.round((todaySteps / stepTarget) * 100)) : 0
+  const stepPct = stepTarget ? Math.min(100, Math.round((todayMovement / stepTarget) * 100)) : 0
   const lastSleep = sleepLogs[0]?.hours_sleep ?? snapshot?.sleep?.hours_sleep ?? '—'
   const recoverySummary = snapshot?.recovery_summary
   const activeFlagItems = Array.isArray(recoverySummary?.active_flag_items) ? recoverySummary.active_flag_items : []
+  const activeFlagLoad = Number(recoverySummary?.active_flag_load || 0)
+  const recoveryActionPlan = buildRecoveryActionPlan(recoverySummary, activeFlagItems)
   const caloriePreview = snapshot?.calorie_adjustment_preview
 
   function handleRecoveryQuickAction() {
@@ -204,7 +243,7 @@ export default function BodyScreen() {
     item => item.date
   )
   const stepSeries = selectSeries(
-    metrics.steps,
+    Array.isArray(metrics.movement) && metrics.movement.length ? metrics.movement : metrics.steps,
     chartRange.steps,
     item => Number(item.steps),
     item => item.date
@@ -270,6 +309,33 @@ export default function BodyScreen() {
     setStepsDate(todayInputValue())
   }
 
+  useEffect(() => {
+    if (!pendingScrollTarget) return
+
+    if (pendingScrollTarget === 'weight' && weights.length && weightListRef.current) {
+      requestAnimationFrame(() => {
+        weightListRef.current?.querySelector('.body-log-row')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        setPendingScrollTarget('')
+      })
+      return
+    }
+
+    if (pendingScrollTarget === 'sleep' && sleepLogs.length && sleepListRef.current) {
+      requestAnimationFrame(() => {
+        sleepListRef.current?.querySelector('.body-log-row')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        setPendingScrollTarget('')
+      })
+      return
+    }
+
+    if (pendingScrollTarget === 'steps' && stepLogs.length && stepsListRef.current) {
+      requestAnimationFrame(() => {
+        stepsListRef.current?.querySelector('.body-log-row')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        setPendingScrollTarget('')
+      })
+    }
+  }, [pendingScrollTarget, sleepLogs, stepLogs, weights])
+
   return (
     <div className="screen body-screen">
       <header className="screen-header body-screen-header">
@@ -282,12 +348,20 @@ export default function BodyScreen() {
         </button>
       </header>
 
-      {msg && <p className={msg.startsWith('Error') ? 'error' : 'success-msg'} onClick={() => setMsg('')}>{msg}</p>}
+      {msg ? (
+        <div className={`app-toast ${msg.startsWith('Error') ? 'error' : 'success'}`} role="status" aria-live="polite">
+          <div className="app-toast-copy">
+            <p className="app-toast-title">{msg.startsWith('Error') ? 'Could not save' : 'Saved'}</p>
+            <p className="app-toast-message">{msg}</p>
+          </div>
+          <button type="button" className="app-toast-dismiss" onClick={() => setMsg('')} aria-label="Dismiss toast">×</button>
+        </div>
+      ) : null}
 
       <section className="body-summary-grid">
         <SummaryCard label="Latest weight" value={latestWeight} suffix=" lbs" meta={weightTrend} accent="orange" />
         <SummaryCard label="Avg sleep" value={avgSleep ? avgSleep.toFixed(1) : '—'} suffix=" h" meta={lastSleep !== '—' ? `Last night ${lastSleep}h` : 'Log sleep to see recovery trends'} accent="teal" />
-        <SummaryCard label="Steps today" value={Number(todaySteps).toLocaleString()} meta={`Target ${Number(stepTarget).toLocaleString()} • ${stepPct}%`} accent="pink" />
+        <SummaryCard label="Movement today" value={Number(todayMovement).toLocaleString()} meta={`Target ${Number(stepTarget).toLocaleString()} • ${stepPct}%`} accent="pink" />
       </section>
 
       <section className="dash-card progress-photos-entry-card">
@@ -315,14 +389,24 @@ export default function BodyScreen() {
             <div><strong>{recoverySummary.last_sleep_is_recent ? `${recoverySummary.last_sleep_hours || '—'}h` : '—'}</strong><span>{buildRecoverySleepLabel(recoverySummary)}</span></div>
             <div><strong>{recoverySummary.avg_sleep_3d || '—'}h</strong><span>{buildRecoveryWindowLabel(recoverySummary)}</span></div>
             <div><strong>{recoverySummary.cardio_minutes_7d || 0}</strong><span>Cardio min / 7d</span></div>
-            <div><strong>{recoverySummary.active_flag_load || 0}</strong><span>Weighted flag load</span></div>
+            <div><strong>{activeFlagLoad}</strong><span>{buildFlagLoadLabel(activeFlagLoad)}</span></div>
           </div>
-          {recoverySummary.why_summary ? (
-            <p className="body-recovery-note">Why: <strong>{recoverySummary.why_summary}</strong></p>
-          ) : null}
-          {recoverySummary.trend_summary ? (
-            <p className="body-recovery-note">Trend: <strong>{recoverySummary.trend_summary}</strong></p>
-          ) : null}
+
+          <div className="body-recovery-insights">
+            <p className="body-recovery-note">
+              <strong>Weighted flag load:</strong> This is your recovery friction score. It combines active flags (sleep debt, soreness, high stress, etc.) with severity, not just count.
+            </p>
+            <p className="body-recovery-note">
+              <strong>Current read:</strong> {buildFlagLoadExplanation(activeFlagLoad)}
+            </p>
+            {recoverySummary.why_summary ? (
+              <p className="body-recovery-note">Why: <strong>{recoverySummary.why_summary}</strong></p>
+            ) : null}
+            {recoverySummary.trend_summary ? (
+              <p className="body-recovery-note">Trend: <strong>{recoverySummary.trend_summary}</strong></p>
+            ) : null}
+          </div>
+
           {Array.isArray(recoverySummary.reason_items) && recoverySummary.reason_items.length ? (
             <div className="dashboard-johnny-metric-row">
               {recoverySummary.reason_items.map(reason => (
@@ -342,6 +426,12 @@ export default function BodyScreen() {
             <p className="body-recovery-note">Active flags: <strong>None</strong></p>
           )}
           <p className="body-recovery-note">Recommended training tier: <strong>{recoverySummary.recommended_time_tier}</strong></p>
+          <div className="body-recovery-next-steps">
+            <strong>What to do next</strong>
+            <ul className="body-recovery-action-list">
+              {recoveryActionPlan.map(item => <li key={item}>{item}</li>)}
+            </ul>
+          </div>
           <div className="dashboard-recovery-action-row">
             <button className="btn-outline small" type="button" onClick={handleRecoveryQuickAction}>
               {recoverySummary?.recommended_action?.label || 'Take action'}
@@ -417,7 +507,7 @@ export default function BodyScreen() {
               <h3>Recent weigh-ins</h3>
               <p>{weights.length ? 'Your latest 14 entries.' : 'No weigh-ins yet.'}</p>
             </div>
-            <div className="trend-chart body-trend-chart">
+            <div ref={weightListRef} className="trend-chart body-trend-chart">
             {weights.map((w, i) => (
               <div key={w.id || i} className="trend-row body-trend-row body-log-row">
                 <div className="body-log-main">
@@ -490,7 +580,7 @@ export default function BodyScreen() {
               <h3>Recent sleep</h3>
               <p>{sleepLogs.length ? 'Last 7 nights with quality tags.' : 'No sleep logs yet.'}</p>
             </div>
-            <div className="trend-chart body-trend-chart">
+            <div ref={sleepListRef} className="trend-chart body-trend-chart">
               {sleepLogs.map((entry, i) => (
                 <div key={entry.id || i} className="trend-row body-trend-row sleep-row body-log-row">
                   <div className="body-log-main">
@@ -514,7 +604,7 @@ export default function BodyScreen() {
           <section className="dash-card body-chart-card">
             <div className="body-card-header body-chart-header">
               <div>
-                <h3>Step Trend</h3>
+                <h3>Movement Trend</h3>
                 <p>{stepSeries.length > 1 ? `${chartRange.steps}-day movement view.` : 'Log steps over a few days to build the trend line.'}</p>
               </div>
               <div className="body-chart-actions body-chart-actions-stack">
@@ -555,7 +645,15 @@ export default function BodyScreen() {
             <div className="body-mini-stats">
               <div>
                 <span>Today</span>
-                <strong>{Number(todaySteps).toLocaleString()}</strong>
+                <strong>{Number(todayMovement).toLocaleString()}</strong>
+              </div>
+              <div>
+                <span>Actual steps</span>
+                <strong>{Number(todayActualSteps).toLocaleString()}</strong>
+              </div>
+              <div>
+                <span>Cardio equiv.</span>
+                <strong>{Number(todayCardioEquivalentSteps).toLocaleString()}</strong>
               </div>
               <div>
                 <span>Target</span>
@@ -572,7 +670,7 @@ export default function BodyScreen() {
               <h3>30-day movement trail</h3>
               <p>{stepLogs.length ? 'Recent daily step totals with inline edit/delete actions.' : 'No step entries yet.'}</p>
             </div>
-            <div className="trend-chart body-trend-chart compact">
+            <div ref={stepsListRef} className="trend-chart body-trend-chart compact">
               {stepLogs.map((entry, i) => (
                 <div key={entry.id || i} className="trend-row body-trend-row body-log-row">
                   <div className="body-log-main">
@@ -624,12 +722,12 @@ function WorkoutHistoryTab({ workoutLogs, currentWeight, invalidate, onRefreshSn
   const [caloriesDirty, setCaloriesDirty] = useState(false)
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState('')
+  const [pendingScrollToLatest, setPendingScrollToLatest] = useState(false)
   const workoutFormRef = useRef(null)
+  const workoutListRef = useRef(null)
 
   const totalMinutes = (workoutLogs ?? []).reduce((sum, entry) => sum + Number(entry.duration_minutes || 0), 0)
   const totalCalories = (workoutLogs ?? []).reduce((sum, entry) => sum + Number(entry.estimated_calories || 0), 0)
-  const latestWorkout = workoutLogs?.[0] || null
-
   useEffect(() => {
     if (caloriesDirty) return
 
@@ -640,10 +738,12 @@ function WorkoutHistoryTab({ workoutLogs, currentWeight, invalidate, onRefreshSn
       weightLb: currentWeight,
     })
 
-    setForm(current => ({
-      ...current,
-      estimated_calories: estimate ? String(estimate) : '',
-    }))
+    startTransition(() => {
+      setForm(current => ({
+        ...current,
+        estimated_calories: estimate ? String(estimate) : '',
+      }))
+    })
   }, [caloriesDirty, currentWeight, form.actual_day_type, form.duration_minutes, form.time_tier])
 
   function scrollToForm() {
@@ -697,7 +797,8 @@ function WorkoutHistoryTab({ workoutLogs, currentWeight, invalidate, onRefreshSn
     resetForm()
     invalidate()
     onRefreshSnapshot?.()
-    onRefreshBodyData?.()
+    await onRefreshBodyData?.()
+    setPendingScrollToLatest(true)
     } catch (err) { setMsg('Error: ' + err.message) }
     setSaving(false)
   }
@@ -714,10 +815,20 @@ function WorkoutHistoryTab({ workoutLogs, currentWeight, invalidate, onRefreshSn
     onFlash?.('Workout deleted.')
     invalidate()
     onRefreshSnapshot?.()
-    onRefreshBodyData?.()
+    await onRefreshBodyData?.()
+    setPendingScrollToLatest(true)
     } catch (err) { setMsg('Error: ' + err.message) }
     setSaving(false)
   }
+
+  useEffect(() => {
+    if (!pendingScrollToLatest || !workoutLogs?.length || !workoutListRef.current) return
+
+    requestAnimationFrame(() => {
+      workoutListRef.current?.querySelector('.body-log-row')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      setPendingScrollToLatest(false)
+    })
+  }, [pendingScrollToLatest, workoutLogs])
 
   return (
     <div className="body-tab cardio-tab">
@@ -777,7 +888,7 @@ function WorkoutHistoryTab({ workoutLogs, currentWeight, invalidate, onRefreshSn
       <h3>Recent workouts</h3>
       <p>{workoutLogs.length ? 'Completed workouts from the last 3 days with duration and estimated burn.' : 'No completed workouts from the last 3 days yet.'}</p>
       </div>
-      <div className="trend-chart body-trend-chart cardio-log-list">
+      <div ref={workoutListRef} className="trend-chart body-trend-chart cardio-log-list">
       {workoutLogs.map((entry, index) => (
         <div key={entry.id || index} className="trend-row body-trend-row cardio-row body-log-row">
         <div className="body-log-main">
@@ -805,7 +916,9 @@ function CardioTab({ invalidate, cardioLogs, cardioSeries, cardioRange, currentW
   const [caloriesDirty, setCaloriesDirty] = useState(false)
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState('')
+  const [pendingScrollToLatest, setPendingScrollToLatest] = useState(false)
   const cardioFormRef = useRef(null)
+  const cardioListRef = useRef(null)
 
   const cardioMinutesWeek = sumCardioMinutes(cardioLogs, 7)
   const cardioSessionsWeek = countCardioSessions(cardioLogs, 7)
@@ -822,10 +935,12 @@ function CardioTab({ invalidate, cardioLogs, cardioSeries, cardioRange, currentW
       weightLb: currentWeight,
     })
 
-    setForm(current => ({
-      ...current,
-      estimated_calories: estimate ? String(estimate) : '',
-    }))
+    startTransition(() => {
+      setForm(current => ({
+        ...current,
+        estimated_calories: estimate ? String(estimate) : '',
+      }))
+    })
   }, [form.cardio_type, form.duration_minutes, form.intensity, currentWeight, caloriesDirty])
 
   function update(k, v) {
@@ -865,7 +980,8 @@ function CardioTab({ invalidate, cardioLogs, cardioSeries, cardioRange, currentW
       resetCardioForm(form.cardio_type, form.intensity)
       invalidate()
       onRefreshSnapshot?.()
-      onLogged?.()
+      await onLogged?.()
+      setPendingScrollToLatest(true)
     } catch (err) { setMsg('Error: ' + err.message) }
     setSaving(false)
   }
@@ -882,10 +998,20 @@ function CardioTab({ invalidate, cardioLogs, cardioSeries, cardioRange, currentW
       onFlash?.('Cardio entry deleted.')
       invalidate()
       onRefreshSnapshot?.()
-      onLogged?.()
+      await onLogged?.()
+      setPendingScrollToLatest(true)
     } catch (err) { setMsg('Error: ' + err.message) }
     setSaving(false)
   }
+
+  useEffect(() => {
+    if (!pendingScrollToLatest || !cardioLogs?.length || !cardioListRef.current) return
+
+    requestAnimationFrame(() => {
+      cardioListRef.current?.querySelector('.body-log-row')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      setPendingScrollToLatest(false)
+    })
+  }, [cardioLogs, pendingScrollToLatest])
 
   return (
     <div className="body-tab cardio-tab">
@@ -968,7 +1094,7 @@ function CardioTab({ invalidate, cardioLogs, cardioSeries, cardioRange, currentW
           <h3>Recent cardio sessions</h3>
           <p>{cardioLogs.length ? 'Latest conditioning sessions with modality and intensity.' : 'No cardio sessions yet.'}</p>
         </div>
-        <div className="trend-chart body-trend-chart cardio-log-list">
+        <div ref={cardioListRef} className="trend-chart body-trend-chart cardio-log-list">
           {cardioLogs.map((entry, i) => (
             <div key={entry.id || i} className="trend-row body-trend-row cardio-row body-log-row">
               <div className="body-log-main">
@@ -1342,6 +1468,51 @@ function buildRecoverySleepLabel(recoverySummary) {
 function buildRecoveryWindowLabel(recoverySummary) {
   const loggedDays = Number(recoverySummary?.sleep_logged_days_3d || 0)
   return `${loggedDays}/3 nights logged`
+}
+
+function buildFlagLoadLabel(flagLoad) {
+  if (flagLoad <= 0) return 'Low friction'
+  if (flagLoad <= 2) return 'Light friction'
+  if (flagLoad <= 5) return 'Moderate friction'
+  return 'High friction'
+}
+
+function buildFlagLoadExplanation(flagLoad) {
+  if (flagLoad <= 0) return 'No active recovery warnings. Stay consistent and keep logging sleep.'
+  if (flagLoad <= 2) return 'Some recovery drag is present. Keep today clean and avoid extra training stress.'
+  if (flagLoad <= 5) return 'Recovery pressure is building. Prioritize sleep, protein, and a shorter training effort.'
+  return 'Recovery load is high right now. Downshift intensity and focus on restoring sleep and energy first.'
+}
+
+function buildRecoveryActionPlan(recoverySummary, activeFlagItems) {
+  const items = []
+  const hasRecentSleep = Boolean(recoverySummary?.last_sleep_is_recent)
+  const lastSleepHours = Number(recoverySummary?.last_sleep_hours || 0)
+  const avgSleep3d = Number(recoverySummary?.avg_sleep_3d || 0)
+  const flagLoad = Number(recoverySummary?.active_flag_load || 0)
+  const recommendedTier = String(recoverySummary?.recommended_time_tier || '').trim()
+  const hasFlags = Array.isArray(activeFlagItems) && activeFlagItems.length > 0
+
+  if (!hasRecentSleep) {
+    items.push('Log last night sleep first so today’s recovery read is accurate.')
+  }
+  if (hasRecentSleep && lastSleepHours > 0 && lastSleepHours < 6.5) {
+    items.push('Keep training in short or medium range today and skip failure sets.')
+  }
+  if (avgSleep3d > 0 && avgSleep3d < 6.5) {
+    items.push('Protect tonight’s bedtime window to reduce your 3-day sleep debt.')
+  }
+  if (flagLoad >= 4 || hasFlags) {
+    items.push('Use lower-friction movement: controlled lifting, easier cardio, and extra recovery between sessions.')
+  }
+  if (recommendedTier) {
+    items.push(`Follow the suggested ${recommendedTier} training tier for today’s session.`)
+  }
+  if (!items.length) {
+    items.push('Stay with your planned session, keep movement consistent, and maintain normal protein + hydration.')
+  }
+
+  return items.slice(0, 3)
 }
 
 function routeRecoveryAction(recoverySummary, navigate) {

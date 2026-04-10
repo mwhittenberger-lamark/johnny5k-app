@@ -5,6 +5,7 @@ defined( 'ABSPATH' ) || exit;
 
 use Johnny5k\Services\CalorieEngine;
 use Johnny5k\Services\AwardEngine;
+use Johnny5k\Services\BehaviorAnalyticsService;
 use Johnny5k\Services\TrainingEngine;
 use Johnny5k\Services\UserTime;
 
@@ -122,6 +123,16 @@ class OnboardingController {
 				'callback'            => [ __CLASS__, 'serve_generated_image' ],
 				'permission_callback' => $auth,
 			],
+			[
+				'methods'             => 'POST',
+				'callback'            => [ __CLASS__, 'update_generated_image' ],
+				'permission_callback' => $auth,
+			],
+			[
+				'methods'             => 'DELETE',
+				'callback'            => [ __CLASS__, 'delete_generated_image' ],
+				'permission_callback' => $auth,
+			],
 		] );
 	}
 
@@ -158,6 +169,7 @@ class OnboardingController {
 			'prefs'               => self::decode_preferences( $prefs ),
 			'goal'                => $goal,
 			'color_schemes'       => AdminApiController::get_color_schemes_config(),
+			'app_images'          => AdminApiController::get_app_images_config(),
 			'live_workout_frames' => AdminApiController::get_live_workout_frames_config(),
 			'health_flags'        => $health_flags,
 			'progress_photos'     => $progress_photos,
@@ -264,7 +276,10 @@ class OnboardingController {
 		}
 
 		$custom_prompt = sanitize_textarea_field( (string) ( $req->get_param( 'prompt' ) ?: '' ) );
+		$requested_count = (int) ( $req->get_param( 'count' ) ?? 2 );
+		$generation_count = max( 1, min( 2, $requested_count ) );
 		$scenarios = self::get_generation_scenarios();
+		$scenarios = array_slice( $scenarios, 0, $generation_count );
 		$progress_photo_data_urls = self::get_latest_progress_photo_data_urls( $user_id, 3 );
 		$headshot_data_url = self::attachment_to_ai_data_url( $headshot_attachment_id );
 		if ( is_wp_error( $headshot_data_url ) ) {
@@ -295,14 +310,15 @@ class OnboardingController {
 				return new \WP_REST_Response( [ 'message' => $attachment_id->get_error_message() ], 500 );
 			}
 
-			$created_items[] = [
-				'id'            => wp_generate_uuid4(),
-				'attachment_id' => (int) $attachment_id,
-				'scenario'      => sanitize_text_field( $scenario['label'] ),
-				'prompt'        => $prompt,
-				'created_at'    => current_time( 'mysql' ),
-			];
-		}
+				$created_items[] = [
+					'id'            => wp_generate_uuid4(),
+					'attachment_id' => (int) $attachment_id,
+					'scenario'      => sanitize_text_field( $scenario['label'] ),
+					'prompt'        => $prompt,
+					'created_at'    => current_time( 'mysql' ),
+					'favorited'     => false,
+				];
+			}
 
 		$existing_items = get_user_meta( $user_id, self::GENERATED_IMAGES_META_KEY, true );
 		$existing_items = is_array( $existing_items ) ? $existing_items : [];
@@ -312,6 +328,82 @@ class OnboardingController {
 		return new \WP_REST_Response( [
 			'generated_images' => self::get_generated_images_payload( $user_id ),
 		], 201 );
+	}
+
+	public static function update_generated_image( \WP_REST_Request $req ): \WP_REST_Response {
+		$user_id = get_current_user_id();
+		$image_id = sanitize_text_field( (string) $req->get_param( 'id' ) );
+		$favorited = (bool) $req->get_param( 'favorited' );
+
+		if ( '' === $image_id ) {
+			return new \WP_REST_Response( [ 'message' => 'Generated image id is required.' ], 400 );
+		}
+
+		$items = get_user_meta( $user_id, self::GENERATED_IMAGES_META_KEY, true );
+		$items = is_array( $items ) ? $items : [];
+		$updated = false;
+
+		foreach ( $items as &$item ) {
+			if ( ! is_array( $item ) ) {
+				continue;
+			}
+			if ( (string) ( $item['id'] ?? '' ) !== $image_id ) {
+				continue;
+			}
+			$item['favorited'] = $favorited;
+			$updated = true;
+			break;
+		}
+		unset( $item );
+
+		if ( ! $updated ) {
+			return new \WP_REST_Response( [ 'message' => 'Generated image not found.' ], 404 );
+		}
+
+		update_user_meta( $user_id, self::GENERATED_IMAGES_META_KEY, $items );
+		return new \WP_REST_Response( [
+			'updated' => true,
+			'generated_images' => self::get_generated_images_payload( $user_id ),
+		] );
+	}
+
+	public static function delete_generated_image( \WP_REST_Request $req ): \WP_REST_Response {
+		$user_id = get_current_user_id();
+		$image_id = sanitize_text_field( (string) $req->get_param( 'id' ) );
+
+		if ( '' === $image_id ) {
+			return new \WP_REST_Response( [ 'message' => 'Generated image id is required.' ], 400 );
+		}
+
+		$items = get_user_meta( $user_id, self::GENERATED_IMAGES_META_KEY, true );
+		$items = is_array( $items ) ? $items : [];
+		$next_items = [];
+		$deleted = false;
+
+		foreach ( $items as $item ) {
+			if ( ! is_array( $item ) ) {
+				continue;
+			}
+			if ( (string) ( $item['id'] ?? '' ) !== $image_id ) {
+				$next_items[] = $item;
+				continue;
+			}
+			$attachment_id = (int) ( $item['attachment_id'] ?? 0 );
+			if ( $attachment_id ) {
+				wp_delete_attachment( $attachment_id, true );
+			}
+			$deleted = true;
+		}
+
+		if ( ! $deleted ) {
+			return new \WP_REST_Response( [ 'message' => 'Generated image not found.' ], 404 );
+		}
+
+		update_user_meta( $user_id, self::GENERATED_IMAGES_META_KEY, $next_items );
+		return new \WP_REST_Response( [
+			'deleted' => true,
+			'generated_images' => self::get_generated_images_payload( $user_id ),
+		] );
 	}
 
 	// ── POST /onboarding/profile ──────────────────────────────────────────────
@@ -582,6 +674,17 @@ class OnboardingController {
 		);
 
 		AwardEngine::grant( $user_id, 'onboarding_complete' );
+		BehaviorAnalyticsService::track(
+			$user_id,
+			'onboarding_complete',
+			'onboarding',
+			'complete',
+			null,
+			[
+				'goal_type' => (string) ( $targets['goal_type'] ?? '' ),
+				'target_calories' => (int) ( $targets['target_calories'] ?? 0 ),
+			]
+		);
 
 		return new \WP_REST_Response( array_merge(
 			[ 'completed' => true ],
@@ -637,14 +740,15 @@ class OnboardingController {
 				continue;
 			}
 
-			$payload[] = [
-				'id'            => sanitize_text_field( (string) ( $item['id'] ?? '' ) ),
-				'attachment_id' => $attachment_id,
-				'scenario'      => sanitize_text_field( (string) ( $item['scenario'] ?? '' ) ),
-				'prompt'        => sanitize_textarea_field( (string) ( $item['prompt'] ?? '' ) ),
-				'created_at'    => sanitize_text_field( (string) ( $item['created_at'] ?? '' ) ),
-			];
-		}
+				$payload[] = [
+					'id'            => sanitize_text_field( (string) ( $item['id'] ?? '' ) ),
+					'attachment_id' => $attachment_id,
+					'scenario'      => sanitize_text_field( (string) ( $item['scenario'] ?? '' ) ),
+					'prompt'        => sanitize_textarea_field( (string) ( $item['prompt'] ?? '' ) ),
+					'created_at'    => sanitize_text_field( (string) ( $item['created_at'] ?? '' ) ),
+					'favorited'     => ! empty( $item['favorited'] ),
+				];
+			}
 
 		return $payload;
 	}
@@ -699,12 +803,14 @@ class OnboardingController {
 		$scenario_prompt = sanitize_text_field( (string) ( $scenario['prompt'] ?? '' ) );
 		$custom_prompt = trim( $custom_prompt );
 
-		$base_prompt = "Create a photorealistic square image featuring Johnny and {$first_name}. The user must match the uploaded headshot and progress-photo references. Johnny must match the uploaded Johnny reference image. Show both people together in the same scene, with realistic anatomy, natural skin texture, and believable gym or outdoor sports photography. Keep the user recognizable and flattering without changing identity. The user's fitness goal is {$goal}. Scene: {$scenario_prompt}";
+		$base_prompt = "Create a photorealistic square image featuring Johnny and {$first_name}. The user must match the uploaded headshot and progress-photo references. Johnny must match the uploaded Johnny reference image. Show both people together in the same scene, with realistic anatomy, natural skin texture, and believable gym or outdoor sports photography. Keep the user recognizable and flattering without changing identity. The user's fitness goal is {$goal}.";
 
 		if ( '' !== $custom_prompt ) {
-			$base_prompt .= ' Additional direction: ' . $custom_prompt;
+			$base_prompt .= ' Primary user direction (highest priority): ' . $custom_prompt . '.';
 		}
 
+		$base_prompt .= ' Scenario anchor: ' . $scenario_prompt . '.';
+		$base_prompt .= ' Do not use or resemble Keanu Reeves. Keep both faces faithful to the provided reference images only.';
 		$base_prompt .= ' Use a premium editorial fitness-photo style, crisp detail, energetic but realistic lighting, no text, no watermark overlays, and no collage layout.';
 
 		return $base_prompt;
@@ -1010,6 +1116,15 @@ class OnboardingController {
 					'day_order' => $order,
 					'time_tier' => $matched_day->time_tier ?: ( $profile->available_time_default ?? 'medium' ),
 				], [ 'id' => $matched_day->id ] );
+				if ( 'rest' !== $day_type && ! empty( $template_day_map[ $day_type ] ) ) {
+					$active_count = (int) $wpdb->get_var( $wpdb->prepare(
+						"SELECT COUNT(*) FROM {$p}fit_user_training_day_exercises WHERE training_day_id = %d AND active = 1",
+						(int) $matched_day->id
+					) );
+					if ( $active_count < 1 ) {
+						self::copy_template_day_exercises( $profile->user_id ?? 0, $day_type, (int) $template_day_map[ $day_type ]->id, (int) $matched_day->id );
+					}
+				}
 				$used_day_ids[] = (int) $matched_day->id;
 				$order += 1;
 				continue;

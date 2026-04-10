@@ -211,26 +211,24 @@ class NutritionSourceService {
 	}
 
 	private static function pick_best_candidate( string $query, array $item, array $candidates ): array {
-		$query_normalized = self::normalise_text( $query );
+		$query_normalized = self::normalise_food_phrase( $query );
 		$brand_query = self::normalise_text( (string) ( $item['brand'] ?? '' ) );
 		$scored = [];
 
 		foreach ( $candidates as $candidate ) {
 			$description = (string) ( $candidate['description'] ?? '' );
-			$normalized_description = self::normalise_text( $description );
+			$normalized_description = self::normalise_food_phrase( $description );
+			if ( ! self::is_exact_candidate_match( $query_normalized, $normalized_description ) ) {
+				continue;
+			}
 			$data_type = (string) ( $candidate['dataType'] ?? '' );
 			$score = self::DATA_TYPE_SCORES[ $data_type ] ?? 0;
 
 			if ( $normalized_description === $query_normalized ) {
-				$score += 80;
-			} elseif ( str_starts_with( $normalized_description, $query_normalized ) ) {
-				$score += 48;
-			} elseif ( str_contains( $normalized_description, $query_normalized ) ) {
-				$score += 24;
+				$score += 90;
+			} elseif ( str_starts_with( $normalized_description, $query_normalized . ' ' ) ) {
+				$score += 60;
 			}
-
-			similar_text( $query_normalized, $normalized_description, $similarity );
-			$score += (int) round( $similarity / 4 );
 
 			$brand_owner = self::normalise_text( (string) ( $candidate['brandOwner'] ?? '' ) );
 			if ( '' !== $brand_query && '' !== $brand_owner && str_contains( $brand_owner, $brand_query ) ) {
@@ -246,6 +244,18 @@ class NutritionSourceService {
 		usort( $scored, static fn( array $left, array $right ) => $right['score'] <=> $left['score'] );
 
 		return $scored[0]['candidate'] ?? [];
+	}
+
+	private static function is_exact_candidate_match( string $query_normalized, string $candidate_normalized ): bool {
+		if ( '' === $query_normalized || '' === $candidate_normalized ) {
+			return false;
+		}
+
+		if ( $candidate_normalized === $query_normalized ) {
+			return true;
+		}
+
+		return str_starts_with( $candidate_normalized, $query_normalized . ' ' );
 	}
 
 	private static function get_food_details( int $fdc_id ): array {
@@ -414,6 +424,37 @@ class NutritionSourceService {
 		$value = preg_replace( '/\s+/', ' ', $value ) ?: '';
 
 		return trim( $value );
+	}
+
+	private static function normalise_food_phrase( string $value ): string {
+		$tokens = array_values( array_filter( explode( ' ', self::normalise_text( $value ) ) ) );
+		$tokens = array_values( array_filter( array_map( static function( string $token ): string {
+			$singular = self::singularize_token( $token );
+			return self::is_stop_token( $singular ) ? '' : $singular;
+		}, $tokens ) ) );
+
+		return implode( ' ', $tokens );
+	}
+
+	private static function singularize_token( string $token ): string {
+		$value = trim( $token );
+		if ( strlen( $value ) <= 3 ) {
+			return $value;
+		}
+		if ( str_ends_with( $value, 'ies' ) && strlen( $value ) > 4 ) {
+			return substr( $value, 0, -3 ) . 'y';
+		}
+		if ( str_ends_with( $value, 'es' ) && strlen( $value ) > 4 ) {
+			return substr( $value, 0, -2 );
+		}
+		if ( str_ends_with( $value, 's' ) && ! str_ends_with( $value, 'ss' ) ) {
+			return substr( $value, 0, -1 );
+		}
+		return $value;
+	}
+
+	private static function is_stop_token( string $token ): bool {
+		return in_array( $token, [ 'a', 'an', 'the', 'of', 'and', 'with' ], true );
 	}
 
 	private static function get_api_key(): string {

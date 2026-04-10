@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { authApi } from '../../api/client'
+import { authApi } from '../../api/modules/auth'
 
 export default function ResetPasswordScreen() {
   const navigate = useNavigate()

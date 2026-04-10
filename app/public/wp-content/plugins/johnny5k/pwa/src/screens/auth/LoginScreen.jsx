@@ -1,16 +1,17 @@
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { authApi } from '../../api/client'
+import { authApi } from '../../api/modules/auth'
+import { getAppImageUrl } from '../../lib/appImages'
 import { useAuthStore } from '../../store/authStore'
-import welcomeImage from '../../assets/welcome.PNG'
 
 export default function LoginScreen() {
   const [email, setEmail]       = useState('')
   const [password, setPassword] = useState('')
   const [error, setError]       = useState('')
   const [loading, setLoading]   = useState(false)
-  const { setAuth, clearAuth } = useAuthStore()
+  const { setAuth, clearAuth, appImages } = useAuthStore()
   const navigate = useNavigate()
+  const welcomeImage = getAppImageUrl(appImages, 'login_welcome')
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -31,8 +32,8 @@ export default function LoginScreen() {
 
   return (
     <div className="auth-screen">
-      <h1 className="logo">Johnny <span>5000</span></h1>
-      <img className="auth-welcome-image" src={welcomeImage} alt="Johnny 5000 welcome" />
+      <h1 className="logo">Johnny<span>5k</span></h1>
+      <img className="auth-welcome-image" src={welcomeImage} alt="Johnny5k welcome" />
       <p className="tagline">Your AI fitness coach. Let's go.</p>
 
       <form onSubmit={handleSubmit} className="auth-form">

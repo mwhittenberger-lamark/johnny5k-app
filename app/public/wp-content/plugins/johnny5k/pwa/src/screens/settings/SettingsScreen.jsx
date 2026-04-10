@@ -1,10 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { aiApi, bodyApi, onboardingApi } from '../../api/client'
+import { aiApi } from '../../api/modules/ai'
+import { analyticsApi } from '../../api/modules/analytics'
+import { bodyApi } from '../../api/modules/body'
+import { onboardingApi } from '../../api/modules/onboarding'
+import { pushApi } from '../../api/modules/push'
+import { decodeVapidPublicKey, ensurePushRegistration, getCurrentPushSubscription, getNotificationPermission, getPushSupportState, requestNotificationPermission, serializeSubscription } from '../../lib/pushNotifications'
 import { useDashboardStore } from '../../store/dashboardStore'
 import { useAuthStore } from '../../store/authStore'
 import { useJohnnyAssistantStore } from '../../store/johnnyAssistantStore'
-import { formatSpeechVoiceLabel, getDefaultLiveWorkoutVoicePrefs, LIVE_WORKOUT_VOICE_PITCH_OPTIONS, LIVE_WORKOUT_VOICE_RATE_OPTIONS, readLiveWorkoutVoicePrefs, writeLiveWorkoutVoicePrefs } from '../../lib/liveWorkoutVoice'
+import { formatOpenAiVoiceLabel, getDefaultLiveWorkoutVoicePrefs, LIVE_WORKOUT_VOICE_RATE_OPTIONS, OPENAI_TTS_VOICE_OPTIONS, readLiveWorkoutVoicePrefs, writeLiveWorkoutVoicePrefs } from '../../lib/liveWorkoutVoice'
 import { buildHeightCm, formatPhoneInput, formatReminderHour, formatMissingFields, getTimezoneRegion, getTimezoneRegions, getTimezonesForRegion, normalizePhoneNumber, normalizeTargets, reminderHourOptions, settingsFormFromState } from '../../lib/onboarding'
 import { formatUsShortDate } from '../../lib/dateFormat'
 import { applyColorScheme, getColorSchemeOptions, normalizeColorScheme, setAvailableColorSchemes } from '../../lib/theme'
@@ -35,6 +40,7 @@ const PROFILE_ACCORDION_DEFAULTS = {
 }
 
 export default function SettingsScreen() {
+  const initialPushSupport = getPushSupportState()
   const navigate = useNavigate()
   const invalidate = useDashboardStore(s => s.invalidate)
   const loadSnapshot = useDashboardStore(s => s.loadSnapshot)
@@ -45,9 +51,9 @@ export default function SettingsScreen() {
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState(settingsFormFromState())
   const [targets, setTargets] = useState(null)
-  const [error, setError] = useState('')
-  const [message, setMessage] = useState('')
-  const [missingFields, setMissingFields] = useState([])
+  const [, setError] = useState('')
+  const [, setMessage] = useState('')
+  const [, setMissingFields] = useState([])
   const [timezoneRegion, setTimezoneRegion] = useState(getTimezoneRegion(form.timezone))
   const [weeklyWeights, setWeeklyWeights] = useState([])
   const [johnnyMemory, setJohnnyMemory] = useState([])
@@ -61,10 +67,26 @@ export default function SettingsScreen() {
   const [smsReminderLoading, setSmsReminderLoading] = useState(true)
   const [smsReminderError, setSmsReminderError] = useState('')
   const [smsReminderMessage, setSmsReminderMessage] = useState('')
+  const [pushStatus, setPushStatus] = useState({
+    supported: initialPushSupport.supported,
+    supportReason: initialPushSupport.reason,
+    permission: getNotificationPermission(),
+    configured: false,
+    enabled: false,
+    vapidPublicKey: '',
+    activeCount: 0,
+    subscribed: false,
+    origin: typeof window !== 'undefined' ? window.location.origin : '',
+    serviceWorkerRegistered: false,
+  })
+  const [pushBusy, setPushBusy] = useState(false)
+  const [pushError, setPushError] = useState('')
+  const [pushMessage, setPushMessage] = useState('')
   const [cancelingReminderId, setCancelingReminderId] = useState('')
   const [accordionSections, setAccordionSections] = useState(PROFILE_ACCORDION_DEFAULTS)
   const [liveVoicePrefs, setLiveVoicePrefs] = useState(() => readLiveWorkoutVoicePrefs())
-  const [availableSpeechVoices, setAvailableSpeechVoices] = useState([])
+  const [voicePreviewBusy, setVoicePreviewBusy] = useState(false)
+  const [voicePreviewError, setVoicePreviewError] = useState('')
   const [headshot, setHeadshot] = useState({ configured: false })
   const [headshotSrc, setHeadshotSrc] = useState('')
   const [headshotUploading, setHeadshotUploading] = useState(false)
@@ -72,11 +94,15 @@ export default function SettingsScreen() {
   const [headshotMessage, setHeadshotMessage] = useState('')
   const [generatedImages, setGeneratedImages] = useState([])
   const [generatedImageSrcs, setGeneratedImageSrcs] = useState({})
+  const [generatedImageActionBusyId, setGeneratedImageActionBusyId] = useState('')
   const [generatingImages, setGeneratingImages] = useState(false)
+  const [generationCount, setGenerationCount] = useState(2)
   const [generationPrompt, setGenerationPrompt] = useState('')
   const [generationError, setGenerationError] = useState('')
   const [generationMessage, setGenerationMessage] = useState('')
-  const speechPlaybackSupported = typeof window !== 'undefined' && 'speechSynthesis' in window
+  const [zoomedImageId, setZoomedImageId] = useState('')
+  const [zoomScale, setZoomScale] = useState(1)
+  const speechPlaybackSupported = typeof window !== 'undefined' && typeof window.Audio !== 'undefined'
 
   function update(field, value) {
     setForm(current => ({ ...current, [field]: value }))
@@ -195,28 +221,6 @@ export default function SettingsScreen() {
   }, [generatedImages])
 
   useEffect(() => {
-    if (!speechPlaybackSupported) return undefined
-
-    function syncVoices() {
-      const nextVoices = window.speechSynthesis.getVoices()
-      setAvailableSpeechVoices(Array.isArray(nextVoices) ? nextVoices : [])
-    }
-
-    syncVoices()
-    window.speechSynthesis.addEventListener('voiceschanged', syncVoices)
-
-    return () => {
-      window.speechSynthesis.removeEventListener('voiceschanged', syncVoices)
-    }
-  }, [speechPlaybackSupported])
-
-  useEffect(() => () => {
-    if (speechPlaybackSupported) {
-      window.speechSynthesis.cancel()
-    }
-  }, [speechPlaybackSupported])
-
-  useEffect(() => {
     let active = true
 
     aiApi.getMemory()
@@ -258,6 +262,44 @@ export default function SettingsScreen() {
   }, [])
 
   useEffect(() => {
+    let active = true
+    const support = getPushSupportState()
+
+    Promise.all([
+      pushApi.config().catch(() => ({ push: { enabled: false, configured: false, vapid_public_key: '' } })),
+      support.supported ? getCurrentPushSubscription().catch(() => null) : Promise.resolve(null),
+      pushApi.subscriptions().catch(() => ({ active_count: 0 })),
+      typeof navigator !== 'undefined' && 'serviceWorker' in navigator ? navigator.serviceWorker.getRegistration().catch(() => null) : Promise.resolve(null),
+    ])
+      .then(([configResponse, subscription, subscriptionsResponse, registration]) => {
+        if (!active) return
+        const config = configResponse?.push ?? {}
+        const serializedSubscription = serializeSubscription(subscription)
+        if (serializedSubscription?.endpoint) {
+          pushApi.subscribe(serializedSubscription).catch(() => {})
+        }
+        setPushStatus(current => ({
+          ...current,
+          supported: support.supported,
+          supportReason: support.reason,
+          permission: getNotificationPermission(),
+          configured: Boolean(config?.configured),
+          enabled: Boolean(config?.enabled),
+          vapidPublicKey: config?.vapid_public_key ?? '',
+          activeCount: Number(subscriptionsResponse?.active_count ?? 0),
+          subscribed: Boolean(subscription),
+          origin: typeof window !== 'undefined' ? window.location.origin : '',
+          serviceWorkerRegistered: Boolean(registration),
+        }))
+      })
+      .catch(err => {
+        if (active) setPushError(err.message)
+      })
+
+    return () => { active = false }
+  }, [])
+
+  useEffect(() => {
     loadSnapshot()
     bodyApi.getWeight(7)
       .then(rows => setWeeklyWeights(Array.isArray(rows) ? rows.slice(0, 7).reverse() : []))
@@ -271,21 +313,28 @@ export default function SettingsScreen() {
     }))
   }
 
-  function previewLiveVoice() {
+  async function previewLiveVoice() {
     if (!speechPlaybackSupported) return
+    if (voicePreviewBusy) return
 
-    const utterance = new SpeechSynthesisUtterance('Live workout check. Keep the next set sharp and stay inside the rest window.')
-    const preferredVoice = availableSpeechVoices.find(voice => voice.voiceURI === liveVoicePrefs.voiceURI)
-
-    utterance.rate = liveVoicePrefs.rate
-    utterance.pitch = liveVoicePrefs.pitch
-    utterance.lang = preferredVoice?.lang || 'en-US'
-    if (preferredVoice) {
-      utterance.voice = preferredVoice
+    setVoicePreviewError('')
+    setVoicePreviewBusy(true)
+    try {
+      const audioBlob = await aiApi.speech('Live workout check. Keep the next set sharp and stay inside the rest window.', {
+        voice: liveVoicePrefs.openAiVoice,
+        speed: liveVoicePrefs.rate,
+        format: 'mp3',
+      })
+      const objectUrl = window.URL.createObjectURL(audioBlob)
+      const audio = new window.Audio(objectUrl)
+      audio.onended = () => window.URL.revokeObjectURL(objectUrl)
+      audio.onerror = () => window.URL.revokeObjectURL(objectUrl)
+      await audio.play()
+    } catch (err) {
+      setVoicePreviewError(err?.message || 'Could not play OpenAI voice sample.')
+    } finally {
+      setVoicePreviewBusy(false)
     }
-
-    window.speechSynthesis.cancel()
-    window.speechSynthesis.speak(utterance)
   }
 
   async function persist({ recalculate = false }) {
@@ -326,6 +375,13 @@ export default function SettingsScreen() {
           sleep_reminder_hour: Number(form.sleep_reminder_hour),
           weekly_summary_enabled: form.weekly_summary_enabled,
           weekly_summary_hour: Number(form.weekly_summary_hour),
+          push_enabled: form.push_enabled,
+          push_absence_nudges: form.push_absence_nudges,
+          push_milestones: form.push_milestones,
+          push_winback: form.push_winback,
+          push_accountability: form.push_accountability,
+          push_quiet_hours_start: Number(form.push_quiet_hours_start),
+          push_quiet_hours_end: Number(form.push_quiet_hours_end),
         },
       })
 
@@ -402,19 +458,66 @@ export default function SettingsScreen() {
   }
 
   async function handleGenerateImages() {
+    if (!headshot?.configured) return
     setGeneratingImages(true)
     setGenerationError('')
     setGenerationMessage('')
 
     try {
-      const data = await onboardingApi.generateImages({ prompt: generationPrompt.trim() })
+      const data = await onboardingApi.generateImages({
+        prompt: generationPrompt.trim(),
+        count: generationCount,
+      })
       const nextImages = Array.isArray(data?.generated_images) ? data.generated_images : []
       setGeneratedImages(nextImages)
-      setGenerationMessage('Generated a new batch of personalized images.')
+      setGenerationMessage(`Generated ${generationCount} personalized image${generationCount === 1 ? '' : 's'}.`)
     } catch (err) {
       setGenerationError(err.message)
     } finally {
       setGeneratingImages(false)
+    }
+  }
+
+  async function handleToggleGeneratedImageFavorite(imageId, favorited) {
+    if (!imageId || generatedImageActionBusyId) return
+    setGeneratedImageActionBusyId(imageId)
+    setGenerationError('')
+    setGenerationMessage('')
+
+    try {
+      const data = await onboardingApi.updateGeneratedImage(imageId, { favorited: !favorited })
+      const nextImages = Array.isArray(data?.generated_images) ? data.generated_images : []
+      setGeneratedImages(nextImages)
+      setGenerationMessage(!favorited ? 'Added to Live Workout rotation.' : 'Removed from Live Workout rotation.')
+    } catch (err) {
+      setGenerationError(err.message)
+    } finally {
+      setGeneratedImageActionBusyId('')
+    }
+  }
+
+  async function handleDeleteGeneratedImage(imageId) {
+    if (!imageId || generatedImageActionBusyId) return
+    const confirmed = window.confirm('Delete this generated image?')
+    if (!confirmed) return
+
+    setGeneratedImageActionBusyId(imageId)
+    setGenerationError('')
+    setGenerationMessage('')
+
+    try {
+      const data = await onboardingApi.deleteGeneratedImage(imageId)
+      const nextImages = Array.isArray(data?.generated_images) ? data.generated_images : []
+      setGeneratedImages(nextImages)
+      setGenerationMessage('Generated image deleted.')
+      if (zoomedImageId === imageId) {
+        setZoomedImageId('')
+        setZoomScale(1)
+      }
+    } catch (err) {
+      setGenerationError(err.message)
+    } finally {
+      setGeneratedImageActionBusyId('')
     }
   }
 
@@ -495,7 +598,105 @@ export default function SettingsScreen() {
     }
   }
 
+  async function handleEnablePush() {
+    if (!pushStatus.supported) {
+      setPushError(pushStatus.supportReason || 'Browser notifications are not supported on this device.')
+      return
+    }
+
+    if (!pushStatus.configured || !pushStatus.vapidPublicKey) {
+      setPushError('Push notifications are not configured yet.')
+      return
+    }
+
+    setPushBusy(true)
+    setPushError('')
+    setPushMessage('')
+
+    try {
+      const permission = await requestNotificationPermission()
+      if (permission !== 'granted') {
+        setPushStatus(current => ({ ...current, permission, subscribed: false }))
+        throw new Error('Notifications permission was not granted.')
+      }
+
+      const registration = await ensurePushRegistration()
+      const existingSubscription = await registration.pushManager.getSubscription()
+      const subscription = existingSubscription || await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: decodeVapidPublicKey(pushStatus.vapidPublicKey),
+      })
+
+      const payload = serializeSubscription(subscription)
+      if (!payload) {
+        throw new Error('Could not read the browser push subscription.')
+      }
+
+      await pushApi.subscribe(payload)
+      analyticsApi.event('push_subscription_enabled', {
+        screen: 'settings',
+        context: 'push_preferences',
+        metadata: {
+          permission,
+        },
+      }).catch(() => {})
+
+      const subscriptionsResponse = await pushApi.subscriptions().catch(() => ({ active_count: 1 }))
+      setPushStatus(current => ({
+        ...current,
+        permission,
+        subscribed: true,
+        activeCount: Number(subscriptionsResponse?.active_count ?? 1),
+        serviceWorkerRegistered: true,
+      }))
+      setPushMessage('Browser notifications enabled on this device.')
+    } catch (err) {
+      setPushError(err.message || 'Could not enable browser notifications.')
+    } finally {
+      setPushBusy(false)
+    }
+  }
+
+  async function handleDisablePush() {
+    setPushBusy(true)
+    setPushError('')
+    setPushMessage('')
+
+    try {
+      const subscription = await getCurrentPushSubscription()
+      if (subscription) {
+        const payload = serializeSubscription(subscription)
+        if (payload?.endpoint) {
+          await pushApi.unsubscribe({ endpoint: payload.endpoint })
+        }
+        await subscription.unsubscribe()
+        analyticsApi.event('push_subscription_disabled', {
+          screen: 'settings',
+          context: 'push_preferences',
+          metadata: {
+            endpoint: payload?.endpoint || '',
+          },
+        }).catch(() => {})
+      }
+
+      const subscriptionsResponse = await pushApi.subscriptions().catch(() => ({ active_count: 0 }))
+      setPushStatus(current => ({
+        ...current,
+        permission: getNotificationPermission(),
+        subscribed: false,
+        activeCount: Number(subscriptionsResponse?.active_count ?? 0),
+      }))
+      setPushMessage('Browser notifications disabled on this device.')
+    } catch (err) {
+      setPushError(err.message || 'Could not disable browser notifications.')
+    } finally {
+      setPushBusy(false)
+    }
+  }
+
   const regionTimezones = useMemo(() => getTimezonesForRegion(timezoneRegion), [timezoneRegion])
+  const deliveryDiagnostics = snapshot?.delivery_diagnostics ?? null
+  const pendingFollowUps = Array.isArray(snapshot?.pending_follow_ups) ? snapshot.pending_follow_ups : []
   const latestWeight = Number(snapshot?.latest_weight?.weight_lb ?? weeklyWeights[weeklyWeights.length - 1]?.weight_lb ?? form.starting_weight_lb ?? 0) || null
   const weeklyWeightDelta = useMemo(() => {
     if (weeklyWeights.length < 2) return null
@@ -512,6 +713,8 @@ export default function SettingsScreen() {
     pace: form.goal_rate,
     timezone: form.timezone,
   }), [form.current_goal, form.goal_rate, form.timezone, latestWeight, snapshot?.nutrition_totals?.calories, targets?.target_calories])
+  const zoomedImage = generatedImages.find(image => image.id === zoomedImageId) || null
+  const favoritedImageCount = generatedImages.filter(image => image?.favorited).length
 
   if (loading) return <div className="screen-loading">Loading…</div>
 
@@ -622,8 +825,8 @@ export default function SettingsScreen() {
           sectionKey="profile"
           eyebrow="Core inputs"
           title="Profile Basics"
-          description="Identity, body stats, goal direction, and the numbers used to calculate targets."
-          itemCountLabel="3 sections"
+          description="Identity, body stats, goal direction, plus headshot and AI image generation controls."
+          itemCountLabel="3 sections + image generation"
           open={accordionSections.profile}
           onToggle={toggleAccordionSection}
         >
@@ -670,11 +873,42 @@ export default function SettingsScreen() {
             </div>
           </section>
 
+          <section className="settings-section dash-card">
+            <h3>Body & Goal</h3>
+            <div className="settings-grid">
+              <label className="settings-field"><span className="settings-field-label">Current Weight</span><div className="settings-input-suffix"><input type="number" min="80" max="600" step="0.1" value={form.starting_weight_lb} onChange={e => update('starting_weight_lb', e.target.value)} /><span>lbs</span></div></label>
+              <label className="settings-field"><span className="settings-field-label">Goal</span>
+                <select value={form.current_goal} onChange={e => update('current_goal', e.target.value)}>
+                  <option value="cut">Cut</option>
+                  <option value="gain">Gain</option>
+                  <option value="recomp">Recomp</option>
+                  <option value="maintain">Maintain</option>
+                </select>
+              </label>
+              <label className="settings-field"><span className="settings-field-label">Goal Pace</span>
+                <select value={form.goal_rate} onChange={e => update('goal_rate', e.target.value)}>
+                  <option value="slow">Slow</option>
+                  <option value="moderate">Moderate</option>
+                  <option value="aggressive">Aggressive</option>
+                </select>
+              </label>
+              <label className="settings-field"><span className="settings-field-label">Activity Level</span>
+                <select value={form.activity_level} onChange={e => update('activity_level', e.target.value)}>
+                  <option value="sedentary">Sedentary</option>
+                  <option value="light">Light</option>
+                  <option value="moderate">Moderate</option>
+                  <option value="high">Active</option>
+                  <option value="athlete">Athlete</option>
+                </select>
+              </label>
+            </div>
+          </section>
+
           <section className="settings-section dash-card settings-headshot-section">
             <div className="settings-headshot-head">
               <div>
-                <h3>Your Headshot</h3>
-                <p className="settings-subtitle">Upload a clear face photo. Gemini uses this together with your recent progress photos and Johnny&apos;s reference image to generate square workout and lifestyle scenes.</p>
+                <h3>Your Headshot + Johnny Image Generation</h3>
+                <p className="settings-subtitle">Upload a clear face photo. Gemini uses this together with your recent progress photos and Johnny&apos;s reference image to generate square scenes of you and Johnny together.</p>
               </div>
               <div className="settings-headshot-actions">
                 <label className="btn-secondary settings-upload-trigger">
@@ -710,10 +944,19 @@ export default function SettingsScreen() {
                 </label>
                 <div className="settings-inline-panel settings-field-span-2">
                   <strong>Generate Johnny scenes</strong>
-                  <p className="settings-subtitle">This creates four square images using your headshot, your recent progress photos, and the Johnny reference image configured in the plugin settings.</p>
+                  <p className="settings-subtitle">Pick 1 or 2 images per run. Hearts add images into Live Workout coach rotation.</p>
+                  <div className="settings-grid settings-grid-compact">
+                    <label className="settings-field">
+                      <span className="settings-field-label">How many to generate</span>
+                      <select value={generationCount} onChange={event => setGenerationCount(Number(event.target.value))} disabled={generatingImages}>
+                        <option value={1}>1 image</option>
+                        <option value={2}>2 images</option>
+                      </select>
+                    </label>
+                  </div>
                   <div className="settings-ai-actions">
                     <button type="button" className="btn-primary small" onClick={handleGenerateImages} disabled={!headshot?.configured || generatingImages || headshotUploading}>
-                      {generatingImages ? 'Generating…' : 'Generate 4 Images'}
+                      {generatingImages ? 'Generating…' : `Generate ${generationCount} Image${generationCount === 1 ? '' : 's'}`}
                     </button>
                   </div>
                 </div>
@@ -727,16 +970,43 @@ export default function SettingsScreen() {
             <div className="settings-generated-gallery">
               <div className="settings-generated-gallery-head">
                 <strong>Generated Images</strong>
-                <span>{generatedImages.length}</span>
+                <span>{generatedImages.length} total • {favoritedImageCount} in live rotation</span>
               </div>
               {generatedImages.length > 0 ? (
                 <div className="settings-generated-grid">
                   {generatedImages.map(image => (
                     <article key={image.id} className="settings-generated-card">
-                      {generatedImageSrcs[image.id] ? <img src={generatedImageSrcs[image.id]} alt={image.scenario || 'Generated workout scene'} /> : <div className="settings-generated-loading">Loading…</div>}
+                      {generatedImageSrcs[image.id] ? (
+                        <button type="button" className="settings-generated-image-trigger" onClick={() => { setZoomedImageId(image.id); setZoomScale(1) }}>
+                          <img src={generatedImageSrcs[image.id]} alt={image.scenario || 'Generated workout scene'} />
+                        </button>
+                      ) : <div className="settings-generated-loading">Loading…</div>}
                       <div className="settings-generated-copy">
                         <strong>{image.scenario || 'Generated scene'}</strong>
                         <span>{image.created_at ? formatUsShortDate(image.created_at, image.created_at) : 'Just now'}</span>
+                      </div>
+                      <div className="settings-ai-actions settings-generated-card-actions">
+                        <button
+                          type="button"
+                          className={`btn-outline small ${image.favorited ? 'active-toggle' : ''}`}
+                          onClick={() => handleToggleGeneratedImageFavorite(image.id, Boolean(image.favorited))}
+                          disabled={generatedImageActionBusyId === image.id}
+                        >
+                          {image.favorited ? '♥ Hearted' : '♡ Heart'}
+                        </button>
+                        {generatedImageSrcs[image.id] ? (
+                          <a className="btn-secondary small" href={generatedImageSrcs[image.id]} download={`johnny-scene-${image.id}.png`}>
+                            Download
+                          </a>
+                        ) : null}
+                        <button
+                          type="button"
+                          className="btn-danger small"
+                          onClick={() => handleDeleteGeneratedImage(image.id)}
+                          disabled={generatedImageActionBusyId === image.id}
+                        >
+                          Remove
+                        </button>
                       </div>
                     </article>
                   ))}
@@ -747,36 +1017,6 @@ export default function SettingsScreen() {
             </div>
           </section>
 
-          <section className="settings-section dash-card">
-            <h3>Body & Goal</h3>
-            <div className="settings-grid">
-              <label className="settings-field"><span className="settings-field-label">Current Weight</span><div className="settings-input-suffix"><input type="number" min="80" max="600" step="0.1" value={form.starting_weight_lb} onChange={e => update('starting_weight_lb', e.target.value)} /><span>lbs</span></div></label>
-              <label className="settings-field"><span className="settings-field-label">Goal</span>
-                <select value={form.current_goal} onChange={e => update('current_goal', e.target.value)}>
-                  <option value="cut">Cut</option>
-                  <option value="gain">Gain</option>
-                  <option value="recomp">Recomp</option>
-                  <option value="maintain">Maintain</option>
-                </select>
-              </label>
-              <label className="settings-field"><span className="settings-field-label">Goal Pace</span>
-                <select value={form.goal_rate} onChange={e => update('goal_rate', e.target.value)}>
-                  <option value="slow">Slow</option>
-                  <option value="moderate">Moderate</option>
-                  <option value="aggressive">Aggressive</option>
-                </select>
-              </label>
-              <label className="settings-field"><span className="settings-field-label">Activity Level</span>
-                <select value={form.activity_level} onChange={e => update('activity_level', e.target.value)}>
-                  <option value="sedentary">Sedentary</option>
-                  <option value="light">Light</option>
-                  <option value="moderate">Moderate</option>
-                  <option value="high">Active</option>
-                  <option value="athlete">Athlete</option>
-                </select>
-              </label>
-            </div>
-          </section>
         </SettingsAccordionSection>
 
         <SettingsAccordionSection
@@ -784,7 +1024,7 @@ export default function SettingsScreen() {
           eyebrow="Daily defaults"
           title="Targets & Reminders"
           description="Steps, sleep, SMS reminders, and the live target preview for your current setup."
-          itemCountLabel="2 sections"
+          itemCountLabel="3 sections"
           open={accordionSections.defaults}
           onToggle={toggleAccordionSection}
         >
@@ -821,6 +1061,152 @@ export default function SettingsScreen() {
                   <input type="tel" inputMode="tel" value={form.phone} onChange={e => updatePhone(e.target.value)} placeholder="(555) 123-4567" disabled={!form.notifications_enabled} />
                   <span className="settings-field-hint">Only used for reminder texts.</span>
                 </label>
+              </div>
+              <div className="settings-inline-panel settings-field-span-2 settings-reminders-panel">
+                <div className="switch-copy">
+                  <span className="settings-field-label">Browser notifications</span>
+                  <span className="settings-field-hint">Control whether Johnny can use push for absence nudges, milestones, winback, and accountability check-ins.</span>
+                </div>
+                <div className="settings-ai-actions">
+                  {pushStatus.supported && pushStatus.subscribed ? (
+                    <button type="button" className="btn-outline small" onClick={handleDisablePush} disabled={pushBusy}>
+                      {pushBusy ? 'Updating…' : 'Disable on this device'}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="btn-secondary small"
+                      onClick={handleEnablePush}
+                      disabled={pushBusy || !pushStatus.supported || !pushStatus.enabled || !pushStatus.configured}
+                    >
+                      {pushBusy ? 'Updating…' : 'Enable browser notifications'}
+                    </button>
+                  )}
+                </div>
+                <p className="settings-field-hint">
+                  {pushStatus.supported
+                    ? (pushStatus.subscribed ? 'Enabled on this device.' : `Permission: ${pushStatus.permission}.`)
+                    : pushStatus.supportReason}
+                </p>
+                <p className="settings-field-hint">
+                  {pushStatus.enabled && pushStatus.configured
+                    ? `${pushStatus.activeCount} active notification device${pushStatus.activeCount === 1 ? '' : 's'} on your account.`
+                    : 'Johnny push is not configured yet by the admin.'}
+                </p>
+                {pushError ? <p className="error">{pushError}</p> : null}
+                {pushMessage ? <p className="success-message">{pushMessage}</p> : null}
+              </div>
+              <div className="settings-inline-panel settings-field-span-2 settings-reminders-panel">
+                <div className="switch-copy">
+                  <span className="settings-field-label">Push delivery preferences</span>
+                  <span className="settings-field-hint">These rules decide when Johnny is allowed to reach out proactively.</span>
+                </div>
+                <div className="settings-grid settings-grid-compact">
+                  <label className="switch-field">
+                    <span className="switch-copy">
+                      <span className="settings-field-label">Allow push nudges</span>
+                      <span className="settings-field-hint">Master switch for coach push delivery.</span>
+                    </span>
+                    <span className="switch-control">
+                      <input className="switch-input" type="checkbox" checked={form.push_enabled} onChange={e => update('push_enabled', e.target.checked)} />
+                      <span className="switch-track" aria-hidden="true" />
+                    </span>
+                  </label>
+                  <label className="switch-field">
+                    <span className="switch-copy">
+                      <span className="settings-field-label">Usual training day nudges</span>
+                      <span className="settings-field-hint">“You usually train on Mondays” type reminders.</span>
+                    </span>
+                    <span className="switch-control">
+                      <input className="switch-input" type="checkbox" checked={form.push_absence_nudges} onChange={e => update('push_absence_nudges', e.target.checked)} />
+                      <span className="switch-track" aria-hidden="true" />
+                    </span>
+                  </label>
+                  <label className="switch-field">
+                    <span className="switch-copy">
+                      <span className="settings-field-label">Milestone pushes</span>
+                      <span className="settings-field-hint">Recognition when momentum or streaks are real.</span>
+                    </span>
+                    <span className="switch-control">
+                      <input className="switch-input" type="checkbox" checked={form.push_milestones} onChange={e => update('push_milestones', e.target.checked)} />
+                      <span className="switch-track" aria-hidden="true" />
+                    </span>
+                  </label>
+                  <label className="switch-field">
+                    <span className="switch-copy">
+                      <span className="settings-field-label">Winback pushes</span>
+                      <span className="settings-field-hint">Reset prompts after missed sessions.</span>
+                    </span>
+                    <span className="switch-control">
+                      <input className="switch-input" type="checkbox" checked={form.push_winback} onChange={e => update('push_winback', e.target.checked)} />
+                      <span className="switch-track" aria-hidden="true" />
+                    </span>
+                  </label>
+                  <label className="switch-field settings-field-span-2">
+                    <span className="switch-copy">
+                      <span className="settings-field-label">Accountability pushes</span>
+                      <span className="settings-field-hint">Balance and drift prompts when your week gets lopsided.</span>
+                    </span>
+                    <span className="switch-control">
+                      <input className="switch-input" type="checkbox" checked={form.push_accountability} onChange={e => update('push_accountability', e.target.checked)} />
+                      <span className="switch-track" aria-hidden="true" />
+                    </span>
+                  </label>
+                  <label className="settings-subfield">
+                    <span>Quiet hours start</span>
+                    <select value={form.push_quiet_hours_start} onChange={e => update('push_quiet_hours_start', Number(e.target.value))}>
+                      {REMINDER_HOUR_OPTIONS.map(option => <option key={`push-start-${option.value}`} value={option.value}>{option.label}</option>)}
+                    </select>
+                  </label>
+                  <label className="settings-subfield">
+                    <span>Quiet hours end</span>
+                    <select value={form.push_quiet_hours_end} onChange={e => update('push_quiet_hours_end', Number(e.target.value))}>
+                      {REMINDER_HOUR_OPTIONS.map(option => <option key={`push-end-${option.value}`} value={option.value}>{option.label}</option>)}
+                    </select>
+                  </label>
+                </div>
+              </div>
+              <div className="settings-inline-panel settings-field-span-2 settings-reminders-panel">
+                <div className="switch-copy">
+                  <span className="settings-field-label">Push diagnostics</span>
+                  <span className="settings-field-hint">This is the current delivery state Johnny sees for your account.</span>
+                </div>
+                <div className="settings-diagnostics-grid">
+                  <div className="settings-diagnostics-card">
+                    <strong>Local status</strong>
+                    <span>Permission: {pushStatus.permission}</span>
+                    <span>Supported: {pushStatus.supported ? 'yes' : 'no'}</span>
+                    <span>Subscribed on this device: {pushStatus.subscribed ? 'yes' : 'no'}</span>
+                    <span>Account devices: {pushStatus.activeCount}</span>
+                    <span>Origin: {pushStatus.origin || '—'}</span>
+                    <span>Service worker: {pushStatus.serviceWorkerRegistered ? 'registered' : 'missing'}</span>
+                  </div>
+                  <div className="settings-diagnostics-card">
+                    <strong>Coach delivery</strong>
+                    <span>Pending follow-ups: {deliveryDiagnostics?.follow_up_overview?.pending_count ?? 0}</span>
+                    <span>Overdue: {deliveryDiagnostics?.follow_up_overview?.overdue_count ?? 0}</span>
+                    <span>Dismissed last 14d: {deliveryDiagnostics?.counts?.dismissed_follow_ups_last_14d ?? 0}</span>
+                    <span>Push last 24h: {deliveryDiagnostics?.counts?.sent_last_24h ?? 0}</span>
+                  </div>
+                  <div className="settings-diagnostics-card">
+                    <strong>Timing</strong>
+                    <span>Timezone: {deliveryDiagnostics?.local_time?.timezone || form.timezone}</span>
+                    <span>Local now: {deliveryDiagnostics?.local_time?.now || '—'}</span>
+                    <span>In quiet hours: {deliveryDiagnostics?.local_time?.in_quiet_hours ? 'yes' : 'no'}</span>
+                    <span>Push configured: {deliveryDiagnostics?.push?.configured ? 'yes' : 'no'}</span>
+                  </div>
+                </div>
+                {pendingFollowUps.length ? (
+                  <div className="settings-diagnostics-list">
+                    <strong>Current coach queue</strong>
+                    {pendingFollowUps.slice(0, 3).map(followUp => (
+                      <div key={followUp.id} className="settings-diagnostics-list-row">
+                        <span>{followUp.reason || followUp.prompt}</span>
+                        <small>{followUp.last_delivery_channel ? `${followUp.last_delivery_channel} • ` : ''}{followUp.status || 'pending'}</small>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
               </div>
             </div>
             {form.notifications_enabled ? (
@@ -1016,10 +1402,10 @@ export default function SettingsScreen() {
                 </div>
               </div>
               {!speechPlaybackSupported ? (
-                <p className="settings-subtitle">This browser does not expose speech synthesis, so spoken live-workout coaching is unavailable here.</p>
+                <p className="settings-subtitle">This browser cannot play inline audio, so spoken live-workout coaching is unavailable here.</p>
               ) : (
                 <>
-                  <p className="settings-subtitle">These settings control Live Workout Mode playback on this device. Voice choice stays client-side because browser voices differ by OS and browser.</p>
+                  <p className="settings-subtitle">These settings control OpenAI voice playback for Live Workout Mode on this device.</p>
                   <div className="settings-grid settings-grid-compact">
                     <div className="settings-inline-panel">
                       <label className="switch-field">
@@ -1033,15 +1419,26 @@ export default function SettingsScreen() {
                         </span>
                       </label>
                     </div>
+                    <div className="settings-inline-panel">
+                      <label className="switch-field">
+                        <span className="switch-copy">
+                          <span className="settings-field-label">Auto-speak drawer replies</span>
+                          <span className="settings-field-hint">Read new Johnny Assistant drawer replies out loud automatically.</span>
+                        </span>
+                        <span className="switch-control">
+                          <input className="switch-input" type="checkbox" checked={liveVoicePrefs.assistantAutoSpeak} onChange={event => updateLiveVoicePref('assistantAutoSpeak', event.target.checked)} />
+                          <span className="switch-track" aria-hidden="true" />
+                        </span>
+                      </label>
+                    </div>
                     <label className="settings-field settings-field-span-2">
                       <span className="settings-field-label">Voice</span>
-                      <select value={liveVoicePrefs.voiceURI} onChange={event => updateLiveVoicePref('voiceURI', event.target.value)}>
-                        <option value="">System default</option>
-                        {availableSpeechVoices.map(voice => (
-                          <option key={voice.voiceURI} value={voice.voiceURI}>{formatSpeechVoiceLabel(voice)}</option>
+                      <select value={liveVoicePrefs.openAiVoice} onChange={event => updateLiveVoicePref('openAiVoice', event.target.value)}>
+                        {OPENAI_TTS_VOICE_OPTIONS.map(voice => (
+                          <option key={voice} value={voice}>{formatOpenAiVoiceLabel(voice)}</option>
                         ))}
                       </select>
-                      <span className="settings-field-hint">If the selected voice disappears after a browser update, Johnny falls back to the system default.</span>
+                      <span className="settings-field-hint">Voice is generated by OpenAI instead of browser-native speech synthesis.</span>
                     </label>
                     <label className="settings-field">
                       <span className="settings-field-label">Playback speed</span>
@@ -1051,21 +1448,14 @@ export default function SettingsScreen() {
                         ))}
                       </select>
                     </label>
-                    <label className="settings-field">
-                      <span className="settings-field-label">Pitch</span>
-                      <select value={String(liveVoicePrefs.pitch)} onChange={event => updateLiveVoicePref('pitch', Number(event.target.value))}>
-                        {LIVE_WORKOUT_VOICE_PITCH_OPTIONS.map(pitch => (
-                          <option key={pitch} value={pitch}>{pitch.toFixed(pitch % 1 === 0 ? 0 : 2)}x</option>
-                        ))}
-                      </select>
-                    </label>
                     <div className="settings-inline-panel settings-live-voice-preview-card">
                       <strong>Preview</strong>
-                      <p className="settings-subtitle">Play a short sample with the current voice, speed, and pitch, or reset this device back to Johnny’s defaults.</p>
+                      <p className="settings-subtitle">Play a short sample with the current OpenAI voice and speed, or reset this device back to Johnny’s defaults.</p>
                       <div className="settings-ai-actions">
-                        <button type="button" className="btn-outline small" onClick={previewLiveVoice}>Play sample</button>
+                        <button type="button" className="btn-outline small" onClick={previewLiveVoice} disabled={voicePreviewBusy}>{voicePreviewBusy ? 'Playing…' : 'Play sample'}</button>
                         <button type="button" className="btn-secondary small" onClick={() => setLiveVoicePrefs(getDefaultLiveWorkoutVoicePrefs())}>Reset defaults</button>
                       </div>
+                      {voicePreviewError ? <p className="error">{voicePreviewError}</p> : null}
                     </div>
                   </div>
                 </>
@@ -1249,6 +1639,29 @@ export default function SettingsScreen() {
         </SettingsAccordionSection>
       </div>
 
+      {zoomedImage && generatedImageSrcs[zoomedImage.id] ? (
+        <div className="settings-image-zoom-modal" role="dialog" aria-modal="true" aria-label="Generated image preview">
+          <button type="button" className="settings-image-zoom-backdrop" onClick={() => setZoomedImageId('')} aria-label="Close preview" />
+          <div className="settings-image-zoom-panel">
+            <div className="settings-image-zoom-head">
+              <strong>{zoomedImage.scenario || 'Generated scene'}</strong>
+              <button type="button" className="btn-secondary small" onClick={() => setZoomedImageId('')}>Close</button>
+            </div>
+            <div className="settings-image-zoom-canvas">
+              <img
+                src={generatedImageSrcs[zoomedImage.id]}
+                alt={zoomedImage.scenario || 'Generated workout scene'}
+                style={{ transform: `scale(${zoomScale})` }}
+              />
+            </div>
+            <label className="settings-field">
+              <span className="settings-field-label">Zoom</span>
+              <input type="range" min="1" max="2.5" step="0.1" value={zoomScale} onChange={event => setZoomScale(Number(event.target.value))} />
+            </label>
+          </div>
+        </div>
+      ) : null}
+
       <div className="settings-actions settings-actions-stack">
         <button className="btn-secondary settings-save-button" onClick={() => persist({ recalculate: false })} disabled={saving}>
           {saving ? 'Saving…' : 'Save Changes'}
@@ -1279,7 +1692,6 @@ function SettingsAccordionSection({ sectionKey, eyebrow, title, description, ite
         <div className="settings-accordion-trigger-copy">
           {eyebrow ? <span className="settings-accordion-eyebrow">{eyebrow}</span> : null}
           <h2>{title}</h2>
-          <p>{description}</p>
         </div>
         <div className="settings-accordion-meta">
           {itemCountLabel ? <span className="settings-accordion-count">{itemCountLabel}</span> : null}
@@ -1288,6 +1700,7 @@ function SettingsAccordionSection({ sectionKey, eyebrow, title, description, ite
             <span className="workout-accordion-icon-bar vertical" />
           </span>
         </div>
+        <p className="settings-accordion-description">{description}</p>
       </button>
       <div id={panelId} className={`workout-accordion-panel settings-accordion-panel ${open ? 'expanded' : ''}`}>
         <div className="workout-accordion-panel-inner settings-accordion-panel-inner">

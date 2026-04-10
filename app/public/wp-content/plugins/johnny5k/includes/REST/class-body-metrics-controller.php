@@ -444,7 +444,17 @@ class BodyMetricsController {
 			$user_id, $since
 		) );
 
-		return new \WP_REST_Response( compact( 'weight', 'sleep', 'steps', 'cardio' ) );
+		$cardio_step_rows = $wpdb->get_results( $wpdb->prepare(
+			"SELECT cardio_date AS date, cardio_type, intensity, duration_minutes
+			 FROM {$wpdb->prefix}fit_cardio_logs
+			 WHERE user_id = %d AND cardio_date >= %s
+			 ORDER BY cardio_date ASC, id ASC",
+			$user_id, $since
+		) );
+
+		$movement = self::build_movement_series( $steps, $cardio_step_rows );
+
+		return new \WP_REST_Response( compact( 'weight', 'sleep', 'steps', 'cardio', 'movement' ) );
 	}
 
 	// ── Health flags ──────────────────────────────────────────────────────────
@@ -504,6 +514,79 @@ class BodyMetricsController {
 
 	private static function sync_user_awards( int $user_id ): void {
 		\Johnny5k\Services\AwardEngine::sync_user_awards( $user_id );
+	}
+
+	public static function estimate_cardio_step_equivalent( string $cardio_type, string $intensity, int $duration_minutes ): int {
+		$duration_minutes = max( 0, $duration_minutes );
+		if ( 0 === $duration_minutes ) {
+			return 0;
+		}
+
+		$type = sanitize_key( $cardio_type ?: 'other' );
+		$normalized_intensity = self::normalize_cardio_intensity( $intensity );
+
+		$base_steps_per_minute = [
+			'walking'     => 105,
+			'running'     => 170,
+			'cycling'     => 120,
+			'swimming'    => 130,
+			'rowing'      => 125,
+			'stairmaster' => 140,
+			'hiit'        => 160,
+			'other'       => 110,
+		];
+
+		$intensity_multiplier = [
+			'light'    => 0.85,
+			'moderate' => 1.0,
+			'hard'     => 1.15,
+		];
+
+		$steps_per_minute = (float) ( $base_steps_per_minute[ $type ] ?? $base_steps_per_minute['other'] );
+		$multiplier = (float) ( $intensity_multiplier[ $normalized_intensity ] ?? $intensity_multiplier['moderate'] );
+
+		return (int) round( $duration_minutes * $steps_per_minute * $multiplier );
+	}
+
+	private static function build_movement_series( array $steps_rows, array $cardio_rows ): array {
+		$actual_steps_by_date = [];
+		foreach ( $steps_rows as $row ) {
+			$date = (string) ( $row->date ?? '' );
+			if ( '' === $date ) {
+				continue;
+			}
+			$actual_steps_by_date[ $date ] = (int) ( $row->steps ?? 0 );
+		}
+
+		$cardio_steps_by_date = [];
+		foreach ( $cardio_rows as $row ) {
+			$date = (string) ( $row->date ?? '' );
+			if ( '' === $date ) {
+				continue;
+			}
+			$cardio_steps_by_date[ $date ] = (int) ( $cardio_steps_by_date[ $date ] ?? 0 ) + self::estimate_cardio_step_equivalent(
+				(string) ( $row->cardio_type ?? 'other' ),
+				(string) ( $row->intensity ?? 'moderate' ),
+				(int) ( $row->duration_minutes ?? 0 )
+			);
+		}
+
+		$all_dates = array_unique( array_merge( array_keys( $actual_steps_by_date ), array_keys( $cardio_steps_by_date ) ) );
+		sort( $all_dates );
+
+		$series = [];
+		foreach ( $all_dates as $date ) {
+			$actual = (int) ( $actual_steps_by_date[ $date ] ?? 0 );
+			$cardio = (int) ( $cardio_steps_by_date[ $date ] ?? 0 );
+			$series[] = [
+				'date' => $date,
+				'steps' => $actual + $cardio,
+				'actual_steps' => $actual,
+				'cardio_equivalent_steps' => $cardio,
+			];
+		}
+
+		return $series;
 	}
 
 	private static function normalize_cardio_intensity( $value ): string {

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { authApi } from '../../api/client'
+import { authApi } from '../../api/modules/auth'
 
 export default function ForgotPasswordScreen() {
   const [email, setEmail] = useState('')

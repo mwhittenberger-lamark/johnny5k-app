@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { authApi } from '../api/client'
+import { authApi } from '../api/modules/auth'
+import { DEFAULT_APP_IMAGES, normalizeAppImages } from '../lib/appImages'
 import { applyColorScheme, clearStoredColorScheme, DEFAULT_COLOR_SCHEME } from '../lib/theme'
 
 const NONCE_KEY = 'jf_rest_nonce'
@@ -14,8 +15,9 @@ export const useAuthStore = create(
       isAuthenticated: false,
       onboardingComplete: false,
       isAdmin: false,
+      appImages: DEFAULT_APP_IMAGES,
 
-      setAuth: ({ nonce, user_id, email, onboarding_complete, is_admin }) => {
+      setAuth: ({ nonce, user_id, email, onboarding_complete, is_admin, app_images }) => {
         const current = get()
         const nextNonce = nonce ?? current.nonce ?? null
 
@@ -32,14 +34,22 @@ export const useAuthStore = create(
           isAuthenticated: (user_id ?? current.userId) ? true : current.isAuthenticated,
           onboardingComplete: onboarding_complete ?? current.onboardingComplete,
           isAdmin: is_admin ?? current.isAdmin,
+          appImages: app_images ? normalizeAppImages(app_images) : current.appImages,
         })
+      },
+
+      setAppImages: (appImages) => {
+        set(current => ({
+          ...current,
+          appImages: normalizeAppImages(appImages),
+        }))
       },
 
       clearAuth: () => {
         localStorage.removeItem(NONCE_KEY)
         clearStoredColorScheme()
         applyColorScheme(DEFAULT_COLOR_SCHEME)
-        set({ nonce: null, userId: null, email: null, isAuthenticated: false, onboardingComplete: false, isAdmin: false })
+        set(current => ({ ...current, nonce: null, userId: null, email: null, isAuthenticated: false, onboardingComplete: false, isAdmin: false }))
       },
 
       // Called on app mount to re-validate a stored cookie session.
@@ -69,6 +79,7 @@ export const useAuthStore = create(
         isAuthenticated: state.isAuthenticated,
         onboardingComplete: state.onboardingComplete,
         isAdmin: state.isAdmin,
+        appImages: state.appImages,
       }),
       // Sync nonce to the key the API client reads.
       onRehydrateStorage: () => (state) => {

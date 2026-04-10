@@ -1,0 +1,16 @@
+{
+  "name": "johnny5k/backend-tests",
+  "type": "project",
+  "scripts": {
+    "test": "phpunit",
+    "test:api": "phpunit --filter ApiIntegrationTest",
+    "stan": "phpstan analyse --configuration=phpstan.neon.dist --memory-limit=512M --no-progress"
+  },
+  "require-dev": {
+    "phpunit/phpunit": "^11.5",
+    "phpstan/phpstan": "^1.12"
+  },
+  "require": {
+    "minishlink/web-push": "^10.0"
+  }
+}

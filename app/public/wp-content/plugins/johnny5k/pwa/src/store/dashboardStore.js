@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { dashboardApi } from '../api/client'
+import { dashboardApi } from '../api/modules/dashboard'
 
 /**
  * Light client-side cache for the daily snapshot.

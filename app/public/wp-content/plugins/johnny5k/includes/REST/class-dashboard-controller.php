@@ -208,12 +208,28 @@ class DashboardController {
 			$user_id
 		) );
 
-		$steps = (int) $wpdb->get_var( $wpdb->prepare(
+		$actual_steps = (int) $wpdb->get_var( $wpdb->prepare(
 			"SELECT steps FROM {$p}fit_step_logs WHERE user_id = %d AND step_date = %s",
 			$user_id, $today
 		) );
 
-		$recovery_summary = self::build_recovery_summary( $user_id, $goal, $sleep, $steps );
+		$cardio_step_rows = $wpdb->get_results( $wpdb->prepare(
+			"SELECT cardio_type, intensity, duration_minutes
+			 FROM {$p}fit_cardio_logs
+			 WHERE user_id = %d AND cardio_date = %s",
+			$user_id, $today
+		) );
+		$cardio_equivalent_steps = 0;
+		foreach ( $cardio_step_rows as $row ) {
+			$cardio_equivalent_steps += BodyMetricsController::estimate_cardio_step_equivalent(
+				(string) ( $row->cardio_type ?? 'other' ),
+				(string) ( $row->intensity ?? 'moderate' ),
+				(int) ( $row->duration_minutes ?? 0 )
+			);
+		}
+		$total_movement_steps = $actual_steps + $cardio_equivalent_steps;
+
+		$recovery_summary = self::build_recovery_summary( $user_id, $goal, $sleep, $actual_steps );
 		$calorie_adjustment_preview = \Johnny5k\Services\CalorieEngine::calculate_weekly_adjustment( $user_id );
 
 		$latest_weight = $wpdb->get_row( $wpdb->prepare(
@@ -232,6 +248,9 @@ class DashboardController {
 			'sleep_days'    => self::count_sleep_streak( $user_id ),
 			'cardio_days'   => self::count_cardio_streak( $user_id ),
 		];
+		$follow_up_overview = AiService::get_follow_up_overview( $user_id );
+		$pending_follow_ups = AiService::get_pending_follow_ups( $user_id );
+		$delivery_diagnostics = \Johnny5k\Services\CoachDeliveryService::get_user_delivery_diagnostics( $user_id );
 
 		return [
 			'date'             => $today,
@@ -246,7 +265,13 @@ class DashboardController {
 			'tomorrow_preview' => $tomorrow_preview,
 			'tomorrow_schedule'=> $tomorrow_schedule,
 			'sleep'            => $sleep,
-			'steps'            => [ 'today' => $steps, 'target' => (int) ( $goal->target_steps ?? 8000 ) ],
+			'steps'            => [
+				'today' => $total_movement_steps,
+				'actual_today' => $actual_steps,
+				'cardio_equivalent_today' => $cardio_equivalent_steps,
+				'total_movement_today' => $total_movement_steps,
+				'target' => (int) ( $goal->target_steps ?? 8000 ),
+			],
 			'recovery_summary' => $recovery_summary,
 			'calorie_adjustment_preview' => $calorie_adjustment_preview,
 			'latest_weight'    => $latest_weight,
@@ -255,6 +280,9 @@ class DashboardController {
 			'streaks'          => $streaks,
 			'skip_count_30d'   => $skip_count,
 			'skip_warning'     => $skip_count >= 3,
+			'follow_up_overview' => $follow_up_overview,
+			'pending_follow_ups' => array_slice( $pending_follow_ups, 0, 4 ),
+			'delivery_diagnostics' => $delivery_diagnostics,
 		];
 	}
 

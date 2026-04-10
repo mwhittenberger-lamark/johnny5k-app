@@ -4,6 +4,7 @@ namespace Johnny5k\Admin;
 defined( 'ABSPATH' ) || exit;
 
 use Johnny5k\REST\AdminApiController;
+use Johnny5k\Services\PushService;
 
 /**
  * Settings page — stores all API keys and integration config as wp_options.
@@ -23,7 +24,7 @@ class Settings {
 		'jf_usda_api_key'        => [ 'label' => 'USDA API Key',            'type' => 'password', 'placeholder' => 'DEMO_KEY or your key' ],
 		'jf_clicksend_username'  => [ 'label' => 'ClickSend Username',       'type' => 'text',     'placeholder' => 'you@email.com' ],
 		'jf_clicksend_api_key'   => [ 'label' => 'ClickSend API Key',        'type' => 'password', 'placeholder' => ''             ],
-		'jf_clicksend_sender_id' => [ 'label' => 'SMS Sender ID (≤11 chars)','type' => 'text',     'placeholder' => 'Johnny5000'  ],
+		'jf_clicksend_sender_id' => [ 'label' => 'SMS Sender ID (≤11 chars)','type' => 'text',     'placeholder' => 'Johnny5k'  ],
 	];
 
 	public static function render(): void {
@@ -83,6 +84,22 @@ class Settings {
 				);
 			}
 
+			if ( isset( $_POST['jf_push_settings'] ) ) {
+				$current_push_settings = PushService::get_settings();
+				$submitted_push_settings = wp_unslash( $_POST['jf_push_settings'] );
+				if ( is_array( $submitted_push_settings ) ) {
+					$submitted_private_key = trim( (string) ( $submitted_push_settings['vapid_private_key'] ?? '' ) );
+					if ( '' === $submitted_private_key && ! empty( $current_push_settings['vapid_private_key'] ) ) {
+						$submitted_push_settings['vapid_private_key'] = (string) $current_push_settings['vapid_private_key'];
+					}
+				}
+				update_option(
+					'jf_push_settings',
+					PushService::sanitize_settings( $submitted_push_settings ),
+					false
+				);
+			}
+
 			if ( empty( $errors ) ) {
 				$saved = true;
 			}
@@ -107,7 +124,7 @@ class Settings {
 		// ── OpenAI section ────────────────────────────────────────────────
 		echo '<tr><th colspan="2"><h2 style="margin:0">OpenAI</h2></th></tr>';
 		self::render_field( 'jf_openai_api_key' );
-		echo '<tr><td></td><td><p class="description">Used for the AI coach (Johnny 5000), meal analysis, and workout summaries. Get your key at <strong>platform.openai.com/api-keys</strong>.</p></td></tr>';
+		echo '<tr><td></td><td><p class="description">Used for the AI coach (Johnny5k), meal analysis, and workout summaries. Get your key at <strong>platform.openai.com/api-keys</strong>.</p></td></tr>';
 		echo '<tr><th colspan="2"><h2 style="margin:0;padding-top:16px">Gemini Image Generation</h2></th></tr>';
 		self::render_field( 'jf_gemini_api_key' );
 		echo '<tr><td></td><td><p class="description">Used for Gemini image generation with Nano Banana Pro via <strong>gemini-3-pro-image-preview</strong>. Create a key in <strong>Google AI Studio</strong>.</p></td></tr>';
@@ -123,13 +140,18 @@ class Settings {
 
 		// ── ClickSend section ─────────────────────────────────────────────
 		$current_sender_id = (string) get_option( 'jf_clicksend_sender_id', '' );
-		$effective_sender_id = $current_sender_id !== '' ? $current_sender_id : 'Johnny5000';
+		$effective_sender_id = $current_sender_id !== '' ? $current_sender_id : 'Johnny5k';
 		echo '<tr><th colspan="2"><h2 style="margin:0;padding-top:16px">ClickSend SMS</h2></th></tr>';
 		self::render_field( 'jf_clicksend_username' );
 		self::render_field( 'jf_clicksend_api_key' );
-		echo '<tr><th scope="row">Effective SMS Sender</th><td><strong>' . esc_html( $effective_sender_id ) . '</strong><p class="description" style="margin:6px 0 0">This is the sender name Johnny5k will use when texting users. If you leave the field below blank, it falls back to Johnny5000.</p></td></tr>';
+		echo '<tr><th scope="row">Effective SMS Sender</th><td><strong>' . esc_html( $effective_sender_id ) . '</strong><p class="description" style="margin:6px 0 0">This is the sender name Johnny5k will use when texting users. If you leave the field below blank, it falls back to Johnny5k.</p></td></tr>';
 		self::render_field( 'jf_clicksend_sender_id' );
 		echo '<tr><td></td><td><p class="description">Used for daily motivation and milestone SMS messages. Credentials found in your ClickSend dashboard under <strong>API Credentials</strong>.</p></td></tr>';
+
+		echo '<tr><th colspan="2"><h2 style="margin:0;padding-top:16px">Web Push Notifications</h2></th></tr>';
+		echo '<tr><td colspan="2">';
+		self::render_push_settings_editor();
+		echo '</td></tr>';
 
 		echo '<tr><th colspan="2"><h2 style="margin:0;padding-top:16px">Color Schemes</h2></th></tr>';
 		echo '<tr><td colspan="2">';
@@ -166,6 +188,27 @@ class Settings {
 		echo '<button class="button" id="jf-test-sms">Send Test SMS</button> ';
 		echo '<span id="jf-sms-result" style="margin-left:8px"></span>';
 		echo '</p>';
+
+		echo '<h2 style="margin-top:24px">Test Push Notification</h2>';
+		echo '<p class="description">Sends a real browser push notification to the selected user if they have at least one active subscribed device.</p>';
+		echo '<p>';
+		echo '<select id="jf-push-user" style="min-width:280px"></select> ';
+		echo '<input type="text" id="jf-push-title" class="regular-text" style="min-width:220px" value="Johnny test push" placeholder="Notification title"> ';
+		echo '</p>';
+		echo '<p>';
+		echo '<input type="text" id="jf-push-body" class="large-text" style="max-width:520px" value="If you see this, web push is working on this device." placeholder="Notification body"> ';
+		echo '</p>';
+		echo '<p>';
+		echo '<input type="text" id="jf-push-url" class="regular-text code" style="min-width:220px" value="/dashboard" placeholder="/dashboard"> ';
+		echo '<button class="button" id="jf-test-push">Send Test Push</button> ';
+		echo '<span id="jf-push-result" style="margin-left:8px"></span>';
+		echo '</p>';
+
+		echo '<hr>';
+		echo '<h2>User Analytics</h2>';
+		echo '<p class="description">The retention and behavior analytics dashboard lives in the Johnny5k admin menu.</p>';
+		echo '<p><a class="button button-secondary" href="' . esc_url( admin_url( 'admin.php?page=jf-retention-dashboard' ) ) . '">Open User Analytics</a></p>';
+
 		self::render_recent_sms_logs();
 
 		self::render_test_script();
@@ -261,6 +304,48 @@ class Settings {
 		}
 
 		echo '</tbody></table>';
+	}
+
+	private static function render_push_settings_editor(): void {
+		$settings = PushService::get_settings();
+		$public_key = (string) ( $settings['vapid_public_key'] ?? '' );
+		$private_key = (string) ( $settings['vapid_private_key'] ?? '' );
+		$subject = (string) ( $settings['subject'] ?? '' );
+		$masked_private_key = '';
+
+		if ( '' !== $private_key ) {
+			$masked_private_key = str_repeat( '•', max( 0, strlen( $private_key ) - 4 ) ) . substr( $private_key, -4 );
+		}
+
+		echo '<div style="max-width:880px">';
+		echo '<p class="description" style="margin-top:0">Configure browser push notifications for the Johnny5k PWA. The VAPID keys are required before any device can subscribe.</p>';
+		echo '<table class="form-table" role="presentation" style="margin-top:8px">';
+		echo '<tr>';
+		echo '<th scope="row">Enable Web Push</th>';
+		echo '<td><label><input type="checkbox" name="jf_push_settings[enabled]" value="1"' . checked( ! empty( $settings['enabled'] ), true, false ) . '> Allow Johnny5k to send browser notifications</label></td>';
+		echo '</tr>';
+		echo '<tr>';
+		echo '<th scope="row"><label for="jf_push_vapid_public_key">VAPID Public Key</label></th>';
+		echo '<td><input type="text" id="jf_push_vapid_public_key" name="jf_push_settings[vapid_public_key]" value="' . esc_attr( $public_key ) . '" class="large-text code" autocomplete="off" spellcheck="false"><p class="description">Paste the public key used by the browser subscription flow.</p></td>';
+		echo '</tr>';
+		echo '<tr>';
+		echo '<th scope="row"><label for="jf_push_vapid_private_key">VAPID Private Key</label></th>';
+		echo '<td><input type="password" id="jf_push_vapid_private_key" name="jf_push_settings[vapid_private_key]" value="" placeholder="' . esc_attr( $masked_private_key ) . '" class="large-text code" autocomplete="new-password" spellcheck="false">';
+		if ( '' !== $private_key ) {
+			echo '<span style="color:#666;margin-left:8px">✓ Set</span>';
+		}
+		echo '<p class="description">Keep this private. If left blank on save, the existing key stays in place.</p></td>';
+		echo '</tr>';
+		echo '<tr>';
+		echo '<th scope="row"><label for="jf_push_subject">Subject</label></th>';
+		echo '<td><input type="text" id="jf_push_subject" name="jf_push_settings[subject]" value="' . esc_attr( $subject ) . '" class="regular-text" placeholder="mailto:support@johnny5k.app"><p class="description">Usually a <code>mailto:</code> address that identifies the sender.</p></td>';
+		echo '</tr>';
+		echo '<tr>';
+		echo '<th scope="row">Next Step</th>';
+		echo '<td><a class="button button-secondary" href="' . esc_url( admin_url( 'admin.php?page=jf-retention-dashboard' ) ) . '">Open User Analytics</a><p class="description">After saving these keys, enable notifications on a device from the app Settings screen.</p></td>';
+		echo '</tr>';
+		echo '</table>';
+		echo '</div>';
 	}
 
 	private static function format_trigger_label( string $trigger_type ): string {
@@ -485,10 +570,13 @@ class Settings {
 		?>
 		<script>
 		(async function loadSmsUsers() {
-			const select = document.getElementById('jf-sms-user');
-			const result = document.getElementById('jf-sms-result');
-			if (!select) return;
-			select.innerHTML = '<option value="">Loading users…</option>';
+			const smsSelect = document.getElementById('jf-sms-user');
+			const pushSelect = document.getElementById('jf-push-user');
+			const smsResult = document.getElementById('jf-sms-result');
+			const pushResult = document.getElementById('jf-push-result');
+			const selects = [smsSelect, pushSelect].filter(Boolean);
+			if (!selects.length) return;
+			selects.forEach(select => { select.innerHTML = '<option value="">Loading users…</option>'; });
 			try {
 				const res = await fetch('/wp-json/fit/v1/admin/users', {
 					credentials: 'same-origin',
@@ -502,26 +590,27 @@ class Settings {
 					throw new Error('Unexpected admin users response.');
 				}
 				if (users.length === 0) {
-					select.innerHTML = '<option value="">No users found</option>';
-					if (result) {
-						result.textContent = 'No WordPress users are available for SMS testing.';
+					selects.forEach(select => { select.innerHTML = '<option value="">No users found</option>'; });
+					[smsResult, pushResult].filter(Boolean).forEach(result => {
+						result.textContent = 'No WordPress users are available for testing.';
 						result.style.color = '#666';
-					}
+					});
 					return;
 				}
-				select.innerHTML = users.map(user => {
+				const optionsHtml = users.map(user => {
 					const name = [user.first_name, user.last_name].filter(Boolean).join(' ').trim() || user.user_email;
 					return `<option value="${user.user_id}">${name} (${user.user_email})</option>`;
 				}).join('');
-				if (result) {
+				selects.forEach(select => { select.innerHTML = optionsHtml; });
+				[smsResult, pushResult].filter(Boolean).forEach(result => {
 					result.textContent = '';
-				}
+				});
 			} catch (e) {
-				select.innerHTML = '<option value="">Unable to load users</option>';
-				if (result) {
+				selects.forEach(select => { select.innerHTML = '<option value="">Unable to load users</option>'; });
+				[smsResult, pushResult].filter(Boolean).forEach(result => {
 					result.textContent = '✗ ' + e.message;
 					result.style.color = 'red';
-				}
+				});
 			}
 		})();
 
@@ -567,6 +656,45 @@ class Settings {
 				const data = await res.json();
 				if (data?.sent && data?.result) {
 					el.textContent = `✓ Sent to ${data.result.phone} | ${data.result.timezone} | local now ${data.result.local_now} | scheduled hour ${data.result.scheduled_hour}:00 | enabled ${data.result.enabled ? 'yes' : 'no'}`;
+					el.style.color = 'green';
+				} else {
+					el.textContent = '✗ ' + (data.message || JSON.stringify(data));
+					el.style.color = 'red';
+				}
+			} catch (e) {
+				el.textContent = '✗ ' + e.message;
+				el.style.color = 'red';
+			}
+		});
+
+		document.getElementById('jf-test-push')?.addEventListener('click', async function() {
+			const el = document.getElementById('jf-push-result');
+			const userSelect = document.getElementById('jf-push-user');
+			const titleInput = document.getElementById('jf-push-title');
+			const bodyInput = document.getElementById('jf-push-body');
+			const urlInput = document.getElementById('jf-push-url');
+			if (!userSelect?.value) {
+				el.textContent = 'Select a user first.';
+				el.style.color = 'red';
+				return;
+			}
+			el.textContent = 'Sending…';
+			try {
+				const res = await fetch('/wp-json/fit/v1/admin/push/test', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json', 'X-WP-Nonce': '<?php echo esc_js( $nonce ); ?>' },
+					body: JSON.stringify({
+						user_id: Number(userSelect.value),
+						title: titleInput?.value || 'Johnny test push',
+						body: bodyInput?.value || 'If you see this, web push is working on this device.',
+						url: urlInput?.value || '/dashboard',
+					}),
+				});
+				const data = await res.json();
+				if (data?.sent) {
+					const delivered = Number(data?.result?.delivered_count ?? 0);
+					const disabled = Number(data?.result?.disabled_count ?? 0);
+					el.textContent = `✓ Push sent | delivered ${delivered} | disabled ${disabled}`;
 					el.style.color = 'green';
 				} else {
 					el.textContent = '✗ ' + (data.message || JSON.stringify(data));

@@ -6,6 +6,7 @@ defined( 'ABSPATH' ) || exit;
 use Johnny5k\Auth\InviteCodes;
 use Johnny5k\Services\AiService;
 use Johnny5k\Services\CostTracker;
+use Johnny5k\Services\PushService;
 use Johnny5k\Services\UserTime;
 
 /**
@@ -18,8 +19,8 @@ use Johnny5k\Services\UserTime;
  * POST /fit/v1/admin/invite-codes     — generate new invite code
  * DELETE /fit/v1/admin/invite-codes/{id} — delete unused code
  * GET  /fit/v1/admin/costs            — cost summary (monthly total, per-user, daily)
- * GET  /fit/v1/admin/persona          — get Johnny 5000 persona settings
- * POST /fit/v1/admin/persona          — save Johnny 5000 persona settings
+ * GET  /fit/v1/admin/persona          — get Johnny5k persona settings
+ * POST /fit/v1/admin/persona          — save Johnny5k persona settings
  * POST /fit/v1/admin/persona/test     — test persona with a message
  * POST /fit/v1/admin/sms/test         — send a test SMS reminder to a user
  */
@@ -133,6 +134,21 @@ class AdminApiController {
 		return [];
 	}
 
+	public static function default_app_images(): array {
+		return [
+			'brandmark' => JF_PLUGIN_URL . 'pwa/src/assets/F9159E4E-E475-4BE5-8674-456B7BEFDBEE.webp',
+			'login_welcome' => JF_PLUGIN_URL . 'pwa/src/assets/welcome.webp',
+			'johnny_drawer' => JF_PLUGIN_URL . 'pwa/src/assets/8CD0AD13-4C88-49C7-A455-4B180A3F732B.webp',
+			'live_workout_frame_1' => JF_PLUGIN_URL . 'pwa/src/assets/8CD0AD13-4C88-49C7-A455-4B180A3F732B.webp',
+			'live_workout_frame_2' => JF_PLUGIN_URL . 'pwa/src/assets/F9159E4E-E475-4BE5-8674-456B7BEFDBEE.webp',
+			'live_workout_frame_3' => JF_PLUGIN_URL . 'pwa/src/assets/hero.png',
+		];
+	}
+
+	public static function get_app_images_config(): array {
+		return self::sanitize_app_images( get_option( 'jf_app_images', self::default_app_images() ) );
+	}
+
 	public static function get_live_workout_frames_config(): array {
 		return self::sanitize_live_workout_frames( get_option( 'jf_live_workout_frames', self::default_live_workout_frames() ) );
 	}
@@ -211,6 +227,22 @@ class AdminApiController {
 		}
 
 		return array_values( $clean );
+	}
+
+	public static function sanitize_app_images( $images ): array {
+		$defaults = self::default_app_images();
+		$clean = [];
+
+		if ( ! is_array( $images ) ) {
+			$images = [];
+		}
+
+		foreach ( $defaults as $key => $default_url ) {
+			$image_url = esc_url_raw( (string) ( $images[ $key ] ?? '' ) );
+			$clean[ $key ] = '' !== $image_url ? $image_url : $default_url;
+		}
+
+		return $clean;
 	}
 
 	public static function register_routes(): void {
@@ -328,6 +360,18 @@ class AdminApiController {
 		register_rest_route( $ns, '/admin/sms/test', [
 			'methods'             => 'POST',
 			'callback'            => [ __CLASS__, 'test_sms' ],
+			'permission_callback' => $admin,
+		] );
+
+		register_rest_route( $ns, '/admin/push/test', [
+			'methods'             => 'POST',
+			'callback'            => [ __CLASS__, 'test_push' ],
+			'permission_callback' => $admin,
+		] );
+
+		register_rest_route( $ns, '/admin/analytics/retention', [
+			'methods'             => 'GET',
+			'callback'            => [ __CLASS__, 'get_retention_analytics' ],
 			'permission_callback' => $admin,
 		] );
 	}
@@ -588,7 +632,9 @@ class AdminApiController {
 				'saved_foods'     => 1,
 				'recovery_summary'=> 1,
 			] ),
+			'push_settings' => PushService::get_settings(),
 			'color_schemes' => self::get_color_schemes_config(),
+			'app_images' => self::get_app_images_config(),
 			'live_workout_frames' => self::get_live_workout_frames_config(),
 		] );
 	}
@@ -596,7 +642,9 @@ class AdminApiController {
 	public static function save_settings( \WP_REST_Request $req ): \WP_REST_Response {
 		$ai_settings = (array) $req->get_param( 'ai_settings' );
 		$feature_flags = (array) $req->get_param( 'feature_flags' );
+		$push_settings = (array) $req->get_param( 'push_settings' );
 		$color_schemes = $req->get_param( 'color_schemes' );
+		$app_images = $req->get_param( 'app_images' );
 		$live_workout_frames = $req->get_param( 'live_workout_frames' );
 
 		update_option( 'jf_ai_settings', [
@@ -611,7 +659,9 @@ class AdminApiController {
 			$feature_flags
 		), false );
 
+		update_option( 'jf_push_settings', PushService::sanitize_settings( $push_settings ), false );
 		update_option( 'jf_color_schemes', self::sanitize_color_schemes( $color_schemes ), false );
+		update_option( 'jf_app_images', self::sanitize_app_images( $app_images ), false );
 		update_option( 'jf_live_workout_frames', self::sanitize_live_workout_frames( $live_workout_frames ), false );
 
 		return new \WP_REST_Response( [ 'saved' => true ] );
@@ -784,6 +834,175 @@ class AdminApiController {
 			'sent' => true,
 			'result' => $result,
 		] );
+	}
+
+	public static function test_push( \WP_REST_Request $req ): \WP_REST_Response {
+		$user_id = (int) $req->get_param( 'user_id' );
+		$title   = sanitize_text_field( (string) ( $req->get_param( 'title' ) ?? '' ) );
+		$body    = sanitize_textarea_field( (string) ( $req->get_param( 'body' ) ?? '' ) );
+		$url     = sanitize_text_field( (string) ( $req->get_param( 'url' ) ?? '/dashboard' ) );
+
+		if ( $user_id <= 0 ) {
+			return new \WP_REST_Response( [ 'message' => 'A valid user_id is required.' ], 400 );
+		}
+
+		$result = PushService::send_test_notification( $user_id, $title, $body, $url );
+
+		if ( is_wp_error( $result ) ) {
+			return new \WP_REST_Response( [ 'message' => $result->get_error_message() ], 400 );
+		}
+
+		return new \WP_REST_Response( [
+			'sent'   => true,
+			'result' => $result,
+		] );
+	}
+
+	public static function get_retention_analytics( \WP_REST_Request $req ): \WP_REST_Response {
+		$days = max( 7, min( 90, (int) ( $req->get_param( 'days' ) ?: 30 ) ) );
+		return new \WP_REST_Response( self::retention_analytics_payload( $days ) );
+	}
+
+	public static function retention_analytics_payload( int $days = 30 ): array {
+		global $wpdb;
+
+		$days = max( 7, min( 90, $days ) );
+		$since_utc = gmdate( 'Y-m-d H:i:s', time() - ( $days * DAY_IN_SECONDS ) );
+		$p = $wpdb->prefix . 'fit_';
+
+		$users = $wpdb->get_results(
+			"SELECT u.ID AS user_id, u.user_email, u.user_registered, p.first_name, p.last_name, p.onboarding_complete
+			 FROM {$wpdb->users} u
+			 LEFT JOIN {$p}user_profiles p ON p.user_id = u.ID
+			 ORDER BY u.user_registered DESC"
+		);
+
+		$segments = [
+			'active' => 0,
+			'at_risk' => 0,
+			'winback' => 0,
+			'churned' => 0,
+		];
+		$rows = [];
+
+		foreach ( (array) $users as $user ) {
+			$user_id = (int) ( $user->user_id ?? 0 );
+			if ( $user_id <= 0 ) {
+				continue;
+			}
+
+			$last_active = $wpdb->get_var( $wpdb->prepare(
+				"SELECT MAX(last_activity) FROM (
+					SELECT MAX(created_at) AS last_activity FROM {$p}behavior_events WHERE user_id = %d
+					UNION ALL
+					SELECT MAX(created_at) AS last_activity FROM {$p}workout_sessions WHERE user_id = %d
+					UNION ALL
+					SELECT MAX(created_at) AS last_activity FROM {$p}cardio_logs WHERE user_id = %d
+					UNION ALL
+					SELECT MAX(created_at) AS last_activity FROM {$p}step_logs WHERE user_id = %d
+					UNION ALL
+					SELECT MAX(created_at) AS last_activity FROM {$p}sleep_logs WHERE user_id = %d
+					UNION ALL
+					SELECT MAX(created_at) AS last_activity FROM {$p}meals WHERE user_id = %d
+				 ) activity_rollup",
+				$user_id,
+				$user_id,
+				$user_id,
+				$user_id,
+				$user_id,
+				$user_id
+			) );
+
+			$inactive_days = null;
+			if ( $last_active ) {
+				$inactive_days = (int) floor( ( time() - strtotime( (string) $last_active ) ) / DAY_IN_SECONDS );
+			}
+
+			$segment = 'churned';
+			if ( null === $inactive_days || $inactive_days >= 14 ) {
+				$segment = 'churned';
+			} elseif ( $inactive_days >= 7 ) {
+				$segment = 'winback';
+			} elseif ( $inactive_days >= 3 ) {
+				$segment = 'at_risk';
+			} else {
+				$segment = 'active';
+			}
+			$segments[ $segment ]++;
+
+			$rows[] = [
+				'user_id' => $user_id,
+				'user_email' => (string) ( $user->user_email ?? '' ),
+				'name' => trim( (string) ( $user->first_name ?? '' ) . ' ' . (string) ( $user->last_name ?? '' ) ),
+				'onboarding_complete' => ! empty( $user->onboarding_complete ),
+				'user_registered' => (string) ( $user->user_registered ?? '' ),
+				'last_active_at' => $last_active ? (string) $last_active : '',
+				'inactive_days' => $inactive_days,
+				'segment' => $segment,
+			];
+		}
+
+		usort( $rows, static function( array $a, array $b ): int {
+			$left = isset( $a['inactive_days'] ) ? (int) $a['inactive_days'] : 9999;
+			$right = isset( $b['inactive_days'] ) ? (int) $b['inactive_days'] : 9999;
+			return $left <=> $right;
+		} );
+
+		$events = $wpdb->get_results( $wpdb->prepare(
+			"SELECT event_name, COUNT(*) AS total_events, COUNT(DISTINCT user_id) AS active_users
+			 FROM {$p}behavior_events
+			 WHERE occurred_at >= %s
+			 GROUP BY event_name
+			 ORDER BY total_events DESC
+			 LIMIT 20",
+			$since_utc
+		), ARRAY_A );
+
+		$delivery_summary_rows = $wpdb->get_results( $wpdb->prepare(
+			"SELECT channel, status, COUNT(*) AS total
+			 FROM {$p}coach_delivery_logs
+			 WHERE created_at >= %s
+			 GROUP BY channel, status
+			 ORDER BY channel ASC, status ASC",
+			$since_utc
+		), ARRAY_A );
+
+		$delivery_summary = [];
+		foreach ( (array) $delivery_summary_rows as $row ) {
+			$channel = sanitize_key( (string) ( $row['channel'] ?? '' ) );
+			$status  = sanitize_key( (string) ( $row['status'] ?? '' ) );
+			if ( '' === $channel || '' === $status ) {
+				continue;
+			}
+			if ( ! isset( $delivery_summary[ $channel ] ) ) {
+				$delivery_summary[ $channel ] = [];
+			}
+			$delivery_summary[ $channel ][ $status ] = (int) ( $row['total'] ?? 0 );
+		}
+
+		$recent_deliveries = $wpdb->get_results( $wpdb->prepare(
+			"SELECT l.user_id, l.channel, l.status, l.delivery_key, l.title, l.error_message, l.created_at,
+			        u.user_email, p.first_name, p.last_name
+			 FROM {$p}coach_delivery_logs l
+			 LEFT JOIN {$wpdb->users} u ON u.ID = l.user_id
+			 LEFT JOIN {$p}user_profiles p ON p.user_id = l.user_id
+			 WHERE l.created_at >= %s
+			 ORDER BY l.created_at DESC
+			 LIMIT 20",
+			$since_utc
+		), ARRAY_A );
+
+		return [
+			'days' => $days,
+			'since_utc' => $since_utc,
+			'total_users' => count( $rows ),
+			'segments' => $segments,
+			'events' => array_values( $events ),
+			'push_summary' => PushService::get_subscription_summary(),
+			'delivery_summary' => $delivery_summary,
+			'recent_deliveries' => array_values( $recent_deliveries ),
+			'users' => $rows,
+		];
 	}
 
 	// ── Persona compiler ──────────────────────────────────────────────────────

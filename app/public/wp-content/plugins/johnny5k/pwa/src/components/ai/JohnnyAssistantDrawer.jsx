@@ -1,12 +1,15 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { aiApi } from '../../api/client'
+import { aiApi } from '../../api/modules/ai'
+import { analyticsApi } from '../../api/modules/analytics'
 import { formatUsShortDate } from '../../lib/dateFormat'
+import { getAppImageUrl } from '../../lib/appImages'
+import { readLiveWorkoutVoicePrefs } from '../../lib/liveWorkoutVoice'
+import { useAuthStore } from '../../store/authStore'
 import { useDashboardStore } from '../../store/dashboardStore'
 import { useJohnnyAssistantStore } from '../../store/johnnyAssistantStore'
 import { useWorkoutStore } from '../../store/workoutStore'
 import AppIcon from '../ui/AppIcon'
-import johnnyDrawerImage from '../../assets/8CD0AD13-4C88-49C7-A455-4B180A3F732B.PNG'
 
 const THREAD_KEY = 'main'
 const ACTION_TOOLS = new Set([
@@ -63,6 +66,7 @@ const STARTER_SUGGESTIONS = [
 export default function JohnnyAssistantDrawer() {
   const navigate = useNavigate()
   const location = useLocation()
+  const appImages = useAuthStore(state => state.appImages)
   const { isOpen, closeDrawer, consumeStarterPrompt } = useJohnnyAssistantStore()
   const { invalidate, loadSnapshot } = useDashboardStore()
   const workoutSession = useWorkoutStore(state => state.session)
@@ -80,11 +84,16 @@ export default function JohnnyAssistantDrawer() {
   const [listening, setListening] = useState(false)
   const [exitingWorkout, setExitingWorkout] = useState(false)
   const [statusMessage, setStatusMessage] = useState('')
+  const [voicePrefs, setVoicePrefs] = useState(() => readLiveWorkoutVoicePrefs())
   const recognitionRef = useRef(null)
   const bottomRef = useRef(null)
   const textareaRef = useRef(null)
+  const ttsAudioRef = useRef(null)
+  const spokenMessageKeyRef = useRef('')
   const voiceSupported = typeof window !== 'undefined' && (window.SpeechRecognition || window.webkitSpeechRecognition)
+  const playbackSupported = typeof window !== 'undefined' && typeof window.Audio !== 'undefined'
   const chatMode = deriveJohnnyMode(location.pathname, messages)
+  const johnnyDrawerImage = getAppImageUrl(appImages, 'johnny_drawer')
 
   async function hydrateThread() {
     try {
@@ -105,7 +114,33 @@ export default function JohnnyAssistantDrawer() {
     hydrateThread()
   }, [])
 
+  useEffect(() => {
+    if (initialising || !followUps.length) return
+    analyticsApi.event('coach_followups_viewed', {
+      screen: 'ai',
+      context: 'drawer',
+      value_num: followUps.length,
+      metadata: {
+        follow_up_ids: followUps.slice(0, 4).map(item => item.id),
+      },
+    }).catch(() => {})
+  }, [followUps, initialising])
+
   useEffect(() => () => recognitionRef.current?.stop(), [])
+
+  const stopTtsPlayback = useCallback(() => {
+    if (ttsAudioRef.current) {
+      ttsAudioRef.current.pause()
+      if (ttsAudioRef.current.src && ttsAudioRef.current.src.startsWith('blob:')) {
+        window.URL.revokeObjectURL(ttsAudioRef.current.src)
+      }
+      ttsAudioRef.current = null
+    }
+  }, [])
+
+  useEffect(() => () => {
+    stopTtsPlayback()
+  }, [stopTtsPlayback])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -117,12 +152,13 @@ export default function JohnnyAssistantDrawer() {
   }, [isOpen])
 
   useEffect(() => {
-    if (!isOpen || initialising || loading) return
+    setVoicePrefs(readLiveWorkoutVoicePrefs())
+  }, [isOpen])
 
-    const starterPrompt = consumeStarterPrompt()
-    if (!starterPrompt) return
-    sendPrompt(starterPrompt)
-  }, [isOpen, initialising, loading, consumeStarterPrompt])
+  useEffect(() => {
+    if (isOpen || !playbackSupported) return
+    stopTtsPlayback()
+  }, [isOpen, playbackSupported, stopTtsPlayback])
 
   useEffect(() => {
     if (!isOpen) return undefined
@@ -197,7 +233,7 @@ export default function JohnnyAssistantDrawer() {
     }
   }
 
-  async function sendPrompt(message, options = {}) {
+  const sendPrompt = useCallback(async (message, options = {}) => {
     const nextMessage = message.trim()
     if (!nextMessage || loading) return
 
@@ -256,7 +292,67 @@ export default function JohnnyAssistantDrawer() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [chatMode, invalidate, loadSnapshot, loading, location.pathname, navigate, reloadWorkoutSession])
+
+  useEffect(() => {
+    if (!isOpen || initialising || loading) return
+
+    const starterPrompt = consumeStarterPrompt()
+    if (!starterPrompt) return
+    sendPrompt(starterPrompt)
+  }, [isOpen, initialising, loading, consumeStarterPrompt, sendPrompt])
+
+  useEffect(() => {
+    if (!isOpen || initialising || !voicePrefs.assistantAutoSpeak || !playbackSupported) return
+
+    const latestAssistantMessage = [...messages].reverse().find(entry => entry.role === 'assistant')
+    const nextText = String(latestAssistantMessage?.message_text || '').trim()
+    const nextKey = latestAssistantMessage ? `${latestAssistantMessage.created_at || ''}-${nextText}` : ''
+    if (!nextText || !nextKey) return
+
+    if (!spokenMessageKeyRef.current) {
+      spokenMessageKeyRef.current = nextKey
+      return
+    }
+    if (spokenMessageKeyRef.current === nextKey) return
+    spokenMessageKeyRef.current = nextKey
+
+    aiApi.speech(nextText, {
+      voice: voicePrefs.openAiVoice,
+      speed: voicePrefs.rate,
+      format: 'mp3',
+    }).then(blob => {
+      if (!isOpen) return
+      stopTtsPlayback()
+      const objectUrl = window.URL.createObjectURL(blob)
+      const audio = new window.Audio(objectUrl)
+      audio.onended = () => {
+        if (audio.src.startsWith('blob:')) {
+          window.URL.revokeObjectURL(audio.src)
+        }
+        if (ttsAudioRef.current === audio) {
+          ttsAudioRef.current = null
+        }
+      }
+      audio.onerror = () => {
+        if (audio.src.startsWith('blob:')) {
+          window.URL.revokeObjectURL(audio.src)
+        }
+        if (ttsAudioRef.current === audio) {
+          ttsAudioRef.current = null
+        }
+      }
+      ttsAudioRef.current = audio
+      audio.play().catch(() => {
+        if (audio.src.startsWith('blob:')) {
+          window.URL.revokeObjectURL(audio.src)
+        }
+        if (ttsAudioRef.current === audio) {
+          ttsAudioRef.current = null
+        }
+      })
+    }).catch(() => {})
+  }, [initialising, isOpen, messages, playbackSupported, stopTtsPlayback, voicePrefs.assistantAutoSpeak, voicePrefs.openAiVoice, voicePrefs.rate])
 
   async function handleSubmit(event) {
     event?.preventDefault()
@@ -289,6 +385,13 @@ export default function JohnnyAssistantDrawer() {
     try {
       await aiApi.dismissFollowUp(followUpId)
       setFollowUps(current => current.filter(item => item.id !== followUpId))
+      analyticsApi.event('coach_followup_dismissed', {
+        screen: 'ai',
+        context: 'drawer',
+        metadata: {
+          follow_up_id: followUpId,
+        },
+      }).catch(() => {})
     } catch (err) {
       setStatusMessage(err?.message || 'Could not dismiss the follow-up.')
     }
@@ -298,6 +401,14 @@ export default function JohnnyAssistantDrawer() {
     try {
       const data = await aiApi.updateFollowUp(followUpId, { state, due_at: dueAt })
       setFollowUps(Array.isArray(data.follow_ups) ? data.follow_ups : [])
+      analyticsApi.event(`coach_followup_${state}`, {
+        screen: 'ai',
+        context: 'drawer',
+        metadata: {
+          follow_up_id: followUpId,
+          due_at: dueAt,
+        },
+      }).catch(() => {})
     } catch (err) {
       setStatusMessage(err?.message || 'Could not update the follow-up.')
     }
@@ -355,16 +466,16 @@ export default function JohnnyAssistantDrawer() {
             <div className="johnny-drawer-header-main">
               <div>
                 <span className="dashboard-chip ai">Coach</span>
-                <h2>Johnny 5000</h2>
+                <h2>Johnny5k</h2>
                 <p>Ask Johnny for health advice or have him log an entry for you.</p>
               </div>
               <span className="johnny-drawer-header-art" aria-hidden="true">
                 <img src={johnnyDrawerImage} alt="" />
               </span>
             </div>
-            <div className="johnny-drawer-actions">
+            <div className="johnny-drawer-actions johnny-drawer-actions-chat">
               {workoutSession?.session?.id && !workoutSession?.session?.completed ? (
-                <button type="button" className="btn-secondary small johnny-drawer-action-button" title="Exit workout" onClick={handleExitWorkout} disabled={loading || exitingWorkout}>
+                <button type="button" className="btn-secondary small johnny-drawer-action-button johnny-drawer-action-exit" title="Exit workout" onClick={handleExitWorkout} disabled={loading || exitingWorkout}>
                   <AppIcon name="close" />
                   <span>{exitingWorkout ? 'Exiting…' : 'Exit workout'}</span>
                 </button>

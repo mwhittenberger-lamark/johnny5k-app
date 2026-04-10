@@ -13,10 +13,12 @@ class Router {
 		AuthController::register_routes();
 		OnboardingController::register_routes();
 		BodyMetricsController::register_routes();
+		AnalyticsController::register_routes();
 		DashboardController::register_routes();
 		TrainingController::register_routes();
 		WorkoutController::register_routes();
 		AiController::register_routes();
+		PushController::register_routes();
 		AdminApiController::register_routes();
 	}
 }

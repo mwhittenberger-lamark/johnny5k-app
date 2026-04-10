@@ -1,7 +1,8 @@
 import { useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { formatUsFriendlyDate } from '../../lib/dateFormat'
-import AppIcon, { normalizeAppIconName } from '../../components/ui/AppIcon'
+import AppIcon from '../../components/ui/AppIcon'
+import { normalizeAppIconName } from '../../components/ui/AppIcon.utils'
 import { useDashboardStore } from '../../store/dashboardStore'
 
 export default function RewardsScreen() {
@@ -11,10 +12,10 @@ export default function RewardsScreen() {
   useEffect(() => {
     loadSnapshot()
     loadAwards()
-  }, [])
+  }, [loadAwards, loadSnapshot])
 
-  const earnedAwards = Array.isArray(awards?.earned) ? awards.earned : []
-  const allAwards = Array.isArray(awards?.all_awards) ? awards.all_awards : []
+  const earnedAwards = useMemo(() => (Array.isArray(awards?.earned) ? awards.earned : []), [awards])
+  const allAwards = useMemo(() => (Array.isArray(awards?.all_awards) ? awards.all_awards : []), [awards])
   const earnedCodes = useMemo(() => new Set(earnedAwards.map(award => award.code)), [earnedAwards])
   const lockedAwards = useMemo(
     () => allAwards.filter(award => !earnedCodes.has(award.code)).sort((left, right) => Number(right.points ?? 0) - Number(left.points ?? 0)),

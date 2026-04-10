@@ -1,6 +1,9 @@
 import { lazy, Suspense, useEffect, useLayoutEffect, useState } from 'react'
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
-import { onboardingApi } from './api/client'
+import { authApi } from './api/modules/auth'
+import { onboardingApi } from './api/modules/onboarding'
+import { pushApi } from './api/modules/push'
+import { getCurrentPushSubscription, serializeSubscription } from './lib/pushNotifications'
 import { useAuthStore } from './store/authStore'
 import AppShell from './components/layout/AppShell'
 import { applyColorScheme, getStoredColorScheme, setAvailableColorSchemes } from './lib/theme'
@@ -43,8 +46,11 @@ function RequireAdmin({ children }) {
 }
 
 export default function App() {
-  const { nonce, isAuthenticated, revalidate } = useAuthStore()
-  const [ready, setReady] = useState(false)
+  const { nonce, isAuthenticated, revalidate, setAppImages } = useAuthStore()
+  const requiresBootstrap = Boolean(nonce || isAuthenticated)
+  const [authBootstrapComplete, setAuthBootstrapComplete] = useState(() => !requiresBootstrap)
+  const [publicConfigComplete, setPublicConfigComplete] = useState(false)
+  const ready = publicConfigComplete && (!requiresBootstrap || authBootstrapComplete)
 
   useEffect(() => {
     applyColorScheme(getStoredColorScheme())
@@ -53,28 +59,56 @@ export default function App() {
   useEffect(() => {
     let active = true
 
-    if (nonce || isAuthenticated) {
+    authApi.publicConfig()
+      .then(data => {
+        if (!active) return
+        setAppImages(data?.app_images)
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (active) setPublicConfigComplete(true)
+      })
+
+    return () => { active = false }
+  }, [setAppImages])
+
+  useEffect(() => {
+    let active = true
+
+    if (requiresBootstrap) {
       revalidate()
         .then(valid => {
           if (!valid || !active) return null
           return onboardingApi.getState()
             .then(data => {
               if (!active) return
+              setAppImages(data?.app_images)
               setAvailableColorSchemes(data?.color_schemes)
               applyColorScheme(data?.prefs?.exercise_preferences_json?.color_scheme)
             })
             .catch(() => {})
         })
         .finally(() => {
-          if (active) setReady(true)
+          if (active) setAuthBootstrapComplete(true)
         })
-    } else {
-      applyColorScheme(getStoredColorScheme())
-      setReady(true)
     }
 
     return () => { active = false }
-  }, [nonce, isAuthenticated, revalidate])
+  }, [requiresBootstrap, revalidate, setAppImages])
+
+  useEffect(() => {
+    if (!ready || !isAuthenticated) return
+
+    getCurrentPushSubscription()
+      .then(subscription => {
+        const payload = serializeSubscription(subscription)
+        if (payload?.endpoint) {
+          return pushApi.subscribe(payload).catch(() => null)
+        }
+        return null
+      })
+      .catch(() => {})
+  }, [ready, isAuthenticated])
 
   if (!ready) return <div className="splash">Loading...</div>
 

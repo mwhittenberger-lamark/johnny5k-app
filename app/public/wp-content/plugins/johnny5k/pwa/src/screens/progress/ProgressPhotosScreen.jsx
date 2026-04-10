@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { dashboardApi } from '../../api/client'
+import { dashboardApi } from '../../api/modules/dashboard'
 import { formatUsShortDate } from '../../lib/dateFormat'
 
 const ANGLES = ['front', 'side', 'back']
@@ -23,6 +23,7 @@ export default function ProgressPhotosScreen() {
   const [baselineSavingAngle, setBaselineSavingAngle] = useState('')
   const [deletingId, setDeletingId] = useState(0)
   const [error, setError] = useState('')
+  const [notice, setNotice] = useState(null)
   const [comparison, setComparison] = useState(null)
   const [selectedPair, setSelectedPair] = useState(null)
   const [openTimelineDates, setOpenTimelineDates] = useState({})
@@ -141,6 +142,17 @@ export default function ProgressPhotosScreen() {
   const comparisonFirstSrc = comparison ? photoSrcs[comparison.first_photo?.id] ?? '' : ''
   const comparisonSecondSrc = comparison ? photoSrcs[comparison.second_photo?.id] ?? '' : ''
   const showComparisonCard = comparing || Boolean(comparison)
+  const uploadButtonLabel = uploading ? 'Uploading…' : `Upload ${titleCase(angle)} Photo`
+
+  useEffect(() => {
+    if (!notice?.id) return undefined
+
+    const timer = window.setTimeout(() => {
+      setNotice(null)
+    }, 4500)
+
+    return () => window.clearTimeout(timer)
+  }, [notice])
 
   useEffect(() => {
     if (!timelineDateGroups.length) {
@@ -184,6 +196,12 @@ export default function ProgressPhotosScreen() {
       await dashboardApi.photoUpload(form)
       await loadPhotos()
       uploadRef.current.value = ''
+      setNotice({
+        id: `upload-${Date.now()}`,
+        tone: 'success',
+        title: 'Photo added',
+        message: `${titleCase(angle)} photo saved for ${formatPhotoDate(date)}.`,
+      })
     } catch (err) {
       setError(err.message)
     } finally {
@@ -201,6 +219,12 @@ export default function ProgressPhotosScreen() {
     try {
       const data = await dashboardApi.comparePhotos(firstPhoto.id, secondPhoto.id)
       setComparison(data)
+      setNotice({
+        id: `compare-${Date.now()}`,
+        tone: 'info',
+        title: 'Comparison ready',
+        message: `Showing ${label.toLowerCase()}.`,
+      })
     } catch (err) {
       setError(err.message)
     } finally {
@@ -222,6 +246,12 @@ export default function ProgressPhotosScreen() {
         setComparison(null)
         setSelectedPair(null)
       }
+      setNotice({
+        id: `baseline-${Date.now()}`,
+        tone: 'success',
+        title: 'Baseline updated',
+        message: `${titleCase(photo.angle)} baseline set to ${formatPhotoDate(photo.photo_date)}.`,
+      })
     } catch (err) {
       setError(err.message)
     } finally {
@@ -242,6 +272,12 @@ export default function ProgressPhotosScreen() {
         setSelectedPair(null)
       }
       await loadPhotos()
+      setNotice({
+        id: `remove-${Date.now()}`,
+        tone: 'info',
+        title: 'Photo removed',
+        message: `${titleCase(photo.angle)} photo from ${formatPhotoDate(photo.photo_date)} was deleted.`,
+      })
     } catch (err) {
       setError(err.message)
     } finally {
@@ -265,7 +301,29 @@ export default function ProgressPhotosScreen() {
         </div>
       </header>
 
+      {notice ? (
+        <div className={`app-toast ${notice.tone || 'info'}`} role="status" aria-live="polite">
+          <div className="app-toast-copy">
+            {notice.title ? <p className="app-toast-title">{notice.title}</p> : null}
+            {notice.message ? <p className="app-toast-message">{notice.message}</p> : null}
+          </div>
+          <button type="button" className="app-toast-dismiss" onClick={() => setNotice(null)} aria-label="Dismiss toast">×</button>
+        </div>
+      ) : null}
+
       {error ? <p className="error">{error}</p> : null}
+
+      <section className="dash-card progress-howto-card">
+        <div className="dashboard-card-head">
+          <span className="dashboard-chip subtle">How it works</span>
+          <span className="dashboard-card-kicker">3 quick steps</span>
+        </div>
+        <ol className="progress-howto-list">
+          <li>Upload a front or side photo with the correct date.</li>
+          <li>Set a baseline in Timeline for each angle you want to track.</li>
+          <li>Run a comparison from the angle cards to get Johnny&apos;s review.</li>
+        </ol>
+      </section>
 
       <section className="dash-card progress-upload-card">
         <div className="progress-toolbar">
@@ -278,11 +336,11 @@ export default function ProgressPhotosScreen() {
             <input type="date" value={date} onChange={event => setDate(event.target.value)} />
           </label>
           <label className="btn-primary progress-upload-button">
-            {uploading ? 'Uploading…' : 'Upload photo'}
+            {uploadButtonLabel}
             <input ref={uploadRef} type="file" accept="image/*" capture="environment" onChange={handleUpload} hidden disabled={uploading} />
           </label>
         </div>
-        <p className="progress-upload-note">Front and side photos are recommended. Back photos are optional.</p>
+        <p className="progress-upload-note">Front and side photos are recommended. Back photos are optional. Upload starts right after you pick a file.</p>
       </section>
 
       <section className="dashboard-section">
@@ -303,7 +361,7 @@ export default function ProgressPhotosScreen() {
               </div>
               <div className="progress-angle-actions">
                 <button
-                  className="btn-secondary"
+                  className="btn-primary"
                   disabled={comparing || !group.latest || !group.baseline || group.latest.id === group.baseline.id}
                   onClick={() => runCompare(group.baseline, group.latest, `${titleCase(group.angle)} baseline vs latest`)}
                 >
@@ -317,6 +375,8 @@ export default function ProgressPhotosScreen() {
                   Compare previous vs latest
                 </button>
               </div>
+              {!group.baseline ? <p className="progress-angle-tip">Set a baseline in Timeline first.</p> : null}
+              {group.baseline && group.latest && group.latest.id === group.baseline.id ? <p className="progress-angle-tip">Add a newer {group.angle} photo to compare against your baseline.</p> : null}
             </article>
           ))}
           {!compareGroups.length ? <p className="empty-state">No progress photos yet. Upload a front or side photo to start your timeline.</p> : null}

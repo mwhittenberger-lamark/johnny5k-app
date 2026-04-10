@@ -6,7 +6,7 @@ defined( 'ABSPATH' ) || exit;
 use Johnny5k\Services\AiService;
 
 /**
- * Admin sub-page: Johnny 5000 Personality Editor
+ * Admin sub-page: Johnny5k Personality Editor
  *
  * Editable fields for the persona. On save the compiled system prompt is
  * regenerated and stored in `jf_johnny_system_prompt` (wp_options).
@@ -54,7 +54,7 @@ class PersonalityEditor {
 		$persona = array_merge( $defaults, $persona );
 
 		echo '<div class="wrap" id="jf-personality-editor">';
-		echo '<h1>Johnny 5000 Personality Editor</h1>';
+		echo '<h1>Johnny5k Personality Editor</h1>';
 		echo '<p style="max-width:860px">These settings shape Johnny\'s identity and voice inside the shared behavioral contract. The contract still enforces pattern-noticing, data-aware coaching, direct next steps, and non-corporate language across chat and SMS.</p>';
 		echo '<div style="display:grid;grid-template-columns:1fr 1fr;gap:24px">';
 

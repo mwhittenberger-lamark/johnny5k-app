@@ -6,6 +6,8 @@ defined( 'ABSPATH' ) || exit;
 use Johnny5k\Auth\InviteCodes;
 use Johnny5k\Services\CalorieEngine;
 use Johnny5k\Services\AwardEngine;
+use Johnny5k\Services\BehaviorAnalyticsService;
+use Johnny5k\Services\PushService;
 
 /**
  * REST Controller: Authentication
@@ -47,6 +49,12 @@ class AuthController {
 			'methods'             => 'GET',
 			'callback'            => [ __CLASS__, 'validate_token' ],
 			'permission_callback' => [ __CLASS__, 'require_auth' ],
+		] );
+
+		register_rest_route( $ns, '/auth/public-config', [
+			'methods'             => 'GET',
+			'callback'            => [ __CLASS__, 'public_config' ],
+			'permission_callback' => '__return_true',
 		] );
 
 		register_rest_route( $ns, '/auth/logout', [
@@ -93,6 +101,14 @@ class AuthController {
 		}
 
 		wp_set_current_user( $user->ID );
+		BehaviorAnalyticsService::track(
+			(int) $user->ID,
+			'auth_login',
+			'auth',
+			'login',
+			null,
+			[ 'method' => 'password' ]
+		);
 
 		return self::auth_response( $user, 200, [ 'valid' => true ] );
 	}
@@ -155,6 +171,14 @@ class AuthController {
 		// Mark first login for awards
 		update_user_meta( $user_id, 'jf_first_login_done', 1 );
 		AwardEngine::grant( $user_id, 'first_login' );
+		BehaviorAnalyticsService::track(
+			$user_id,
+			'auth_register',
+			'auth',
+			'register',
+			null,
+			[ 'invite_code_used' => true ]
+		);
 
 		$user = get_user_by( 'id', $user_id );
 		self::start_session( $user );
@@ -167,6 +191,13 @@ class AuthController {
 	public static function validate_token( \WP_REST_Request $req ): \WP_REST_Response {
 		$user = wp_get_current_user();
 		return self::auth_response( $user, 200, [ 'valid' => true ] );
+	}
+
+	public static function public_config( \WP_REST_Request $req ): \WP_REST_Response {
+		return new \WP_REST_Response( [
+			'app_images' => AdminApiController::get_app_images_config(),
+			'push'       => PushService::get_public_config(),
+		], 200 );
 	}
 
 	// ── POST /auth/logout ───────────────────────────────────────────────────────
@@ -264,6 +295,8 @@ class AuthController {
 			'email'               => $user->user_email,
 			'onboarding_complete' => (bool) self::get_profile_field( $user->ID, 'onboarding_complete' ),
 			'is_admin'            => user_can( $user, 'manage_options' ),
+			'app_images'          => AdminApiController::get_app_images_config(),
+			'push'                => PushService::get_public_config(),
 			'nonce'               => wp_create_nonce( 'wp_rest' ),
 		], $extra ), $status );
 	}

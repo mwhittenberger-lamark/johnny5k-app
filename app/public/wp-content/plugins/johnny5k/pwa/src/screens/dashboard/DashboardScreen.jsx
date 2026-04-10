@@ -1,56 +1,36 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { bodyApi, dashboardApi, nutritionApi, onboardingApi } from '../../api/client'
+import AppIcon from '../../components/ui/AppIcon'
 import { formatUsFriendlyDate, formatUsShortDate, formatUsWeekday } from '../../lib/dateFormat'
-import AppIcon, { normalizeAppIconName } from '../../components/ui/AppIcon'
+import { normalizeAppIconName } from '../../components/ui/AppIcon.utils'
 import { useDashboardStore } from '../../store/dashboardStore'
 import { useAuthStore } from '../../store/authStore'
 import { useJohnnyAssistantStore } from '../../store/johnnyAssistantStore'
-
-const COACH_PROMPTS_STORAGE_KEY = 'johnny5k.dashboard.coachPromptsOpen'
-const DASHBOARD_LAYOUT_STORAGE_KEY = 'johnny5k.dashboard.layout.v2'
-const DASHBOARD_CUSTOMIZE_GROUPS = [
-  {
-    id: 'primary_main',
-    label: 'Today focus',
-    description: 'Best next move, nutrition, and recovery cards.',
-  },
-  {
-    id: 'primary_side',
-    label: 'Coach',
-    description: 'Johnny review and prompt cards.',
-  },
-  {
-    id: 'quick_actions',
-    label: 'Do this now',
-    description: 'Fast one-thumb action shortcuts.',
-  },
-  {
-    id: 'snapshot_stats',
-    label: 'Today snapshot',
-    description: 'Steps, sleep, weight, and week rhythm stat cards.',
-  },
-  {
-    id: 'snapshot_detail',
-    label: 'Snapshot extras',
-    description: 'Optional cards that extend your body and trend view.',
-  },
-  {
-    id: 'training_main',
-    label: 'Training today',
-    description: 'The main training status card for today.',
-  },
-  {
-    id: 'training_side',
-    label: 'Training extras',
-    description: 'Tomorrow preview and momentum cards.',
-  },
-  {
-    id: 'story',
-    label: 'Inspirational thoughts',
-    description: 'Rotating coaching thoughts and editorial card.',
-  },
-]
+import {
+  BestNextMoveCard,
+  CoachReviewCard,
+  DashboardIconBadge,
+  GroceryGapSpotlightCard,
+  JohnnyImageGalleryCard,
+  MealRhythmCard,
+  MomentumDashboardCard,
+  ProteinRunwayCard,
+  QuickActionCard,
+  RealSuccessStoriesCard,
+  RecoveryLoopCard,
+  ReminderQueueCard,
+  SleepDebtCard,
+  StatCard,
+  StepForecastCard,
+  StoryCard,
+  TodayIntakeCard,
+  TomorrowPreviewCard,
+  TrainingTodayCard,
+  WeekRhythmDrawer,
+  WeeklyTrendCard,
+} from './components/DashboardCards'
+import { useDashboardPreferences } from './hooks/useDashboardPreferences'
+import { useDashboardSupplementalData } from './hooks/useDashboardSupplementalData'
 const DASHBOARD_CARD_DEFS = [
   { id: 'best_next_move', bucket: 'primary_main', label: 'Best next move', description: 'The top recommended action based on your board.', iconName: 'coach', iconTone: 'teal' },
   { id: 'today_intake', bucket: 'primary_main', label: 'Today\'s intake', description: 'Calories, macros, and meal count for today.', iconName: 'nutrition', iconTone: 'teal' },
@@ -78,8 +58,53 @@ const DASHBOARD_CARD_DEFS = [
   { id: 'grocery_gap_spotlight', bucket: 'snapshot_detail', label: 'Grocery gap spotlight', description: 'A short list of the missing staples or recipe items most worth fixing next.', optional: true, iconName: 'award', iconTone: 'green' },
   { id: 'reminder_queue', bucket: 'snapshot_detail', label: 'Reminder queue', description: 'The next scheduled Johnny reminder and a quick jump into reminder management.', optional: true, iconName: 'profile', iconTone: 'pink' },
   { id: 'weekly_trend', bucket: 'snapshot_detail', label: 'Weekly trend', description: 'The 7-day weight trend card from your profile screen.', optional: true, iconName: 'progress', iconTone: 'teal' },
+  { id: 'johnny_image_gallery', bucket: 'snapshot_detail', label: 'Johnny image gallery', description: 'Recent generated Johnny + You images and favorites for Live Workout mode.', optional: true, iconName: 'photos', iconTone: 'pink' },
 ]
 const DASHBOARD_CARD_DEF_MAP = new Map(DASHBOARD_CARD_DEFS.map(card => [card.id, card]))
+const DASHBOARD_BUCKET_META = {
+  primary_main: {
+    label: 'Today focus',
+    description: 'Best next move, nutrition, and recovery cards.',
+  },
+  primary_side: {
+    label: 'Coach',
+    description: 'Johnny review and follow-up prompts.',
+  },
+  quick_actions: {
+    label: 'Do this now',
+    description: 'Fast shortcuts for the most common actions.',
+  },
+  snapshot_stats: {
+    label: 'Today snapshot',
+    description: 'Core daily stats like steps, sleep, and weight.',
+  },
+  snapshot_detail: {
+    label: 'Snapshot extras',
+    description: 'Optional context cards that extend the body view.',
+  },
+  training_main: {
+    label: 'Training today',
+    description: 'Primary training status for the day.',
+  },
+  training_side: {
+    label: 'Training extras',
+    description: 'Tomorrow preview and momentum support cards.',
+  },
+  story: {
+    label: 'Inspirational thoughts',
+    description: 'Story and inspiration cards.',
+  },
+}
+const DASHBOARD_BUCKET_ORDER = [
+  'primary_main',
+  'primary_side',
+  'quick_actions',
+  'snapshot_stats',
+  'snapshot_detail',
+  'training_main',
+  'training_side',
+  'story',
+]
 
 export default function DashboardScreen() {
   const {
@@ -96,59 +121,35 @@ export default function DashboardScreen() {
   const navigate = useNavigate()
   const location = useLocation()
   const openDrawer = useJohnnyAssistantStore(state => state.openDrawer)
-  const [noticeDismissed, setNoticeDismissed] = useState(false)
-  const [actionNoticeDismissed, setActionNoticeDismissed] = useState(false)
+  const targetsUpdated = location.state?.targetsUpdated
+  const johnnyActionNotice = location.state?.johnnyActionNotice
+  const targetsNoticeKey = JSON.stringify(targetsUpdated || null)
+  const actionNoticeKey = String(johnnyActionNotice || '')
+  const [dismissedTargetsNoticeKey, setDismissedTargetsNoticeKey] = useState('')
+  const [dismissedActionNoticeKey, setDismissedActionNoticeKey] = useState('')
   const [weekRhythmOpen, setWeekRhythmOpen] = useState(false)
   const [thoughtWindowKey, setThoughtWindowKey] = useState(() => getInspirationalThoughtWindow().key)
   const [storyIndex, setStoryIndex] = useState(0)
-  const [coachPromptsOpen, setCoachPromptsOpen] = useState(() => readCoachPromptsPreference())
-  const [customizeOpen, setCustomizeOpen] = useState(false)
-  const [dashboardLayout, setDashboardLayout] = useState(() => getDefaultDashboardLayout())
-  const [dashboardLayoutReady, setDashboardLayoutReady] = useState(false)
-  const [weeklyWeights, setWeeklyWeights] = useState([])
-  const [groceryGap, setGroceryGap] = useState(null)
-  const [smsReminders, setSmsReminders] = useState({ timezone: '', scheduled: [] })
-  const [realSuccessStoryData, setRealSuccessStoryData] = useState(null)
-  const [realSuccessStoryLoading, setRealSuccessStoryLoading] = useState(false)
-  const [realSuccessStoryError, setRealSuccessStoryError] = useState('')
   const email = useAuthStore(state => state.email)
-
-  useEffect(() => {
-    loadSnapshot()
-    loadAwards()
-    bodyApi.getWeight(7)
-      .then(rows => setWeeklyWeights(Array.isArray(rows) ? rows.slice(0, 7).reverse() : []))
-      .catch(() => {})
-    nutritionApi.getGroceryGap()
-      .then(data => setGroceryGap(data || null))
-      .catch(() => {})
-    onboardingApi.getSmsReminders()
-      .then(data => {
-        setSmsReminders({
-          timezone: data?.timezone ?? '',
-          scheduled: Array.isArray(data?.scheduled) ? data.scheduled : [],
-        })
-      })
-      .catch(() => {})
-    setRealSuccessStoryLoading(true)
-    dashboardApi.realSuccessStory()
-      .then(data => {
-        setRealSuccessStoryData(data || null)
-        setRealSuccessStoryError('')
-      })
-      .catch(error => {
-        setRealSuccessStoryError(error?.message || 'Could not load inspiration right now.')
-      })
-      .finally(() => setRealSuccessStoryLoading(false))
-  }, [])
-
-  useEffect(() => {
-    setNoticeDismissed(false)
-  }, [location.state?.targetsUpdated])
-
-  useEffect(() => {
-    setActionNoticeDismissed(false)
-  }, [location.state?.johnnyActionNotice])
+  const {
+    coachPromptsOpen,
+    customizeOpen,
+    dashboardLayout,
+    resetDashboardLayout,
+    setCoachPromptsOpen,
+    setCustomizeOpen,
+    setDashboardLayout,
+  } = useDashboardPreferences({ email, cardDefs: DASHBOARD_CARD_DEFS })
+  const {
+    groceryGap,
+    generatedImageGallery,
+    realSuccessStoryData,
+    realSuccessStoryError,
+    realSuccessStoryLoading,
+    refreshRealSuccessStory,
+    smsReminders,
+    weeklyWeights,
+  } = useDashboardSupplementalData({ loadSnapshot, loadAwards })
 
   const reviewTrigger = useMemo(() => buildDashboardReviewTrigger(snapshot), [snapshot])
 
@@ -191,13 +192,9 @@ export default function DashboardScreen() {
   const coachMetrics = useMemo(() => buildCoachMetricGrid(johnnyReview.metrics), [johnnyReview.metrics])
   const coachNextStepMeta = useMemo(() => buildCoachNextStepMeta(s, johnnyReview.nextStepMeta), [johnnyReview.nextStepMeta, s])
   const coachBackupStep = useMemo(() => buildCoachBackupStep(s, johnnyReview.backupStep), [johnnyReview.backupStep, s])
-  const coachBackupAction = useMemo(() => buildCoachBackupAction(s), [s])
+  const coachBackupAction = useMemo(() => buildCoachBackupAction(s, coachBackupStep), [coachBackupStep, s])
   const coachStarterPrompt = useMemo(() => buildCoachStarterPrompt(johnnyReview, coachNextStepMeta), [coachNextStepMeta, johnnyReview])
   const coachFreshness = useMemo(() => buildCoachFreshnessLabel(johnnyReview.generatedAt, johnnyReview.cached), [johnnyReview.cached, johnnyReview.generatedAt])
-
-  useEffect(() => {
-    setStoryIndex(0)
-  }, [inspirationalStories.length, thoughtWindowKey])
 
   useEffect(() => {
     function scheduleThoughtWindowRefresh() {
@@ -214,48 +211,11 @@ export default function DashboardScreen() {
     return () => window.clearTimeout(timeoutId)
   }, [thoughtWindowKey])
 
-  useEffect(() => {
-    writeCoachPromptsPreference(coachPromptsOpen)
-  }, [coachPromptsOpen])
-
-  useEffect(() => {
-    setDashboardLayout(readDashboardLayoutPreference(email))
-    setDashboardLayoutReady(true)
-  }, [email])
-
-  useEffect(() => {
-    if (!dashboardLayoutReady) return
-    writeDashboardLayoutPreference(email, dashboardLayout)
-  }, [dashboardLayout, dashboardLayoutReady, email])
-
-  useEffect(() => {
-    if (!customizeOpen) return undefined
-
-    const previousOverflow = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-
-    function handleKeyDown(event) {
-      if (event.key === 'Escape') {
-        setCustomizeOpen(false)
-      }
-    }
-
-    window.addEventListener('keydown', handleKeyDown)
-
-    return () => {
-      document.body.style.overflow = previousOverflow
-      window.removeEventListener('keydown', handleKeyDown)
-    }
-  }, [customizeOpen])
-
   if (loading && !snapshot) return <div className="screen-loading">Loading…</div>
 
   const goal = s?.goal
   const nt   = s?.nutrition_totals
   const tomorrow = s?.tomorrow_preview
-  const targetsUpdated = location.state?.targetsUpdated
-  const johnnyActionNotice = location.state?.johnnyActionNotice
-
   const calPct = goal && nt ? Math.round((nt.calories / goal.target_calories) * 100) : 0
   const proPct = goal && nt ? Math.round((nt.protein_g / goal.target_protein_g) * 100) : 0
   const carbPct = goal && nt ? Math.round((nt.carbs_g / goal.target_carbs_g) * 100) : 0
@@ -265,10 +225,11 @@ export default function DashboardScreen() {
   const greetingName = getGreetingName(email)
   const dateLabel = formatFriendlyDate(s?.date)
   const coachLine = buildCoachLine(s)
-  const tomorrowRecommendation = buildTomorrowRecommendation(s)
+  const pendingFollowUps = Array.isArray(s?.pending_follow_ups) ? s.pending_follow_ups : []
+  const followUpOverview = s?.follow_up_overview ?? null
   const weeklyScoreLabel = (s?.score_7d ?? 0) >= 80 ? 'Momentum is holding' : (s?.score_7d ?? 0) >= 40 ? 'Rhythm is building' : 'Still easy to steady'
   const mealCount = countLoggedMealsByType(s?.meals_today)
-  const recoverySummary = s?.recovery_summary
+  const recoverySummary = s?.recovery_summary || {}
   const recoveryFlagItems = Array.isArray(recoverySummary?.active_flag_items) ? recoverySummary.active_flag_items : []
   const recoverySleepLabel = buildRecoverySleepLabel(recoverySummary)
 
@@ -294,24 +255,23 @@ export default function DashboardScreen() {
     ])
   }
 
-  async function handleRefreshRealSuccessStory() {
-    setRealSuccessStoryLoading(true)
-    try {
-      const data = await dashboardApi.realSuccessStory(true)
-      setRealSuccessStoryData(data || null)
-      setRealSuccessStoryError('')
-    } catch (error) {
-      setRealSuccessStoryError(error?.message || 'Could not refresh inspiration right now.')
-    } finally {
-      setRealSuccessStoryLoading(false)
-    }
-  }
+  function moveDashboardCard(cardId, bucket, direction, visibleBucketIds = []) {
+    const cardDef = DASHBOARD_CARD_DEF_MAP.get(cardId)
 
-  function moveDashboardCard(cardId, bucket, direction) {
     setDashboardLayout(current => {
+      if (cardDef?.optional) {
+        const nextLayout = moveOptionalDashboardCardAnywhere(current, cardId, direction, visibleBucketIds)
+        if (nextLayout !== current) {
+          return nextLayout
+        }
+      }
+
+      const hasVisibleBucketOrder = Array.isArray(visibleBucketIds) && visibleBucketIds.length > 1
       return {
         ...current,
-        order: moveDashboardCardsWithinBucket(current.order, cardId, bucket, direction),
+        order: hasVisibleBucketOrder
+          ? moveDashboardCardsWithinVisibleBucket(current.order, cardId, direction, visibleBucketIds)
+          : moveDashboardCardsWithinBucket(current.order, cardId, bucket, direction, current),
       }
     })
   }
@@ -336,222 +296,62 @@ export default function DashboardScreen() {
     }))
   }
 
-  function resetDashboardLayout() {
-    setDashboardLayout(getDefaultDashboardLayout())
-  }
+  const recoveryWindowLabel = buildRecoveryWindowLabel(recoverySummary)
+  const tomorrowTitle = `${tomorrow?.weekday_label || 'Tomorrow'}${tomorrow?.planned_day_type ? ` • ${formatDayType(tomorrow.planned_day_type)}` : ' • Recovery'}`
+  const tomorrowBody = tomorrow?.planned_day_type
+    ? `Next up: ${formatDayType(tomorrow.planned_day_type).toLowerCase()} focus${tomorrow?.inferred ? ' based on your saved weekly split.' : '.'}`
+    : 'No training preview is queued yet, so tomorrow is currently open.'
+  const tomorrowMetaPrimary = tomorrow?.time_tier ? `${tomorrow.time_tier} session` : 'medium session'
+  const tomorrowMetaSecondary = tomorrow?.date ? formatFriendlyDate(tomorrow.date) : 'Tomorrow'
 
   const dashboardCards = [
-    makeDashboardCard('best_next_move', (
-      <button className="dash-card dashboard-card-button dashboard-best-next-card" type="button" onClick={() => handleDashboardAction(bestNextMove)}>
-        <div className="dashboard-card-head">
-          <span className="dashboard-chip ai">Best next move</span>
-          <span className="dashboard-card-kicker">Right now</span>
-        </div>
-        <h2>{bestNextMove.title}</h2>
-        <p>{bestNextMove.body}</p>
-        <div className="dashboard-best-next-meta">
-          <span>{bestNextMove.context}</span>
-          <span>{bestNextMove.actionLabel}</span>
-        </div>
-      </button>
-    )),
+    makeDashboardCard('best_next_move', <BestNextMoveCard model={bestNextMove} onAction={handleDashboardAction} />),
     makeDashboardCard('today_intake', (
-      <button className="dash-card dashboard-card-button dashboard-hero-card" type="button" onClick={() => navigate('/nutrition')}>
-        <div className="dashboard-card-head">
-          <span className="dashboard-chip">Today&apos;s intake</span>
-          <span className="dashboard-card-kicker">{mealCount} meal{mealCount === 1 ? '' : 's'} logged</span>
-        </div>
-        <h2>{caloriesRemaining != null ? `${caloriesRemaining} cal left` : 'Nutrition ready'}</h2>
-        <p>{proteinTargetCopy(nt, goal, mealCount)}</p>
-        <div className="dashboard-hero-progress-row">
-          <MacroPill label="Calories" current={nt?.calories} target={goal?.target_calories} pct={calPct} compact />
-          <MacroPill label="Protein" current={nt?.protein_g} target={goal?.target_protein_g} pct={proPct} compact suffix="g" />
-          <MacroPill label="Carbs" current={nt?.carbs_g} target={goal?.target_carbs_g} pct={carbPct} compact suffix="g" />
-          <MacroPill label="Fat" current={nt?.fat_g} target={goal?.target_fat_g} pct={fatPct} compact suffix="g" />
-        </div>
-        <span className="dashboard-card-cta">Open nutrition</span>
-      </button>
-    )),
-    makeDashboardCard('recovery_loop', recoverySummary ? (
-      <section className="dash-card dashboard-recovery-summary-card">
-        <div className="dashboard-card-head">
-          <span className="dashboard-chip subtle">Recovery Loop</span>
-          <span className={`dashboard-chip ${recoverySummary.mode === 'normal' ? 'success' : 'subtle'}`}>{recoverySummary.mode}</span>
-        </div>
-        <h3>{recoverySummary.headline}</h3>
-        <div className="dashboard-recovery-summary-grid">
-          <div>
-            <strong>{recoverySummary.last_sleep_is_recent ? `${recoverySummary.last_sleep_hours || '—'}h` : '—'}</strong>
-            <span>{recoverySleepLabel}</span>
-          </div>
-          <div>
-            <strong>{recoverySummary.avg_sleep_3d || '—'}h</strong>
-            <span>{buildRecoveryWindowLabel(recoverySummary)}</span>
-          </div>
-          <div>
-            <strong>{recoverySummary.active_flag_load || 0}</strong>
-            <span>Weighted flag load</span>
-          </div>
-        </div>
-        <p className="dashboard-recovery-summary-note">Training tier: <strong>{recoverySummary.recommended_time_tier}</strong></p>
-        {recoverySummary.why_summary ? (
-          <p className="dashboard-recovery-summary-note">Why: <strong>{recoverySummary.why_summary}</strong></p>
-        ) : null}
-        {recoverySummary.trend_summary ? (
-          <p className="dashboard-recovery-summary-note">Trend: <strong>{recoverySummary.trend_summary}</strong></p>
-        ) : null}
-        {Array.isArray(recoverySummary.reason_items) && recoverySummary.reason_items.length ? (
-          <div className="dashboard-johnny-metric-row">
-            {recoverySummary.reason_items.map(reason => (
-              <span key={reason} className="dashboard-chip subtle dashboard-johnny-metric">{reason}</span>
-            ))}
-          </div>
-        ) : null}
-        {recoveryFlagItems.length ? (
-          <div className="dashboard-johnny-metric-row">
-            {recoveryFlagItems.slice(0, 3).map(flag => (
-              <span key={flag.id || `${flag.label}-${flag.severity}`} className="dashboard-chip subtle dashboard-johnny-metric">
-                {flag.label}{flag.severity ? ` • ${flag.severity}` : ''}
-              </span>
-            ))}
-          </div>
-        ) : (
-          <p className="dashboard-recovery-summary-note">No active flags right now.</p>
-        )}
-        <div className="dashboard-recovery-action-row">
-          <button className="btn-outline small" type="button" onClick={() => navigate('/body')}>
-            Open recovery
-          </button>
-          <button className="btn-primary small" type="button" onClick={handleRecoveryQuickAction}>
-            {recoverySummary?.recommended_action?.label || 'Take action'}
-          </button>
-        </div>
-      </section>
-    ) : null),
-    makeDashboardCard('protein_runway', (
-      <ProteinRunwayCard
-        model={proteinRunway}
-        onOpenNutrition={() => navigate('/nutrition')}
-        onAskJohnny={prompt => openDrawer(prompt)}
-      />
-    )),
-    makeDashboardCard('meal_rhythm', (
-      <MealRhythmCard
-        model={mealRhythm}
+      <TodayIntakeCard
+        caloriesRemaining={caloriesRemaining}
+        mealCount={mealCount}
+        nt={nt}
+        goal={goal}
+        calPct={calPct}
+        proPct={proPct}
+        carbPct={carbPct}
+        fatPct={fatPct}
+        body={proteinTargetCopy(nt, goal, mealCount)}
         onOpenNutrition={() => navigate('/nutrition')}
       />
     )),
+    makeDashboardCard('recovery_loop', (
+      <RecoveryLoopCard
+        recoverySummary={recoverySummary}
+        recoverySleepLabel={recoverySleepLabel}
+        recoveryWindowLabel={recoveryWindowLabel}
+        recoveryFlagItems={recoveryFlagItems}
+        onOpenRecovery={() => navigate('/body')}
+        onQuickAction={handleRecoveryQuickAction}
+      />
+    )),
+    makeDashboardCard('protein_runway', <ProteinRunwayCard model={proteinRunway} onOpenNutrition={() => navigate('/nutrition')} onAskJohnny={openDrawer} />),
+    makeDashboardCard('meal_rhythm', <MealRhythmCard model={mealRhythm} onOpenNutrition={() => navigate('/nutrition')} />),
     makeDashboardCard('coach_review', (
-      <article className="dash-card dashboard-coach-card">
-        <div className="dashboard-card-head">
-          <div className="dashboard-johnny-head-actions">
-            <div className="dashboard-johnny-head-copy">
-              <div className="dashboard-johnny-head-copy">
-                <span className="dashboard-chip ai">Coach</span>
-                <div className="dashboard-johnny-head-stack">
-                  <strong>
-                    <AppIcon name="coach" />
-                    Johnny 5000
-                  </strong>
-                  <span>{coachFreshness.subtitle || (johnnyReviewError ? 'Fallback review from your current board' : 'Review of today\'s board')}</span>
-                </div>
-              </div>
-            </div>
-            <div className="dashboard-johnny-head-meta">
-              <span className={`dashboard-chip ${coachFreshness.cached ? 'subtle' : 'success'} dashboard-johnny-freshness`}>{coachFreshness.badge}</span>
-              <button type="button" className="btn-ghost small dashboard-johnny-refresh" onClick={handleRefreshReview} disabled={johnnyReviewLoading}>
-                {johnnyReviewLoading ? 'Refreshing…' : 'Refresh'}
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div className="dashboard-johnny-zone dashboard-johnny-summary-zone">
-          <h3>{johnnyReview.title}</h3>
-          <p className="dashboard-johnny-message">{johnnyReview.message}</p>
-          <div className="dashboard-johnny-metric-grid">
-            {coachMetrics.map(metric => (
-              <div key={`${metric.label}-${metric.value}`} className="dashboard-johnny-metric-card">
-                <span>{metric.label}</span>
-                <strong>{metric.value}</strong>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="dashboard-johnny-zone dashboard-johnny-action-zone">
-          <div className="dashboard-johnny-next-step">
-            <div className="dashboard-johnny-next-step-icon">
-              <AppIcon name={coachNextStepMeta.icon} />
-            </div>
-            <div className="dashboard-johnny-next-step-copy">
-              <strong>{coachNextStepMeta.label}</strong>
-              <span>{johnnyReview.nextStep}</span>
-              {coachNextStepMeta.hint ? <small>{coachNextStepMeta.hint}</small> : null}
-            </div>
-          </div>
-          {coachBackupStep ? (
-            <div className="dashboard-johnny-backup-step">
-              <strong>Backup move</strong>
-              <span>{coachBackupStep}</span>
-              {coachBackupAction ? (
-                <button
-                  type="button"
-                  className="btn-outline small"
-                  onClick={() => handleDashboardAction(coachBackupAction)}
-                >
-                  {coachBackupAction.actionLabel}
-                </button>
-              ) : null}
-            </div>
-          ) : null}
-          <p className="dashboard-johnny-encouragement">{johnnyReview.encouragement}</p>
-          {johnnyReviewError ? <p className="dashboard-johnny-status">Johnny review is using the fallback summary right now.</p> : null}
-          <div className="dashboard-johnny-actions">
-            <button
-              type="button"
-              className="btn-primary small"
-              onClick={() => {
-                openDrawer(coachStarterPrompt)
-              }}
-            >
-              Ask Johnny about today
-            </button>
-          </div>
-        </div>
-
-        <div className="dashboard-johnny-zone dashboard-johnny-followups">
-          <div className="dashboard-johnny-followups-head">
-            <div>
-              <strong>More ways to ask</strong>
-              <p>{quickPrompts.length} focused follow-up{quickPrompts.length === 1 ? '' : 's'} based on your board right now.</p>
-            </div>
-            <button
-              type="button"
-              className="btn-ghost small dashboard-johnny-followups-toggle"
-              onClick={() => setCoachPromptsOpen(open => !open)}
-            >
-              {coachPromptsOpen ? 'Hide prompts' : 'Show prompts'}
-            </button>
-          </div>
-          {coachPromptsOpen ? (
-            <div className="dashboard-prompt-list dashboard-prompt-list-secondary">
-              {quickPrompts.map(prompt => (
-                <button
-                  key={prompt.id}
-                  className="dashboard-prompt-chip"
-                  type="button"
-                  onClick={() => {
-                    openDrawer(prompt.prompt)
-                  }}
-                >
-                  {prompt.prompt}
-                </button>
-              ))}
-            </div>
-          ) : null}
-        </div>
-      </article>
+      <CoachReviewCard
+        coachFreshness={coachFreshness}
+        johnnyReview={johnnyReview}
+        johnnyReviewError={johnnyReviewError}
+        coachMetrics={coachMetrics}
+        coachNextStepMeta={coachNextStepMeta}
+        coachBackupStep={coachBackupStep}
+        coachBackupAction={coachBackupAction}
+        quickPrompts={quickPrompts}
+        coachPromptsOpen={coachPromptsOpen}
+        starterPrompt={coachStarterPrompt}
+        pendingFollowUps={pendingFollowUps}
+        followUpOverview={followUpOverview}
+        onTogglePrompts={() => setCoachPromptsOpen(open => !open)}
+        onRefresh={handleRefreshReview}
+        johnnyReviewLoading={johnnyReviewLoading}
+        onAskJohnny={openDrawer}
+        onAction={handleDashboardAction}
+      />
     )),
     makeDashboardCard('quick_log_meal', <QuickActionCard title="Log meal" meta="Nutrition" icon="meal" onClick={() => navigate('/nutrition')} />),
     makeDashboardCard('quick_training', <QuickActionCard title={trainingQuickAction.title} meta={trainingQuickAction.meta} icon="workout" onClick={() => handleDashboardAction(trainingQuickAction)} />),
@@ -563,122 +363,53 @@ export default function DashboardScreen() {
     makeDashboardCard('snapshot_sleep', <StatCard label="Sleep" value={s?.sleep?.hours_sleep != null ? `${s.sleep.hours_sleep}h` : '—'} meta={buildDashboardSleepMeta(s?.sleep)} accent="teal" onClick={() => navigate('/body')} />),
     makeDashboardCard('snapshot_weight', <StatCard label="Weight" value={s?.latest_weight?.weight_lb != null ? `${s.latest_weight.weight_lb}` : '—'} meta={s?.latest_weight?.metric_date ? `Logged ${formatFriendlyDate(s.latest_weight.metric_date)}` : 'No bodyweight yet'} accent="orange" onClick={() => navigate('/body')} />),
     makeDashboardCard('snapshot_week_rhythm', <StatCard label="Week rhythm" value={s?.score_7d ?? 0} meta={weeklyScoreLabel} accent="yellow" onClick={() => setWeekRhythmOpen(open => !open)} />),
-    makeDashboardCard('training_today', (
-      <button className={`dash-card dashboard-card-button dashboard-session-card ${trainingCard.done ? 'done' : ''}`} type="button" onClick={() => handleDashboardAction(trainingCard)}>
-        <div className="dashboard-card-head">
-          <span className="dashboard-chip workout">Training</span>
-          {trainingCard.timeTier ? <span className="dashboard-chip subtle">{trainingCard.timeTier}</span> : null}
-        </div>
-        <h3>{trainingCard.title}</h3>
-        <p>{trainingCard.body}</p>
-        <div className="dashboard-session-meta">
-          <span>{trainingCard.metaPrimary}</span>
-          <span>{trainingCard.metaSecondary}</span>
-        </div>
-        {s?.skip_warning && <p className="skip-warn">{s.skip_count_30d} skips in the last 30 days</p>}
-        <span className="dashboard-card-cta">{trainingCard.actionLabel}</span>
-      </button>
-    )),
-    makeDashboardCard('training_tomorrow', (
-      <button className="dash-card dashboard-card-button dashboard-tomorrow-card" type="button" onClick={() => navigate('/workout')}>
-        <div className="dashboard-card-head">
-          <span className="dashboard-chip subtle">Tomorrow</span>
-          {tomorrow?.inferred ? <span className="dashboard-chip subtle">Preview</span> : <span className="dashboard-chip subtle">Queued</span>}
-        </div>
-        <h3>{`${tomorrow?.weekday_label || 'Tomorrow'}${tomorrow?.planned_day_type ? ` • ${formatDayType(tomorrow.planned_day_type)}` : ' • Recovery'}`}</h3>
-        <p>{tomorrow?.planned_day_type ? `Next up: ${formatDayType(tomorrow.planned_day_type).toLowerCase()} focus${tomorrow?.inferred ? ' based on your saved weekly split.' : '.'}` : 'No training preview is queued yet, so tomorrow is currently open.'}</p>
-        <div className="dashboard-session-meta">
-          <span>{tomorrow?.time_tier ? `${tomorrow.time_tier} session` : 'medium session'}</span>
-          <span>{tomorrow?.date ? formatFriendlyDate(tomorrow.date) : 'Tomorrow'}</span>
-        </div>
-        <span className="dashboard-card-cta">Open training</span>
-      </button>
-    )),
-    makeDashboardCard('training_momentum', (
-      <button className="dash-card dashboard-card-button dashboard-momentum-card" type="button" onClick={() => navigate('/rewards')}>
-        <div className="dashboard-card-head">
-          <span className="dashboard-chip awards">Momentum</span>
-          <strong>{momentumCard.badge}</strong>
-        </div>
-        <h3 className="dashboard-momentum-title">
-          {momentumCard.iconName ? <span className="dashboard-momentum-icon"><AppIcon name={momentumCard.iconName} /></span> : null}
-          <span>{momentumCard.title}</span>
-        </h3>
-        <p>{momentumCard.body}</p>
-        <div className="dashboard-streak-list compact">
-          {momentumCard.rows.map(row => (
-            <StreakRow key={row.label} label={row.label} days={row.value} suffix={row.suffix} />
-          ))}
-        </div>
-        <span className="dashboard-card-cta">Open rewards</span>
-      </button>
-    )),
-    makeDashboardCard('story_card', activeStory ? (
-      <RotatingStoryCard
-        story={activeStory}
-        index={storyIndex}
-        total={inspirationalStories.length}
-        onAction={() => handleDashboardAction(activeStory)}
+    makeDashboardCard('training_today', <TrainingTodayCard model={trainingCard} skipWarning={s?.skip_warning} skipCount30d={s?.skip_count_30d} onAction={handleDashboardAction} />),
+    makeDashboardCard('training_tomorrow', <TomorrowPreviewCard tomorrow={tomorrow} title={tomorrowTitle} body={tomorrowBody} metaPrimary={tomorrowMetaPrimary} metaSecondary={tomorrowMetaSecondary} onOpenTraining={() => navigate('/workout')} />),
+    makeDashboardCard('training_momentum', <MomentumDashboardCard momentumCard={momentumCard} onOpenRewards={() => navigate('/rewards')} />),
+    makeDashboardCard('story_card', (
+      <StoryCard
+        activeStory={activeStory}
+        storyIndex={storyIndex}
+        inspirationalStories={inspirationalStories}
+        editorialCard={editorialCard}
+        onAction={handleDashboardAction}
         onPrevious={() => setStoryIndex(current => (current - 1 + inspirationalStories.length) % inspirationalStories.length)}
         onNext={() => setStoryIndex(current => (current + 1) % inspirationalStories.length)}
         onSelect={index => setStoryIndex(index)}
       />
-    ) : (
-      <EditorialCard
-        chip={editorialCard.chip}
-        title={editorialCard.title}
-        body={editorialCard.body}
-        actionLabel={editorialCard.actionLabel}
-        onClick={() => handleDashboardAction(editorialCard)}
-      />
     )),
-    makeDashboardCard('real_success_stories', (
-      <RealSuccessStoriesCard
-        story={realSuccessStory}
-        loading={realSuccessStoryLoading}
-        error={realSuccessStoryError}
-        onRefresh={handleRefreshRealSuccessStory}
-      />
-    )),
-    makeDashboardCard('sleep_debt', (
-      <SleepDebtCard
-        model={sleepDebt}
-        onOpenRecovery={() => navigate('/body', { state: { focusTab: 'sleep' } })}
-      />
-    )),
-    makeDashboardCard('step_finish_forecast', (
-      <StepForecastCard
-        model={stepForecast}
-        onOpenSteps={() => navigate('/body', { state: { focusTab: 'steps' } })}
-      />
-    )),
-    makeDashboardCard('grocery_gap_spotlight', (
-      <GroceryGapSpotlightCard
-        model={groceryGapSpotlight}
-        onOpenGroceryGap={() => navigate('/nutrition', { state: { focusSection: 'groceryGap' } })}
-      />
-    )),
-    makeDashboardCard('reminder_queue', (
-      <ReminderQueueCard
-        model={reminderQueue}
-        onOpenProfile={() => navigate('/settings')}
-        onAskJohnny={() => openDrawer('Show me my scheduled SMS reminders and help me manage them.')}
-      />
-    )),
-    makeDashboardCard('weekly_trend', (
-      <WeeklyTrendCard
-        weights={weeklyWeights}
-        onOpenProgress={() => navigate('/body', { state: { focusTab: 'weight' } })}
-      />
-    )),
-  ].filter(card => card.content)
+    makeDashboardCard('real_success_stories', <RealSuccessStoriesCard story={realSuccessStory} loading={realSuccessStoryLoading} error={realSuccessStoryError} onRefresh={refreshRealSuccessStory} />),
+    makeDashboardCard('sleep_debt', <SleepDebtCard model={sleepDebt} onOpenRecovery={() => navigate('/body', { state: { focusTab: 'sleep' } })} />),
+    makeDashboardCard('step_finish_forecast', <StepForecastCard model={stepForecast} onOpenSteps={() => navigate('/body', { state: { focusTab: 'steps' } })} />),
+    makeDashboardCard('grocery_gap_spotlight', <GroceryGapSpotlightCard model={groceryGapSpotlight} onOpenGroceryGap={() => navigate('/nutrition', { state: { focusSection: 'groceryGap' } })} />),
+    makeDashboardCard('reminder_queue', <ReminderQueueCard model={reminderQueue} onOpenProfile={() => navigate('/settings')} onAskJohnny={() => openDrawer('Show me my scheduled SMS reminders and help me manage them.')} />),
+    makeDashboardCard('weekly_trend', <WeeklyTrendCard weights={weeklyWeights} onOpenProgress={() => navigate('/body', { state: { focusTab: 'weight' } })} />),
+    makeDashboardCard('johnny_image_gallery', <JohnnyImageGalleryCard images={generatedImageGallery} onOpenProfile={() => navigate('/settings')} />),
+  ].filter(card => card.content).map(card => ({
+    ...card,
+    bucket: getDashboardCardBucket(card.id, dashboardLayout),
+  }))
   const orderedDashboardCards = orderDashboardCards(dashboardCards, dashboardLayout)
   const visibleDashboardCards = orderedDashboardCards.filter(card => !dashboardLayout.hidden?.[card.id])
+  const hiddenDashboardCards = orderedDashboardCards.filter(card => dashboardLayout.hidden?.[card.id])
   const dashboardCardsByBucket = groupDashboardCardsByBucket(visibleDashboardCards)
 
-  function renderDashboardCardSlot(card) {
+  function renderDashboardCardSlot(card, visibleBucketIds = []) {
+    const index = visibleBucketIds.indexOf(card.id)
+    const canCrossBucketUp = Boolean(card.optional) && canMoveDashboardCardAcrossBuckets(card.id, dashboardLayout, -1)
+    const canCrossBucketDown = Boolean(card.optional) && canMoveDashboardCardAcrossBuckets(card.id, dashboardLayout, 1)
+
     return (
-      <DashboardCardSlot key={card.id} label={card.label} customizing={customizeOpen}>
+      <DashboardCardSlot
+        key={card.id}
+        card={card}
+        customizing={customizeOpen}
+        canMoveUp={index > 0 || canCrossBucketUp}
+        canMoveDown={(index > -1 && index < visibleBucketIds.length - 1) || canCrossBucketDown}
+        onMoveUp={() => moveDashboardCard(card.id, card.bucket, -1, visibleBucketIds)}
+        onMoveDown={() => moveDashboardCard(card.id, card.bucket, 1, visibleBucketIds)}
+        onHide={() => toggleDashboardCard(card.id)}
+      >
         {card.content}
       </DashboardCardSlot>
     )
@@ -697,23 +428,23 @@ export default function DashboardScreen() {
         </div>
       </header>
 
-      {targetsUpdated && !noticeDismissed && (
+      {targetsUpdated && dismissedTargetsNoticeKey !== targetsNoticeKey && (
         <div className="dash-card settings-warning dashboard-notice" role="status">
           <div>
             <strong>Targets updated.</strong>
             <p>{targetsUpdated.target_calories} calories | {targetsUpdated.target_protein_g}g protein | {targetsUpdated.target_carbs_g}g carbs | {targetsUpdated.target_fat_g}g fat</p>
           </div>
-          <button className="btn-outline small" onClick={() => setNoticeDismissed(true)}>Dismiss</button>
+          <button className="btn-outline small" onClick={() => setDismissedTargetsNoticeKey(targetsNoticeKey)}>Dismiss</button>
         </div>
       )}
 
-      {johnnyActionNotice && !actionNoticeDismissed && (
+      {johnnyActionNotice && dismissedActionNoticeKey !== actionNoticeKey && (
         <div className="dash-card settings-warning dashboard-notice" role="status">
           <div>
             <strong>Johnny opened this screen.</strong>
             <p>{johnnyActionNotice}</p>
           </div>
-          <button className="btn-outline small" onClick={() => setActionNoticeDismissed(true)}>Dismiss</button>
+          <button className="btn-outline small" onClick={() => setDismissedActionNoticeKey(actionNoticeKey)}>Dismiss</button>
         </div>
       )}
 
@@ -723,12 +454,12 @@ export default function DashboardScreen() {
             <section className="dashboard-primary-grid">
               {dashboardCardsByBucket.primary_main?.length ? (
                 <div className="dashboard-primary-stack">
-                  {dashboardCardsByBucket.primary_main.map(renderDashboardCardSlot)}
+                  {dashboardCardsByBucket.primary_main.map(card => renderDashboardCardSlot(card, dashboardCardsByBucket.primary_main.map(bucketCard => bucketCard.id)))}
                 </div>
               ) : null}
               {dashboardCardsByBucket.primary_side?.length ? (
                 <div className="dashboard-primary-stack">
-                  {dashboardCardsByBucket.primary_side.map(renderDashboardCardSlot)}
+                  {dashboardCardsByBucket.primary_side.map(card => renderDashboardCardSlot(card, dashboardCardsByBucket.primary_side.map(bucketCard => bucketCard.id)))}
                 </div>
               ) : null}
             </section>
@@ -740,7 +471,7 @@ export default function DashboardScreen() {
                 <h2>Do this now</h2>
               </div>
               <div className="dashboard-action-grid compact">
-                {dashboardCardsByBucket.quick_actions.map(renderDashboardCardSlot)}
+                {dashboardCardsByBucket.quick_actions.map(card => renderDashboardCardSlot(card, dashboardCardsByBucket.quick_actions.map(bucketCard => bucketCard.id)))}
               </div>
             </section>
           ) : null}
@@ -753,38 +484,22 @@ export default function DashboardScreen() {
               </div>
               {dashboardCardsByBucket.snapshot_stats?.length ? (
                 <div className="dashboard-stat-grid">
-                  {dashboardCardsByBucket.snapshot_stats.map(renderDashboardCardSlot)}
+                  {dashboardCardsByBucket.snapshot_stats.map(card => renderDashboardCardSlot(card, dashboardCardsByBucket.snapshot_stats.map(bucketCard => bucketCard.id)))}
                 </div>
               ) : null}
               {dashboardCardsByBucket.snapshot_detail?.length ? (
                 <div className="dashboard-detail-stack">
-                  {dashboardCardsByBucket.snapshot_detail.map(renderDashboardCardSlot)}
+                  {dashboardCardsByBucket.snapshot_detail.map(card => renderDashboardCardSlot(card, dashboardCardsByBucket.snapshot_detail.map(bucketCard => bucketCard.id)))}
                 </div>
               ) : null}
-              {weekRhythmOpen ? (
-                <div className="dash-card dashboard-score-drawer" role="region" aria-label="Week rhythm breakdown">
-                  <div className="dashboard-score-drawer-head">
-                    <div>
-                      <span className="dashboard-chip awards">Week rhythm</span>
-                      <h3>{s?.score_7d ?? 0} this week</h3>
-                      <p>{buildWeekRhythmDrawerCopy(s?.score_7d ?? 0)}</p>
-                    </div>
-                    <button type="button" className="btn-outline small" onClick={() => setWeekRhythmOpen(false)}>Close</button>
-                  </div>
-                  <div className="dashboard-score-drawer-grid">
-                    {weeklyRhythmBreakdown.map(item => (
-                      <div key={item.label} className="dashboard-score-drawer-card">
-                        <span>{item.label}</span>
-                        <strong>{item.value} / {item.target}</strong>
-                        {item.helper ? <small>{item.helper}</small> : null}
-                      </div>
-                    ))}
-                  </div>
-                  <div className="dashboard-score-drawer-actions">
-                    <button type="button" className="btn-secondary small" onClick={() => navigate('/rewards')}>Open rewards</button>
-                  </div>
-                </div>
-              ) : null}
+              <WeekRhythmDrawer
+                isOpen={weekRhythmOpen}
+                score={s?.score_7d ?? 0}
+                breakdown={weeklyRhythmBreakdown}
+                copy={buildWeekRhythmDrawerCopy(s?.score_7d ?? 0)}
+                onClose={() => setWeekRhythmOpen(false)}
+                onOpenRewards={() => navigate('/rewards')}
+              />
             </section>
           ) : null}
 
@@ -792,12 +507,12 @@ export default function DashboardScreen() {
             <section className="dashboard-section dashboard-two-col">
               {dashboardCardsByBucket.training_main?.length ? (
                 <div className="dashboard-primary-stack">
-                  {dashboardCardsByBucket.training_main.map(renderDashboardCardSlot)}
+                  {dashboardCardsByBucket.training_main.map(card => renderDashboardCardSlot(card, dashboardCardsByBucket.training_main.map(bucketCard => bucketCard.id)))}
                 </div>
               ) : null}
               {dashboardCardsByBucket.training_side?.length ? (
                 <div className="dashboard-side-stack">
-                  {dashboardCardsByBucket.training_side.map(renderDashboardCardSlot)}
+                  {dashboardCardsByBucket.training_side.map(card => renderDashboardCardSlot(card, dashboardCardsByBucket.training_side.map(bucketCard => bucketCard.id)))}
                 </div>
               ) : null}
             </section>
@@ -810,7 +525,7 @@ export default function DashboardScreen() {
                 <span className="dashboard-section-caption">Editorial coaching plus real-world transformation inspiration</span>
               </div>
               <div className="dashboard-story-stack">
-                {dashboardCardsByBucket.story.map(renderDashboardCardSlot)}
+                {dashboardCardsByBucket.story.map(card => renderDashboardCardSlot(card, dashboardCardsByBucket.story.map(bucketCard => bucketCard.id)))}
               </div>
             </section>
           ) : null}
@@ -819,143 +534,129 @@ export default function DashboardScreen() {
         <section className="dash-card dashboard-empty-layout-card">
           <span className="dashboard-chip subtle">All hidden</span>
           <h2>Your dashboard is currently empty.</h2>
-          <p>Open Pimp My Dashboard to add cards back or reset the layout.</p>
+          <p>Turn on Pimp My Dashboard to add cards back or reset the layout.</p>
           <div className="dashboard-empty-layout-actions">
-            <button type="button" className="btn-outline small" onClick={() => setCustomizeOpen(true)}>Open customizer</button>
+            <button type="button" className="btn-outline small" onClick={() => setCustomizeOpen(true)}>Start arranging</button>
             <button type="button" className="btn-secondary small" onClick={resetDashboardLayout}>Reset layout</button>
           </div>
         </section>
       )}
 
-      <div className="dashboard-bottom-actions">
-        <button type="button" className="btn-outline small dashboard-customize-trigger" onClick={() => setCustomizeOpen(true)}>
-          Pimp My Dashboard
-        </button>
-      </div>
+      {customizeOpen ? <DashboardAddCardsSection cards={hiddenDashboardCards} onAddCard={addDashboardCard} /> : null}
 
-      <DashboardCustomizeOverlay
-        isOpen={customizeOpen}
-        cards={orderedDashboardCards}
-        hiddenMap={dashboardLayout.hidden}
-        onMove={moveDashboardCard}
-        onToggleHidden={toggleDashboardCard}
-        onAddCard={addDashboardCard}
-        onReset={resetDashboardLayout}
-        onClose={() => setCustomizeOpen(false)}
-      />
+      <div className="dashboard-bottom-actions">
+        <button type="button" className={`btn-outline small dashboard-customize-trigger${customizeOpen ? ' active' : ''}`} onClick={() => setCustomizeOpen(open => !open)}>
+          {customizeOpen ? 'Done arranging' : 'Pimp My Dashboard'}
+        </button>
+        {customizeOpen ? <button type="button" className="btn-secondary small dashboard-customize-trigger" onClick={resetDashboardLayout}>Reset layout</button> : null}
+      </div>
     </div>
   )
 }
 
-function DashboardCardSlot({ label, customizing, children }) {
+function DashboardCardSlot({ card, customizing, canMoveUp, canMoveDown, onMoveUp, onMoveDown, onHide, children }) {
   return (
     <div className={`dashboard-layout-slot${customizing ? ' customizing' : ''}`}>
-      {customizing ? <span className="dashboard-layout-slot-label">{label}</span> : null}
+      {customizing ? (
+        <div className="dashboard-layout-slot-overlay">
+          <span className="dashboard-layout-slot-label">{card.label}</span>
+          <div className="dashboard-layout-slot-controls">
+            {card.optional ? <span className="dashboard-customize-optional-badge">Optional</span> : null}
+            <button type="button" className="btn-outline small dashboard-slot-icon-control" onClick={onMoveUp} disabled={!canMoveUp} aria-label={`Move ${card.label} up`}>
+              <AppIcon name="chevron-up" />
+            </button>
+            <button type="button" className="btn-outline small dashboard-slot-icon-control" onClick={onMoveDown} disabled={!canMoveDown} aria-label={`Move ${card.label} down`}>
+              <AppIcon name="chevron-down" />
+            </button>
+            <button type="button" className="btn-secondary small dashboard-slot-icon-control" onClick={onHide} aria-label={`Hide ${card.label}`}>
+              <AppIcon name="close" />
+            </button>
+          </div>
+        </div>
+      ) : null}
       {children}
     </div>
   )
 }
 
-function DashboardCustomizeOverlay({ isOpen, cards, hiddenMap, onMove, onToggleHidden, onAddCard, onReset, onClose }) {
-  if (!isOpen) return null
+function DashboardAddCardsSection({ cards, onAddCard }) {
+  if (!cards.length) return null
 
-  const hiddenCount = cards.filter(card => hiddenMap?.[card.id]).length
-  const availableOptionalCards = cards.filter(card => card.optional && hiddenMap?.[card.id])
-  const activeCardsByBucket = groupDashboardCardsByBucket(cards.filter(card => !card.optional || !hiddenMap?.[card.id]))
+  const cardsByBucket = groupDashboardCardsByBucket(cards)
 
   return (
-    <div className="exercise-drawer-shell" role="dialog" aria-modal="true" aria-labelledby="dashboard-customize-title">
-      <button type="button" className="exercise-drawer-backdrop" aria-label="Close dashboard customizer" onClick={onClose} />
-      <aside className="exercise-drawer dashboard-customize-drawer">
-        <div className="exercise-drawer-head">
-          <div>
-            <p className="exercise-drawer-eyebrow">Dashboard tools</p>
-            <h3 id="dashboard-customize-title">Pimp My Dashboard</h3>
-          </div>
-          <button type="button" className="exercise-drawer-close" onClick={onClose}>Close</button>
+    <section className="dashboard-section dashboard-add-cards-section" aria-labelledby="dashboard-add-cards-title">
+      <div className="dashboard-section-title-row">
+        <div>
+          <h2 id="dashboard-add-cards-title">Add cards</h2>
+          <p className="dashboard-add-cards-subtitle">Hidden and optional cards live here until you add them back to the board.</p>
         </div>
-        <div className="dashboard-customize-scroll">
-          <p className="exercise-drawer-subtitle">Move cards within each area, hide anything you do not want, and add optional cards when you want more on the home screen.</p>
-          <div className="dashboard-customize-summary">
-            <span className="dashboard-chip subtle">{cards.length} cards</span>
-            <span className="dashboard-chip subtle">{hiddenCount} hidden</span>
-            <span className="dashboard-chip subtle">{availableOptionalCards.length} available to add</span>
-          </div>
-          {DASHBOARD_CUSTOMIZE_GROUPS.map(group => {
-            const groupCards = activeCardsByBucket[group.id] || []
+      </div>
+      <div className="dashboard-add-cards-groups">
+        {Object.entries(cardsByBucket).map(([bucket, bucketCards]) => {
+          const bucketMeta = DASHBOARD_BUCKET_META[bucket] || { label: bucket, description: '' }
 
-            if (!groupCards.length) return null
-
-            return (
-              <section key={group.id} className="dashboard-customize-group">
-                <div className="dashboard-customize-group-head">
-                  <strong>{group.label}</strong>
-                  <p>{group.description}</p>
-                </div>
-                <div className="dashboard-customize-list">
-                  {groupCards.map((card, index) => {
-                    const hidden = Boolean(hiddenMap?.[card.id])
-
-                    return (
-                      <div key={card.id} className={`dashboard-customize-item${hidden ? ' hidden' : ''}`}>
-                        <div className="dashboard-customize-item-copy">
-                          <div className="dashboard-customize-item-title-row">
-                            <DashboardIconBadge iconName={card.iconName} tone={card.iconTone} compact />
-                            <strong>{card.label}</strong>
-                          </div>
-                          <p>{card.description}</p>
-                        </div>
-                        <div className="dashboard-customize-item-controls">
-                          <span className={`dashboard-customize-status ${hidden ? 'hidden' : 'shown'}`}>{hidden ? 'Hidden' : 'Shown'}</span>
-                          {card.optional ? <span className="dashboard-customize-optional-badge">Optional</span> : null}
-                          <button type="button" className="btn-outline small" onClick={() => onMove(card.id, card.bucket, -1)} disabled={index === 0}>Up</button>
-                          <button type="button" className="btn-outline small" onClick={() => onMove(card.id, card.bucket, 1)} disabled={index === groupCards.length - 1}>Down</button>
-                          <button type="button" className="btn-secondary small" onClick={() => onToggleHidden(card.id)}>{hidden ? 'Show' : 'Hide'}</button>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              </section>
-            )
-          })}
-          {availableOptionalCards.length ? (
-            <section className="dashboard-customize-group dashboard-customize-add-list">
-              <div className="dashboard-customize-group-head">
-                <strong>Add a card</strong>
-                <p>Optional cards live here until you add them to the dashboard.</p>
+          return (
+            <section key={bucket} className="dashboard-add-cards-group">
+              <div className="dashboard-add-cards-group-head">
+                <strong>{bucketMeta.label}</strong>
+                {bucketMeta.description ? <p>{bucketMeta.description}</p> : null}
               </div>
-              <div className="dashboard-customize-list">
-                {availableOptionalCards.map(card => (
-                  <div key={card.id} className="dashboard-customize-item hidden optional-add">
-                    <div className="dashboard-customize-item-copy">
-                      <div className="dashboard-customize-item-title-row">
+              <div className="dashboard-add-cards-list">
+                {bucketCards.map(card => (
+                  <article key={card.id} className="dashboard-add-card-item">
+                    <div className="dashboard-add-card-copy">
+                      <div className="dashboard-add-card-title-row">
                         <DashboardIconBadge iconName={card.iconName} tone={card.iconTone} compact />
                         <strong>{card.label}</strong>
                       </div>
                       <p>{card.description}</p>
                     </div>
-                    <div className="dashboard-customize-item-controls">
-                      <span className="dashboard-customize-optional-badge">Optional</span>
+                    <div className="dashboard-add-card-actions">
+                      <span className="dashboard-customize-status hidden">Hidden</span>
+                      {card.optional ? <span className="dashboard-customize-optional-badge">Optional</span> : null}
                       <button type="button" className="btn-primary small" onClick={() => onAddCard(card.id)}>Add card</button>
                     </div>
-                  </div>
+                  </article>
                 ))}
               </div>
             </section>
-          ) : null}
-        </div>
-        <div className="dashboard-customize-footer">
-          <button type="button" className="btn-outline small" onClick={onReset}>Reset layout</button>
-          <button type="button" className="btn-primary small" onClick={onClose}>Done</button>
-        </div>
-      </aside>
-    </div>
+          )
+        })}
+      </div>
+    </section>
   )
 }
 
 function isStrengthDayType(value) {
   return Boolean(value) && value !== 'rest' && value !== 'cardio'
+}
+
+function getScheduledTrainingType(snapshot) {
+  return String(
+    getTrainingStatus(snapshot)?.scheduled_day_type
+      || snapshot?.today_schedule?.day_type
+      || snapshot?.session?.actual_day_type
+      || snapshot?.session?.planned_day_type
+      || ''
+  ).trim()
+}
+
+function hasTrainingRecorded(snapshot) {
+  return Boolean(getTrainingStatus(snapshot)?.recorded)
+}
+
+function getRecordedTrainingType(snapshot) {
+  return String(getTrainingStatus(snapshot)?.recorded_type || '').trim()
+}
+
+function getDashboardSessionDayType(session) {
+  return String(session?.actual_day_type || session?.planned_day_type || '').trim()
+}
+
+function isStrengthDashboardSession(session) {
+  const dayType = getDashboardSessionDayType(session)
+  return Boolean(session?.completed) && isStrengthDayType(dayType)
 }
 
 function getTrainingStatus(snapshot) {
@@ -1019,33 +720,6 @@ function getTrainingStatus(snapshot) {
     matching_workout_session: matchingWorkoutSession,
     cardio_log: cardioLog,
   }
-}
-
-function getScheduledTrainingType(snapshot) {
-  return String(
-    getTrainingStatus(snapshot)?.scheduled_day_type
-      || snapshot?.today_schedule?.day_type
-      || snapshot?.session?.actual_day_type
-      || snapshot?.session?.planned_day_type
-      || ''
-  ).trim()
-}
-
-function hasTrainingRecorded(snapshot) {
-  return Boolean(getTrainingStatus(snapshot)?.recorded)
-}
-
-function getRecordedTrainingType(snapshot) {
-  return String(getTrainingStatus(snapshot)?.recorded_type || '').trim()
-}
-
-function getDashboardSessionDayType(session) {
-  return String(session?.actual_day_type || session?.planned_day_type || '').trim()
-}
-
-function isStrengthDashboardSession(session) {
-  const dayType = getDashboardSessionDayType(session)
-  return Boolean(session?.completed) && isStrengthDayType(dayType)
 }
 
 function buildTrainingCardModel(snapshot) {
@@ -1434,74 +1108,6 @@ function buildCoachFreshnessLabel(generatedAt, cached) {
   }
 }
 
-function readCoachPromptsPreference() {
-  if (typeof window === 'undefined') return false
-
-  try {
-    return window.localStorage.getItem(COACH_PROMPTS_STORAGE_KEY) === '1'
-  } catch {
-    return false
-  }
-}
-
-function getDefaultDashboardLayout() {
-  const hidden = {}
-
-  for (const card of DASHBOARD_CARD_DEFS) {
-    hidden[card.id] = Boolean(card.optional)
-  }
-
-  return {
-    order: DASHBOARD_CARD_DEFS.map(card => card.id),
-    hidden,
-  }
-}
-
-function normalizeDashboardLayoutPreference(value) {
-  const defaults = getDefaultDashboardLayout()
-  const next = value && typeof value === 'object' ? value : {}
-  const validIds = new Set(DASHBOARD_CARD_DEFS.map(card => card.id))
-  const nextOrder = Array.isArray(next.order)
-    ? next.order.filter(id => validIds.has(id))
-    : []
-  const mergedOrder = [...nextOrder, ...defaults.order.filter(id => !nextOrder.includes(id))]
-  const nextHidden = {}
-
-  for (const cardId of defaults.order) {
-    nextHidden[cardId] = next.hidden?.[cardId] == null ? defaults.hidden[cardId] : Boolean(next.hidden?.[cardId])
-  }
-
-  return {
-    order: mergedOrder,
-    hidden: nextHidden,
-  }
-}
-
-function readDashboardLayoutPreference(email) {
-  if (typeof window === 'undefined') return getDefaultDashboardLayout()
-
-  try {
-    const raw = window.localStorage.getItem(`${DASHBOARD_LAYOUT_STORAGE_KEY}.${email || 'guest'}`)
-    if (!raw) return getDefaultDashboardLayout()
-    return normalizeDashboardLayoutPreference(JSON.parse(raw))
-  } catch {
-    return getDefaultDashboardLayout()
-  }
-}
-
-function writeDashboardLayoutPreference(email, value) {
-  if (typeof window === 'undefined') return
-
-  try {
-    window.localStorage.setItem(
-      `${DASHBOARD_LAYOUT_STORAGE_KEY}.${email || 'guest'}`,
-      JSON.stringify(normalizeDashboardLayoutPreference(value)),
-    )
-  } catch {
-    // noop
-  }
-}
-
 function moveArrayItem(items, fromIndex, toIndex) {
   const nextItems = [...items]
   const [movedItem] = nextItems.splice(fromIndex, 1)
@@ -1510,8 +1116,8 @@ function moveArrayItem(items, fromIndex, toIndex) {
   return nextItems
 }
 
-function moveDashboardCardsWithinBucket(order, cardId, bucket, direction) {
-  const bucketIds = order.filter(id => DASHBOARD_CARD_DEF_MAP.get(id)?.bucket === bucket)
+function moveDashboardCardsWithinBucket(order, cardId, bucket, direction, layout = null) {
+  const bucketIds = order.filter(id => getDashboardCardBucket(id, layout) === bucket)
   const currentIndex = bucketIds.indexOf(cardId)
   if (currentIndex === -1) return order
 
@@ -1522,9 +1128,103 @@ function moveDashboardCardsWithinBucket(order, cardId, bucket, direction) {
   let bucketCursor = 0
 
   return order.map(id => {
-    if (DASHBOARD_CARD_DEF_MAP.get(id)?.bucket !== bucket) return id
+    if (getDashboardCardBucket(id, layout) !== bucket) return id
     const nextId = reorderedBucketIds[bucketCursor]
     bucketCursor += 1
+    return nextId
+  })
+}
+
+function moveOptionalDashboardCardAnywhere(layout, cardId, direction, visibleBucketIds = []) {
+  const currentBucket = getDashboardCardBucket(cardId, layout)
+  const currentOrder = Array.isArray(layout?.order) ? layout.order : []
+  const hasVisibleBucketOrder = Array.isArray(visibleBucketIds) && visibleBucketIds.length > 1
+  const movedWithinBucket = hasVisibleBucketOrder
+    ? moveDashboardCardsWithinVisibleBucket(currentOrder, cardId, direction, visibleBucketIds)
+    : moveDashboardCardsWithinBucket(currentOrder, cardId, currentBucket, direction, layout)
+
+  if (movedWithinBucket !== currentOrder) {
+    return {
+      ...layout,
+      order: movedWithinBucket,
+    }
+  }
+
+  const currentBucketIndex = DASHBOARD_BUCKET_ORDER.indexOf(currentBucket)
+  const targetBucket = DASHBOARD_BUCKET_ORDER[currentBucketIndex + direction]
+  if (!targetBucket) return layout
+
+  const nextLayout = setDashboardCardBucket(layout, cardId, targetBucket)
+
+  return {
+    ...nextLayout,
+    order: insertDashboardCardIntoBucket(currentOrder, nextLayout, cardId, targetBucket, direction),
+  }
+}
+
+function insertDashboardCardIntoBucket(order, layout, cardId, targetBucket, direction) {
+  const workingOrder = order.filter(id => id !== cardId)
+  const targetBucketIndex = DASHBOARD_BUCKET_ORDER.indexOf(targetBucket)
+  const targetBucketVisibleIds = workingOrder.filter(id => !layout.hidden?.[id] && getDashboardCardBucket(id, layout) === targetBucket)
+
+  if (targetBucketVisibleIds.length) {
+    const anchorId = direction > 0
+      ? targetBucketVisibleIds[0]
+      : targetBucketVisibleIds[targetBucketVisibleIds.length - 1]
+    const anchorIndex = workingOrder.indexOf(anchorId)
+    const insertIndex = direction > 0 ? anchorIndex : anchorIndex + 1
+
+    return [
+      ...workingOrder.slice(0, insertIndex),
+      cardId,
+      ...workingOrder.slice(insertIndex),
+    ]
+  }
+
+  if (direction > 0) {
+    const nextLaterIndex = workingOrder.findIndex(id => DASHBOARD_BUCKET_ORDER.indexOf(getDashboardCardBucket(id, layout)) > targetBucketIndex)
+    if (nextLaterIndex === -1) {
+      return [...workingOrder, cardId]
+    }
+    return [
+      ...workingOrder.slice(0, nextLaterIndex),
+      cardId,
+      ...workingOrder.slice(nextLaterIndex),
+    ]
+  }
+
+  let insertIndex = 0
+  for (let index = 0; index < workingOrder.length; index += 1) {
+    if (DASHBOARD_BUCKET_ORDER.indexOf(getDashboardCardBucket(workingOrder[index], layout)) < targetBucketIndex) {
+      insertIndex = index + 1
+    }
+  }
+
+  return [
+    ...workingOrder.slice(0, insertIndex),
+    cardId,
+    ...workingOrder.slice(insertIndex),
+  ]
+}
+
+function moveDashboardCardsWithinVisibleBucket(order, cardId, direction, visibleBucketIds) {
+  const workingOrder = Array.isArray(order) ? order : []
+  const requestedVisibleIds = Array.isArray(visibleBucketIds) ? visibleBucketIds : []
+  const visibleSet = new Set(requestedVisibleIds)
+  const visibleIds = workingOrder.filter(id => visibleSet.has(id))
+  const currentVisibleIndex = visibleIds.indexOf(cardId)
+  if (currentVisibleIndex === -1) return workingOrder
+
+  const nextVisibleIndex = currentVisibleIndex + direction
+  if (nextVisibleIndex < 0 || nextVisibleIndex >= visibleIds.length) return workingOrder
+
+  const reorderedVisibleIds = moveArrayItem(visibleIds, currentVisibleIndex, nextVisibleIndex)
+  let cursor = 0
+
+  return workingOrder.map(id => {
+    if (!visibleSet.has(id)) return id
+    const nextId = reorderedVisibleIds[cursor]
+    cursor += 1
     return nextId
   })
 }
@@ -1562,13 +1262,35 @@ function makeDashboardCard(id, content) {
   }
 }
 
-function writeCoachPromptsPreference(value) {
-  if (typeof window === 'undefined') return
+function getDashboardCardDefaultBucket(cardId) {
+  return DASHBOARD_CARD_DEF_MAP.get(cardId)?.bucket || 'snapshot_detail'
+}
 
-  try {
-    window.localStorage.setItem(COACH_PROMPTS_STORAGE_KEY, value ? '1' : '0')
-  } catch {
-    // noop
+function getDashboardCardBucket(cardId, layout) {
+  return layout?.bucketOverrides?.[cardId] || getDashboardCardDefaultBucket(cardId)
+}
+
+function canMoveDashboardCardAcrossBuckets(cardId, layout, direction) {
+  const currentBucket = getDashboardCardBucket(cardId, layout)
+  const currentBucketIndex = DASHBOARD_BUCKET_ORDER.indexOf(currentBucket)
+  return Boolean(DASHBOARD_BUCKET_ORDER[currentBucketIndex + direction])
+}
+
+function setDashboardCardBucket(layout, cardId, bucket) {
+  const defaultBucket = getDashboardCardDefaultBucket(cardId)
+  const nextBucketOverrides = {
+    ...(layout?.bucketOverrides || {}),
+  }
+
+  if (!bucket || bucket === defaultBucket) {
+    delete nextBucketOverrides[cardId]
+  } else {
+    nextBucketOverrides[cardId] = bucket
+  }
+
+  return {
+    ...layout,
+    bucketOverrides: nextBucketOverrides,
   }
 }
 
@@ -1724,7 +1446,7 @@ function buildJohnnyDashboardReview(snapshot) {
   } else if (weeklyScore >= 80 || bestCurrentStreak >= 5) {
     title = 'You are building real momentum.'
     message = `Johnny sees a ${weeklyScore} weekly score${bestCurrentStreak >= 5 ? ` and a live ${bestCurrentStreak}-day streak` : ''}. This is the stage where boring consistency starts paying off.`
-    nextStep = plannedDayType && !session?.completed
+    nextStep = plannedDayType && !trainingRecorded
       ? `Protect your ${formatDayType(plannedDayType).toLowerCase()} session and keep meals clean enough that tomorrow starts with no cleanup.`
       : 'Stay on script, avoid adding chaos to a good run, and close the day the same way you opened it.'
     encouragement = 'This is what progress looks like before it looks dramatic. Keep stacking ordinary wins.'
@@ -1732,7 +1454,7 @@ function buildJohnnyDashboardReview(snapshot) {
   } else {
     title = 'You are close to a solid day.'
     message = `Johnny sees a board with useful signal: weekly score ${weeklyScore}, ${stepsToday.toLocaleString()} steps, and ${mealsLogged} meal${mealsLogged === 1 ? '' : 's'} logged. Nothing here needs a reset. It just needs one more deliberate close.`
-    nextStep = plannedDayType && !session?.completed
+    nextStep = plannedDayType && !trainingRecorded
       ? `Start the ${formatDayType(plannedDayType).toLowerCase()} session if it is still open, or tighten food quality and steps if training is handled later.`
       : 'Close whichever gap is still most open first: movement, protein, or recovery planning.'
     encouragement = 'You are not chasing perfection. You are just keeping the day pointed in the right direction.'
@@ -1782,7 +1504,7 @@ function buildCoachBackupStep(snapshot, explicitBackupStep = '') {
   return 'If the main move is blocked, choose the smallest clean action you can finish in the next 10 minutes.'
 }
 
-function buildCoachBackupAction(snapshot) {
+function buildCoachBackupAction(snapshot, backupStep = '') {
   const training = getTrainingStatus(snapshot)
   const plannedType = getScheduledTrainingType(snapshot)
   const sleepHours = Number(snapshot?.sleep?.hours_sleep ?? 0)
@@ -1791,6 +1513,38 @@ function buildCoachBackupAction(snapshot) {
   const stepsToday = Number(snapshot?.steps?.today ?? 0)
   const proteinTarget = Number(snapshot?.goal?.target_protein_g ?? 0)
   const protein = Number(snapshot?.nutrition_totals?.protein_g ?? 0)
+  const normalizedBackupStep = String(backupStep || '').toLowerCase()
+
+  if (normalizedBackupStep) {
+    if (/\bcardio\b|\bconditioning\b/.test(normalizedBackupStep)) {
+      return {
+        href: '/body',
+        state: { focusTab: 'cardio', johnnyActionNotice: 'Johnny opened cardio so you can knock out the backup conditioning move.' },
+        actionLabel: 'Open cardio',
+      }
+    }
+    if (/\bsleep\b|\bbedtime\b/.test(normalizedBackupStep)) {
+      return {
+        href: '/body',
+        state: { focusTab: 'sleep', johnnyActionNotice: 'Johnny opened sleep so you can protect recovery tonight.' },
+        actionLabel: 'Open sleep',
+      }
+    }
+    if (/\bprotein\b|\bmeal\b|\bnutrition\b|\bsnack\b/.test(normalizedBackupStep)) {
+      return {
+        href: '/nutrition',
+        state: { johnnyActionNotice: 'Johnny opened nutrition so you can handle the backup protein move.' },
+        actionLabel: 'Open nutrition',
+      }
+    }
+    if (/\bwalk\b|\bsteps?\b|\bmovement\b/.test(normalizedBackupStep)) {
+      return {
+        href: '/body',
+        state: { focusTab: 'steps', johnnyActionNotice: 'Johnny opened steps so you can handle the backup movement move.' },
+        actionLabel: 'Open steps',
+      }
+    }
+  }
 
   if (plannedType === 'cardio' && !training?.recorded) {
     return {
@@ -2008,7 +1762,12 @@ function buildQuickPrompts(snapshot) {
       return left.order - right.order
     })
     .slice(0, 4)
-    .map(({ score, order: promptOrder, ...prompt }) => prompt)
+    .map(prompt => {
+      const nextPrompt = { ...prompt }
+      delete nextPrompt.score
+      delete nextPrompt.order
+      return nextPrompt
+    })
 }
 
 function buildEditorialCard(snapshot) {
@@ -2155,7 +1914,6 @@ function buildBestNextMove(snapshot) {
 function buildMomentumCard(snapshot, awards) {
   const streaks = snapshot?.streaks || {}
   const breakdown = snapshot?.score_7d_breakdown || {}
-  const best = bestStreak(streaks)
   const weeklyScore = Number(snapshot?.score_7d ?? 0)
   const mealDays = Number(breakdown?.meal_days?.value ?? streaks?.logging_days ?? 0)
   const trainingDays = Number(breakdown?.movement_days?.value ?? streaks?.training_days ?? 0)
@@ -2328,268 +2086,6 @@ function buildRealSuccessStoryModel(payload) {
     url,
     cached: Boolean(payload?.cached),
   }
-}
-
-function RealSuccessStoriesCard({ story, loading, error, onRefresh }) {
-  const hasStory = Boolean(story?.url)
-
-  return (
-    <section className="dash-card dashboard-optional-card dashboard-optional-card-success-story">
-      <div className="dashboard-card-head">
-        <DashboardIconBadge iconName="award" tone="green" />
-        <span className="dashboard-chip subtle">Real Success Stories</span>
-        <span className="dashboard-card-kicker">{story?.publication || 'Fresh inspiration'}</span>
-      </div>
-      <h3>{story?.title || 'Finding a fresh transformation story'}</h3>
-      <p>{story?.summary || 'Johnny can pull in a recent real-world transformation story from a reputable health or fitness publication.'}</p>
-      {story?.excitementLine ? <p className="dashboard-card-support-text dashboard-success-story-hook">{story.excitementLine}</p> : null}
-      {error ? <p className="dashboard-card-support-text">{error}</p> : null}
-      {!hasStory && loading ? <p className="dashboard-card-support-text">Searching recent publications for a strong story...</p> : null}
-      <div className="dashboard-success-story-meta">
-        <span>{story?.cached ? 'Saved until you refresh' : hasStory ? 'Freshly found for you' : 'Recent story discovery'}</span>
-        <strong>{hasStory ? 'Real person • Real article' : 'Web search enabled'}</strong>
-      </div>
-      <div className="dashboard-optional-actions">
-        <button
-          type="button"
-          className="btn-outline small"
-          onClick={() => {
-            if (story?.url) {
-              window.open(story.url, '_blank', 'noopener,noreferrer')
-            }
-          }}
-          disabled={!hasStory}
-        >
-          Read story
-        </button>
-        <button type="button" className="btn-primary small" onClick={onRefresh} disabled={loading}>
-          {loading ? 'Finding…' : 'Find More Inspo'}
-        </button>
-      </div>
-    </section>
-  )
-}
-
-function WeeklyTrendCard({ weights, onOpenProgress }) {
-  const trendBars = buildDashboardWeeklyTrendBars(weights)
-
-  return (
-    <section className="dash-card settings-trend-card dashboard-weekly-trend-card">
-      <div className="settings-trend-head">
-        <div className="dashboard-optional-heading-row">
-          <DashboardIconBadge iconName="progress" tone="teal" />
-          <strong>Weekly trend</strong>
-        </div>
-        <button type="button" className="btn-outline small" onClick={onOpenProgress}>Open progress</button>
-      </div>
-      {trendBars.length ? (
-        <div className="settings-trend-bars" aria-label="Weekly weight trend">
-          {trendBars.map(point => (
-            <div key={`${point.date}-${point.label}`} className="settings-trend-bar-group">
-              <span className="settings-trend-bar-value">{point.valueLabel}</span>
-              <div className="settings-trend-bar-track">
-                <span className="settings-trend-bar-fill" style={{ height: `${point.height}%` }} />
-              </div>
-              <span className="settings-trend-bar-label">{point.label}</span>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <p className="dashboard-weekly-trend-empty">Log a few weigh-ins on Progress to see your weekly trajectory here.</p>
-      )}
-    </section>
-  )
-}
-
-function buildDashboardWeeklyTrendBars(weights) {
-  const points = (Array.isArray(weights) ? weights : []).map(entry => ({
-    date: entry.metric_date || entry.date || '',
-    value: Number(entry.weight_lb ?? 0),
-  })).filter(point => point.value > 0)
-
-  if (!points.length) return []
-
-  const values = points.map(point => point.value)
-  const min = Math.min(...values)
-  const max = Math.max(...values)
-  const range = Math.max(max - min, 0.5)
-
-  return points.map(point => ({
-    ...point,
-    height: 24 + (((point.value - min) / range) * 76),
-    label: formatUsShortDate(point.date, point.date).replace(/^\w+\s/, ''),
-    valueLabel: point.value % 1 === 0 ? `${point.value}` : point.value.toFixed(1),
-  }))
-}
-
-function ProteinRunwayCard({ model, onOpenNutrition, onAskJohnny }) {
-  if (!model) return null
-
-  return (
-    <section className="dash-card dashboard-optional-card dashboard-optional-card-protein">
-      <div className="dashboard-card-head">
-        <DashboardIconBadge iconName="nutrition" tone="teal" />
-        <span className="dashboard-chip ai">Protein runway</span>
-        <span className="dashboard-card-kicker">{model.statusLabel}</span>
-      </div>
-      <h3>{model.title}</h3>
-      <p>{model.body}</p>
-      <div className="dashboard-optional-stat-grid">
-        <div>
-          <span>Remaining</span>
-          <strong>{model.remainingLabel}</strong>
-        </div>
-        <div>
-          <span>Next meal target</span>
-          <strong>{model.nextMealProteinLabel}</strong>
-        </div>
-      </div>
-      <div className="dashboard-card-support-text">{model.helper}</div>
-      <div className="dashboard-optional-actions">
-        <button type="button" className="btn-outline small" onClick={onOpenNutrition}>Open nutrition</button>
-        <button type="button" className="btn-primary small" onClick={() => onAskJohnny(model.prompt)}>Ask Johnny</button>
-      </div>
-    </section>
-  )
-}
-
-function MealRhythmCard({ model, onOpenNutrition }) {
-  if (!model) return null
-
-  return (
-    <section className="dash-card dashboard-optional-card dashboard-optional-card-meals">
-      <div className="dashboard-card-head">
-        <DashboardIconBadge iconName="nutrition" tone="amber" />
-        <span className="dashboard-chip subtle">Meal rhythm</span>
-        <span className="dashboard-card-kicker">{model.loggedCountLabel}</span>
-      </div>
-      <h3>{model.title}</h3>
-      <p>{model.body}</p>
-      <div className="dashboard-rhythm-row">
-        {model.windows.map(window => (
-          <span key={window.key} className={`dashboard-rhythm-pill ${window.logged ? 'logged' : 'open'}`}>{window.label}</span>
-        ))}
-      </div>
-      <div className="dashboard-card-support-text">{model.helper}</div>
-      <div className="dashboard-optional-actions">
-        <button type="button" className="btn-primary small" onClick={onOpenNutrition}>Open nutrition</button>
-      </div>
-    </section>
-  )
-}
-
-function SleepDebtCard({ model, onOpenRecovery }) {
-  if (!model) return null
-
-  return (
-    <section className="dash-card dashboard-optional-card dashboard-optional-card-sleep">
-      <div className="dashboard-card-head">
-        <DashboardIconBadge iconName="star" tone="slate" />
-        <span className="dashboard-chip subtle">Sleep debt</span>
-        <span className={`dashboard-chip ${model.modeClass}`}>{model.modeLabel}</span>
-      </div>
-      <h3>{model.title}</h3>
-      <p>{model.body}</p>
-      <div className="dashboard-optional-stat-grid">
-        <div>
-          <span>Last sleep</span>
-          <strong>{model.lastSleepLabel}</strong>
-        </div>
-        <div>
-          <span>3-day debt</span>
-          <strong>{model.debtLabel}</strong>
-        </div>
-      </div>
-      <div className="dashboard-optional-actions">
-        <button type="button" className="btn-primary small" onClick={onOpenRecovery}>Open recovery</button>
-      </div>
-    </section>
-  )
-}
-
-function StepForecastCard({ model, onOpenSteps }) {
-  if (!model) return null
-
-  return (
-    <section className="dash-card dashboard-optional-card dashboard-optional-card-steps">
-      <div className="dashboard-card-head">
-        <DashboardIconBadge iconName="bolt" tone="gold" />
-        <span className="dashboard-chip subtle">Step finish forecast</span>
-        <span className="dashboard-card-kicker">{model.statusLabel}</span>
-      </div>
-      <h3>{model.title}</h3>
-      <p>{model.body}</p>
-      <div className="dashboard-optional-stat-grid">
-        <div>
-          <span>Projected finish</span>
-          <strong>{model.projectedLabel}</strong>
-        </div>
-        <div>
-          <span>Still needed</span>
-          <strong>{model.remainingLabel}</strong>
-        </div>
-      </div>
-      <div className="dashboard-optional-actions">
-        <button type="button" className="btn-primary small" onClick={onOpenSteps}>Open steps</button>
-      </div>
-    </section>
-  )
-}
-
-function GroceryGapSpotlightCard({ model, onOpenGroceryGap }) {
-  if (!model) return null
-
-  return (
-    <section className="dash-card dashboard-optional-card dashboard-optional-card-grocery">
-      <div className="dashboard-card-head">
-        <DashboardIconBadge iconName="award" tone="green" />
-        <span className="dashboard-chip awards">Grocery gap</span>
-        <span className="dashboard-card-kicker">{model.countLabel}</span>
-      </div>
-      <h3>{model.title}</h3>
-      <p>{model.body}</p>
-      {model.items.length ? (
-        <div className="dashboard-optional-list">
-          {model.items.map(item => (
-            <div key={item.key} className="dashboard-optional-list-row">
-              <strong>{item.label}</strong>
-              <span>{item.sourceLabel}</span>
-            </div>
-          ))}
-        </div>
-      ) : null}
-      <div className="dashboard-optional-actions">
-        <button type="button" className="btn-primary small" onClick={onOpenGroceryGap}>Open grocery gap</button>
-      </div>
-    </section>
-  )
-}
-
-function ReminderQueueCard({ model, onOpenProfile, onAskJohnny }) {
-  if (!model) return null
-
-  return (
-    <section className="dash-card dashboard-optional-card dashboard-optional-card-reminders">
-      <div className="dashboard-card-head">
-        <DashboardIconBadge iconName="profile" tone="pink" />
-        <span className="dashboard-chip subtle">Reminder queue</span>
-        <span className="dashboard-card-kicker">{model.countLabel}</span>
-      </div>
-      <h3>{model.title}</h3>
-      <p>{model.body}</p>
-      {model.nextReminder ? (
-        <div className="dashboard-optional-reminder-row">
-          <strong>{model.nextReminder.whenLabel}</strong>
-          <span>{model.nextReminder.message}</span>
-          <small>{model.nextReminder.metaLabel}</small>
-        </div>
-      ) : null}
-      <div className="dashboard-optional-actions">
-        <button type="button" className="btn-outline small" onClick={onAskJohnny}>Ask Johnny</button>
-        <button type="button" className="btn-primary small" onClick={onOpenProfile}>Open profile</button>
-      </div>
-    </section>
-  )
 }
 
 function buildProteinRunwayModel(snapshot) {
@@ -2877,109 +2373,6 @@ function roundToTenth(value) {
 function getElapsedDayFraction() {
   const now = new Date()
   return Math.min(1, Math.max(0.2, ((now.getHours() * 60) + now.getMinutes()) / 1440))
-}
-
-function DashboardIconBadge({ iconName, tone = 'slate', compact = false }) {
-  return (
-    <span className={`dashboard-card-icon-badge tone-${tone}${compact ? ' compact' : ''}`}>
-      <AppIcon name={iconName || 'label'} />
-    </span>
-  )
-}
-
-function MacroPill({ label, current, target, pct, compact = false, suffix = '' }) {
-  return (
-    <div className={`dashboard-macro-pill ${compact ? 'compact' : ''}`}>
-      <div className="dashboard-macro-top">
-        <span>{label}</span>
-        <strong>{Math.round(current ?? 0)} / {Math.round(target ?? 0)}{suffix}</strong>
-      </div>
-      <div className="bar-track thin">
-        <div className="bar-fill" style={{ width: `${Math.min(100, pct)}%` }} />
-      </div>
-    </div>
-  )
-}
-
-function StatCard({ label, value, meta, accent, onClick }) {
-  return (
-    <button className={`dash-card dashboard-card-button dashboard-stat-card ${accent || ''}`} type="button" onClick={onClick}>
-      <span className="dashboard-stat-label">{label}</span>
-      <strong className="dashboard-stat-value">{value}</strong>
-      <span className="dashboard-stat-meta">{meta}</span>
-    </button>
-  )
-}
-
-function QuickActionCard({ title, meta, icon, onClick }) {
-  return (
-    <button className="dash-card dashboard-card-button dashboard-action-card" type="button" onClick={onClick}>
-      <span className="dashboard-action-icon"><ActionIcon name={icon} /></span>
-      <span className="dashboard-action-copy">
-        <strong>{title}</strong>
-        <span>{meta}</span>
-      </span>
-    </button>
-  )
-}
-
-function EditorialCard({ chip, title, body, actionLabel, onClick }) {
-  return (
-    <button className="dash-card dashboard-card-button dashboard-editorial-card" type="button" onClick={onClick}>
-      <span className="dashboard-chip subtle">{chip}</span>
-      <h3>{title}</h3>
-      <p>{body}</p>
-      <span className="dashboard-story-link">{actionLabel}</span>
-    </button>
-  )
-}
-
-function RotatingStoryCard({ story, index, total, onAction, onPrevious, onNext, onSelect }) {
-  return (
-    <div className="dash-card dashboard-rotating-story-card" role="region" aria-label="Rotating inspirational thoughts">
-      <div className="dashboard-rotating-story-head">
-        <div className="dashboard-rotating-story-copy">
-          <span className="dashboard-chip subtle">{story.chip}</span>
-          <h3>{story.title}</h3>
-        </div>
-        <div className="dashboard-rotating-story-controls" aria-label="Thought controls">
-          <button type="button" className="dashboard-story-nav" onClick={onPrevious} aria-label="Previous thought">‹</button>
-          <button type="button" className="dashboard-story-nav" onClick={onNext} aria-label="Next thought">›</button>
-        </div>
-      </div>
-      <p>{story.body}</p>
-      <div className="dashboard-rotating-story-footer">
-        <button type="button" className="btn-secondary small" onClick={onAction}>
-          {story.actionLabel}
-        </button>
-        <div className="dashboard-story-dots" aria-label={`Thought ${index + 1} of ${total}`}>
-          {Array.from({ length: total }, (_, dotIndex) => (
-            <button
-              key={dotIndex}
-              type="button"
-              className={`dashboard-story-dot ${dotIndex === index ? 'active' : ''}`}
-              onClick={() => onSelect(dotIndex)}
-              aria-label={`Show thought ${dotIndex + 1}`}
-              aria-pressed={dotIndex === index}
-            />
-          ))}
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function StreakRow({ label, days, suffix = 'd' }) {
-  return (
-    <div className="dashboard-streak-row">
-      <span>{label}</span>
-      <strong>{typeof days === 'number' ? `${days}${suffix}` : days}</strong>
-    </div>
-  )
-}
-
-function ActionIcon({ name }) {
-  return <AppIcon name={normalizeAppIconName(name, 'coach')} />
 }
 
 function getInspirationalThoughtWindow(now = new Date()) {

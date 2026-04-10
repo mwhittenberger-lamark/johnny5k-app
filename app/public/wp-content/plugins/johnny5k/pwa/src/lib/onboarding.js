@@ -64,6 +64,13 @@ const DEFAULT_HABITS_FORM = {
   sleep_reminder_hour: 20,
   weekly_summary_enabled: true,
   weekly_summary_hour: 9,
+  push_enabled: true,
+  push_absence_nudges: true,
+  push_milestones: true,
+  push_winback: true,
+  push_accountability: true,
+  push_quiet_hours_start: 21,
+  push_quiet_hours_end: 7,
 }
 
 const DEFAULT_NOTIFICATIONS_FORM = {
@@ -313,6 +320,13 @@ export function habitsFormFromState(profile, prefs, goal) {
     phone: profile?.phone ?? '',
     timezone: profile?.timezone ?? detectBrowserTimezone(),
     ...reminderSettings,
+    push_enabled: preferenceMeta?.push_enabled ?? DEFAULT_HABITS_FORM.push_enabled,
+    push_absence_nudges: preferenceMeta?.push_absence_nudges ?? DEFAULT_HABITS_FORM.push_absence_nudges,
+    push_milestones: preferenceMeta?.push_milestones ?? DEFAULT_HABITS_FORM.push_milestones,
+    push_winback: preferenceMeta?.push_winback ?? DEFAULT_HABITS_FORM.push_winback,
+    push_accountability: preferenceMeta?.push_accountability ?? DEFAULT_HABITS_FORM.push_accountability,
+    push_quiet_hours_start: normalizeReminderHour(preferenceMeta?.push_quiet_hours_start, DEFAULT_HABITS_FORM.push_quiet_hours_start),
+    push_quiet_hours_end: normalizeReminderHour(preferenceMeta?.push_quiet_hours_end, DEFAULT_HABITS_FORM.push_quiet_hours_end),
   }
 }
 
@@ -330,12 +344,20 @@ export function notificationsFormFromState(profile, prefs) {
 export function settingsFormFromState(profile, prefs, goal) {
   const training = trainingFormFromState(profile, prefs)
   const preferenceMeta = prefs?.exercise_preferences_json ?? {}
+  const habits = habitsFormFromState(profile, prefs, goal)
 
   return {
     ...profileFormFromState(profile),
     ...bodyFormFromState(profile),
     ...goalsFormFromState(goal),
     ...notificationsFormFromState(profile, prefs),
+    push_enabled: habits.push_enabled,
+    push_absence_nudges: habits.push_absence_nudges,
+    push_milestones: habits.push_milestones,
+    push_winback: habits.push_winback,
+    push_accountability: habits.push_accountability,
+    push_quiet_hours_start: habits.push_quiet_hours_start,
+    push_quiet_hours_end: habits.push_quiet_hours_end,
     weekly_schedule: training.weekly_schedule,
     color_scheme: preferenceMeta?.color_scheme ?? 'classic',
     add_exercise_calories_to_target: Boolean(preferenceMeta?.add_exercise_calories_to_target),

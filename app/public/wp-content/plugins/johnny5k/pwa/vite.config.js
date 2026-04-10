@@ -6,6 +6,12 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.js',
+      injectManifest: {
+        injectionPoint: undefined,
+      },
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'icons/*.png'],
       manifest: {
@@ -20,25 +26,6 @@ export default defineConfig({
         icons: [
           { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
           { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
-        ],
-      },
-      workbox: {
-        navigateFallbackDenylist: [
-          /^\/wp-admin(?:\/|$)/,
-          /^\/wp-login\.php$/,
-          /^\/wp-json(?:\/|$)/,
-          /^\/wp-content(?:\/|$)/,
-          /^\/wp-includes(?:\/|$)/,
-          /^\/wp-.*\.php$/,
-          /^\/xmlrpc\.php$/,
-        ],
-        // Only cache the workout screen for offline use
-        runtimeCaching: [
-          {
-            urlPattern: /\/workout/,
-            handler: 'NetworkFirst',
-            options: { cacheName: 'workout-cache', expiration: { maxAgeSeconds: 86400 } },
-          },
         ],
       },
     }),

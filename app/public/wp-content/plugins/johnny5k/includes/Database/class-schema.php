@@ -605,6 +605,23 @@ class Schema {
   KEY user_id (user_id)
 ) $c;",
 
+			/* ── Behavior Events (Retention Analytics) ────────────────────────── */
+			"CREATE TABLE {$p}behavior_events (
+  id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  user_id bigint(20) unsigned NOT NULL,
+  event_name varchar(100) NOT NULL,
+  screen varchar(100) DEFAULT NULL,
+  context varchar(100) DEFAULT NULL,
+  value_num decimal(12,2) DEFAULT NULL,
+  metadata_json longtext DEFAULT NULL,
+  occurred_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY  (id),
+  KEY user_time (user_id,occurred_at),
+  KEY event_time (event_name,occurred_at),
+  KEY screen_time (screen,occurred_at)
+) $c;",
+
 			/* ── AI Threads ────────────────────────────────────────────────────── */
 			"CREATE TABLE {$p}ai_threads (
   id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
@@ -665,6 +682,51 @@ class Schema {
   KEY user_id (user_id),
   KEY trigger_type (trigger_type),
   KEY sent_at (sent_at)
+) $c;",
+
+			/* ── Push Subscriptions ───────────────────────────────────────────── */
+			"CREATE TABLE {$p}push_subscriptions (
+  id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  user_id bigint(20) unsigned NOT NULL,
+  endpoint varchar(767) NOT NULL,
+  endpoint_hash char(64) NOT NULL,
+  public_key varchar(255) NOT NULL DEFAULT '',
+  auth_token varchar(255) NOT NULL DEFAULT '',
+  content_encoding varchar(50) NOT NULL DEFAULT '',
+  expiration_time bigint(20) DEFAULT NULL,
+  user_agent varchar(255) DEFAULT NULL,
+  subscription_json longtext DEFAULT NULL,
+  created_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  last_seen_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  disabled_at datetime DEFAULT NULL,
+  PRIMARY KEY  (id),
+  UNIQUE KEY endpoint_hash (endpoint_hash),
+  KEY user_id (user_id),
+  KEY user_active (user_id,disabled_at)
+) $c;",
+
+			/* ── Coach Delivery Logs ──────────────────────────────────────────── */
+			"CREATE TABLE {$p}coach_delivery_logs (
+  id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  user_id bigint(20) unsigned NOT NULL,
+  follow_up_id varchar(64) DEFAULT NULL,
+  channel enum('in_app','push','sms') NOT NULL DEFAULT 'in_app',
+  delivery_type varchar(50) NOT NULL DEFAULT 'follow_up',
+  delivery_key varchar(100) DEFAULT NULL,
+  title varchar(150) DEFAULT NULL,
+  message_preview varchar(255) DEFAULT NULL,
+  payload_json longtext DEFAULT NULL,
+  status enum('queued','sent','failed','suppressed','skipped') NOT NULL DEFAULT 'queued',
+  error_code varchar(100) DEFAULT NULL,
+  error_message text DEFAULT NULL,
+  provider_message_id varchar(150) DEFAULT NULL,
+  created_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  sent_at datetime DEFAULT NULL,
+  PRIMARY KEY  (id),
+  KEY user_time (user_id,created_at),
+  KEY follow_up (follow_up_id),
+  KEY channel_status_time (channel,status,created_at)
 ) $c;",
 
 		]; // end return

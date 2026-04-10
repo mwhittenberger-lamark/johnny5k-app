@@ -1,6 +1,18 @@
 import { memo, useEffect, useState } from 'react'
-import { aiApi, trainingApi } from '../../api/client'
+import { aiApi } from '../../api/modules/ai'
 import { formatUsShortDate } from '../../lib/dateFormat'
+import {
+  buildExerciseMeta,
+  buildLocalOptionReason,
+  dedupeExercisePool,
+  humanizeToken,
+  isUserOwnedExercise,
+  parseAiSwapSuggestions,
+  parseStringList,
+  resolveAiSwapSuggestions,
+  saveSuggestedExerciseToLibrary,
+} from './swapShared'
+import { usePersonalExerciseLibrarySwap } from '../../hooks/usePersonalExerciseLibrarySwap'
 
 function ExerciseCard({
   exercise,
@@ -30,20 +42,31 @@ function ExerciseCard({
   const [aiSwapSuggestions, setAiSwapSuggestions] = useState([])
   const [savingSuggestionName, setSavingSuggestionName] = useState('')
   const [saveMessage, setSaveMessage] = useState('')
-  const [myExercises, setMyExercises] = useState([])
-  const [loadingMyExercises, setLoadingMyExercises] = useState(false)
-  const [myExercisesError, setMyExercisesError] = useState('')
-  const [editingExerciseId, setEditingExerciseId] = useState(0)
-  const [editDraft, setEditDraft] = useState(() => buildPersonalExerciseDraft())
-  const [savingPersonalExerciseId, setSavingPersonalExerciseId] = useState(0)
-  const [deletingPersonalExerciseId, setDeletingPersonalExerciseId] = useState(0)
-  const [savedExerciseIds, setSavedExerciseIds] = useState([])
 
   const activeSetSignature = (exercise?.sets ?? []).map(set => `${set.id}:${set.weight}:${set.reps}:${set.rir ?? ''}:${set.completed}`).join('|')
   const coachingCues = parseCoachingCues(exercise?.coaching_cues ?? exercise?.coaching_cues_json)
   const secondaryMuscles = parseStringList(exercise?.secondary_muscles ?? exercise?.secondary_muscles_json)
   const librarySlots = parseStringList(exercise?.slot_types ?? exercise?.slot_types_json)
   const nextRowKey = getNewRowKey(exercise)
+  const {
+    myExercises,
+    loadingMyExercises,
+    myExercisesError,
+    editingExerciseId,
+    editDraft,
+    savingPersonalExerciseId,
+    deletingPersonalExerciseId,
+    savedExerciseIds,
+    setEditingExerciseId,
+    handleEditPersonalExercise: beginEditPersonalExercise,
+    handleEditDraftChange: updateEditDraftField,
+    handleSavePersonalExercise: persistPersonalExerciseEdit,
+    handleDeletePersonalExercise: removePersonalExerciseFromLibrary,
+    prependSavedExercise,
+  } = usePersonalExerciseLibrarySwap({
+    enabled: showSwapOptions && Boolean(exercise?.id),
+    exercise,
+  })
 
   useEffect(() => {
     setSetDrafts(buildSetDrafts(exercise))
@@ -58,51 +81,7 @@ function ExerciseCard({
     setAiSwapSuggestions([])
     setSavingSuggestionName('')
     setSaveMessage('')
-    setMyExercises([])
-    setLoadingMyExercises(false)
-    setMyExercisesError('')
-    setEditingExerciseId(0)
-    setEditDraft(buildPersonalExerciseDraft())
-    setSavingPersonalExerciseId(0)
-    setDeletingPersonalExerciseId(0)
-    setSavedExerciseIds([])
-  }, [exercise?.id, exercise?.notes, activeSetSignature])
-
-  useEffect(() => {
-    if (!showSwapOptions || !exercise?.id) return undefined
-
-    let active = true
-
-    async function loadMyExercises() {
-      setLoadingMyExercises(true)
-      setMyExercisesError('')
-
-      try {
-        const rows = await trainingApi.getExercises({
-          own_only: 1,
-          limit: 8,
-          preferred_muscle: exercise.primary_muscle || '',
-          preferred_equipment: exercise.equipment || '',
-        })
-
-        if (!active) return
-        setMyExercises(normalizeLibraryRows(rows).filter(candidate => Number(candidate.id) !== Number(exercise.exercise_id)))
-      } catch (error) {
-        if (!active) return
-        setMyExercisesError(error?.message || 'Could not load your saved exercises.')
-      } finally {
-        if (active) {
-          setLoadingMyExercises(false)
-        }
-      }
-    }
-
-    loadMyExercises()
-
-    return () => {
-      active = false
-    }
-  }, [exercise?.equipment, exercise?.exercise_id, exercise?.id, exercise?.primary_muscle, showSwapOptions])
+  }, [exercise, exercise?.id, exercise?.notes, activeSetSignature])
 
   useEffect(() => {
     if (!showCuesDrawer) return undefined
@@ -148,7 +127,7 @@ function ExerciseCard({
     const rowKey = String(set.id)
     const draft = setDrafts[rowKey] ?? {}
     const dirty = isSetDirty(set, draft)
-    const nextCompleted = dirty ? true : !Boolean(set.completed)
+    const nextCompleted = dirty ? true : !set.completed
     setSavingRowKey(rowKey)
 
     try {
@@ -262,41 +241,13 @@ function ExerciseCard({
     setSaveMessage('')
 
     try {
-      const payload = buildSuggestedExercisePayload({
+      const { savedExercise } = await saveSuggestedExerciseToLibrary({
         suggestion,
         exercise,
         aiPrompt: aiSwapPrompt,
       })
-      const result = await trainingApi.savePersonalExercise(payload)
-      const savedExerciseId = Number(result?.id)
 
-      if (!savedExerciseId) {
-        throw new Error('Johnny could not save that exercise to the library.')
-      }
-
-      const baseExerciseId = getSubstitutionBaseExerciseId(exercise)
-      if (baseExerciseId > 0 && baseExerciseId !== savedExerciseId) {
-        await trainingApi.savePersonalSubstitution({
-          exercise_id: baseExerciseId,
-          substitute_exercise_id: savedExerciseId,
-          reason_code: inferSubstitutionReasonCode({ exercise, aiPrompt: aiSwapPrompt }),
-          priority: 1,
-        })
-      }
-
-      const savedExercise = {
-        id: savedExerciseId,
-        name: suggestion.name,
-        description: payload.description,
-        movement_pattern: payload.movement_pattern,
-        primary_muscle: exercise.primary_muscle || '',
-        equipment: exercise.equipment || 'other',
-        difficulty: exercise.difficulty || 'beginner',
-        owned_by_user: 1,
-      }
-
-      setSavedExerciseIds(current => Array.from(new Set([...current, savedExerciseId])))
-      setMyExercises(current => dedupeExercisePool([normalizeLibraryExercise(savedExercise), ...current]))
+      prependSavedExercise(savedExercise)
       setSaveMessage(`${suggestion.name} was added to your library and swapped into this workout.`)
       await handleSwap(savedExercise)
     } catch (error) {
@@ -307,76 +258,24 @@ function ExerciseCard({
   }
 
   function handleEditPersonalExercise(option) {
-    setEditingExerciseId(option.id)
-    setEditDraft(buildPersonalExerciseDraft(option))
-    setMyExercisesError('')
+    beginEditPersonalExercise(option)
   }
 
   function handleEditDraftChange(key, value) {
-    setEditDraft(current => ({
-      ...current,
-      [key]: value,
-    }))
+    updateEditDraftField(key, value)
   }
 
   async function handleSavePersonalExercise(optionId) {
-    if (!optionId || savingPersonalExerciseId) return
-
-    setSavingPersonalExerciseId(optionId)
-    setMyExercisesError('')
-
-    try {
-      await trainingApi.updatePersonalExercise(optionId, {
-        name: editDraft.name,
-        description: editDraft.description,
-        primary_muscle: editDraft.primary_muscle,
-        equipment: editDraft.equipment,
-        difficulty: editDraft.difficulty,
-        movement_pattern: editDraft.movement_pattern,
-      })
-
-      setMyExercises(current => current.map(option => (
-        Number(option.id) === Number(optionId)
-          ? {
-              ...option,
-              name: editDraft.name.trim(),
-              description: editDraft.description.trim(),
-              primary_muscle: editDraft.primary_muscle,
-              equipment: editDraft.equipment,
-              difficulty: editDraft.difficulty,
-              movement_pattern: editDraft.movement_pattern,
-            }
-          : option
-      )))
-      setEditingExerciseId(0)
+    const saved = await persistPersonalExerciseEdit(optionId)
+    if (saved) {
       setSaveMessage('Your personal exercise was updated.')
-    } catch (error) {
-      setMyExercisesError(error?.message || 'Could not update that exercise.')
-    } finally {
-      setSavingPersonalExerciseId(0)
     }
   }
 
   async function handleDeletePersonalExercise(optionId) {
-    if (!optionId || deletingPersonalExerciseId) return
-    if (!window.confirm('Remove this personal exercise from your library? Any personal swap links that depend on it will be removed too.')) return
-
-    setDeletingPersonalExerciseId(optionId)
-    setMyExercisesError('')
-
-    try {
-      await trainingApi.deletePersonalExercise(optionId)
-      setMyExercises(current => current.filter(option => Number(option.id) !== Number(optionId)))
-      setSavedExerciseIds(current => current.filter(id => Number(id) !== Number(optionId)))
-      if (editingExerciseId === optionId) {
-        setEditingExerciseId(0)
-        setEditDraft(buildPersonalExerciseDraft())
-      }
+    const deleted = await removePersonalExerciseFromLibrary(optionId)
+    if (deleted) {
       setSaveMessage('That personal exercise was removed from your library.')
-    } catch (error) {
-      setMyExercisesError(error?.message || 'Could not remove that exercise.')
-    } finally {
-      setDeletingPersonalExerciseId(0)
     }
   }
 
@@ -410,6 +309,10 @@ function ExerciseCard({
             <span className="exercise-card-tag subtle">{humanizeToken(exercise.slot_type || librarySlots[0] || 'accessory')} slot</span>
             <span className="dashboard-chip subtle">{exercise.planned_sets} x {exercise.planned_rep_min}-{exercise.planned_rep_max}</span>
             {exercise.equipment ? <span className="exercise-card-tag subtle">{humanizeToken(exercise.equipment)}</span> : null}
+            {exercise.is_bonus_fill ? <span className="exercise-card-tag bonus-fill">Full bonus {humanizeToken(exercise.slot_type || 'accessory')}</span> : null}
+            {exercise.was_swapped && exercise.original_exercise_name ? (
+              <span className="exercise-card-tag equipment-adjusted">Adjusted to your equipment</span>
+            ) : null}
           </div>
         </div>
 
@@ -437,6 +340,9 @@ function ExerciseCard({
 
       {exercise.was_swapped && exercise.original_exercise_name ? (
         <p className="workout-swap-note">Swapped in for {exercise.original_exercise_name}.</p>
+      ) : null}
+      {exercise.is_bonus_fill ? (
+        <p className="workout-swap-note workout-bonus-note">Johnny added this movement automatically so your full session includes extra {humanizeToken(exercise.slot_type || 'accessory')} work.</p>
       ) : null}
 
       <div className="exercise-muscle-strip">
@@ -951,21 +857,6 @@ function parseCoachingCues(value) {
   }
 }
 
-function parseStringList(value) {
-  if (!value) return []
-  if (Array.isArray(value)) return value.filter(Boolean)
-
-  try {
-    const parsed = JSON.parse(value)
-    return Array.isArray(parsed) ? parsed.filter(Boolean) : []
-  } catch {
-    return String(value)
-      .split(/[\r\n,]+/)
-      .map(item => item.trim())
-      .filter(Boolean)
-  }
-}
-
 function formatShortDate(value) {
   if (!value) return 'Recent'
   return formatUsShortDate(value, 'Recent')
@@ -1028,245 +919,6 @@ function buildExerciseDescription(exercise, coachingCues = []) {
   }
 
   return `This movement should feel controlled, repeatable, and easy to judge from set to set. ${targetSummary}${cueSummary}`.trim()
-}
-
-function humanizeToken(value) {
-  if (!value) return ''
-  return String(value).replace(/[_-]+/g, ' ').trim()
-}
-
-function parseAiSwapSuggestions(reply) {
-  return String(reply || '')
-    .split('\n')
-    .map(line => line.trim())
-    .filter(Boolean)
-    .map(line => line.replace(/^[-*\d.\s]+/, '').trim())
-    .map(line => {
-      const parts = line.split('|')
-      if (parts.length >= 2) {
-        return {
-          name: parts[0].trim(),
-          reason: parts.slice(1).join('|').trim(),
-        }
-      }
-
-      const fallbackParts = line.split(/\s[-:]\s/)
-      if (fallbackParts.length >= 2) {
-        return {
-          name: fallbackParts[0].trim(),
-          reason: fallbackParts.slice(1).join(' - ').trim(),
-        }
-      }
-
-      return {
-        name: line.trim(),
-        reason: 'Suggested by Johnny based on your prompt.',
-      }
-    })
-    .filter(item => item.name)
-    .slice(0, 3)
-}
-
-function buildPersonalExerciseDraft(exercise = null) {
-  return {
-    name: String(exercise?.name || '').trim(),
-    description: String(exercise?.description || '').trim(),
-    primary_muscle: String(exercise?.primary_muscle || '').trim(),
-    movement_pattern: String(exercise?.movement_pattern || '').trim(),
-    equipment: String(exercise?.equipment || '').trim(),
-    difficulty: String(exercise?.difficulty || 'beginner').trim() || 'beginner',
-  }
-}
-
-function normalizeLibraryRows(rows) {
-  return Array.isArray(rows) ? rows.map(normalizeLibraryExercise) : []
-}
-
-function normalizeLibraryExercise(exercise) {
-  return {
-    ...exercise,
-    owned_by_user: isUserOwnedExercise(exercise) ? 1 : 0,
-  }
-}
-
-function isUserOwnedExercise(exercise) {
-  return Number(exercise?.owned_by_user || 0) === 1 || Number(exercise?.user_id || 0) > 0
-}
-
-function buildExerciseMeta(option) {
-  return [option?.primary_muscle, option?.equipment, option?.difficulty]
-    .map(humanizeToken)
-    .filter(Boolean)
-    .join(' · ')
-}
-
-function buildSuggestedExercisePayload({ suggestion, exercise, aiPrompt }) {
-  return {
-    name: suggestion.name,
-    slug: slugifyExerciseName(suggestion.name),
-    description: buildSuggestedExerciseDescription(suggestion, aiPrompt),
-    movement_pattern: exercise.movement_pattern || '',
-    primary_muscle: exercise.primary_muscle || '',
-    equipment: exercise.equipment || 'other',
-    difficulty: exercise.difficulty || 'beginner',
-    day_types: parseStringList(exercise?.day_types ?? exercise?.day_types_json),
-    slot_types: parseStringList(exercise?.slot_types ?? exercise?.slot_types_json),
-    active: 1,
-  }
-}
-
-function buildSuggestedExerciseDescription(suggestion, aiPrompt) {
-  const parts = [String(suggestion?.reason || '').trim(), String(aiPrompt || '').trim()]
-    .filter(Boolean)
-
-  return parts.join(' Request context: ')
-}
-
-function slugifyExerciseName(value) {
-  return String(value || '')
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-}
-
-function getSubstitutionBaseExerciseId(exercise) {
-  const originalExerciseId = Number(exercise?.original_exercise_id || 0)
-  if (originalExerciseId > 0) {
-    return originalExerciseId
-  }
-
-  return Number(exercise?.exercise_id || 0)
-}
-
-function inferSubstitutionReasonCode({ exercise, aiPrompt }) {
-  const prompt = String(aiPrompt || '').toLowerCase()
-  const equipment = String(exercise?.equipment || '').toLowerCase()
-
-  if (/shoulder|elbow|wrist|knee|hip|back|pain|hurt|injur|joint/.test(prompt)) {
-    return 'joint_friendly'
-  }
-
-  if (equipment && prompt.includes('machine')) {
-    return 'equipment'
-  }
-
-  if (/beginner|easier|simpler|learn|skill|advanced|harder/.test(prompt)) {
-    return 'skill_level'
-  }
-
-  return 'variation'
-}
-
-async function resolveAiSwapSuggestions(suggestions, exercise) {
-  const swapOptions = (exercise.swap_options ?? []).map(option => ({
-    id: option.id,
-    name: option.name,
-    primary_muscle: exercise.primary_muscle,
-    equipment: exercise.equipment,
-  }))
-
-  return Promise.all(suggestions.map(async suggestion => {
-    let searchResults = []
-
-    try {
-      searchResults = await trainingApi.getExercises({
-        q: suggestion.name,
-        limit: 8,
-        preferred_muscle: exercise.primary_muscle || '',
-        preferred_equipment: exercise.equipment || '',
-      })
-    } catch {
-      searchResults = []
-    }
-
-    const pool = dedupeExercisePool([
-      ...swapOptions,
-      ...(Array.isArray(searchResults) ? searchResults : []),
-    ]).filter(candidate => Number(candidate.id) !== Number(exercise.exercise_id))
-
-    return {
-      ...suggestion,
-      match: findBestExerciseMatch(suggestion.name, pool),
-    }
-  }))
-}
-
-function dedupeExercisePool(items) {
-  const seen = new Map()
-
-  for (const item of items) {
-    if (!item?.id || seen.has(item.id)) continue
-    seen.set(item.id, item)
-  }
-
-  return Array.from(seen.values())
-}
-
-function buildLocalOptionReason(option, exercise) {
-  const reasons = []
-
-  if (option.primary_muscle && option.primary_muscle === exercise.primary_muscle) {
-    reasons.push('Hits the same primary muscle.')
-  }
-  if (option.equipment && option.equipment !== exercise.equipment) {
-    reasons.push(`Changes the setup to ${humanizeToken(option.equipment).toLowerCase()}.`)
-  }
-  if (!reasons.length) {
-    reasons.push('Fits the same training slot from your saved exercise library.')
-  }
-
-  return reasons.slice(0, 2).join(' ')
-}
-
-function findBestExerciseMatch(name, pool) {
-  const target = normalizeExerciseName(name)
-  if (!target) return null
-
-  let bestMatch = null
-  let bestScore = 0
-
-  for (const candidate of pool) {
-    const candidateName = normalizeExerciseName(candidate?.name)
-    if (!candidateName) continue
-
-    let score = 0
-    if (candidateName === target) {
-      score = 100
-    } else if (candidateName.includes(target) || target.includes(candidateName)) {
-      score = 82
-    } else {
-      const targetTokens = tokeniseExerciseName(target)
-      const candidateTokens = tokeniseExerciseName(candidateName)
-      const overlap = targetTokens.filter(token => candidateTokens.includes(token)).length
-      score = overlap * 22
-
-      if (targetTokens[0] && targetTokens[0] === candidateTokens[0]) {
-        score += 8
-      }
-    }
-
-    if (score > bestScore) {
-      bestScore = score
-      bestMatch = candidate
-    }
-  }
-
-  return bestScore >= 30 ? bestMatch : null
-}
-
-function normalizeExerciseName(value) {
-  return String(value || '')
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-}
-
-function tokeniseExerciseName(value) {
-  return normalizeExerciseName(value)
-    .split(' ')
-    .filter(token => token.length > 2)
 }
 
 export default memo(ExerciseCard)

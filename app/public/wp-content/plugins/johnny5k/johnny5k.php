@@ -16,7 +16,11 @@ define( 'JF_VERSION',        '1.0.0' );
 define( 'JF_PLUGIN_DIR',     plugin_dir_path( __FILE__ ) );
 define( 'JF_PLUGIN_URL',     plugin_dir_url( __FILE__ ) );
 define( 'JF_REST_NAMESPACE', 'fit/v1' );
-define( 'JF_DB_VERSION',     '1.1.5' );
+define( 'JF_DB_VERSION',     '1.1.8' );
+
+if ( file_exists( JF_PLUGIN_DIR . 'vendor/autoload.php' ) ) {
+	require_once JF_PLUGIN_DIR . 'vendor/autoload.php';
+}
 
 // ── Autoloader ──────────────────────────────────────────────────────────────
 spl_autoload_register( function ( string $class ): void {
@@ -61,6 +65,7 @@ register_deactivation_hook( __FILE__, function (): void {
     wp_clear_scheduled_hook( 'jf_send_scheduled_sms_reminder' );
     wp_clear_scheduled_hook( 'jf_weekly_calorie_adjust' );
     wp_clear_scheduled_hook( 'jf_evaluate_awards' );
+    wp_clear_scheduled_hook( 'jf_process_coach_deliveries' );
 } );
 
 // ── Bootstrap ────────────────────────────────────────────────────────────────
@@ -93,6 +98,20 @@ add_action( 'plugins_loaded', function (): void {
     if ( ! wp_next_scheduled( 'jf_evaluate_awards' ) ) {
         wp_schedule_event( time(), 'twicedaily', 'jf_evaluate_awards' );
     }
+    if ( ! wp_next_scheduled( 'jf_process_coach_deliveries' ) ) {
+        wp_schedule_event( time() + 300, 'hourly', 'jf_process_coach_deliveries' );
+    }
+} );
+
+add_filter( 'cron_schedules', function ( array $schedules ): array {
+	if ( ! isset( $schedules['weekly'] ) ) {
+		$schedules['weekly'] = [
+			'interval' => WEEK_IN_SECONDS,
+			'display'  => 'Once Weekly',
+		];
+	}
+
+	return $schedules;
 } );
 
 add_filter( 'retrieve_password_notification_email', function ( array $defaults, string $key, string $user_login, \WP_User $user_data ): array {
@@ -124,5 +143,11 @@ add_action( 'jf_weekly_calorie_adjust', function (): void {
 } );
 
 add_action( 'jf_evaluate_awards', function (): void {
-    Johnny5k\Services\AwardEngine::evaluate_all_users();
+    Johnny5k\Services\AwardEngine::run_all();
+} );
+
+add_action( 'jf_process_coach_deliveries', function (): void {
+    Johnny5k\Services\CoachDeliveryService::process_due_follow_ups_all_users();
+    Johnny5k\Services\PushService::cleanup_disabled_subscriptions();
+    Johnny5k\Services\PushService::cleanup_stale_active_subscriptions();
 } );

@@ -1,10 +1,11 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
-import { authApi } from '../../api/client'
+import { analyticsApi } from '../../api/modules/analytics'
+import { authApi } from '../../api/modules/auth'
+import { getAppImageUrl } from '../../lib/appImages'
 import { useAuthStore } from '../../store/authStore'
 import { useJohnnyAssistantStore } from '../../store/johnnyAssistantStore'
 import AppIcon from '../ui/AppIcon'
-import brandmarkImage from '../../assets/F9159E4E-E475-4BE5-8674-456B7BEFDBEE.PNG'
 
 const JohnnyAssistantDrawer = lazy(() => import('../ai/JohnnyAssistantDrawer'))
 
@@ -19,17 +20,58 @@ const tabs = [
 export default function AppShell({ children }) {
   const location = useLocation()
   const navigate = useNavigate()
-  const { isAdmin, clearAuth } = useAuthStore()
+  const { isAdmin, clearAuth, appImages } = useAuthStore()
   const openDrawer = useJohnnyAssistantStore(state => state.openDrawer)
   const isDrawerOpen = useJohnnyAssistantStore(state => state.isOpen)
   const [loggingOut, setLoggingOut] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const menuButtonRef = useRef(null)
   const firstMobileLinkRef = useRef(null)
+  const brandmarkImage = getAppImageUrl(appImages, 'brandmark')
 
   useEffect(() => {
     setMenuOpen(false)
   }, [location.pathname])
+
+  useEffect(() => {
+    const search = new URLSearchParams(location.search)
+    const coachDelivery = search.get('coach_delivery')
+    const followUpId = search.get('follow_up_id')
+    const triggerType = search.get('trigger_type')
+    const coachSource = search.get('coach_source')
+    const coachPrompt = search.get('coach_prompt')
+
+    if (!coachDelivery && !coachPrompt) {
+      return
+    }
+
+    if (coachDelivery || followUpId || triggerType || coachSource) {
+      analyticsApi.event('coach_delivery_opened', {
+        screen: location.pathname.replace(/^\//, '') || 'dashboard',
+        context: coachDelivery || 'coach_delivery',
+        metadata: {
+          follow_up_id: followUpId || '',
+          trigger_type: triggerType || '',
+          coach_source: coachSource || '',
+          path: location.pathname,
+        },
+      }).catch(() => {})
+    }
+
+    const mappedPrompt = buildCoachPromptFromQuery(coachPrompt, triggerType)
+    if (mappedPrompt) {
+      openDrawer(mappedPrompt)
+    }
+
+    search.delete('coach_delivery')
+    search.delete('follow_up_id')
+    search.delete('trigger_type')
+    search.delete('coach_source')
+    search.delete('coach_prompt')
+    const nextSearch = search.toString()
+    const nextUrl = `${location.pathname}${nextSearch ? `?${nextSearch}` : ''}${location.hash || ''}`
+    window.history.replaceState(window.history.state, '', nextUrl)
+  }, [location.hash, location.pathname, location.search, openDrawer])
 
   useEffect(() => {
     if (!menuOpen) return undefined
@@ -76,7 +118,7 @@ export default function AppShell({ children }) {
             <img src={brandmarkImage} alt="Johnny5k brandmark" />
           </span>
           <span className="app-shell-brand-copy">
-            <strong>Johnny 5000</strong>
+            <strong>Johnny5k</strong>
             <small>Your AI Health Coach</small>
           </span>
         </NavLink>
@@ -179,4 +221,24 @@ export default function AppShell({ children }) {
       ) : null}
     </div>
   )
+}
+
+function buildCoachPromptFromQuery(coachPrompt, triggerType) {
+  const normalizedPrompt = String(coachPrompt || '').trim().toLowerCase()
+  const normalizedTrigger = String(triggerType || '').trim().toLowerCase()
+
+  if (normalizedPrompt === 'absence' || normalizedTrigger === 'absence_nudge') {
+    return 'You caught me on a usual training day. Build me the best short workout to keep the rhythm.'
+  }
+  if (normalizedPrompt === 'reset' || normalizedTrigger === 'reset_offer') {
+    return 'Build me a reset workout based on the sessions I missed this week.'
+  }
+  if (normalizedPrompt === 'balance' || normalizedTrigger === 'balance_prompt') {
+    return 'Review my recent week and balance out the next workout.'
+  }
+  if (normalizedPrompt === 'milestone' || normalizedTrigger === 'milestone') {
+    return 'Use my current momentum and build the right next move.'
+  }
+
+  return ''
 }

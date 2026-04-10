@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { authApi } from '../../api/client'
+import { authApi } from '../../api/modules/auth'
 import { useAuthStore } from '../../store/authStore'
 
 export default function RegisterScreen() {
@@ -34,7 +34,7 @@ export default function RegisterScreen() {
 
   return (
     <div className="auth-screen">
-      <h1 className="logo">Johnny<span>5000</span></h1>
+      <h1 className="logo">Johnny<span>5k</span></h1>
       <p className="tagline">Join by invite. Let's build something.</p>
 
       <form onSubmit={handleSubmit} className="auth-form">

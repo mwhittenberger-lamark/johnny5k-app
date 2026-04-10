@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
-import { workoutApi } from '../api/client'
+import { workoutApi } from '../api/modules/workout'
 
 /** Active session state — persisted in sessionStorage so a page refresh doesn't lose the workout. */
 export const useWorkoutStore = create(persist((set, get) => ({
@@ -197,6 +197,9 @@ export const useWorkoutStore = create(persist((set, get) => ({
     const customWorkoutDraftId = options.customWorkoutDraftId ?? customWorkoutDraft?.id ?? ''
     const selectedExerciseSwaps = Array.isArray(options.exerciseSwaps) ? options.exerciseSwaps : []
     const selectedExerciseOrder = Array.isArray(options.exerciseOrder) ? options.exerciseOrder : []
+    const selectedRepAdjustments = Array.isArray(options.repAdjustments) ? options.repAdjustments : []
+    const selectedExerciseRemovals = Array.isArray(options.exerciseRemovals) ? options.exerciseRemovals : []
+    const selectedExerciseAdditions = Array.isArray(options.exerciseAdditions) ? options.exerciseAdditions : []
     set({ loading: true, error: null })
     try {
       const data = await workoutApi.start({
@@ -206,6 +209,9 @@ export const useWorkoutStore = create(persist((set, get) => ({
         ...(customWorkoutDraftId ? { custom_workout_draft_id: customWorkoutDraftId } : {}),
         ...(selectedExerciseSwaps.length ? { exercise_swaps: selectedExerciseSwaps } : {}),
         ...(selectedExerciseOrder.length ? { exercise_order: selectedExerciseOrder } : {}),
+        ...(selectedRepAdjustments.length ? { rep_adjustments: selectedRepAdjustments } : {}),
+        ...(selectedExerciseRemovals.length ? { exercise_removals: selectedExerciseRemovals } : {}),
+        ...(selectedExerciseAdditions.length ? { exercise_additions: selectedExerciseAdditions } : {}),
       })
       const resolvedSession = data.session ? data : await workoutApi.get(data.session_id)
 
@@ -220,6 +226,9 @@ export const useWorkoutStore = create(persist((set, get) => ({
           ...(customWorkoutDraftId ? { custom_workout_draft_id: customWorkoutDraftId } : {}),
           ...(selectedExerciseSwaps.length ? { exercise_swaps: selectedExerciseSwaps } : {}),
           ...(selectedExerciseOrder.length ? { exercise_order: selectedExerciseOrder } : {}),
+          ...(selectedRepAdjustments.length ? { rep_adjustments: selectedRepAdjustments } : {}),
+          ...(selectedExerciseRemovals.length ? { exercise_removals: selectedExerciseRemovals } : {}),
+          ...(selectedExerciseAdditions.length ? { exercise_additions: selectedExerciseAdditions } : {}),
         })
 
         const retriedSession = retryData.session ? retryData : await workoutApi.get(retryData.session_id)
@@ -252,14 +261,56 @@ export const useWorkoutStore = create(persist((set, get) => ({
 
   logSet: async (sessionExerciseId, setData) => {
     const { sessionId } = get()
-    await workoutApi.logSet(sessionId, { session_exercise_id: sessionExerciseId, ...setData })
-    await get().reloadSession()
+    const tempSetId = -Date.now()
+    const optimisticSet = buildOptimisticSet(sessionExerciseId, setData, tempSetId)
+    const rollbackSession = get().session
+
+    set((state) => {
+      const nextSession = appendSetToExercise(state.session, sessionExerciseId, optimisticSet)
+      return nextSession ? { session: nextSession } : {}
+    })
+
+    try {
+      const result = await workoutApi.logSet(sessionId, { session_exercise_id: sessionExerciseId, ...setData })
+      const persistedSetId = Number(result?.set_id || 0)
+      if (persistedSetId > 0) {
+        set((state) => {
+          const nextSession = replaceSetId(state.session, sessionExerciseId, tempSetId, persistedSetId)
+          return nextSession ? { session: nextSession } : {}
+        })
+      }
+      return result
+    } catch (error) {
+      set({ session: rollbackSession })
+      try {
+        await get().reloadSession()
+      } catch (reloadError) {
+        void reloadError
+      }
+      throw error
+    }
   },
 
   updateSet: async (setId, setData) => {
     const { sessionId } = get()
-    await workoutApi.updateSet(sessionId, setId, setData)
-    await get().reloadSession()
+    const rollbackSession = get().session
+    set((state) => {
+      const nextSession = patchSetById(state.session, setId, setData)
+      return nextSession ? { session: nextSession } : {}
+    })
+
+    try {
+      const result = await workoutApi.updateSet(sessionId, setId, setData)
+      return result
+    } catch (error) {
+      set({ session: rollbackSession })
+      try {
+        await get().reloadSession()
+      } catch (reloadError) {
+        void reloadError
+      }
+      throw error
+    }
   },
 
   saveExerciseNote: async (sessionExerciseId, notes) => {
@@ -271,34 +322,52 @@ export const useWorkoutStore = create(persist((set, get) => ({
   deleteSet: async (setId) => {
     const { sessionId, session } = get()
     const deletedSet = session?.exercises?.flatMap(exercise => exercise.sets ?? []).find(set => set.id === setId)
-    const result = await workoutApi.deleteSet(sessionId, setId)
-    await get().reloadSession()
-    const payload = result?.set || deletedSet
+    const rollbackSession = session
+    try {
+      if (deletedSet?.session_exercise_id) {
+        set((state) => {
+          const nextSession = removeSetFromExercise(state.session, Number(deletedSet.session_exercise_id), setId)
+          return nextSession ? { session: nextSession } : {}
+        })
+      }
 
-    if (!payload) {
-      set({ undoToast: null })
-      return
+      const result = await workoutApi.deleteSet(sessionId, setId)
+      const payload = result?.set || deletedSet || null
+
+      if (!payload && rollbackSession) {
+        set({ session: rollbackSession, undoToast: null })
+        return result
+      }
+
+      set({
+        undoToast: payload ? {
+          type: 'delete-set',
+          message: `Set ${payload.set_number} removed.`,
+          actionLabel: 'Undo',
+          expiresAt: Date.now() + 8000,
+          payload: {
+            sessionExerciseId: payload.session_exercise_id,
+            setNumber: payload.set_number,
+            weight: payload.weight,
+            reps: payload.reps,
+            rir: payload.rir,
+            rpe: payload.rpe,
+            completed: payload.completed,
+            painFlag: payload.pain_flag,
+            notes: payload.notes,
+          },
+        } : null,
+      })
+      return result
+    } catch (error) {
+      set({ session: rollbackSession })
+      try {
+        await get().reloadSession()
+      } catch (reloadError) {
+        void reloadError
+      }
+      throw error
     }
-
-    set({
-      undoToast: {
-        type: 'delete-set',
-        message: `Set ${payload.set_number} removed.`,
-        actionLabel: 'Undo',
-        expiresAt: Date.now() + 8000,
-        payload: {
-          sessionExerciseId: payload.session_exercise_id,
-          setNumber: payload.set_number,
-          weight: payload.weight,
-          reps: payload.reps,
-          rir: payload.rir,
-          rpe: payload.rpe,
-          completed: payload.completed,
-          painFlag: payload.pain_flag,
-          notes: payload.notes,
-        },
-      },
-    })
   },
 
   swapExercise: async (sessionExerciseId, newExerciseId) => {
@@ -364,6 +433,7 @@ export const useWorkoutStore = create(persist((set, get) => ({
   undoLastReversibleAction: async () => {
     const { sessionId, undoToast } = get()
     if (!sessionId || !undoToast) return
+    let shouldReload = true
 
     if (undoToast.type === 'swap') {
       await workoutApi.undoSwap(sessionId, {
@@ -381,7 +451,7 @@ export const useWorkoutStore = create(persist((set, get) => ({
     }
 
     if (undoToast.type === 'delete-set') {
-      await workoutApi.restoreSet(sessionId, {
+      const result = await workoutApi.restoreSet(sessionId, {
         session_exercise_id: undoToast.payload.sessionExerciseId,
         set_number: undoToast.payload.setNumber,
         weight: undoToast.payload.weight,
@@ -392,6 +462,26 @@ export const useWorkoutStore = create(persist((set, get) => ({
         pain_flag: undoToast.payload.painFlag,
         notes: undoToast.payload.notes,
       })
+      const restoredSetId = Number(result?.set_id || 0)
+      const restoredSet = buildOptimisticSet(
+        Number(undoToast.payload.sessionExerciseId),
+        {
+          set_number: undoToast.payload.setNumber,
+          weight: undoToast.payload.weight,
+          reps: undoToast.payload.reps,
+          rir: undoToast.payload.rir,
+          rpe: undoToast.payload.rpe,
+          completed: undoToast.payload.completed,
+          pain_flag: undoToast.payload.painFlag,
+          notes: undoToast.payload.notes,
+        },
+        restoredSetId > 0 ? restoredSetId : -Date.now()
+      )
+      set((state) => {
+        const nextSession = insertSetIntoExercise(state.session, Number(undoToast.payload.sessionExerciseId), restoredSet)
+        return nextSession ? { session: nextSession } : {}
+      })
+      shouldReload = false
     }
 
     if (undoToast.type === 'remove-exercise') {
@@ -409,7 +499,9 @@ export const useWorkoutStore = create(persist((set, get) => ({
       })
     }
 
-    await get().reloadSession()
+    if (shouldReload) {
+      await get().reloadSession()
+    }
     const maxIndex = Math.max(0, (get().session?.exercises?.length ?? 1) - 1)
     set({ undoToast: null, activeExerciseIdx: Math.min(get().activeExerciseIdx, maxIndex) })
   },
@@ -565,4 +657,120 @@ function syncDraftExerciseOrder(currentOrder, nextIds) {
   const combined = [...filteredCurrent, ...missingIds]
 
   return combined.length === filteredNextIds.length ? combined : filteredNextIds
+}
+
+function buildOptimisticSet(sessionExerciseId, setData, setId) {
+  const setNumber = Number(setData?.set_number || 0) > 0 ? Number(setData.set_number) : 1
+  return {
+    id: Number(setId),
+    session_exercise_id: Number(sessionExerciseId),
+    set_number: setNumber,
+    weight: Number(setData?.weight || 0),
+    reps: Number(setData?.reps || 0),
+    rir: setData?.rir ?? null,
+    rpe: setData?.rpe ?? null,
+    completed: Number(setData?.completed ?? 1) ? 1 : 0,
+    pain_flag: Number(setData?.pain_flag ?? setData?.painFlag ?? 0) ? 1 : 0,
+    notes: setData?.notes ?? null,
+  }
+}
+
+function patchSetById(sessionData, setId, setPatch) {
+  if (!sessionData || !Array.isArray(sessionData.exercises)) return null
+  const numericSetId = Number(setId)
+  if (!numericSetId) return null
+  const patch = mapSetPatch(setPatch)
+  if (!Object.keys(patch).length) return null
+
+  let changed = false
+  const exercises = sessionData.exercises.map((exercise) => {
+    if (!Array.isArray(exercise?.sets)) return exercise
+    const sets = exercise.sets.map((setRow) => {
+      if (Number(setRow?.id) !== numericSetId) return setRow
+      changed = true
+      return {
+        ...setRow,
+        ...patch,
+      }
+    })
+    return changed ? { ...exercise, sets } : exercise
+  })
+
+  return changed ? { ...sessionData, exercises } : null
+}
+
+function appendSetToExercise(sessionData, sessionExerciseId, setRow) {
+  return updateExerciseSets(sessionData, sessionExerciseId, (sets) => normalizeSetNumbers([...sets, setRow]))
+}
+
+function insertSetIntoExercise(sessionData, sessionExerciseId, setRow) {
+  return updateExerciseSets(sessionData, sessionExerciseId, (sets) => {
+    const targetSetNumber = Math.max(1, Number(setRow?.set_number || sets.length + 1))
+    const next = [...sets]
+    const insertIndex = next.findIndex((item) => Number(item?.set_number || 0) >= targetSetNumber)
+    if (insertIndex === -1) {
+      next.push(setRow)
+    } else {
+      next.splice(insertIndex, 0, setRow)
+    }
+    return normalizeSetNumbers(next)
+  })
+}
+
+function removeSetFromExercise(sessionData, sessionExerciseId, setId) {
+  const numericSetId = Number(setId)
+  if (!numericSetId) return null
+  return updateExerciseSets(sessionData, sessionExerciseId, (sets) => normalizeSetNumbers(sets.filter((item) => Number(item?.id) !== numericSetId)))
+}
+
+function replaceSetId(sessionData, sessionExerciseId, fromSetId, toSetId) {
+  const oldId = Number(fromSetId)
+  const newId = Number(toSetId)
+  if (!oldId || !newId) return null
+  return updateExerciseSets(sessionData, sessionExerciseId, (sets) => sets.map((item) => (
+    Number(item?.id) === oldId ? { ...item, id: newId } : item
+  )))
+}
+
+function updateExerciseSets(sessionData, sessionExerciseId, updater) {
+  if (!sessionData || !Array.isArray(sessionData.exercises)) return null
+  const numericSessionExerciseId = Number(sessionExerciseId)
+  if (!numericSessionExerciseId) return null
+
+  let changed = false
+  const exercises = sessionData.exercises.map((exercise) => {
+    if (Number(exercise?.id) !== numericSessionExerciseId) return exercise
+    const currentSets = Array.isArray(exercise?.sets) ? exercise.sets : []
+    const nextSets = updater(currentSets)
+    changed = true
+    return { ...exercise, sets: nextSets }
+  })
+
+  return changed ? { ...sessionData, exercises } : null
+}
+
+function normalizeSetNumbers(sets) {
+  return [...sets]
+    .sort((a, b) => {
+      const aNumber = Number(a?.set_number || 0)
+      const bNumber = Number(b?.set_number || 0)
+      if (aNumber === bNumber) return Number(a?.id || 0) - Number(b?.id || 0)
+      return aNumber - bNumber
+    })
+    .map((setRow, index) => ({
+      ...setRow,
+      set_number: index + 1,
+    }))
+}
+
+function mapSetPatch(setPatch) {
+  const patch = {}
+  if (setPatch?.weight !== undefined) patch.weight = Number(setPatch.weight || 0)
+  if (setPatch?.reps !== undefined) patch.reps = Number(setPatch.reps || 0)
+  if (setPatch?.rir !== undefined) patch.rir = setPatch.rir
+  if (setPatch?.rpe !== undefined) patch.rpe = setPatch.rpe
+  if (setPatch?.completed !== undefined) patch.completed = Number(setPatch.completed) ? 1 : 0
+  if (setPatch?.pain_flag !== undefined || setPatch?.painFlag !== undefined) patch.pain_flag = Number(setPatch.pain_flag ?? setPatch.painFlag) ? 1 : 0
+  if (setPatch?.notes !== undefined) patch.notes = setPatch.notes
+  return patch
 }

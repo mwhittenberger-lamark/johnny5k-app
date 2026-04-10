@@ -1,0 +1,28 @@
+import { api } from '../core/restClient'
+
+export const workoutApi = {
+  current: () => api.get('/workout/current'),
+  saveCustomDraft: (data) => api.post('/workout/custom-draft', data),
+  clearCustomDraft: () => api.del('/workout/custom-draft', {}),
+  getHistory: (days = 3, limit = 10) => api.get(`/workout/history?days=${days}&limit=${limit}`),
+  preview: (data) => api.post('/workout/preview', data),
+  start: (data) => api.post('/workout/start', data),
+  get: (id) => api.get(`/workout/${id}`),
+  updateHistory: (id, data) => api.put(`/workout/history/${id}`, data),
+  deleteHistory: (id) => api.del(`/workout/history/${id}`),
+  logSet: (id, data) => api.post(`/workout/${id}/set`, data),
+  updateSet: (id, sid, data) => api.put(`/workout/${id}/set/${sid}`, data),
+  deleteSet: (id, sid) => api.del(`/workout/${id}/set/${sid}`),
+  restoreSet: (id, data) => api.post(`/workout/${id}/set/restore`, data),
+  updateExerciseNote: (id, sessionExerciseId, data) => api.put(`/workout/${id}/exercise/${sessionExerciseId}/note`, data),
+  removeExercise: (id, sessionExerciseId) => api.del(`/workout/${id}/exercise/${sessionExerciseId}`),
+  restoreExercise: (id, data) => api.post(`/workout/${id}/exercise/restore`, data),
+  swap: (id, data) => api.post(`/workout/${id}/swap`, data),
+  undoSwap: (id, data) => api.post(`/workout/${id}/swap/undo`, data),
+  quickAdd: (id, data) => api.post(`/workout/${id}/quick-add`, data),
+  undoQuickAdd: (id, data) => api.post(`/workout/${id}/quick-add/undo`, data),
+  restart: (id) => api.post(`/workout/${id}/restart`, {}),
+  discard: (id) => api.post(`/workout/${id}/discard`, {}),
+  skip: (id) => api.post(`/workout/${id}/skip`, {}),
+  complete: (id, data) => api.post(`/workout/${id}/complete`, data),
+}

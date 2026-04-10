@@ -1,40 +1,4 @@
-const VALID_ICON_NAMES = new Set([
-  'home',
-  'workout',
-  'nutrition',
-  'progress',
-  'profile',
-  'admin',
-  'coach',
-  'camera',
-  'label',
-  'plus',
-  'trash',
-  'close',
-  'send',
-  'logout',
-  'award',
-  'trophy',
-  'star',
-  'flame',
-  'bolt',
-])
-
-const LEGACY_ICON_MAP = {
-  '🏅': 'award',
-  '🏆': 'trophy',
-  '⭐': 'star',
-  '🌟': 'star',
-  '🔥': 'flame',
-  '⚡': 'bolt',
-}
-
-export function normalizeAppIconName(name, fallback = 'award') {
-  if (!name) return fallback
-  if (VALID_ICON_NAMES.has(name)) return name
-  if (LEGACY_ICON_MAP[name]) return LEGACY_ICON_MAP[name]
-  return fallback
-}
+import { normalizeAppIconName } from './AppIcon.utils'
 
 export default function AppIcon({ name, className = '' }) {
   const classes = className ? `app-icon ${className}` : 'app-icon'
@@ -163,6 +127,18 @@ export default function AppIcon({ name, className = '' }) {
       return (
         <svg viewBox="0 0 24 24" className={classes} aria-hidden="true">
           <path d="M13 3 6 13h5l-1 8 8-11h-5l0-7Z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      )
+    case 'chevron-up':
+      return (
+        <svg viewBox="0 0 24 24" className={classes} aria-hidden="true">
+          <path d="m6 14 6-6 6 6" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      )
+    case 'chevron-down':
+      return (
+        <svg viewBox="0 0 24 24" className={classes} aria-hidden="true">
+          <path d="m6 10 6 6 6-6" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       )
     default:

@@ -1,15 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { aiApi } from '../../api/client'
-import { readLiveWorkoutVoicePrefs, writeLiveWorkoutVoicePrefs } from '../../lib/liveWorkoutVoice'
-import johnnyFrameOne from '../../assets/8CD0AD13-4C88-49C7-A455-4B180A3F732B.PNG'
-import johnnyFrameTwo from '../../assets/F9159E4E-E475-4BE5-8674-456B7BEFDBEE.PNG'
-import johnnyFrameThree from '../../assets/hero.png'
-
-const DEFAULT_LIVE_JOHNNY_FRAMES = [
-  { image: johnnyFrameOne, label: 'Locked in', note: 'Placeholder frame 1 of Johnny live coaching art.' },
-  { image: johnnyFrameTwo, label: 'Watching the set', note: 'Placeholder frame 2 of Johnny live coaching art.' },
-  { image: johnnyFrameThree, label: 'Mid-session cue', note: 'Placeholder frame 3 of Johnny live coaching art.' },
-]
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { aiApi } from '../../api/modules/ai'
+import { getDefaultLiveWorkoutFrames } from '../../lib/appImages'
+import { formatOpenAiVoiceLabel, readLiveWorkoutVoicePrefs, writeLiveWorkoutVoicePrefs } from '../../lib/liveWorkoutVoice'
+import { useAuthStore } from '../../store/authStore'
 
 export default function LiveWorkoutMode({
   isOpen,
@@ -25,6 +18,7 @@ export default function LiveWorkoutMode({
   todayLabel,
   displayDayType,
 }) {
+  const appImages = useAuthStore(state => state.appImages)
   const [currentSetIdx, setCurrentSetIdx] = useState(0)
   const [drafts, setDrafts] = useState({})
   const [savingSet, setSavingSet] = useState(false)
@@ -35,7 +29,6 @@ export default function LiveWorkoutMode({
   const [coachInput, setCoachInput] = useState('')
   const [listening, setListening] = useState(false)
   const [voicePrefs, setVoicePrefs] = useState(() => readLiveWorkoutVoicePrefs())
-  const [availableVoices, setAvailableVoices] = useState([])
   const [frameIndex, setFrameIndex] = useState(0)
   const [now, setNow] = useState(() => Date.now())
   const [lastTransition, setLastTransition] = useState(() => ({ kind: 'exercise', at: Date.now(), summary: 'Workout live mode opened.' }))
@@ -43,8 +36,11 @@ export default function LiveWorkoutMode({
   const [coachLogOpen, setCoachLogOpen] = useState(false)
   const [restToast, setRestToast] = useState(null)
   const queueRef = useRef([])
+  const pumpCoachQueueRef = useRef(null)
   const processingRef = useRef(false)
   const recognitionRef = useRef(null)
+  const ttsAudioRef = useRef(null)
+  const ttsAbortRef = useRef(null)
   const initializedSessionRef = useRef(0)
   const previousExerciseIdRef = useRef(0)
   const textareaRef = useRef(null)
@@ -58,7 +54,7 @@ export default function LiveWorkoutMode({
   const latestAssistantMessageKeyRef = useRef('')
   const restToastTimerRef = useRef(null)
   const voiceSupported = typeof window !== 'undefined' && (window.SpeechRecognition || window.webkitSpeechRecognition)
-  const playbackSupported = typeof window !== 'undefined' && 'speechSynthesis' in window
+  const playbackSupported = typeof window !== 'undefined' && typeof window.Audio !== 'undefined'
   const workoutSessionId = Number(session?.session?.id || 0)
   const activeExercise = exercises?.[activeExerciseIdx] ?? null
   const totalExerciseCount = Array.isArray(exercises) ? exercises.length : 0
@@ -68,10 +64,11 @@ export default function LiveWorkoutMode({
   const currentDraft = drafts[currentSetKey] ?? buildDraftFromSet(currentSet)
   const restElapsedSeconds = Math.max(0, Math.floor((now - Number(lastTransition?.at || now)) / 1000))
   const restGuidance = useMemo(() => buildRestGuidance(lastTransition?.kind, restElapsedSeconds), [lastTransition?.kind, restElapsedSeconds])
+  const defaultLiveWorkoutFrames = useMemo(() => getDefaultLiveWorkoutFrames(appImages), [appImages])
   const coachFrames = useMemo(() => {
     const configuredFrames = normalizeLiveWorkoutFrames(liveFrames)
-    return configuredFrames.length ? configuredFrames : DEFAULT_LIVE_JOHNNY_FRAMES
-  }, [liveFrames])
+    return configuredFrames.length ? configuredFrames : defaultLiveWorkoutFrames
+  }, [defaultLiveWorkoutFrames, liveFrames])
   const currentFrame = coachFrames[frameIndex % coachFrames.length]
 
   useEffect(() => {
@@ -108,35 +105,32 @@ export default function LiveWorkoutMode({
 
   useEffect(() => () => recognitionRef.current?.stop(), [])
 
-  useEffect(() => () => {
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      window.speechSynthesis.cancel()
+  const stopTtsPlayback = useCallback(() => {
+    if (ttsAbortRef.current) {
+      ttsAbortRef.current.abort()
+      ttsAbortRef.current = null
+    }
+    if (ttsAudioRef.current) {
+      ttsAudioRef.current.pause()
+      if (ttsAudioRef.current.src && ttsAudioRef.current.src.startsWith('blob:')) {
+        window.URL.revokeObjectURL(ttsAudioRef.current.src)
+      }
+      ttsAudioRef.current = null
     }
   }, [])
+
+  useEffect(() => () => {
+    stopTtsPlayback()
+  }, [stopTtsPlayback])
 
   useEffect(() => {
     writeLiveWorkoutVoicePrefs(voicePrefs)
   }, [voicePrefs])
 
   useEffect(() => {
-    if (!playbackSupported) return undefined
-
-    function syncVoices() {
-      const nextVoices = window.speechSynthesis.getVoices()
-      setAvailableVoices(Array.isArray(nextVoices) ? nextVoices : [])
-    }
-
-    syncVoices()
-    window.speechSynthesis.addEventListener('voiceschanged', syncVoices)
-    return () => {
-      window.speechSynthesis.removeEventListener('voiceschanged', syncVoices)
-    }
-  }, [playbackSupported])
-
-  useEffect(() => {
     if ((isOpen && voicePrefs.autoSpeak) || !playbackSupported) return
-    window.speechSynthesis.cancel()
-  }, [isOpen, playbackSupported, voicePrefs.autoSpeak])
+    stopTtsPlayback()
+  }, [isOpen, playbackSupported, stopTtsPlayback, voicePrefs.autoSpeak])
 
   useEffect(() => {
     if (!isOpen) return
@@ -176,7 +170,12 @@ export default function LiveWorkoutMode({
         [currentSetKey]: previousSet ? buildDraftFromSet(previousSet) : buildDraftFromSet(null),
       }
     })
-  }, [activeExercise?.id, currentSet, currentSetIdx, currentSetKey, isOpen])
+  }, [activeExercise?.id, activeExercise?.sets, currentSet, currentSetIdx, currentSetKey, isOpen])
+
+  const enqueueCoachEvent = useCallback((event) => {
+    queueRef.current.push(event)
+    void pumpCoachQueueRef.current?.()
+  }, [])
 
   useEffect(() => {
     if (!isOpen || !workoutSessionId || initializedSessionRef.current === workoutSessionId) return
@@ -192,7 +191,7 @@ export default function LiveWorkoutMode({
       summary: `The user opened Live Workout Mode for a ${formatToken(displayDayType || session?.session?.planned_day_type || 'workout').toLowerCase()} session.`,
       manual: false,
     })
-  }, [displayDayType, isOpen, session?.session?.planned_day_type, workoutSessionId])
+  }, [displayDayType, enqueueCoachEvent, isOpen, session?.session?.planned_day_type, workoutSessionId])
 
   useEffect(() => {
     if (!isOpen || coachMessages[coachMessages.length - 1]?.role !== 'assistant') return
@@ -227,17 +226,49 @@ export default function LiveWorkoutMode({
     if (!nextText || spokenMessageRef.current === nextText) return
 
     spokenMessageRef.current = nextText
-    const utterance = new SpeechSynthesisUtterance(nextText)
-    const preferredVoice = availableVoices.find(voice => voice.voiceURI === voicePrefs.voiceURI)
-    utterance.rate = voicePrefs.rate
-    utterance.pitch = voicePrefs.pitch
-    utterance.lang = preferredVoice?.lang || 'en-US'
-    if (preferredVoice) {
-      utterance.voice = preferredVoice
+    const controller = new AbortController()
+    ttsAbortRef.current = controller
+
+    aiApi.speech(nextText, {
+      voice: voicePrefs.openAiVoice,
+      speed: voicePrefs.rate,
+      format: 'mp3',
+    }).then(blob => {
+      if (controller.signal.aborted || !isOpen) return
+      stopTtsPlayback()
+      const objectUrl = window.URL.createObjectURL(blob)
+      const audio = new window.Audio(objectUrl)
+      audio.onended = () => {
+        if (audio.src.startsWith('blob:')) {
+          window.URL.revokeObjectURL(audio.src)
+        }
+        if (ttsAudioRef.current === audio) {
+          ttsAudioRef.current = null
+        }
+      }
+      audio.onerror = () => {
+        if (audio.src.startsWith('blob:')) {
+          window.URL.revokeObjectURL(audio.src)
+        }
+        if (ttsAudioRef.current === audio) {
+          ttsAudioRef.current = null
+        }
+      }
+      ttsAudioRef.current = audio
+      audio.play().catch(() => {
+        if (audio.src.startsWith('blob:')) {
+          window.URL.revokeObjectURL(audio.src)
+        }
+        if (ttsAudioRef.current === audio) {
+          ttsAudioRef.current = null
+        }
+      })
+    }).catch(() => {})
+
+    return () => {
+      controller.abort()
     }
-    window.speechSynthesis.cancel()
-    window.speechSynthesis.speak(utterance)
-  }, [availableVoices, coachMessages, isOpen, playbackSupported, voicePrefs.autoSpeak, voicePrefs.pitch, voicePrefs.rate, voicePrefs.voiceURI])
+  }, [coachMessages, isOpen, playbackSupported, stopTtsPlayback, voicePrefs.autoSpeak, voicePrefs.openAiVoice, voicePrefs.rate])
 
   useEffect(() => {
     if (!isOpen || !lastTransition?.summary) return
@@ -258,6 +289,10 @@ export default function LiveWorkoutMode({
     }, 10000)
   }, [isOpen, lastTransition])
 
+  useEffect(() => {
+    pumpCoachQueueRef.current = pumpCoachQueue
+  })
+
   if (!isOpen || !activeExercise) {
     return null
   }
@@ -275,11 +310,6 @@ export default function LiveWorkoutMode({
 
   function appendCoachMessage(message) {
     setCoachMessages(current => [...current, message].slice(-10))
-  }
-
-  function enqueueCoachEvent(event) {
-    queueRef.current.push(event)
-    void pumpCoachQueue()
   }
 
   async function pumpCoachQueue() {
@@ -550,7 +580,7 @@ export default function LiveWorkoutMode({
   }
 
   const latestCoachMessage = [...coachMessages].reverse().find(message => message.role === 'assistant')
-  const voiceLabel = availableVoices.find(voice => voice.voiceURI === voicePrefs.voiceURI)?.name || 'Default'
+  const voiceLabel = formatOpenAiVoiceLabel(voicePrefs.openAiVoice)
   const stickyMeta = (
     <div ref={stickyMetaRef} className="live-workout-sticky-meta">
       <div className="live-workout-sticky-meta-copy">
