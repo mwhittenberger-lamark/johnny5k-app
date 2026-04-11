@@ -35,6 +35,7 @@ export default function BodyScreen() {
   const [saving, setSaving]     = useState(false)
   const [msg, setMsg]           = useState('')
   const [pendingScrollTarget, setPendingScrollTarget] = useState('')
+  const [pendingRouteFocus, setPendingRouteFocus] = useState(null)
   const weightFormRef = useRef(null)
   const sleepFormRef = useRef(null)
   const stepsFormRef = useRef(null)
@@ -104,12 +105,19 @@ export default function BodyScreen() {
   }, [msg])
 
   useEffect(() => {
-    if (location.state?.focusTab) {
-      startTransition(() => {
-        setTab(location.state.focusTab)
-      })
+    const focusTab = String(location.state?.focusTab || '').trim()
+    if (!focusTab) {
+      return
     }
-  }, [location.state?.focusTab])
+
+    startTransition(() => {
+      setTab(focusTab)
+      setPendingRouteFocus({
+        tab: focusTab,
+        key: `${location.key}:${focusTab}`,
+      })
+    })
+  }, [location.key, location.state?.focusTab])
 
   useEffect(() => {
     const notice = location.state?.johnnyActionNotice
@@ -438,6 +446,27 @@ export default function BodyScreen() {
       })
     }
   }, [pendingScrollTarget, sleepLogs, stepLogs, weights])
+
+  useEffect(() => {
+    if (!pendingRouteFocus || pendingRouteFocus.tab !== tab) {
+      return
+    }
+
+    const formRef = pendingRouteFocus.tab === 'weight'
+      ? weightFormRef
+      : pendingRouteFocus.tab === 'sleep'
+        ? sleepFormRef
+        : pendingRouteFocus.tab === 'steps'
+          ? stepsFormRef
+          : null
+
+    if (!formRef) {
+      return
+    }
+
+    scrollToForm(formRef)
+    setPendingRouteFocus(current => current?.key === pendingRouteFocus.key ? null : current)
+  }, [pendingRouteFocus, tab])
 
   return (
     <div className="screen body-screen">
@@ -806,6 +835,8 @@ export default function BodyScreen() {
           onQueuedMutation={handleQueuedCardioMutation}
           onRefreshSnapshot={() => loadSnapshot(true)}
           onFlash={setFlash}
+          focusRequestKey={pendingRouteFocus?.tab === 'cardio' ? pendingRouteFocus.key : ''}
+          onFocusHandled={() => setPendingRouteFocus(current => current?.tab === 'cardio' ? null : current)}
         />
       )}
 
@@ -817,13 +848,15 @@ export default function BodyScreen() {
       onRefreshSnapshot={() => loadSnapshot(true)}
       onRefreshBodyData={refreshBodyData}
       onFlash={setFlash}
+      focusRequestKey={pendingRouteFocus?.tab === 'workouts' ? pendingRouteFocus.key : ''}
+      onFocusHandled={() => setPendingRouteFocus(current => current?.tab === 'workouts' ? null : current)}
     />
     )}
     </div>
   )
 }
 
-function WorkoutHistoryTab({ workoutLogs, currentWeight, invalidate, onRefreshSnapshot, onRefreshBodyData, onFlash }) {
+function WorkoutHistoryTab({ workoutLogs, currentWeight, invalidate, onRefreshSnapshot, onRefreshBodyData, onFlash, focusRequestKey = '', onFocusHandled = null }) {
   const [editingWorkoutId, setEditingWorkoutId] = useState(null)
   const [form, setForm] = useState({ session_date: todayInputValue(), actual_day_type: 'push', duration_minutes: '', time_tier: 'medium', estimated_calories: '' })
   const [caloriesDirty, setCaloriesDirty] = useState(false)
@@ -937,6 +970,15 @@ function WorkoutHistoryTab({ workoutLogs, currentWeight, invalidate, onRefreshSn
     })
   }, [pendingScrollToLatest, workoutLogs])
 
+  useEffect(() => {
+    if (!focusRequestKey) {
+      return
+    }
+
+    scrollToForm()
+    onFocusHandled?.()
+  }, [focusRequestKey, onFocusHandled])
+
   return (
     <div className="body-tab cardio-tab">
     <section className="body-summary-grid cardio-summary-grid">
@@ -1017,7 +1059,7 @@ function WorkoutHistoryTab({ workoutLogs, currentWeight, invalidate, onRefreshSn
   )
 }
 
-function CardioTab({ invalidate, cardioLogs, cardioSeries, cardioRange, currentWeight, onRangeChange, onLogged, onQueuedMutation, onRefreshSnapshot, onFlash }) {
+function CardioTab({ invalidate, cardioLogs, cardioSeries, cardioRange, currentWeight, onRangeChange, onLogged, onQueuedMutation, onRefreshSnapshot, onFlash, focusRequestKey = '', onFocusHandled = null }) {
   const [form, setForm] = useState({ cardio_type: 'running', duration_minutes: '', intensity: 'moderate', estimated_calories: '', notes: '', date: todayInputValue() })
   const [editingCardioId, setEditingCardioId] = useState(null)
   const [caloriesDirty, setCaloriesDirty] = useState(false)
@@ -1125,6 +1167,15 @@ function CardioTab({ invalidate, cardioLogs, cardioSeries, cardioRange, currentW
       setPendingScrollToLatest(false)
     })
   }, [cardioLogs, pendingScrollToLatest])
+
+  useEffect(() => {
+    if (!focusRequestKey) {
+      return
+    }
+
+    scrollToCardioForm()
+    onFocusHandled?.()
+  }, [focusRequestKey, onFocusHandled])
 
   return (
     <div className="body-tab cardio-tab">
