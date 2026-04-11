@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { dashboardApi } from '../api/modules/dashboard'
+import { reportClientDiagnostic } from '../lib/clientDiagnostics'
 
 /**
  * Light client-side cache for the daily snapshot.
@@ -34,7 +35,16 @@ export const useDashboardStore = create((set, get) => ({
     try {
       const data = await dashboardApi.awards()
       set({ awards: data })
-    } catch { /* silent */ }
+    } catch (error) {
+      reportClientDiagnostic({
+        source: 'dashboard_awards_load',
+        message: 'Dashboard awards failed to load.',
+        error,
+        context: {
+          flow: 'dashboard_awards',
+        },
+      })
+    }
   },
 
   loadJohnnyReview: async (force = false) => {

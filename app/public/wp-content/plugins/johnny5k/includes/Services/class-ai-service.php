@@ -21,7 +21,7 @@ class AiService {
 	private const DEFAULT_MODEL    = 'gpt-4o-mini';
 	private const RESPONSES_ENDPOINT = 'https://api.openai.com/v1/responses';
 	private const AUDIO_SPEECH_ENDPOINT = 'https://api.openai.com/v1/audio/speech';
-	private const SUPPORTED_ACTION_SCREENS = [ 'nutrition', 'saved_meals', 'recipes', 'grocery_gap', 'pantry', 'steps', 'sleep', 'weight', 'workouts', 'cardio', 'workout', 'dashboard' ];
+	private const SUPPORTED_ACTION_SCREENS = [ 'nutrition', 'saved_meals', 'recipes', 'grocery_gap', 'pantry', 'steps', 'sleep', 'weight', 'workouts', 'cardio', 'workout', 'body', 'dashboard', 'settings' ];
 	private const SUPPORTED_WORKFLOWS = [ 'fix_macros', 'plan_next_meal', 'close_grocery_gap', 'review_recovery', 'build_tomorrow_plan' ];
 	private const MAX_TOOL_MEAL_ROWS = 12;
 	private const MAX_TOOL_PANTRY_ROWS = 24;
@@ -86,7 +86,7 @@ class AiService {
 		// System prompt (persona + live user context + mode instructions)
 		$messages[] = [
 			'role'    => 'system',
-			'content' => self::build_system_prompt( $user_id, $mode, $context_overrides ),
+			'content' => self::build_system_prompt( $user_id, $mode, array_merge( $context_overrides, [ 'latest_user_message' => $user_message ] ) ),
 		];
 
 		// Thread memory block — prepend summary so long-term context is never lost
@@ -215,7 +215,7 @@ class AiService {
 	 * @return array{reply:string, actions:array<int,array<string,mixed>>, tokens_in:int, tokens_out:int, sources:array<int,array{url:string,title:string}>, used_web_search:bool, model:string, system_prompt:string, context:array<string,mixed>}|WP_Error
 	 */
 	public static function preview_chat( int $user_id, string $user_message, string $mode = 'general', array $context_overrides = [] ) {
-		$system_prompt = self::build_system_prompt( $user_id, $mode, $context_overrides );
+		$system_prompt = self::build_system_prompt( $user_id, $mode, array_merge( $context_overrides, [ 'latest_user_message' => $user_message ] ) );
 
 		$result = self::call_openai(
 			[
@@ -4125,6 +4125,34 @@ PROMPT;
 				}
 
 				$result = [ 'screen' => $screen ];
+					$route_path = sanitize_text_field( (string) ( $payload['route_path'] ?? '' ) );
+					if ( '' !== $route_path && str_starts_with( $route_path, '/' ) ) {
+						$result['route_path'] = $route_path;
+					}
+					$focus_section = sanitize_key( (string) ( $payload['focus_section'] ?? '' ) );
+					if ( '' !== $focus_section ) {
+						$result['focus_section'] = $focus_section;
+					}
+					$focus_tab = sanitize_key( (string) ( $payload['focus_tab'] ?? '' ) );
+					if ( '' !== $focus_tab ) {
+						$result['focus_tab'] = $focus_tab;
+					}
+					$guide_id = sanitize_key( (string) ( $payload['guide_id'] ?? '' ) );
+					if ( '' !== $guide_id ) {
+						$result['guide_id'] = $guide_id;
+					}
+					$action_label = sanitize_text_field( (string) ( $payload['action_label'] ?? '' ) );
+					if ( '' !== $action_label ) {
+						$result['action_label'] = $action_label;
+					}
+					$notice = sanitize_textarea_field( (string) ( $payload['notice'] ?? '' ) );
+					if ( '' !== $notice ) {
+						$result['notice'] = $notice;
+					}
+					$starter_prompt = sanitize_textarea_field( (string) ( $payload['starter_prompt'] ?? '' ) );
+					if ( '' !== $starter_prompt ) {
+						$result['starter_prompt'] = $starter_prompt;
+					}
 				$meal_type = self::sanitize_meal_type_value( (string) ( $payload['meal_type'] ?? '' ), false );
 				if ( '' !== $meal_type ) {
 					$result['meal_type'] = $meal_type;

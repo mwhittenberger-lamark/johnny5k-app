@@ -96,7 +96,7 @@ class DashboardController {
 	public static function get_johnny_review( \WP_REST_Request $req ): \WP_REST_Response {
 		$user_id = get_current_user_id();
 		$force   = rest_sanitize_boolean( $req->get_param( 'force' ) );
-		$result  = AiService::dashboard_review( $user_id, (bool) $force );
+		$result  = static::fetch_dashboard_review( $user_id, (bool) $force );
 
 		if ( is_wp_error( $result ) ) {
 			return new \WP_REST_Response( [ 'message' => $result->get_error_message() ], 500 );
@@ -108,13 +108,21 @@ class DashboardController {
 	public static function get_real_success_story( \WP_REST_Request $req ): \WP_REST_Response {
 		$user_id = get_current_user_id();
 		$force   = rest_sanitize_boolean( $req->get_param( 'force' ) );
-		$result  = AiService::dashboard_real_success_story( $user_id, (bool) $force );
+		$result  = static::fetch_dashboard_real_success_story( $user_id, (bool) $force );
 
 		if ( is_wp_error( $result ) ) {
 			return new \WP_REST_Response( [ 'message' => $result->get_error_message() ], 500 );
 		}
 
 		return new \WP_REST_Response( $result );
+	}
+
+	protected static function fetch_dashboard_review( int $user_id, bool $force ) {
+		return AiService::dashboard_review( $user_id, $force );
+	}
+
+	protected static function fetch_dashboard_real_success_story( int $user_id, bool $force ) {
+		return AiService::dashboard_real_success_story( $user_id, $force );
 	}
 
 	public static function get_daily_snapshot_data( int $user_id ): array {

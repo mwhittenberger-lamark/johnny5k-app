@@ -84,6 +84,9 @@ const DEFAULT_NOTIFICATIONS_FORM = {
   phone: '',
 }
 
+export const PUSH_PROMPT_SNOOZE_DAYS = 5
+export const INSTALL_PROMPT_SNOOZE_DAYS = 5
+
 export function detectBrowserTimezone() {
   try {
     return Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/New_York'
@@ -217,6 +220,50 @@ export function normalizePushPromptStatus(value) {
   }
 
   return 'pending'
+}
+
+export function getPushPromptSnoozedUntil(preferenceMeta = {}) {
+  const raw = preferenceMeta?.push_prompt_snoozed_until
+  if (!raw) return ''
+
+  const parsed = Date.parse(String(raw))
+  if (Number.isNaN(parsed)) return ''
+
+  return new Date(parsed).toISOString()
+}
+
+export function isPushPromptSnoozed(preferenceMeta = {}, now = Date.now()) {
+  const snoozedUntil = getPushPromptSnoozedUntil(preferenceMeta)
+  if (!snoozedUntil) return false
+  return Date.parse(snoozedUntil) > now
+}
+
+export function buildPushPromptSnoozedUntil(days = PUSH_PROMPT_SNOOZE_DAYS, now = new Date()) {
+  const target = new Date(now.getTime())
+  target.setDate(target.getDate() + Math.max(1, Number(days) || PUSH_PROMPT_SNOOZE_DAYS))
+  return target.toISOString()
+}
+
+export function getInstallPromptSnoozedUntil(preferenceMeta = {}) {
+  const raw = preferenceMeta?.install_prompt_snoozed_until
+  if (!raw) return ''
+
+  const parsed = Date.parse(String(raw))
+  if (Number.isNaN(parsed)) return ''
+
+  return new Date(parsed).toISOString()
+}
+
+export function isInstallPromptSnoozed(preferenceMeta = {}, now = Date.now()) {
+  const snoozedUntil = getInstallPromptSnoozedUntil(preferenceMeta)
+  if (!snoozedUntil) return false
+  return Date.parse(snoozedUntil) > now
+}
+
+export function buildInstallPromptSnoozedUntil(days = INSTALL_PROMPT_SNOOZE_DAYS, now = new Date()) {
+  const target = new Date(now.getTime())
+  target.setDate(target.getDate() + Math.max(1, Number(days) || INSTALL_PROMPT_SNOOZE_DAYS))
+  return target.toISOString()
 }
 
 export function cmToImperialParts(heightCm) {

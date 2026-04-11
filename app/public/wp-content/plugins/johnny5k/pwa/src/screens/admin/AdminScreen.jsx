@@ -3,12 +3,37 @@ import { adminApi } from '../../api/modules/admin'
 import { mediaApi } from '../../api/modules/media'
 import AppIcon from '../../components/ui/AppIcon'
 import { normalizeAppIconName } from '../../components/ui/AppIcon.utils'
+import { reportClientDiagnostic } from '../../lib/clientDiagnostics'
 import { APP_IMAGE_FIELDS } from '../../lib/appImages'
 import { getColorSchemeOptions, setAvailableColorSchemes } from '../../lib/theme'
 
-const TABS = ['invites', 'costs', 'persona', 'users', 'exercises', 'awards', 'recipes', 'settings']
+const TABS = ['invites', 'costs', 'persona', 'users', 'exercises', 'awards', 'recipes', 'support', 'diagnostics', 'settings']
 const AWARD_ICON_OPTIONS = ['award', 'trophy', 'star', 'flame', 'bolt']
 const COLOR_FIELDS = ['bg', 'bg2', 'bg3', 'border', 'text', 'textMuted', 'accent', 'accent2', 'accent3', 'danger', 'success', 'yellow']
+
+function getErrorMessage(error, fallback) {
+  const detail = String(error?.message || '').trim()
+  return detail ? `${fallback} ${detail}` : fallback
+}
+
+function handleAdminDiagnostic({ source, message, error, context = {}, setMsg = null }) {
+  const nextMessage = getErrorMessage(error, message)
+
+  if (typeof setMsg === 'function') {
+    setMsg(`Error: ${nextMessage}`)
+  }
+
+  reportClientDiagnostic({
+    source,
+    message,
+    error,
+    context: {
+      screen: 'admin',
+      ...context,
+    },
+    toast: null,
+  })
+}
 
 function createEmptyColorScheme(index = 0) {
   const fallback = getColorSchemeOptions()[0]
@@ -66,6 +91,8 @@ export default function AdminScreen() {
       {tab === 'exercises' ? <ExercisesTab /> : null}
       {tab === 'awards' ? <AwardsTab /> : null}
       {tab === 'recipes' ? <RecipesTab /> : null}
+      {tab === 'support' ? <SupportTab /> : null}
+      {tab === 'diagnostics' ? <DiagnosticsTab /> : null}
       {tab === 'settings' ? <SettingsTab /> : null}
     </div>
   )
@@ -131,11 +158,35 @@ function InviteTab() {
 
 function CostTab() {
   const [data, setData] = useState(null)
-  useEffect(() => { adminApi.costs().then(setData).catch(() => {}) }, [])
-  if (!data) return <p>Loading…</p>
+  const [msg, setMsg] = useState('')
+
+  useEffect(() => {
+    adminApi.costs()
+      .then(setData)
+      .catch(error => {
+        handleAdminDiagnostic({
+          source: 'admin_costs_load',
+          message: 'Could not load admin cost analytics.',
+          error,
+          setMsg,
+          context: {
+            tab: 'costs',
+          },
+        })
+      })
+  }, [])
+
+  if (!data) {
+    return (
+      <div className="admin-tab">
+        {msg ? <p className="error">{msg}</p> : <p>Loading…</p>}
+      </div>
+    )
+  }
 
   return (
     <div className="admin-tab">
+      {msg ? <p className="error">{msg}</p> : null}
       <p><strong>This Month Total:</strong> ${parseFloat(data.monthly_total?.total_cost_usd ?? 0).toFixed(4)}</p>
       <h3>By User</h3>
       {(data.monthly_by_user ?? []).map((r, i) => (
@@ -184,13 +235,34 @@ function PersonaTab() {
       setSystemPrompt(d.system_prompt ?? '')
       setPromptSource(d.prompt_source ?? 'default')
       setContractChecks(Array.isArray(d.contract_checks) ? d.contract_checks : [])
-    }).catch(() => {})
+    }).catch(error => {
+      handleAdminDiagnostic({
+        source: 'admin_persona_load',
+        message: 'Could not load the current persona settings.',
+        error,
+        setMsg,
+        context: {
+          tab: 'persona',
+        },
+      })
+    })
   }, [])
 
   useEffect(() => {
     adminApi.users().then(data => {
       setQaUsers(Array.isArray(data) ? data : [])
-    }).catch(() => {})
+    }).catch(error => {
+      handleAdminDiagnostic({
+        source: 'admin_persona_users_load',
+        message: 'Could not load users for persona QA.',
+        error,
+        setMsg,
+        context: {
+          tab: 'persona',
+          flow: 'qa_users',
+        },
+      })
+    })
   }, [])
 
   const loadFollowUpQa = useCallback(async (userId = '') => {
@@ -421,9 +493,27 @@ function PersonaTab() {
 
 function UsersTab() {
   const [users, setUsers] = useState([])
-  useEffect(() => { adminApi.users().then(setUsers).catch(() => {}) }, [])
+  const [msg, setMsg] = useState('')
+
+  useEffect(() => {
+    adminApi.users()
+      .then(setUsers)
+      .catch(error => {
+        handleAdminDiagnostic({
+          source: 'admin_users_load',
+          message: 'Could not load admin users.',
+          error,
+          setMsg,
+          context: {
+            tab: 'users',
+          },
+        })
+      })
+  }, [])
+
   return (
     <div className="admin-tab">
+      {msg ? <p className="error">{msg}</p> : null}
       {users.map(u => (
         <div key={u.user_id} className="user-row">
           <span>{u.user_email}</span>
@@ -439,11 +529,34 @@ function UsersTab() {
 function ExercisesTab() {
   const [exercises, setExercises] = useState([])
   const [subs, setSubs] = useState([])
+  const [msg, setMsg] = useState('')
   const [form, setForm] = useState({ name: '', slug: '', movement_pattern: '', primary_muscle: '', equipment: 'dumbbell', difficulty: 'beginner' })
 
   useEffect(() => {
-    adminApi.exercises().then(setExercises).catch(() => {})
-    adminApi.substitutions().then(setSubs).catch(() => {})
+    adminApi.exercises().then(setExercises).catch(error => {
+      handleAdminDiagnostic({
+        source: 'admin_exercises_load',
+        message: 'Could not load the exercise library.',
+        error,
+        setMsg,
+        context: {
+          tab: 'exercises',
+          flow: 'library',
+        },
+      })
+    })
+    adminApi.substitutions().then(setSubs).catch(error => {
+      handleAdminDiagnostic({
+        source: 'admin_substitutions_load',
+        message: 'Could not load exercise substitutions.',
+        error,
+        setMsg,
+        context: {
+          tab: 'exercises',
+          flow: 'substitutions',
+        },
+      })
+    })
   }, [])
 
   async function saveExercise(event) {
@@ -470,6 +583,7 @@ function ExercisesTab() {
     <div className="admin-tab admin-grid-two">
       <div>
         <h3>Exercise library</h3>
+        {msg ? <p className="error">{msg}</p> : null}
         <form className="admin-stack-form" onSubmit={saveExercise}>
           <input placeholder="Exercise name" value={form.name} onChange={e => setForm(current => ({ ...current, name: e.target.value }))} required />
           <input placeholder="Slug" value={form.slug} onChange={e => setForm(current => ({ ...current, slug: e.target.value }))} />
@@ -520,9 +634,22 @@ function ExercisesTab() {
 
 function AwardsTab() {
   const [awards, setAwards] = useState([])
+  const [msg, setMsg] = useState('')
   const [form, setForm] = useState({ code: '', name: '', description: '', icon: 'award', points: 10 })
 
-  useEffect(() => { adminApi.awards().then(setAwards).catch(() => {}) }, [])
+  useEffect(() => {
+    adminApi.awards().then(setAwards).catch(error => {
+      handleAdminDiagnostic({
+        source: 'admin_awards_load',
+        message: 'Could not load awards.',
+        error,
+        setMsg,
+        context: {
+          tab: 'awards',
+        },
+      })
+    })
+  }, [])
 
   async function save(event) {
     event.preventDefault()
@@ -535,6 +662,7 @@ function AwardsTab() {
     <div className="admin-tab admin-grid-two">
       <form className="admin-stack-form" onSubmit={save}>
         <h3>Create award</h3>
+        {msg ? <p className="error">{msg}</p> : null}
         <input placeholder="Code" value={form.code} onChange={e => setForm(current => ({ ...current, code: e.target.value }))} required />
         <input placeholder="Name" value={form.name} onChange={e => setForm(current => ({ ...current, name: e.target.value }))} required />
         <textarea placeholder="Description" value={form.description} onChange={e => setForm(current => ({ ...current, description: e.target.value }))} rows={3} />
@@ -594,7 +722,19 @@ function RecipesTab() {
   const [discovering, setDiscovering] = useState(false)
   const [msg, setMsg] = useState('')
 
-  useEffect(() => { adminApi.recipes().then(setRecipes).catch(() => {}) }, [])
+  useEffect(() => {
+    adminApi.recipes().then(setRecipes).catch(error => {
+      handleAdminDiagnostic({
+        source: 'admin_recipes_load',
+        message: 'Could not load saved recipes.',
+        error,
+        setMsg,
+        context: {
+          tab: 'recipes',
+        },
+      })
+    })
+  }, [])
 
   async function save(event) {
     event.preventDefault()
@@ -724,6 +864,173 @@ function RecipesTab() {
   )
 }
 
+function SupportTab() {
+  const [guides, setGuides] = useState([])
+  const [analytics, setAnalytics] = useState(null)
+  const [msg, setMsg] = useState('')
+  const supportGuideEditorUrl = '/wp-admin/admin.php?page=jf-support-guides'
+
+  useEffect(() => {
+    adminApi.supportGuides()
+      .then(data => {
+        const nextGuides = Array.isArray(data?.guides) ? data.guides : []
+        setGuides(nextGuides)
+        setAnalytics(data?.analytics || null)
+      })
+      .catch(err => setMsg(`Error: ${err.message}`))
+  }, [])
+
+  return (
+    <div className="admin-tab admin-grid-two">
+      <div className="admin-list admin-support-list-pane">
+        <div className="admin-support-toolbar">
+          <div>
+            <h3>Task guides</h3>
+            <p>Guide editing now lives in the WordPress plugin backend.</p>
+          </div>
+          <a className="btn-primary small" href={supportGuideEditorUrl}>Open WP editor</a>
+        </div>
+        {msg ? <p className="success-msg">{msg}</p> : null}
+        <div className="admin-card-row">
+          <div>
+            <strong>WordPress is the source of truth</strong>
+            <p>Edit guide copy, starter prompts, and deep-link fields from the plugin screen so there is only one editing surface.</p>
+          </div>
+        </div>
+        {guides.map(guide => (
+          <div key={guide.id} className="admin-support-list-item">
+            <span className="admin-support-list-head">
+              <strong>{guide.title || 'Untitled guide'}</strong>
+              <span className={guide.enabled ? 'badge green' : 'badge grey'}>{guide.enabled ? 'Live' : 'Off'}</span>
+            </span>
+            <span className="admin-support-list-meta">{guide.route_path || 'No route set'}</span>
+            {guide.summary ? <span className="admin-support-list-copy">{guide.summary}</span> : null}
+          </div>
+        ))}
+        {analytics ? (
+          <div className="admin-support-analytics-card">
+            <div className="admin-support-toolbar">
+              <div>
+                <h3>Support analytics</h3>
+                <p>Last {analytics.days || 30} days of help usage and unresolved asks.</p>
+              </div>
+            </div>
+            <div className="admin-support-analytics-grid">
+              <div className="admin-card-row"><div><strong>Entrypoints</strong><p>{analytics.totals?.entrypoints || 0} help opens from the app.</p></div></div>
+              <div className="admin-card-row"><div><strong>Prompt starts</strong><p>{analytics.totals?.prompts_started || 0} starter prompts sent to Johnny.</p></div></div>
+              <div className="admin-card-row"><div><strong>Resolved</strong><p>{analytics.totals?.navigations || 0} support chats led to a destination or action.</p></div></div>
+              <div className="admin-card-row"><div><strong>Unresolved</strong><p>{analytics.totals?.unresolved || 0} support chats ended without a clear next move.</p></div></div>
+            </div>
+            {(analytics.top_guides ?? []).length ? (
+              <div className="admin-list">
+                <h4>Top guides</h4>
+                {analytics.top_guides.map(item => (
+                  <div key={item.guide_id} className="admin-card-row">
+                    <div>
+                      <strong>{item.guide_id}</strong>
+                      <p>{item.prompts_started || 0} prompts · {item.navigations || 0} resolved · {item.unresolved || 0} unresolved</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+
+      <div className="admin-stack-form admin-support-editor">
+        <div className="admin-support-toolbar">
+          <div>
+            <h3>Support guide editing moved</h3>
+            <p>Use the native WordPress plugin screen for all copy changes and starter-pack resets.</p>
+          </div>
+          <a className="btn-primary" href={supportGuideEditorUrl}>Open Support Guides in WP</a>
+        </div>
+        <div className="admin-card-row">
+          <div>
+            <strong>What to edit in WordPress</strong>
+            <p>Summary is Johnny&apos;s grounded explanation, Starter prompt seeds guided help opens, Steps define the walk-through, Common issues catch friction, and Route fields control where deep links land.</p>
+          </div>
+        </div>
+        <div className="admin-card-row">
+          <div>
+            <strong>How refreshed starter copy is applied</strong>
+            <p>The default starter pack is updated in the plugin, but existing saved guides stay intact until you use Reset to starter pack from the WordPress Support Guides screen.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function DiagnosticsTab() {
+  const [entries, setEntries] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [msg, setMsg] = useState('')
+
+  const loadDiagnostics = useCallback(async () => {
+    setLoading(true)
+    setMsg('')
+    try {
+      const data = await adminApi.diagnostics()
+      setEntries(Array.isArray(data?.entries) ? data.entries : [])
+    } catch (error) {
+      handleAdminDiagnostic({
+        source: 'admin_diagnostics_load',
+        message: 'Could not load recent client diagnostics.',
+        error,
+        setMsg,
+        context: {
+          tab: 'diagnostics',
+        },
+      })
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void loadDiagnostics()
+  }, [loadDiagnostics])
+
+  return (
+    <div className="admin-tab">
+      <div className="admin-support-toolbar">
+        <div>
+          <h3>Client diagnostics</h3>
+          <p>Recent frontend failures reported by authenticated users. Use this to inspect bootstrap and silent-flow regressions without opening browser devtools.</p>
+        </div>
+        <button type="button" className="btn-secondary small" onClick={() => void loadDiagnostics()} disabled={loading}>
+          {loading ? 'Refreshing…' : 'Refresh'}
+        </button>
+      </div>
+      {msg ? <p className="error">{msg}</p> : null}
+      {loading ? <p>Loading…</p> : null}
+      {!loading && !entries.length ? <p className="settings-subtitle">No client diagnostics logged yet.</p> : null}
+      {!loading ? (
+        <div className="admin-list">
+          {entries.map(entry => (
+            <div key={entry.id || `${entry.source}-${entry.created_at}`} className="admin-card-row">
+              <div>
+                <strong>{entry.source || 'unknown_source'}</strong>
+                <p>{entry.message || 'No message recorded.'}</p>
+                <p>
+                  {(entry.created_at || 'Unknown time')}
+                  {entry.user_email ? ` · ${entry.user_email}` : ''}
+                  {entry.status_code ? ` · HTTP ${entry.status_code}` : ''}
+                </p>
+                {entry.error_message ? <p><strong>Error:</strong> {entry.error_message}</p> : null}
+                {entry.current_path ? <p><strong>Path:</strong> {entry.current_path}</p> : null}
+                {entry.context && Object.keys(entry.context).length ? <p><strong>Context:</strong> {JSON.stringify(entry.context)}</p> : null}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 function SettingsTab() {
   const [settings, setSettings] = useState({
     ai_settings: {
@@ -771,7 +1078,17 @@ function SettingsTab() {
           app_images: { ...createEmptyAppImages(), ...(data?.app_images ?? {}) },
         })
       })
-      .catch(() => {})
+      .catch(error => {
+        handleAdminDiagnostic({
+          source: 'admin_settings_load',
+          message: 'Could not load admin settings.',
+          error,
+          setMsg,
+          context: {
+            tab: 'settings',
+          },
+        })
+      })
   }, [])
 
   function updateAi(field, value) {

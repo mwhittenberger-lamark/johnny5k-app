@@ -1,4 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
+import {
+  getDefaultDashboardLayout,
+  readDashboardLayoutPreference,
+  writeDashboardLayoutPreference,
+} from '../dashboardLayoutUtils'
 
 const COACH_PROMPTS_STORAGE_KEY = 'johnny5k.dashboard.coachPromptsOpen'
 const DASHBOARD_LAYOUT_STORAGE_KEY = 'johnny5k.dashboard.layout.v2'
@@ -9,18 +14,18 @@ export function useDashboardPreferences({ email, cardDefs }) {
   const [customizeOpen, setCustomizeOpen] = useState(false)
   const [dashboardLayoutState, setDashboardLayoutState] = useState(() => ({
     owner: layoutOwner,
-    value: readDashboardLayoutPreference(email, cardDefs),
+    value: readDashboardLayoutPreference(DASHBOARD_LAYOUT_STORAGE_KEY, email, cardDefs),
   }))
 
   const dashboardLayout = dashboardLayoutState.owner === layoutOwner
     ? dashboardLayoutState.value
-    : readDashboardLayoutPreference(email, cardDefs)
+    : readDashboardLayoutPreference(DASHBOARD_LAYOUT_STORAGE_KEY, email, cardDefs)
 
   const setDashboardLayout = useCallback(updater => {
     setDashboardLayoutState(current => {
       const currentValue = current.owner === layoutOwner
         ? current.value
-        : readDashboardLayoutPreference(email, cardDefs)
+        : readDashboardLayoutPreference(DASHBOARD_LAYOUT_STORAGE_KEY, email, cardDefs)
       const nextValue = typeof updater === 'function' ? updater(currentValue) : updater
 
       return {
@@ -35,7 +40,7 @@ export function useDashboardPreferences({ email, cardDefs }) {
   }, [coachPromptsOpen])
 
   useEffect(() => {
-    writeDashboardLayoutPreference(email, dashboardLayout, cardDefs)
+    writeDashboardLayoutPreference(DASHBOARD_LAYOUT_STORAGE_KEY, email, dashboardLayout, cardDefs)
   }, [cardDefs, dashboardLayout, email])
 
   useEffect(() => {
@@ -76,78 +81,6 @@ function readCoachPromptsPreference() {
     return window.localStorage.getItem(COACH_PROMPTS_STORAGE_KEY) === '1'
   } catch {
     return false
-  }
-}
-
-function getDefaultDashboardLayout(cardDefs) {
-  const hidden = {}
-
-  for (const card of cardDefs) {
-    hidden[card.id] = Boolean(card.optional)
-  }
-
-  return {
-    order: cardDefs.map(card => card.id),
-    hidden,
-    bucketOverrides: {},
-  }
-}
-
-function normalizeDashboardLayoutPreference(value, cardDefs) {
-  const defaults = getDefaultDashboardLayout(cardDefs)
-  const next = value && typeof value === 'object' ? value : {}
-  const validIds = new Set(cardDefs.map(card => card.id))
-  const validBuckets = new Set(cardDefs.map(card => card.bucket))
-  const defaultBucketsById = new Map(cardDefs.map(card => [card.id, card.bucket]))
-  const nextOrder = Array.isArray(next.order)
-    ? next.order.filter(id => validIds.has(id))
-    : []
-  const mergedOrder = [...nextOrder, ...defaults.order.filter(id => !nextOrder.includes(id))]
-  const nextHidden = {}
-  const nextBucketOverrides = {}
-
-  for (const cardId of defaults.order) {
-    nextHidden[cardId] = next.hidden?.[cardId] == null ? defaults.hidden[cardId] : Boolean(next.hidden?.[cardId])
-
-    const bucketOverride = next.bucketOverrides?.[cardId]
-    if (
-      typeof bucketOverride === 'string'
-      && validBuckets.has(bucketOverride)
-      && bucketOverride !== defaultBucketsById.get(cardId)
-    ) {
-      nextBucketOverrides[cardId] = bucketOverride
-    }
-  }
-
-  return {
-    order: mergedOrder,
-    hidden: nextHidden,
-    bucketOverrides: nextBucketOverrides,
-  }
-}
-
-function readDashboardLayoutPreference(email, cardDefs) {
-  if (typeof window === 'undefined') return getDefaultDashboardLayout(cardDefs)
-
-  try {
-    const raw = window.localStorage.getItem(`${DASHBOARD_LAYOUT_STORAGE_KEY}.${email || 'guest'}`)
-    if (!raw) return getDefaultDashboardLayout(cardDefs)
-    return normalizeDashboardLayoutPreference(JSON.parse(raw), cardDefs)
-  } catch {
-    return getDefaultDashboardLayout(cardDefs)
-  }
-}
-
-function writeDashboardLayoutPreference(email, value, cardDefs) {
-  if (typeof window === 'undefined') return
-
-  try {
-    window.localStorage.setItem(
-      `${DASHBOARD_LAYOUT_STORAGE_KEY}.${email || 'guest'}`,
-      JSON.stringify(normalizeDashboardLayoutPreference(value, cardDefs)),
-    )
-  } catch {
-    // noop
   }
 }
 

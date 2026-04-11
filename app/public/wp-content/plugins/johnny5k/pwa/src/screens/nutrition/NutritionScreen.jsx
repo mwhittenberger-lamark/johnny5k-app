@@ -4,6 +4,10 @@ import { aiApi } from '../../api/modules/ai'
 import { nutritionApi } from '../../api/modules/nutrition'
 import AppIcon from '../../components/ui/AppIcon'
 import ClearableInput from '../../components/ui/ClearableInput'
+import OfflineState from '../../components/ui/OfflineState'
+import SupportIconButton from '../../components/ui/SupportIconButton'
+import { openSupportGuide } from '../../lib/supportHelp'
+import { useOnlineStatus } from '../../lib/useOnlineStatus'
 import { useDashboardStore } from '../../store/dashboardStore'
 import { useJohnnyAssistantStore } from '../../store/johnnyAssistantStore'
 import {
@@ -18,6 +22,14 @@ import {
   useNutritionPlanningViewState,
   useNutritionToastQueue,
 } from './hooks/nutritionScreenHooks'
+import {
+  approximatelyEqualServingCount,
+  dedupeIngredientList,
+  normalisePantryMatchText,
+  normaliseRawServingUnitLabel,
+  normaliseServingUnitLabel,
+  parseQuantifiedServingUnit,
+} from './servingUtils'
 
 const MEAL_TYPES = ['breakfast', 'lunch', 'dinner', 'snack']
 const RECIPE_CARD_VISIBLE_LIMIT = 5
@@ -99,6 +111,7 @@ function scrollNodeIntoView(node) {
 }
 
 export default function NutritionScreen() {
+  const isOnline = useOnlineStatus()
   const location = useLocation()
   const navigate = useNavigate()
   const isPantryPage = location.pathname.endsWith('/pantry')
@@ -190,6 +203,42 @@ export default function NutritionScreen() {
   const invalidate = useDashboardStore(state => state.invalidate)
   const openDrawer = useJohnnyAssistantStore(state => state.openDrawer)
 
+  function handleOpenNutritionSupport() {
+    const supportConfigByView = {
+      today: {
+        guideId: 'log-meal',
+        prompt: 'Show me exactly how to log a meal here and what to do if the food is not easy to find.',
+      },
+      library: {
+        guideId: 'save-meal',
+        prompt: 'Show me where saved meals and saved foods live and how to reuse them fast.',
+      },
+      plan: {
+        guideId: 'plan-recipes',
+        prompt: 'Show me how to plan my next meal here using recipes, pantry, and grocery gap.',
+      },
+    }
+
+    const config = supportConfigByView[activeView] || supportConfigByView.today
+    openSupportGuide(openDrawer, {
+      screen: 'nutrition',
+      surface: `nutrition_${activeView}`,
+      guideId: config.guideId,
+      prompt: config.prompt,
+      context: { nutrition_view: activeView },
+    })
+  }
+
+  function handleOpenPantrySupport() {
+    openSupportGuide(openDrawer, {
+      screen: 'nutrition',
+      surface: 'nutrition_pantry',
+      guideId: 'manage-pantry',
+      prompt: 'Show me how Pantry works here, how to add items cleanly, and what belongs in grocery gap instead.',
+      context: { nutrition_view: 'pantry' },
+    })
+  }
+
   const latestMeal = meals[0] ?? null
   const latestMealLabel = useMemo(() => formatMealTimeLabel(latestMeal?.meal_datetime), [latestMeal?.meal_datetime])
   const summaryMicros = useMemo(() => {
@@ -231,28 +280,13 @@ export default function NutritionScreen() {
     [filteredPantryItems, pantrySortMode],
   )
   const filteredRecipes = useMemo(
-    () => {
-      const sourceRecipes = recipeCollectionFilter === 'cookbook' ? cookbookRecipes : recipes
-      const mealFilteredRecipes = recipeMealFilter === 'all'
-        ? sourceRecipes
-        : sourceRecipes.filter(recipe => String(recipe?.meal_type || '').trim() === recipeMealFilter)
-
-      const normalizedRecipeQuery = normalisePantryMatchText(recipeSearchQuery)
-      if (!normalizedRecipeQuery) {
-        return mealFilteredRecipes
-      }
-
-      return mealFilteredRecipes.filter(recipe => {
-        const haystack = normalisePantryMatchText([
-          recipe?.recipe_name,
-          ...(Array.isArray(recipe?.ingredients) ? recipe.ingredients : []),
-          recipe?.why_this_works,
-          recipe?.meal_type,
-        ].filter(Boolean).join(' '))
-
-        return haystack.includes(normalizedRecipeQuery)
-      })
-    },
+    () => filterRecipesByPlanningState({
+      recipes,
+      cookbookRecipes,
+      collectionFilter: recipeCollectionFilter,
+      mealFilter: recipeMealFilter,
+      searchQuery: recipeSearchQuery,
+    }),
     [cookbookRecipes, recipeCollectionFilter, recipeMealFilter, recipeSearchQuery, recipes],
   )
   const visibleRecipes = useMemo(
@@ -345,8 +379,9 @@ export default function NutritionScreen() {
       setSavedFoods(savedFoodRows)
       setPantry(pantryRows)
       setRecipes(recipeRows)
-      setCookbookRecipes(Array.isArray(cookbookRows) ? cookbookRows.map(normaliseCookbookRecipe).filter(recipe => recipe.recipe_name) : [])
-      setSelectedRecipeKeys((Array.isArray(cookbookRows) ? cookbookRows : []).map(recipe => getRecipeKey(recipe)))
+      const nextCookbookRecipes = Array.isArray(cookbookRows) ? cookbookRows.map(normaliseCookbookRecipe).filter(recipe => recipe.recipe_name) : []
+      setCookbookRecipes(nextCookbookRecipes)
+      setSelectedRecipeKeys(nextCookbookRecipes.map(recipe => getRecipeKey(recipe)))
       setGroceryGap(groceryGapRow)
       FOOD_SEARCH_CACHE.clear()
       await loadWeeklyCaloriesReview(today)
@@ -509,8 +544,9 @@ export default function NutritionScreen() {
       setSavedFoods(savedFoodRows)
       setPantry(pantryRows)
       setRecipes(recipeRows)
-      setCookbookRecipes(Array.isArray(cookbookRows) ? cookbookRows.map(normaliseCookbookRecipe).filter(recipe => recipe.recipe_name) : [])
-      setSelectedRecipeKeys((Array.isArray(cookbookRows) ? cookbookRows : []).map(recipe => getRecipeKey(recipe)))
+      const nextCookbookRecipes = Array.isArray(cookbookRows) ? cookbookRows.map(normaliseCookbookRecipe).filter(recipe => recipe.recipe_name) : []
+      setCookbookRecipes(nextCookbookRecipes)
+      setSelectedRecipeKeys(nextCookbookRecipes.map(recipe => getRecipeKey(recipe)))
       setGroceryGap(groceryGapRow)
       FOOD_SEARCH_CACHE.clear()
       return true
@@ -1134,6 +1170,7 @@ export default function NutritionScreen() {
     mealsSectionAnchor: mealsSectionRef,
     mergedMeals,
     openDrawer,
+    openPantrySupport: handleOpenPantrySupport,
     openPantryPage,
     orderedSavedFoods,
     pantry,
@@ -1213,13 +1250,27 @@ export default function NutritionScreen() {
     visibleSavedMeals,
   }
 
+  if (!isOnline && !summary && meals.length === 0 && recentFoods.length === 0 && savedFoods.length === 0 && savedMeals.length === 0 && pantry.length === 0) {
+    return (
+      <OfflineState
+        title="Nutrition needs an online refresh first"
+        body="This screen can work from cached reads once Johnny5k has loaded your nutrition data online. Reconnect briefly to pull meals, foods, pantry items, and planning data."
+        actionLabel="Reload nutrition"
+        onAction={() => {
+          void loadData()
+        }}
+      />
+    )
+  }
+
   if (isPantryPage) {
     return <PantryPageContent screen={screen} deps={featureViewDeps} />
   }
 
   return (
     <div className="screen nutrition-screen upgraded-nutrition-screen">
-      <header className="screen-header nutrition-header">
+      <header className="screen-header nutrition-header support-icon-anchor">
+        <SupportIconButton label="Get help with nutrition" onClick={handleOpenNutritionSupport} />
         <div>
           <p className="dashboard-eyebrow">Nutrition</p>
           <h1>Log today first</h1>
@@ -1680,7 +1731,7 @@ function SavedFoodForm({ initialValues = null, savedFoods = [], submitLabel = 'S
         ...current,
         canonical_name: result?.food_name || current.canonical_name,
         brand: result?.brand || current.brand,
-        serving_size: result?.serving_size || current.serving_size,
+        serving_size: normaliseRawServingUnitLabel(result?.serving_size || current.serving_size),
         serving_grams: result?.serving_grams ?? current.serving_grams,
         calories: result?.calories ?? current.calories,
         protein_g: result?.protein_g ?? current.protein_g,
@@ -1710,6 +1761,7 @@ function SavedFoodForm({ initialValues = null, savedFoods = [], submitLabel = 'S
       try {
         await onSave({
           ...form,
+          serving_size: normaliseRawServingUnitLabel(form.serving_size),
           source: typeof form.source === 'string'
             ? form.source
             : (form.source?.provider === 'usda' ? 'usda_ai_text' : 'manual'),
@@ -1810,7 +1862,7 @@ function RecentFoodForm({ initialValues, submitLabel = 'Update recent food', onS
       try {
         await onSave({
           canonical_name: form.canonical_name,
-          serving_unit: form.serving_unit,
+          serving_unit: normaliseRawServingUnitLabel(form.serving_unit),
           calories: Math.round(Number(form.calories) || 0),
           protein_g: Number(form.protein_g) || 0,
           carbs_g: Number(form.carbs_g) || 0,
@@ -3093,7 +3145,7 @@ function normaliseMealItems(items) {
   return items.map(item => recomputeMealDraftItem(null, {
     food_name: item.food_name || 'Food item',
     serving_amount: Number(item.serving_amount ?? 1),
-    serving_unit: item.serving_unit || 'serving',
+    serving_unit: normaliseRawServingUnitLabel(item.serving_unit || 'serving'),
     estimated_grams: Number(item.estimated_grams ?? item.source?.estimated_grams ?? 0),
     portion_description: item.portion_description || '',
     calories: Number(item.calories ?? 0),
@@ -3358,12 +3410,13 @@ function buildNutritionCoachPrompts(summary) {
   const targets = summary?.targets ?? {}
   const proteinGap = Math.max(0, Math.round(Number(targets.target_protein_g ?? 0) - Number(totals.protein_g ?? 0)))
   const calorieGap = Math.round(Number(targets.target_calories ?? 0) - Number(totals.calories ?? 0))
+  const planningPrompt = getNutritionPlanningPrompt()
 
   return [
     {
-      label: 'Plan my dinner',
-      meta: calorieGap > 0 ? `${calorieGap} calories left` : 'Close the day cleanly',
-      prompt: `Plan my dinner from my current nutrition board. Keep it realistic and explain how it fits my remaining calories and macros.`,
+      label: planningPrompt.label,
+      meta: calorieGap > 0 ? `${calorieGap} calories left` : planningPrompt.meta,
+      prompt: planningPrompt.prompt,
     },
     {
       label: 'Fix my macros',
@@ -3416,7 +3469,7 @@ function applyFoodSuggestion(currentItem, suggestion) {
     food_id: suggestion.id || currentItem.food_id || null,
     food_name: suggestion.food_name || suggestion.canonical_name || currentItem.food_name,
     serving_amount: String(suggestion.serving_amount ?? currentItem.serving_amount ?? '1'),
-    serving_unit: suggestion.serving_unit || suggestion.serving_size || currentItem.serving_unit || 'serving',
+    serving_unit: normaliseRawServingUnitLabel(suggestion.serving_unit || suggestion.serving_size || currentItem.serving_unit || 'serving'),
     estimated_grams: String(suggestion.estimated_grams ?? suggestion.serving_grams ?? currentItem.estimated_grams ?? ''),
     calories: String(suggestion.calories ?? currentItem.calories ?? ''),
     protein_g: String(suggestion.protein_g ?? currentItem.protein_g ?? ''),
@@ -3475,7 +3528,7 @@ function syncMealItemSource(previousItem, nextItem, changedField) {
     ...(source || {}),
     ...(nutritionBasis ? { nutrition_basis: nutritionBasis } : {}),
     serving_amount: Number(nextItem?.serving_amount ?? source?.serving_amount ?? 1) || 0,
-    serving_unit: nextItem?.serving_unit || source?.serving_unit || 'serving',
+    serving_unit: normaliseRawServingUnitLabel(nextItem?.serving_unit || source?.serving_unit || 'serving'),
     estimated_grams: roundTo(Number(nextItem?.estimated_grams ?? source?.estimated_grams ?? 0) || 0, 2),
   }
 }
@@ -3485,7 +3538,7 @@ function buildMealItemPayload(item) {
     food_id: item.food_id || null,
     food_name: item.food_name?.trim() || '',
     serving_amount: Number(item.serving_amount) || 1,
-    serving_unit: item.serving_unit?.trim() || 'serving',
+    serving_unit: normaliseRawServingUnitLabel(item.serving_unit?.trim() || 'serving'),
     estimated_grams: Number(item.estimated_grams) || 0,
     calories: Number(item.calories) || 0,
     protein_g: Number(item.protein_g) || 0,
@@ -4041,11 +4094,11 @@ function clearStoredCookbookRecipes() {
   }
 }
 
-function getRecipeKey(recipe) {
+export function getRecipeKey(recipe) {
   return String(recipe?.key || `${recipe?.meal_type || 'meal'}-${recipe?.recipe_name || recipe?.id || ''}`).trim()
 }
 
-function normaliseCookbookRecipe(recipe) {
+export function normaliseCookbookRecipe(recipe) {
   return {
     key: getRecipeKey(recipe),
     recipe_name: String(recipe?.recipe_name || '').trim(),
@@ -4061,6 +4114,35 @@ function normaliseCookbookRecipe(recipe) {
     on_hand_ingredients: dedupeIngredientList(recipe?.on_hand_ingredients),
     missing_ingredients: dedupeIngredientList(recipe?.missing_ingredients),
   }
+}
+
+export function filterRecipesByPlanningState({
+  recipes,
+  cookbookRecipes,
+  collectionFilter = 'all',
+  mealFilter = 'all',
+  searchQuery = '',
+}) {
+  const sourceRecipes = collectionFilter === 'cookbook' ? cookbookRecipes : recipes
+  const mealFilteredRecipes = mealFilter === 'all'
+    ? sourceRecipes
+    : (Array.isArray(sourceRecipes) ? sourceRecipes : []).filter(recipe => String(recipe?.meal_type || '').trim() === mealFilter)
+
+  const normalizedRecipeQuery = normalisePantryMatchText(searchQuery)
+  if (!normalizedRecipeQuery) {
+    return mealFilteredRecipes
+  }
+
+  return mealFilteredRecipes.filter(recipe => {
+    const haystack = normalisePantryMatchText([
+      recipe?.recipe_name,
+      ...(Array.isArray(recipe?.ingredients) ? recipe.ingredients : []),
+      recipe?.why_this_works,
+      recipe?.meal_type,
+    ].filter(Boolean).join(' '))
+
+    return haystack.includes(normalizedRecipeQuery)
+  })
 }
 
 function formatMealTypeLabel(mealType) {
@@ -4097,114 +4179,9 @@ function formatMealServing(amount, unit) {
   return `${roundTo(servingAmount, servingAmount % 1 === 0 ? 0 : 2)} ${unitLabel}`
 }
 
-function normaliseServingUnitLabel(amount, unit) {
-  const rawUnit = String(unit || '').trim().replace(/\s+/g, ' ')
-  if (!rawUnit) {
-    return 'serving'
-  }
-
-  const numericAmount = Number(amount)
-  if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
-    return rawUnit
-  }
-
-  const quantifiedUnit = parseQuantifiedServingUnit(rawUnit)
-  if (quantifiedUnit) {
-    if (approximatelyEqualServingCount(quantifiedUnit.value, numericAmount) || approximatelyEqualServingCount(numericAmount, 1)) {
-      return '__raw_unit__'
-    }
-
-    return `__repeat__${quantifiedUnit.normalized}`
-  }
-
-  const normalizedAmount = String(roundTo(numericAmount, numericAmount % 1 === 0 ? 0 : 2))
-  if (rawUnit === normalizedAmount) {
-    return 'serving'
-  }
-
-  const strippedUnit = rawUnit.replace(new RegExp(`^${normalizedAmount.replace('.', '\\.')}(?:\\.0+)?\\s+`, 'i'), '').trim()
-  return strippedUnit || rawUnit
-}
-
-function parseQuantifiedServingUnit(unit) {
-  const match = String(unit || '').trim().match(/^(\d+\s+\d+\/\d+|\d+\/\d+|\d+(?:\.\d+)?|one|a|an)(?:\s*(?:x|×))?\s+(.+)$/i)
-  if (!match) {
-    return null
-  }
-
-  const quantityToken = String(match[1] || '').trim().toLowerCase()
-  const rest = String(match[2] || '').trim()
-  if (!rest) {
-    return null
-  }
-
-  return {
-    value: parseServingCountToken(quantityToken),
-    normalized: ['a', 'an', 'one'].includes(quantityToken) ? `1 ${rest}` : `${match[1].trim()} ${rest}`,
-  }
-}
-
-function parseServingCountToken(token) {
-  const value = String(token || '').trim().toLowerCase()
-  if (['a', 'an', 'one'].includes(value)) {
-    return 1
-  }
-
-  if (/^\d+\s+\d+\/\d+$/.test(value)) {
-    const [wholePart, fractionPart] = value.split(/\s+/)
-    return (Number(wholePart) || 0) + parseServingCountFraction(fractionPart)
-  }
-
-  if (/^\d+\/\d+$/.test(value)) {
-    return parseServingCountFraction(value)
-  }
-
-  return Number(value) || 0
-}
-
-function parseServingCountFraction(value) {
-  const [numerator, denominator] = String(value || '').split('/')
-  const safeDenominator = Number(denominator) || 1
-  return (Number(numerator) || 0) / safeDenominator
-}
-
-function approximatelyEqualServingCount(left, right) {
-  return Math.abs((Number(left) || 0) - (Number(right) || 0)) < 0.001
-}
-
-function normaliseRawServingUnitLabel(unit) {
-  const rawUnit = String(unit || '').trim().replace(/\s+/g, ' ')
-  const quantifiedUnit = parseQuantifiedServingUnit(rawUnit)
-  return quantifiedUnit ? quantifiedUnit.normalized : rawUnit || 'serving'
-}
-
 function formatMealMacroValue(value) {
   const numeric = Number(value) || 0
   return Number.isInteger(numeric) ? String(numeric) : String(roundTo(numeric, 1))
-}
-
-function normalisePantryMatchText(value) {
-  return String(value || '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim()
-}
-
-function dedupeIngredientList(list) {
-  const seen = new Set()
-
-  return (Array.isArray(list) ? list : []).reduce((items, value) => {
-    const label = String(value || '').trim()
-    const key = normalisePantryMatchText(label)
-
-    if (!label || !key || seen.has(key)) {
-      return items
-    }
-
-    seen.add(key)
-    items.push(label)
-    return items
-  }, [])
 }
 
 function pantryContainsIngredient(pantry, ingredient) {
@@ -4219,7 +4196,7 @@ function pantryContainsIngredient(pantry, ingredient) {
   })
 }
 
-function buildRecipeAwareGroceryGap(baseGap, recipes, pantry, selectedRecipeKeys) {
+export function buildRecipeAwareGroceryGap(baseGap, recipes, pantry, selectedRecipeKeys) {
   const gapItems = new Map()
   const recipeItems = new Map()
   const hiddenItemKeys = new Set(Array.isArray(baseGap?.hidden_item_keys) ? baseGap.hidden_item_keys : [])
@@ -4580,7 +4557,7 @@ function buildSavedFoodFormState(food) {
   return {
     canonical_name: food?.canonical_name || food?.food_name || '',
     brand: food?.brand || '',
-    serving_size: food?.serving_size || '1 serving',
+    serving_size: normaliseRawServingUnitLabel(food?.serving_size || '1 serving'),
     serving_grams: food?.serving_grams ?? '',
     calories: food?.calories ?? '',
     protein_g: food?.protein_g ?? '',
@@ -4597,7 +4574,7 @@ function buildSavedFoodFormState(food) {
 function buildRecentFoodFormState(food) {
   return {
     canonical_name: food?.canonical_name || food?.food_name || '',
-    serving_unit: food?.serving_unit || food?.serving_size || 'serving',
+    serving_unit: normaliseRawServingUnitLabel(food?.serving_unit || food?.serving_size || 'serving'),
     calories: food?.calories ?? '',
     protein_g: food?.protein_g ?? '',
     carbs_g: food?.carbs_g ?? '',
@@ -4643,6 +4620,41 @@ function getDefaultMealTypeForCurrentTime() {
   }
 
   return 'snack'
+}
+
+function getNutritionPlanningPrompt() {
+  const [hours, minutes] = getCurrentLocalTimeString().split(':').map(value => Number(value) || 0)
+  const currentMinutes = (hours * 60) + minutes
+
+  if (currentMinutes >= (22 * 60) || currentMinutes < (5 * 60)) {
+    return {
+      label: 'Close tonight cleanly',
+      meta: 'Bedtime beats drift',
+      prompt: 'It is late here. Based on my current nutrition board, should I eat anything else tonight or just shut the day down and set up tomorrow morning?',
+    }
+  }
+
+  if (currentMinutes < ((10 * 60) + 30)) {
+    return {
+      label: 'Plan my breakfast',
+      meta: 'Start the day cleanly',
+      prompt: 'Plan my breakfast from my current nutrition board. Keep it realistic and explain how it fits my calories and macros for today.',
+    }
+  }
+
+  if (currentMinutes < (15 * 60)) {
+    return {
+      label: 'Plan my lunch',
+      meta: 'Keep the day on track',
+      prompt: 'Plan my lunch from my current nutrition board. Keep it realistic and explain how it fits my remaining calories and macros.',
+    }
+  }
+
+  return {
+    label: 'Plan my dinner',
+    meta: 'Close the day cleanly',
+    prompt: 'Plan my dinner from my current nutrition board. Keep it realistic and explain how it fits my remaining calories and macros.',
+  }
 }
 
 function combineMealDateTime(date, time) {

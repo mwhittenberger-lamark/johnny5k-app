@@ -235,13 +235,13 @@ class SmsService {
 			$weekly_summary_enabled = self::reminder_enabled( $preferences, 'weekly_summary_enabled', true );
 			$weekly_summary_hour = self::reminder_hour( $preferences, 'weekly_summary_hour', 9 );
 
-			// Workout reminder: if a session is planned today and not yet started
-			$session_today = $wpdb->get_row( $wpdb->prepare(
-				"SELECT id, started_at FROM {$wpdb->prefix}fit_workout_sessions
-				 WHERE user_id = %d AND session_date = %s AND completed = 0 AND skip_requested = 0",
-				$uid, $today
-			) );
-			if ( $workout_enabled && $workout_hour === $local_hour && $session_today && ! $session_today->started_at && ! self::was_sent_on_local_date( $uid, 'workout_reminder', $today ) ) {
+			$scheduled_day_type = self::scheduled_day_type_for_date( $uid, $today );
+			if (
+				$workout_enabled
+				&& $workout_hour === $local_hour
+				&& self::workout_is_open_for_date( $uid, $today, $scheduled_day_type )
+				&& ! self::was_sent_on_local_date( $uid, 'workout_reminder', $today )
+			) {
 				self::send_workout_reminder( $uid );
 			}
 
@@ -767,13 +767,65 @@ class SmsService {
 			$today
 		) );
 
-		$day_type = $session->actual_day_type ?? $session->planned_day_type ?? '';
+		$day_type = $session->actual_day_type ?? $session->planned_day_type ?? self::scheduled_day_type_for_date( $user_id, $today );
 
 		return [
 			'weekday_label' => UserTime::weekday_label_for_date( $user_id, $today ),
 			'day_type_label' => self::humanize_day_type( (string) $day_type ),
 			'local_date' => $today,
 		];
+	}
+
+	private static function scheduled_day_type_for_date( int $user_id, string $date ): string {
+		global $wpdb;
+		$p = $wpdb->prefix;
+
+		$plan_id = (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT id FROM {$p}fit_user_training_plans WHERE user_id = %d AND active = 1 ORDER BY created_at DESC LIMIT 1",
+			$user_id
+		) );
+
+		if ( ! $plan_id ) {
+			return '';
+		}
+
+		$weekday_order = UserTime::weekday_order_for_date( $user_id, $date );
+		$day_type = $wpdb->get_var( $wpdb->prepare(
+			"SELECT day_type FROM {$p}fit_user_training_days
+			 WHERE training_plan_id = %d AND day_order = %d
+			 LIMIT 1",
+			$plan_id,
+			$weekday_order
+		) );
+
+		return is_string( $day_type ) ? strtolower( $day_type ) : '';
+	}
+
+	private static function workout_is_open_for_date( int $user_id, string $date, string $scheduled_day_type ): bool {
+		global $wpdb;
+
+		$normalized_day_type = strtolower( trim( $scheduled_day_type ) );
+		if ( '' === $normalized_day_type || 'rest' === $normalized_day_type ) {
+			return false;
+		}
+
+		$session = $wpdb->get_row( $wpdb->prepare(
+			"SELECT completed, skip_requested, started_at FROM {$wpdb->prefix}fit_workout_sessions
+			 WHERE user_id = %d AND session_date = %s
+			 ORDER BY id DESC LIMIT 1",
+			$user_id,
+			$date
+		) );
+
+		if ( ! $session ) {
+			return true;
+		}
+
+		if ( ! empty( $session->completed ) || ! empty( $session->skip_requested ) ) {
+			return false;
+		}
+
+		return empty( $session->started_at );
 	}
 
 	private static function meal_context( int $user_id ): array {

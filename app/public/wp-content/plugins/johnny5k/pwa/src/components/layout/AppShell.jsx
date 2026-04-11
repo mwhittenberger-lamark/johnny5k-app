@@ -1,10 +1,20 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
+import { flushOfflineWriteQueue, subscribeOfflineWriteQueue } from '../../api/client'
 import { analyticsApi } from '../../api/modules/analytics'
 import { authApi } from '../../api/modules/auth'
 import { onboardingApi } from '../../api/modules/onboarding'
 import { getAppImageUrl } from '../../lib/appImages'
+import { reportClientDiagnostic } from '../../lib/clientDiagnostics'
 import { DAILY_CHECK_IN_QUESTIONS, createDailyCheckInAnswers, getDailyCheckInDateKey, getNextDailyCheckInBoundary, isDailyCheckInWindowOpen, normalizeDailyCheckInEntry } from '../../lib/dailyCheckIn'
+import {
+  buildInstallPromptSnoozedUntil,
+  buildPushPromptSnoozedUntil,
+  INSTALL_PROMPT_SNOOZE_DAYS,
+  isInstallPromptSnoozed,
+  isPushPromptSnoozed,
+  PUSH_PROMPT_SNOOZE_DAYS,
+} from '../../lib/onboarding'
 import { useAuthStore } from '../../store/authStore'
 import { useJohnnyAssistantStore } from '../../store/johnnyAssistantStore'
 import AppIcon from '../ui/AppIcon'
@@ -31,16 +41,29 @@ export default function AppShell({ children }) {
   const [dailyCheckInDayKey, setDailyCheckInDayKey] = useState('')
   const [dailyCheckInAnswers, setDailyCheckInAnswers] = useState(() => createDailyCheckInAnswers())
   const [dailyCheckInRefreshKey, setDailyCheckInRefreshKey] = useState(0)
+  const [isOnline, setIsOnline] = useState(() => typeof navigator === 'undefined' ? true : navigator.onLine !== false)
+  const [installPromptEvent, setInstallPromptEvent] = useState(null)
+  const [installHelpOpen, setInstallHelpOpen] = useState(false)
+  const [isStandaloneApp, setIsStandaloneApp] = useState(() => isStandaloneDisplayMode())
+  const [pendingOfflineWrites, setPendingOfflineWrites] = useState(0)
+  const [offlineQueueSyncing, setOfflineQueueSyncing] = useState(false)
+  const [swUpdateReady, setSwUpdateReady] = useState(false)
   const menuButtonRef = useRef(null)
   const firstMobileLinkRef = useRef(null)
   const dailyCheckInCloseRef = useRef(null)
   const dailyCheckInStateRef = useRef(normalizeDailyCheckInEntry(dailyCheckInEntry))
   const preferenceMetaRef = useRef(preferenceMeta ?? {})
   const brandmarkImage = getAppImageUrl(appImages, 'brandmark')
+  const isAppleInstallFlow = !isStandaloneApp && isAppleMobileDevice()
   const showPushPromptNotice = notificationPrefs?.pushSupported
     && notificationPrefs?.pushConfigured
     && !notificationPrefs?.pushSubscribed
     && notificationPrefs?.pushPromptStatus !== 'refused'
+    && !isPushPromptSnoozed(preferenceMeta)
+  const showInstallNotice = !isStandaloneApp
+    && Boolean(installPromptEvent || isAppleInstallFlow)
+    && !isInstallPromptSnoozed(preferenceMeta)
+  const showConnectivityNotice = !isOnline || pendingOfflineWrites > 0
 
   useEffect(() => {
     preferenceMetaRef.current = preferenceMeta && typeof preferenceMeta === 'object' ? preferenceMeta : {}
@@ -58,6 +81,75 @@ export default function AppShell({ children }) {
   useEffect(() => {
     setMenuOpen(false)
   }, [location.pathname])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return undefined
+    }
+
+    const syncNetworkState = () => {
+      setIsOnline(navigator.onLine !== false)
+      setIsStandaloneApp(isStandaloneDisplayMode())
+    }
+
+    window.addEventListener('online', syncNetworkState)
+    window.addEventListener('offline', syncNetworkState)
+    window.addEventListener('focus', syncNetworkState)
+
+    return () => {
+      window.removeEventListener('online', syncNetworkState)
+      window.removeEventListener('offline', syncNetworkState)
+      window.removeEventListener('focus', syncNetworkState)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return undefined
+    }
+
+    function handleBeforeInstallPrompt(event) {
+      event.preventDefault()
+      setInstallPromptEvent(event)
+    }
+
+    function handleAppInstalled() {
+      const currentPreferenceMeta = preferenceMetaRef.current ?? {}
+      if (currentPreferenceMeta.install_prompt_snoozed_until) {
+        const nextPreferenceMeta = {
+          ...currentPreferenceMeta,
+        }
+        delete nextPreferenceMeta.install_prompt_snoozed_until
+        preferenceMetaRef.current = nextPreferenceMeta
+        setPreferenceMeta(nextPreferenceMeta)
+        void onboardingApi.savePrefs({
+          exercise_preferences_json: nextPreferenceMeta,
+        }).catch(() => null)
+      }
+      setInstallPromptEvent(null)
+      setInstallHelpOpen(false)
+      setIsStandaloneApp(true)
+    }
+
+    function handlePwaUpdateReady() {
+      setSwUpdateReady(true)
+    }
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt)
+    window.addEventListener('appinstalled', handleAppInstalled)
+    window.addEventListener('johnny5k:pwa-update-ready', handlePwaUpdateReady)
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt)
+      window.removeEventListener('appinstalled', handleAppInstalled)
+      window.removeEventListener('johnny5k:pwa-update-ready', handlePwaUpdateReady)
+    }
+  }, [])
+
+  useEffect(() => subscribeOfflineWriteQueue((snapshot) => {
+    setPendingOfflineWrites(snapshot.count || 0)
+    setOfflineQueueSyncing(Boolean(snapshot.syncing))
+  }), [])
 
   useEffect(() => {
     const search = new URLSearchParams(location.search)
@@ -261,8 +353,15 @@ export default function AppShell({ children }) {
 
     try {
       await authApi.logout()
-    } catch {
-      // Clear local auth state even if the server session is already gone.
+    } catch (error) {
+      reportClientDiagnostic({
+        source: 'app_logout',
+        message: 'Server logout failed, but the local session was still cleared.',
+        error,
+        context: {
+          path: location.pathname,
+        },
+      })
     } finally {
       clearAuth()
       navigate('/login', { replace: true })
@@ -278,6 +377,87 @@ export default function AppShell({ children }) {
         johnnyActionNotice: 'Enable push here if you want Johnny to catch missing meal logs before they slip.',
       },
     })
+  }
+
+  async function handleSnoozePushPrompt(event) {
+    event.preventDefault()
+    event.stopPropagation()
+
+    const nextPreferenceMeta = {
+      ...(preferenceMetaRef.current ?? {}),
+      push_prompt_snoozed_until: buildPushPromptSnoozedUntil(),
+    }
+
+    preferenceMetaRef.current = nextPreferenceMeta
+    setPreferenceMeta(nextPreferenceMeta)
+
+    try {
+      await onboardingApi.savePrefs({
+        exercise_preferences_json: nextPreferenceMeta,
+      })
+    } catch (error) {
+      reportClientDiagnostic({
+        source: 'app_push_prompt_snooze',
+        message: 'Push prompt snooze could not be persisted.',
+        error,
+        context: {
+          path: location.pathname,
+        },
+      })
+    }
+  }
+
+  async function handleSnoozeInstallPrompt() {
+    const nextPreferenceMeta = {
+      ...(preferenceMetaRef.current ?? {}),
+      install_prompt_snoozed_until: buildInstallPromptSnoozedUntil(),
+    }
+
+    preferenceMetaRef.current = nextPreferenceMeta
+    setPreferenceMeta(nextPreferenceMeta)
+
+    try {
+      await onboardingApi.savePrefs({
+        exercise_preferences_json: nextPreferenceMeta,
+      })
+    } catch (error) {
+      reportClientDiagnostic({
+        source: 'app_install_prompt_snooze',
+        message: 'Install prompt snooze could not be persisted.',
+        error,
+        context: {
+          path: location.pathname,
+        },
+      })
+    }
+  }
+
+  async function handleInstallNoticeClick() {
+    if (installPromptEvent?.prompt) {
+      try {
+        await installPromptEvent.prompt()
+        await installPromptEvent.userChoice?.catch(() => null)
+      } finally {
+        setInstallPromptEvent(null)
+      }
+      return
+    }
+
+    setInstallHelpOpen(true)
+  }
+
+  function handleApplyUpdate() {
+    const updater = window.__jfUpdateServiceWorker
+    if (typeof updater === 'function') {
+      void updater(true)
+      return
+    }
+
+    window.location.reload()
+  }
+
+  function handleSyncQueuedWrites() {
+    void flushOfflineWriteQueue()
   }
 
   function handleDailyCheckInAnswer(questionKey, value) {
@@ -305,7 +485,56 @@ export default function AppShell({ children }) {
               <strong>Enable push notifications</strong>
               <span>Breakfast, lunch, and dinner reminders are waiting for approval on this device.</span>
             </span>
-            <span className="app-shell-push-notice-action">Open Profile</span>
+            <span className="app-shell-push-notice-actions">
+              <button type="button" className="app-shell-push-notice-dismiss" onClick={handleSnoozePushPrompt}>
+                Hide {PUSH_PROMPT_SNOOZE_DAYS} days
+              </button>
+              <span className="app-shell-push-notice-action">Open Profile</span>
+            </span>
+          </button>
+        ) : null}
+        {showInstallNotice ? (
+          <div className="app-shell-install-notice">
+            <span className="app-shell-install-copy">
+              <strong>{installPromptEvent ? 'Install Johnny5k' : 'Add Johnny5k to Home Screen'}</strong>
+              <span>{installPromptEvent ? 'Install the app for faster opens, full-screen mode, and better offline behavior.' : 'On iPhone, use Safari Share > Add to Home Screen, then open Johnny5k from the icon.'}</span>
+            </span>
+            <span className="app-shell-push-notice-actions">
+              <button type="button" className="app-shell-push-notice-dismiss" onClick={handleSnoozeInstallPrompt}>
+                Hide {INSTALL_PROMPT_SNOOZE_DAYS} days
+              </button>
+              <button type="button" className="app-shell-install-action app-shell-install-action-button" onClick={handleInstallNoticeClick}>
+                {installPromptEvent ? 'Install' : 'How to install'}
+              </button>
+            </span>
+          </div>
+        ) : null}
+        {showConnectivityNotice ? (
+          <div className={`app-shell-connectivity-notice ${isOnline ? 'online' : 'offline'}`}>
+            <span className="app-shell-connectivity-copy">
+              <strong>{isOnline ? 'Offline changes waiting to sync' : 'You are offline'}</strong>
+              <span>
+                {isOnline
+                  ? `${pendingOfflineWrites} change${pendingOfflineWrites === 1 ? '' : 's'} queued locally.${offlineQueueSyncing ? ' Syncing now.' : ''}`
+                  : pendingOfflineWrites > 0
+                    ? `${pendingOfflineWrites} queued change${pendingOfflineWrites === 1 ? '' : 's'} will sync when the connection returns.`
+                    : 'Cached screens stay available, and selected body logs will queue until the connection returns.'}
+              </span>
+            </span>
+            {isOnline && pendingOfflineWrites > 0 ? (
+              <button type="button" className="app-shell-connectivity-action" onClick={handleSyncQueuedWrites} disabled={offlineQueueSyncing}>
+                {offlineQueueSyncing ? 'Syncing…' : 'Sync now'}
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+        {swUpdateReady ? (
+          <button type="button" className="app-shell-update-notice" onClick={handleApplyUpdate}>
+            <span className="app-shell-install-copy">
+              <strong>App update ready</strong>
+              <span>A newer Johnny5k version is downloaded and ready to reload.</span>
+            </span>
+            <span className="app-shell-install-action">Reload</span>
           </button>
         ) : null}
 
@@ -420,6 +649,7 @@ export default function AppShell({ children }) {
           onClose={handleCloseDailyCheckIn}
         />
       ) : null}
+      {installHelpOpen ? <InstallHelpModal onClose={() => setInstallHelpOpen(false)} /> : null}
       {isDrawerOpen ? (
         <Suspense fallback={null}>
           <JohnnyAssistantDrawer />
@@ -477,6 +707,47 @@ function DailyCheckInModal({ answers, closeButtonRef, onAnswer, onClose }) {
   )
 }
 
+function InstallHelpModal({ onClose }) {
+  return (
+    <div className="app-shell-checkin-shell" role="dialog" aria-modal="true" aria-labelledby="install-help-title">
+      <button type="button" className="app-shell-checkin-backdrop" aria-label="Close install help" onClick={onClose} />
+      <section className="app-shell-checkin-modal app-shell-install-modal">
+        <div className="app-shell-checkin-head">
+          <div>
+            <p className="dashboard-eyebrow">Install Johnny5k</p>
+            <h2 id="install-help-title">Use Home Screen install on iPhone</h2>
+            <p>Johnny5k works best from the installed app icon. That unlocks standalone mode, push support on iPhone, and stronger offline behavior.</p>
+          </div>
+          <button type="button" className="app-shell-checkin-close" onClick={onClose}>
+            Close
+          </button>
+        </div>
+
+        <div className="app-shell-checkin-body">
+          <section className="app-shell-checkin-question">
+            <div className="dashboard-card-head">
+              <span className="dashboard-chip subtle">iPhone</span>
+            </div>
+            <h3>Install from Safari</h3>
+            <p>Open Johnny5k in Safari, tap the Share button, choose <strong>Add to Home Screen</strong>, then launch the app from the new icon.</p>
+          </section>
+          <section className="app-shell-checkin-question">
+            <div className="dashboard-card-head">
+              <span className="dashboard-chip subtle">Other browsers</span>
+            </div>
+            <h3>Use the browser install prompt</h3>
+            <p>If your browser supports install prompts, use the install button from the address bar or the Johnny5k install notice.</p>
+          </section>
+        </div>
+
+        <div className="app-shell-checkin-actions">
+          <button type="button" className="btn-secondary" onClick={onClose}>Back to app</button>
+        </div>
+      </section>
+    </div>
+  )
+}
+
 function buildCoachPromptFromQuery(coachPrompt, triggerType) {
   const normalizedPrompt = String(coachPrompt || '').trim().toLowerCase()
   const normalizedTrigger = String(triggerType || '').trim().toLowerCase()
@@ -493,6 +764,26 @@ function buildCoachPromptFromQuery(coachPrompt, triggerType) {
   if (normalizedPrompt === 'milestone' || normalizedTrigger === 'milestone') {
     return 'Use my current momentum and build the right next move.'
   }
+  if (normalizedPrompt === 'workout_intent' || normalizedTrigger === 'workout_accountability') {
+    return 'It is my workout day. Help me decide whether I should train today, shorten it, or recover based on my current board.'
+  }
 
   return ''
+}
+
+function isAppleMobileDevice() {
+  if (typeof navigator === 'undefined') {
+    return false
+  }
+
+  const userAgent = String(navigator.userAgent || navigator.vendor || '').toLowerCase()
+  return /iphone|ipad|ipod/.test(userAgent)
+}
+
+function isStandaloneDisplayMode() {
+  if (typeof window === 'undefined') {
+    return false
+  }
+
+  return window.matchMedia?.('(display-mode: standalone)')?.matches || window.navigator.standalone === true
 }

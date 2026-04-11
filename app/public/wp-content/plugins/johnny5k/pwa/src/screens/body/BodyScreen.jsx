@@ -3,11 +3,15 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { bodyApi } from '../../api/modules/body'
 import { workoutApi } from '../../api/modules/workout'
 import ClearableInput from '../../components/ui/ClearableInput'
+import SupportIconButton from '../../components/ui/SupportIconButton'
 import { formatUsShortDate } from '../../lib/dateFormat'
+import { openSupportGuide } from '../../lib/supportHelp'
 import { DAY_TYPE_OPTIONS } from '../../lib/trainingDayTypes'
 import { useDashboardStore } from '../../store/dashboardStore'
+import { useJohnnyAssistantStore } from '../../store/johnnyAssistantStore'
 
 export default function BodyScreen() {
+  const openDrawer = useJohnnyAssistantStore(state => state.openDrawer)
   const location = useLocation()
   const navigate = useNavigate()
   const [weights, setWeights]   = useState([])
@@ -40,6 +44,23 @@ export default function BodyScreen() {
   const invalidate = useDashboardStore(s => s.invalidate)
   const snapshot = useDashboardStore(s => s.snapshot)
   const loadSnapshot = useDashboardStore(s => s.loadSnapshot)
+
+  function handleOpenBodySupport() {
+    const promptsByTab = {
+      weight: 'Show me where to log weight here and how to review the trend without overthinking it.',
+      sleep: 'Show me how to log sleep here and where to review recovery.',
+      steps: 'Show me how to log steps here and how to use this screen when movement is behind.',
+      cardio: 'Show me how to log cardio here and where to review recent conditioning work.',
+    }
+
+    openSupportGuide(openDrawer, {
+      screen: 'body',
+      surface: `body_${tab}`,
+      guideId: 'log-sleep-and-steps',
+      prompt: promptsByTab[tab] || promptsByTab.weight,
+      context: { body_tab: tab },
+    })
+  }
 
   const refreshBodyData = useCallback(async () => {
     const [weightsResult, sleepResult, stepsResult, cardioResult, workoutsResult, metricsResult] = await Promise.allSettled([
@@ -109,17 +130,40 @@ export default function BodyScreen() {
     e.preventDefault()
     setSaving(true)
     try {
+      let result = null
       if (editingWeightId) {
-        await bodyApi.updateWeight(editingWeightId, { weight_lb: +weightInput, date: weightDate })
-        setFlash('Weight updated!')
+        result = await bodyApi.updateWeight(editingWeightId, { weight_lb: +weightInput, date: weightDate })
+        setWeights(current => upsertLocalBodyEntry(
+          current,
+          buildLocalWeightEntry({ id: editingWeightId, weight_lb: +weightInput, date: weightDate }, result),
+          'metric_date',
+          true,
+        ))
+        setMetrics(current => ({
+          ...current,
+          weight: upsertLocalSeriesEntry(current.weight, { date: weightDate, weight_lb: +weightInput }, 'date'),
+        }))
+        setFlash(result?.queued ? 'Weight saved offline. It will sync when you reconnect.' : 'Weight updated!')
       } else {
-        await bodyApi.logWeight({ weight_lb: +weightInput, date: weightDate })
-        setFlash('Weight logged!')
+        result = await bodyApi.logWeight({ weight_lb: +weightInput, date: weightDate })
+        setWeights(current => upsertLocalBodyEntry(
+          current,
+          buildLocalWeightEntry({ weight_lb: +weightInput, date: weightDate }, result),
+          'metric_date',
+          true,
+        ))
+        setMetrics(current => ({
+          ...current,
+          weight: upsertLocalSeriesEntry(current.weight, { date: weightDate, weight_lb: +weightInput }, 'date'),
+        }))
+        setFlash(result?.queued ? 'Weight saved offline. It will sync when you reconnect.' : 'Weight logged!')
       }
       resetWeightForm()
       invalidate()
-      loadSnapshot(true)
-      await refreshBodyData()
+      if (!result?.queued) {
+        loadSnapshot(true)
+        await refreshBodyData()
+      }
       setPendingScrollTarget('weight')
     } catch (err) { setFlash('Error: ' + err.message) }
     setSaving(false)
@@ -129,17 +173,40 @@ export default function BodyScreen() {
     e.preventDefault()
     setSaving(true)
     try {
+      let result = null
       if (editingSleepId) {
-        await bodyApi.updateSleep(editingSleepId, { hours_sleep: +sleepInput, sleep_quality: sleepQuality, date: sleepDate })
-        setFlash('Sleep updated!')
+        result = await bodyApi.updateSleep(editingSleepId, { hours_sleep: +sleepInput, sleep_quality: sleepQuality, date: sleepDate })
+        setSleepLogs(current => upsertLocalBodyEntry(
+          current,
+          buildLocalSleepEntry({ id: editingSleepId, hours_sleep: +sleepInput, sleep_quality: sleepQuality, date: sleepDate }, result),
+          'sleep_date',
+          true,
+        ))
+        setMetrics(current => ({
+          ...current,
+          sleep: upsertLocalSeriesEntry(current.sleep, { date: sleepDate, hours_sleep: +sleepInput }, 'date'),
+        }))
+        setFlash(result?.queued ? 'Sleep saved offline. It will sync when you reconnect.' : 'Sleep updated!')
       } else {
-        await bodyApi.logSleep({ hours_sleep: +sleepInput, sleep_quality: sleepQuality, date: sleepDate })
-        setFlash('Sleep logged!')
+        result = await bodyApi.logSleep({ hours_sleep: +sleepInput, sleep_quality: sleepQuality, date: sleepDate })
+        setSleepLogs(current => upsertLocalBodyEntry(
+          current,
+          buildLocalSleepEntry({ hours_sleep: +sleepInput, sleep_quality: sleepQuality, date: sleepDate }, result),
+          'sleep_date',
+          true,
+        ))
+        setMetrics(current => ({
+          ...current,
+          sleep: upsertLocalSeriesEntry(current.sleep, { date: sleepDate, hours_sleep: +sleepInput }, 'date'),
+        }))
+        setFlash(result?.queued ? 'Sleep saved offline. It will sync when you reconnect.' : 'Sleep logged!')
       }
       resetSleepForm()
       invalidate()
-      loadSnapshot(true)
-      await refreshBodyData()
+      if (!result?.queued) {
+        loadSnapshot(true)
+        await refreshBodyData()
+      }
       setPendingScrollTarget('sleep')
     } catch (err) { setFlash('Error: ' + err.message) }
     setSaving(false)
@@ -149,17 +216,42 @@ export default function BodyScreen() {
     e.preventDefault()
     setSaving(true)
     try {
+      let result = null
       if (editingStepId) {
-        await bodyApi.updateSteps(editingStepId, { steps: +stepsInput, date: stepsDate })
-        setFlash('Steps updated!')
+        result = await bodyApi.updateSteps(editingStepId, { steps: +stepsInput, date: stepsDate })
+        setStepLogs(current => upsertLocalBodyEntry(
+          current,
+          buildLocalStepsEntry({ id: editingStepId, steps: +stepsInput, date: stepsDate }, result),
+          'step_date',
+          true,
+        ))
+        setMetrics(current => ({
+          ...current,
+          steps: upsertLocalSeriesEntry(current.steps, { date: stepsDate, steps: +stepsInput }, 'date'),
+          movement: upsertLocalSeriesEntry(current.movement, { date: stepsDate, steps: +stepsInput }, 'date'),
+        }))
+        setFlash(result?.queued ? 'Steps saved offline. They will sync when you reconnect.' : 'Steps updated!')
       } else {
-        await bodyApi.logSteps({ steps: +stepsInput, date: stepsDate })
-        setFlash('Steps logged!')
+        result = await bodyApi.logSteps({ steps: +stepsInput, date: stepsDate })
+        setStepLogs(current => upsertLocalBodyEntry(
+          current,
+          buildLocalStepsEntry({ steps: +stepsInput, date: stepsDate }, result),
+          'step_date',
+          true,
+        ))
+        setMetrics(current => ({
+          ...current,
+          steps: upsertLocalSeriesEntry(current.steps, { date: stepsDate, steps: +stepsInput }, 'date'),
+          movement: upsertLocalSeriesEntry(current.movement, { date: stepsDate, steps: +stepsInput }, 'date'),
+        }))
+        setFlash(result?.queued ? 'Steps saved offline. They will sync when you reconnect.' : 'Steps logged!')
       }
       resetStepsForm()
       invalidate()
-      loadSnapshot(true)
-      await refreshBodyData()
+      if (!result?.queued) {
+        loadSnapshot(true)
+        await refreshBodyData()
+      }
       setPendingScrollTarget('steps')
     } catch (err) { setFlash('Error: ' + err.message) }
     setSaving(false)
@@ -231,6 +323,15 @@ export default function BodyScreen() {
 
   function handleRecoveryQuickAction() {
     routeRecoveryAction(recoverySummary, navigate)
+  }
+
+  function handleQueuedCardioMutation(nextForm, editingId, result) {
+    const nextEntry = buildLocalCardioEntry({ ...nextForm, id: editingId || 0 }, result)
+    setCardioLogs(current => upsertLocalBodyEntry(current, nextEntry, 'cardio_date', false))
+    setMetrics(current => ({
+      ...current,
+      cardio: upsertLocalSeriesEntry(current.cardio, { date: nextForm.date, duration_minutes: Number(nextForm.duration_minutes || 0) }, 'date'),
+    }))
   }
   const weightSeries = selectSeries(
     metrics.weight,
@@ -340,14 +441,17 @@ export default function BodyScreen() {
 
   return (
     <div className="screen body-screen">
-      <header className="screen-header body-screen-header">
+      <header className="screen-header body-screen-header support-icon-anchor">
+        <SupportIconButton label="Get help with progress tracking" onClick={handleOpenBodySupport} />
         <div>
           <h1>Progress</h1>
           <p className="body-screen-subtitle">Track bodyweight, recovery, movement, and cardio in one place.</p>
         </div>
-        <button className="btn-secondary" type="button" onClick={() => navigate('/activity-log')}>
-          Activity Log
-        </button>
+        <div className="header-actions">
+          <button className="btn-secondary" type="button" onClick={() => navigate('/activity-log')}>
+            Activity Log
+          </button>
+        </div>
       </header>
 
       {msg ? (
@@ -699,6 +803,7 @@ export default function BodyScreen() {
           currentWeight={Number(latestWeight)}
           onRangeChange={days => setRange('cardio', days)}
           onLogged={refreshBodyData}
+          onQueuedMutation={handleQueuedCardioMutation}
           onRefreshSnapshot={() => loadSnapshot(true)}
           onFlash={setFlash}
         />
@@ -912,7 +1017,7 @@ function WorkoutHistoryTab({ workoutLogs, currentWeight, invalidate, onRefreshSn
   )
 }
 
-function CardioTab({ invalidate, cardioLogs, cardioSeries, cardioRange, currentWeight, onRangeChange, onLogged, onRefreshSnapshot, onFlash }) {
+function CardioTab({ invalidate, cardioLogs, cardioSeries, cardioRange, currentWeight, onRangeChange, onLogged, onQueuedMutation, onRefreshSnapshot, onFlash }) {
   const [form, setForm] = useState({ cardio_type: 'running', duration_minutes: '', intensity: 'moderate', estimated_calories: '', notes: '', date: todayInputValue() })
   const [editingCardioId, setEditingCardioId] = useState(null)
   const [caloriesDirty, setCaloriesDirty] = useState(false)
@@ -970,19 +1075,25 @@ function CardioTab({ invalidate, cardioLogs, cardioSeries, cardioRange, currentW
     e.preventDefault()
     setSaving(true)
     try {
+      let result = null
       if (editingCardioId) {
-        await bodyApi.updateCardio(editingCardioId, form)
-        setMsg('Cardio updated!')
-        onFlash?.('Cardio updated!')
+        result = await bodyApi.updateCardio(editingCardioId, form)
+        setMsg(result?.queued ? 'Cardio saved offline. It will sync when you reconnect.' : 'Cardio updated!')
+        onFlash?.(result?.queued ? 'Cardio saved offline. It will sync when you reconnect.' : 'Cardio updated!')
       } else {
-        await bodyApi.logCardio(form)
-        setMsg('Cardio logged!')
-        onFlash?.('Cardio logged!')
+        result = await bodyApi.logCardio(form)
+        setMsg(result?.queued ? 'Cardio saved offline. It will sync when you reconnect.' : 'Cardio logged!')
+        onFlash?.(result?.queued ? 'Cardio saved offline. It will sync when you reconnect.' : 'Cardio logged!')
+      }
+      if (result?.queued) {
+        onQueuedMutation?.(form, editingCardioId, result)
       }
       resetCardioForm(form.cardio_type, form.intensity)
       invalidate()
-      onRefreshSnapshot?.()
-      await onLogged?.()
+      if (!result?.queued) {
+        onRefreshSnapshot?.()
+        await onLogged?.()
+      }
       setPendingScrollToLatest(true)
     } catch (err) { setMsg('Error: ' + err.message) }
     setSaving(false)
@@ -1455,6 +1566,76 @@ function withinDays(logs, days) {
     const date = new Date(`${entry.cardio_date}T12:00:00`)
     return !Number.isNaN(date.getTime()) && date >= cutoff
   })
+}
+
+function upsertLocalBodyEntry(entries, nextEntry, dateKey, allowDateFallback = false) {
+  const list = Array.isArray(entries) ? [...entries] : []
+  const entryId = String(nextEntry?.id || '')
+  const entryDate = String(nextEntry?.[dateKey] || '')
+  const nextIndex = list.findIndex((entry) => {
+    if (entryId && String(entry?.id || '') === entryId) return true
+    return allowDateFallback && entryDate && String(entry?.[dateKey] || '') === entryDate
+  })
+
+  if (nextIndex >= 0) {
+    list[nextIndex] = { ...list[nextIndex], ...nextEntry }
+  } else {
+    list.unshift(nextEntry)
+  }
+
+  return list.sort((a, b) => String(b?.[dateKey] || '').localeCompare(String(a?.[dateKey] || '')))
+}
+
+function upsertLocalSeriesEntry(entries, nextEntry, dateKey) {
+  const list = Array.isArray(entries) ? [...entries] : []
+  const entryDate = String(nextEntry?.[dateKey] || '')
+  const nextIndex = list.findIndex((entry) => String(entry?.[dateKey] || '') === entryDate)
+
+  if (nextIndex >= 0) {
+    list[nextIndex] = { ...list[nextIndex], ...nextEntry }
+  } else {
+    list.unshift(nextEntry)
+  }
+
+  return list.sort((a, b) => String(b?.[dateKey] || '').localeCompare(String(a?.[dateKey] || '')))
+}
+
+function buildLocalWeightEntry(data, result) {
+  return {
+    id: data?.id || result?.local_id || `weight_${Date.now()}`,
+    weight_lb: Number(data?.weight_lb || 0),
+    metric_date: String(data?.date || todayInputValue()),
+  }
+}
+
+function buildLocalSleepEntry(data, result) {
+  return {
+    id: data?.id || result?.local_id || `sleep_${Date.now()}`,
+    hours_sleep: Number(data?.hours_sleep || 0),
+    sleep_quality: String(data?.sleep_quality || 'good'),
+    sleep_date: String(data?.date || yesterdayInputValue()),
+  }
+}
+
+function buildLocalStepsEntry(data, result) {
+  return {
+    id: data?.id || result?.local_id || `steps_${Date.now()}`,
+    steps: Number(data?.steps || 0),
+    step_date: String(data?.date || todayInputValue()),
+  }
+}
+
+function buildLocalCardioEntry(data, result) {
+  return {
+    id: data?.id || result?.local_id || `cardio_${Date.now()}`,
+    cardio_type: String(data?.cardio_type || 'running'),
+    duration_minutes: Number(data?.duration_minutes || 0),
+    intensity: normalizeFrontendCardioIntensity(data?.intensity),
+    estimated_calories: data?.estimated_calories ? Number(data.estimated_calories) : 0,
+    notes: String(data?.notes || ''),
+    cardio_date: String(data?.date || todayInputValue()),
+    time_tier: String(data?.time_tier || 'medium'),
+  }
 }
 
 function round(value) {

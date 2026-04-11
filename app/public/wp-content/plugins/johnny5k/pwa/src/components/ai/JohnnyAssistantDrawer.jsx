@@ -4,11 +4,13 @@ import { aiApi } from '../../api/modules/ai'
 import { analyticsApi } from '../../api/modules/analytics'
 import { formatUsShortDate } from '../../lib/dateFormat'
 import { getAppImageUrl } from '../../lib/appImages'
+import { reportClientDiagnostic } from '../../lib/clientDiagnostics'
 import { readLiveWorkoutVoicePrefs } from '../../lib/liveWorkoutVoice'
 import { useAuthStore } from '../../store/authStore'
 import { useDashboardStore } from '../../store/dashboardStore'
 import { useJohnnyAssistantStore } from '../../store/johnnyAssistantStore'
 import { useWorkoutStore } from '../../store/workoutStore'
+import { renderChatMessageBlocks } from './chatMessageFormatter'
 import AppIcon from '../ui/AppIcon'
 import ClearableInput from '../ui/ClearableInput'
 
@@ -58,17 +60,11 @@ const AUTO_EXECUTABLE_MODEL_ACTIONS = new Set([
   'suggest_recipe_plan',
 ])
 
-const STARTER_SUGGESTIONS = [
-  'Plan my dinner',
-  'Fix my macros',
-  'Adjust tomorrow based on today',
-]
-
 export default function JohnnyAssistantDrawer() {
   const navigate = useNavigate()
   const location = useLocation()
   const appImages = useAuthStore(state => state.appImages)
-  const { isOpen, closeDrawer, consumeStarterPrompt } = useJohnnyAssistantStore()
+  const { isOpen, closeDrawer, consumeStarterPayload } = useJohnnyAssistantStore()
   const { invalidate, loadSnapshot } = useDashboardStore()
   const workoutSession = useWorkoutStore(state => state.session)
   const reloadWorkoutSession = useWorkoutStore(state => state.reloadSession)
@@ -95,6 +91,7 @@ export default function JohnnyAssistantDrawer() {
   const playbackSupported = typeof window !== 'undefined' && typeof window.Audio !== 'undefined'
   const chatMode = deriveJohnnyMode(location.pathname, messages)
   const johnnyDrawerImage = getAppImageUrl(appImages, 'johnny_drawer')
+  const starterSuggestions = getStarterSuggestionsForCurrentTime()
 
   async function hydrateThread() {
     try {
@@ -104,8 +101,16 @@ export default function JohnnyAssistantDrawer() {
       const bullets = Array.isArray(data.durable_memory?.bullets) ? data.durable_memory.bullets : []
       setDurableMemory(bullets)
       setMemoryDraft(bullets)
-    } catch {
-      // noop
+    } catch (error) {
+      reportClientDiagnostic({
+        source: 'johnny_drawer_thread_hydrate',
+        message: 'Johnny assistant history failed to load.',
+        error,
+        context: {
+          thread_key: THREAD_KEY,
+        },
+      })
+      setStatusMessage('Johnny opened, but earlier chat history did not load. You can still start a new conversation.')
     } finally {
       setInitialising(false)
     }
@@ -238,6 +243,19 @@ export default function JohnnyAssistantDrawer() {
     const nextMessage = message.trim()
     if (!nextMessage || loading) return
 
+    const supportMeta = normalizeSupportStarterMeta(options.meta)
+
+    if (supportMeta.isSupport) {
+      analyticsApi.event('support_prompt_started', {
+        screen: supportMeta.screen,
+        context: supportMeta.surface,
+        metadata: {
+          guide_id: supportMeta.guideId,
+          surface: supportMeta.surface,
+        },
+      }).catch(() => {})
+    }
+
     setInput('')
     setStatusMessage('')
     setMessages(current => [...current, { role: 'user', message_text: nextMessage }])
@@ -272,7 +290,17 @@ export default function JohnnyAssistantDrawer() {
         invalidate()
         loadSnapshot(true)
         if (actionTools.includes('swap_workout_exercise')) {
-          reloadWorkoutSession().catch(() => {})
+          reloadWorkoutSession().catch(error => {
+            reportClientDiagnostic({
+              source: 'johnny_drawer_workout_refresh',
+              message: 'Workout session refresh failed after Johnny action.',
+              error,
+              context: {
+                action_tools: actionTools,
+              },
+            })
+            setStatusMessage('Johnny made the change, but the workout screen needs a refresh to show it.')
+          })
         }
         setStatusMessage(buildActionStatus(actionResults, actionTools))
         window.dispatchEvent(new CustomEvent('johnny-assistant-action', { detail: { usedTools: actionTools, actionResults } }))
@@ -286,10 +314,54 @@ export default function JohnnyAssistantDrawer() {
         setStatusMessage(buildModelActionStatus(modelActions, autoAction))
         window.dispatchEvent(new CustomEvent('johnny-assistant-action', { detail: { actions: modelActions, autoAction: autoAction?.type || null } }))
       }
+
+      if (supportMeta.isSupport) {
+        const supportDestination = autoAction
+          ? getModelActionDestination(autoAction)
+          : getFirstModelActionDestination(modelActions)
+
+        if (actionTools.length || supportDestination) {
+          analyticsApi.event('support_navigation_used', {
+            screen: supportMeta.screen,
+            context: supportMeta.surface,
+            metadata: {
+              guide_id: supportMeta.guideId,
+              surface: supportMeta.surface,
+              destination_path: supportDestination?.path || '',
+              auto_action: autoAction?.type || '',
+              tool_count: actionTools.length,
+            },
+          }).catch(() => {})
+        } else {
+          analyticsApi.event('support_help_unresolved', {
+            screen: supportMeta.screen,
+            context: supportMeta.surface,
+            metadata: {
+              guide_id: supportMeta.guideId,
+              surface: supportMeta.surface,
+              confidence: String(data.confidence || ''),
+              action_count: modelActions.length,
+            },
+          }).catch(() => {})
+        }
+      }
     } catch (err) {
       const messageText = err?.message || 'Something went wrong.'
       setMessages(current => [...current, { role: 'assistant', message_text: `⚠️ ${messageText}` }])
       setStatusMessage(messageText)
+
+      const supportMeta = normalizeSupportStarterMeta(options.meta)
+      if (supportMeta.isSupport) {
+        analyticsApi.event('support_help_unresolved', {
+          screen: supportMeta.screen,
+          context: supportMeta.surface,
+          metadata: {
+            guide_id: supportMeta.guideId,
+            surface: supportMeta.surface,
+            error: messageText,
+          },
+        }).catch(() => {})
+      }
     } finally {
       setLoading(false)
     }
@@ -298,10 +370,10 @@ export default function JohnnyAssistantDrawer() {
   useEffect(() => {
     if (!isOpen || initialising || loading) return
 
-    const starterPrompt = consumeStarterPrompt()
-    if (!starterPrompt) return
-    sendPrompt(starterPrompt)
-  }, [isOpen, initialising, loading, consumeStarterPrompt, sendPrompt])
+    const starterPayload = consumeStarterPayload()
+    if (!starterPayload?.prompt) return
+    sendPrompt(starterPayload.prompt, starterPayload)
+  }, [isOpen, initialising, loading, consumeStarterPayload, sendPrompt])
 
   useEffect(() => {
     if (!isOpen || initialising || !voicePrefs.assistantAutoSpeak || !playbackSupported) return
@@ -541,7 +613,7 @@ export default function JohnnyAssistantDrawer() {
               <div className="chat-welcome johnny-drawer-welcome">
                 <p>Ask Johnny to log steps or sleep, log food, update pantry or grocery gap, swap a workout exercise, build a training plan, or talk through your next move.</p>
                 <div className="johnny-drawer-suggestions">
-                  {STARTER_SUGGESTIONS.map(prompt => (
+                  {starterSuggestions.map(prompt => (
                     <button key={prompt} type="button" className="johnny-drawer-suggestion" onClick={() => sendPrompt(prompt)}>
                       {prompt}
                     </button>
@@ -632,127 +704,6 @@ export default function JohnnyAssistantDrawer() {
       </aside>
     </>
   )
-}
-
-function renderChatMessageBlocks(text) {
-  const safeText = typeof text === 'string' ? text : ''
-  const lines = safeText.split('\n')
-  const blocks = []
-  let paragraphLines = []
-  let listItems = []
-  let listType = null
-
-  function flushParagraph() {
-    if (!paragraphLines.length) return
-    const joined = paragraphLines.join('\n')
-    blocks.push(
-      <p key={`paragraph-${blocks.length}`}>
-        {renderMultilineInlineText(joined, `paragraph-${blocks.length}`)}
-      </p>,
-    )
-    paragraphLines = []
-  }
-
-  function flushList() {
-    if (!listItems.length || !listType) return
-    const ListTag = listType
-    blocks.push(
-      <ListTag key={`list-${blocks.length}`}>
-        {listItems.map((item, index) => (
-          <li key={`item-${blocks.length}-${index}`}>{renderMultilineInlineText(item, `list-${blocks.length}-${index}`)}</li>
-        ))}
-      </ListTag>,
-    )
-    listItems = []
-    listType = null
-  }
-
-  lines.forEach(line => {
-    const trimmed = line.trim()
-    const unorderedMatch = /^[-*]\s+(.+)$/.exec(trimmed)
-    const orderedMatch = /^\d+\.\s+(.+)$/.exec(trimmed)
-
-    if (!trimmed) {
-      flushParagraph()
-      flushList()
-      return
-    }
-
-    if (unorderedMatch) {
-      flushParagraph()
-      if (listType && listType !== 'ul') flushList()
-      listType = 'ul'
-      listItems.push(unorderedMatch[1])
-      return
-    }
-
-    if (orderedMatch) {
-      flushParagraph()
-      if (listType && listType !== 'ol') flushList()
-      listType = 'ol'
-      listItems.push(orderedMatch[1])
-      return
-    }
-
-    flushList()
-    paragraphLines.push(line)
-  })
-
-  flushParagraph()
-  flushList()
-
-  return blocks.length ? blocks : [<p key="paragraph-empty">{safeText}</p>]
-}
-
-function renderMultilineInlineText(text, keyPrefix) {
-  const lines = text.split('\n')
-
-  return lines.flatMap((line, index) => {
-    const nodes = renderInlineEmphasis(line, `${keyPrefix}-line-${index}`)
-    if (index === lines.length - 1) return nodes
-    return [...nodes, <br key={`${keyPrefix}-br-${index}`} />]
-  })
-}
-
-function renderInlineEmphasis(text, keyPrefix) {
-  const parts = []
-  const pattern = /(\*\*\*([^*]+)\*\*\*|\*\*([^*]+)\*\*|\*([^*]+)\*)/g
-  let match
-  let lastIndex = 0
-
-  while ((match = pattern.exec(text)) !== null) {
-    if (match.index > lastIndex) {
-      parts.push(text.slice(lastIndex, match.index))
-    }
-
-    if (match[2]) {
-      parts.push(
-        <strong key={`${keyPrefix}-strong-em-${match.index}`}>
-          <em>{renderInlineEmphasis(match[2], `${keyPrefix}-strong-em-${match.index}`)}</em>
-        </strong>,
-      )
-    } else if (match[3]) {
-      parts.push(
-        <strong key={`${keyPrefix}-strong-${match.index}`}>
-          {renderInlineEmphasis(match[3], `${keyPrefix}-strong-${match.index}`)}
-        </strong>,
-      )
-    } else if (match[4]) {
-      parts.push(
-        <em key={`${keyPrefix}-em-${match.index}`}>
-          {renderInlineEmphasis(match[4], `${keyPrefix}-em-${match.index}`)}
-        </em>,
-      )
-    }
-
-    lastIndex = pattern.lastIndex
-  }
-
-  if (lastIndex < text.length) {
-    parts.push(text.slice(lastIndex))
-  }
-
-  return parts
 }
 
 function DurableMemoryCard({ bullets, draft, editing, saving, onStartEdit, onCancelEdit, onChangeDraft, onSave }) {
@@ -1268,7 +1219,50 @@ function getAutoExecutableModelAction(actions) {
   return actions.find(action => AUTO_EXECUTABLE_MODEL_ACTIONS.has(action.type) && getModelActionDestination(action)) || null
 }
 
+function getFirstModelActionDestination(actions) {
+  return (Array.isArray(actions) ? actions : []).map(getModelActionDestination).find(Boolean) || null
+}
+
+function normalizeSupportStarterMeta(meta = {}) {
+  return {
+    isSupport: Boolean(meta?.isSupport),
+    guideId: String(meta?.guideId || '').trim(),
+    surface: String(meta?.surface || '').trim(),
+    screen: String(meta?.screen || '').trim(),
+  }
+}
+
+function buildGuidedOpenScreenDestination(screen, payload = {}) {
+  const routePath = String(payload?.route_path || '').trim()
+  if (!routePath.startsWith('/')) {
+    return null
+  }
+
+  const state = {}
+  const focusSection = String(payload?.focus_section || '').trim()
+  const focusTab = String(payload?.focus_tab || '').trim()
+  const notice = String(payload?.notice || '').trim()
+  const mealType = String(payload?.meal_type || '').trim()
+
+  if (focusSection) state.focusSection = focusSection
+  if (focusTab) state.focusTab = focusTab
+  if (mealType && focusSection === 'recipes') state.recipeMealFilter = mealType
+  if (notice) state.johnnyActionNotice = notice
+
+  return {
+    path: routePath,
+    state: Object.keys(state).length ? state : undefined,
+    label: String(payload?.action_label || '').trim() || `Open ${String(screen || 'screen').replace(/_/g, ' ')}`,
+    actionLabel: 'Open again',
+  }
+}
+
 function resolveOpenScreenDestination(screen, payload = {}) {
+  const guidedDestination = buildGuidedOpenScreenDestination(screen, payload)
+  if (guidedDestination) {
+    return guidedDestination
+  }
+
   switch (screen) {
     case 'nutrition':
       return { path: '/nutrition', state: { johnnyActionNotice: 'Johnny opened Nutrition for the next step.' }, label: 'Open nutrition', actionLabel: 'Open again' }
@@ -1300,6 +1294,8 @@ function resolveOpenScreenDestination(screen, payload = {}) {
       }
     case 'dashboard':
       return { path: '/dashboard', state: { johnnyActionNotice: 'Johnny opened your dashboard to anchor the next decision in your live progress.' }, label: 'Open dashboard', actionLabel: 'Open again' }
+    case 'settings':
+      return { path: '/settings', state: { johnnyActionNotice: 'Johnny opened Profile so you can handle the setting that matters here.' }, label: 'Open profile', actionLabel: 'Open again' }
     default:
       return null
   }
@@ -1521,4 +1517,38 @@ function pluraliseItems(count, label) {
     return `${label}s updated`
   }
   return `${count} ${label.toLowerCase()}${count === 1 ? '' : 's'}`
+}
+
+function getStarterSuggestionsForCurrentTime(now = new Date()) {
+  const currentHour = now.getHours()
+
+  if (currentHour >= 22 || currentHour < 5) {
+    return [
+      'Should I eat anything else tonight or just go to bed?',
+      'Fix my macros',
+      'Adjust tomorrow based on today',
+    ]
+  }
+
+  if (currentHour < 11) {
+    return [
+      'Plan my breakfast',
+      'Fix my macros',
+      'Adjust tomorrow based on today',
+    ]
+  }
+
+  if (currentHour < 15) {
+    return [
+      'Plan my lunch',
+      'Fix my macros',
+      'Adjust tomorrow based on today',
+    ]
+  }
+
+  return [
+    'Plan my dinner',
+    'Fix my macros',
+    'Adjust tomorrow based on today',
+  ]
 }

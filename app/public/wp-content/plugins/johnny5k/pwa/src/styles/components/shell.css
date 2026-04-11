@@ -1,0 +1,569 @@
+/* ── Layout ── */
+#root { height: 100dvh; display: flex; flex-direction: column; }
+
+.splash {
+  display: flex; align-items: center; justify-content: center;
+  height: 100vh; font-size: 1.2rem; color: var(--text-muted);
+  font-family: 'Exo 2', system-ui, sans-serif;
+}
+
+.app-shell { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.app-shell-header {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--screen-gutter-x) var(--space-2);
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: linear-gradient(180deg, rgba(230, 243, 253, 0.96) 0%, rgba(230, 243, 253, 0.82) 65%, rgba(230, 243, 253, 0) 100%);
+  backdrop-filter: blur(8px);
+}
+.app-shell-header-main {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-3);
+}
+.app-shell-push-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+  padding: 14px 16px;
+  border: 1px solid rgba(255, 125, 84, 0.34);
+  border-radius: 20px;
+  background: linear-gradient(135deg, rgba(255, 247, 223, 0.95), rgba(255, 231, 221, 0.95));
+  box-shadow: 0 12px 26px rgba(116, 58, 24, 0.12);
+  color: var(--text);
+  text-align: left;
+}
+.app-shell-push-notice-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.app-shell-push-notice-copy strong {
+  font-family: 'Exo 2', system-ui, sans-serif;
+  font-size: 0.98rem;
+}
+.app-shell-push-notice-copy span {
+  color: rgba(44, 40, 33, 0.78);
+  font-size: 0.9rem;
+  line-height: 1.35;
+}
+.app-shell-push-notice-action {
+  flex-shrink: 0;
+  font-weight: 800;
+  font-size: 0.86rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #9d3e17;
+}
+.app-shell-push-notice-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+.app-shell-push-notice-dismiss {
+  border: 0;
+  background: transparent;
+  color: rgba(68, 44, 26, 0.72);
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+.app-shell-push-notice-dismiss:hover {
+  color: #9d3e17;
+}
+.app-shell-install-notice,
+.app-shell-update-notice,
+.app-shell-connectivity-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+  padding: 13px 16px;
+  border-radius: 20px;
+  text-align: left;
+}
+.app-shell-install-notice,
+.app-shell-update-notice {
+  border: 1px solid rgba(30, 72, 102, 0.18);
+  background: linear-gradient(135deg, rgba(240, 248, 255, 0.96), rgba(228, 242, 255, 0.96));
+  box-shadow: 0 12px 24px rgba(13, 50, 87, 0.1);
+  color: var(--text);
+}
+.app-shell-connectivity-notice {
+  border: 1px solid rgba(36, 58, 84, 0.14);
+  background: linear-gradient(135deg, rgba(244, 248, 253, 0.96), rgba(234, 241, 249, 0.96));
+  box-shadow: 0 10px 22px rgba(13, 50, 87, 0.08);
+  color: var(--text);
+}
+.app-shell-connectivity-notice.offline {
+  border-color: rgba(176, 95, 44, 0.28);
+  background: linear-gradient(135deg, rgba(255, 247, 234, 0.98), rgba(255, 237, 223, 0.98));
+}
+.app-shell-install-copy,
+.app-shell-connectivity-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.app-shell-install-copy strong,
+.app-shell-connectivity-copy strong {
+  font-family: 'Exo 2', system-ui, sans-serif;
+  font-size: 0.98rem;
+}
+.app-shell-install-copy span,
+.app-shell-connectivity-copy span {
+  color: rgba(44, 40, 33, 0.78);
+  font-size: 0.9rem;
+  line-height: 1.35;
+}
+.app-shell-install-action,
+.app-shell-connectivity-action {
+  flex-shrink: 0;
+  font-weight: 800;
+  font-size: 0.86rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #1d5578;
+}
+.app-shell-install-action-button {
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.app-shell-connectivity-action {
+  border: 0;
+  background: transparent;
+}
+.app-shell-connectivity-action:disabled {
+  opacity: 0.55;
+}
+.offline-state-card {
+  margin: 24px auto;
+  width: min(100%, 720px);
+  padding: 24px;
+  border: 1px solid rgba(168, 212, 240, 0.84);
+  border-radius: 28px;
+  background:
+    radial-gradient(circle at top right, rgba(255, 208, 0, 0.12), transparent 28%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(238, 248, 252, 0.98));
+  box-shadow: 0 24px 48px rgba(8, 21, 51, 0.12);
+}
+.offline-state-card h2 {
+  margin: 8px 0 10px;
+  font-size: clamp(1.45rem, 2vw, 1.9rem);
+}
+.offline-state-card p {
+  margin: 0;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+.offline-state-actions {
+  margin-top: 16px;
+}
+.app-shell-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  color: var(--text);
+}
+.app-shell-brand-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 16px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid rgba(168, 212, 240, 0.9);
+  box-shadow: 0 8px 18px rgba(8, 21, 51, 0.12);
+}
+.app-shell-brand-mark img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.app-shell-brand-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.app-shell-brand-copy strong {
+  font-family: 'Exo 2', system-ui, sans-serif;
+  font-size: 1.08rem;
+  line-height: 1.05;
+}
+.app-shell-brand-copy small {
+  color: var(--text-muted);
+  font-size: 0.88rem;
+  white-space: nowrap;
+}
+.app-shell-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.app-shell-desktop-nav {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  padding: 6px;
+  border: 1px solid rgba(168, 212, 240, 0.88);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.66);
+  box-shadow: var(--shadow-sm);
+}
+.app-shell-desktop-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 46px;
+  padding: 0 16px;
+  border-radius: 999px;
+  color: var(--text-muted);
+  font-family: 'Exo 2', system-ui, sans-serif;
+  font-size: 0.96rem;
+  font-weight: 700;
+  transition: background 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
+}
+.app-shell-desktop-link.active,
+.app-shell-desktop-link:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 8px 18px rgba(15, 31, 85, 0.08);
+}
+.app-shell-coach,
+.app-shell-logout {
+  width: auto;
+  min-width: 0;
+  min-height: var(--button-h-compact);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 18px;
+  border-radius: 999px;
+}
+.app-shell-coach {
+  min-width: 120px;
+  background: linear-gradient(135deg, rgba(0, 188, 222, 0.14), rgba(255, 56, 160, 0.14));
+  border-color: rgba(0, 188, 222, 0.28);
+}
+.app-shell-actions .app-icon,
+.app-shell-mobile-link-icon .app-icon {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+.app-shell-menu-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 50px;
+  padding: 12px 16px;
+  border: 1.5px solid rgba(168, 212, 240, 0.92);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: var(--shadow-sm);
+  color: var(--text);
+}
+.app-shell-menu-label {
+  font-weight: 800;
+  font-size: 1rem;
+  white-space: nowrap;
+}
+.app-shell-menu-lines {
+  display: inline-flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  width: 18px;
+}
+.app-shell-menu-lines span {
+  display: block;
+  width: 18px;
+  height: 2px;
+  border-radius: 999px;
+  background: currentColor;
+  transform-origin: center;
+  transition: transform 0.22s ease, opacity 0.22s ease;
+}
+.app-shell-menu-toggle.open .app-shell-menu-lines span:nth-child(1) {
+  transform: translateY(6px) rotate(45deg);
+}
+.app-shell-menu-toggle.open .app-shell-menu-lines span:nth-child(2) {
+  opacity: 0;
+}
+.app-shell-menu-toggle.open .app-shell-menu-lines span:nth-child(3) {
+  transform: translateY(-6px) rotate(-45deg);
+}
+.app-shell-nav-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 31, 85, 0.28);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.22s ease;
+  z-index: 55;
+}
+.app-shell-nav-backdrop.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+.app-shell-mobile-nav {
+  position: fixed;
+  top: 68px;
+  left: 16px;
+  right: 16px;
+  z-index: 60;
+  pointer-events: none;
+}
+.app-shell-mobile-nav-shell {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+  border: 1.5px solid rgba(168, 212, 240, 0.95);
+  border-radius: 26px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(242, 249, 252, 0.98));
+  box-shadow: 0 24px 48px rgba(15, 31, 85, 0.18);
+  transform: translateY(-14px) scale(0.98);
+  transform-origin: top center;
+  opacity: 0;
+  transition: transform 0.22s ease, opacity 0.22s ease, filter 0.22s ease;
+  filter: saturate(0.92);
+}
+.app-shell-mobile-nav.open {
+  pointer-events: auto;
+}
+.app-shell-mobile-nav.open .app-shell-mobile-nav-shell {
+  transform: translateY(0) scale(1);
+  opacity: 1;
+  filter: saturate(1);
+}
+.app-shell-mobile-nav-head h2 {
+  margin: 0 0 4px;
+  font-size: 1.4rem;
+}
+.app-shell-mobile-nav-head p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 1rem;
+}
+.app-shell-mobile-nav-grid {
+  display: grid;
+  gap: 10px;
+}
+.app-shell-mobile-link {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 72px;
+  padding: 16px 18px;
+  border-radius: 18px;
+  border: 1px solid rgba(168, 212, 240, 0.86);
+  background: rgba(255, 255, 255, 0.84);
+  color: var(--text);
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+}
+.app-shell-mobile-link:hover,
+.app-shell-mobile-link.active {
+  transform: translateY(-1px);
+  border-color: rgba(0, 188, 222, 0.44);
+  box-shadow: 0 10px 18px rgba(15, 31, 85, 0.1);
+}
+.app-shell-mobile-link-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(0, 188, 222, 0.12), rgba(255, 85, 48, 0.1));
+  color: var(--accent2);
+}
+.app-shell-mobile-link-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.app-shell-mobile-link-copy strong {
+  font-family: 'Exo 2', system-ui, sans-serif;
+  font-size: 1.08rem;
+}
+.app-shell-mobile-link-copy span {
+  color: var(--text-muted);
+  font-size: 0.94rem;
+}
+.app-shell-mobile-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.app-shell-menu-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: var(--button-h-compact);
+  text-align: center;
+}
+.app-content { flex: 1; overflow-y: auto; padding: var(--screen-gutter-y) var(--screen-gutter-x) var(--space-5); }
+.app-shell-checkin-shell {
+  position: fixed;
+  inset: 0;
+  z-index: 75;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px 16px;
+}
+.app-shell-checkin-backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: rgba(8, 21, 51, 0.56);
+  backdrop-filter: blur(10px);
+}
+.app-shell-checkin-modal {
+  position: relative;
+  z-index: 1;
+  width: min(100%, 640px);
+  max-height: min(82vh, 760px);
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 22px;
+  border: 1px solid rgba(168, 212, 240, 0.88);
+  border-radius: 28px;
+  background:
+    radial-gradient(circle at top right, rgba(255, 208, 0, 0.16), transparent 30%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(238, 248, 252, 0.98));
+  box-shadow: 0 28px 56px rgba(8, 21, 51, 0.28);
+}
+.app-shell-install-modal {
+  width: min(100%, 560px);
+}
+.app-shell-checkin-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.app-shell-checkin-head h2 {
+  margin: 0 0 8px;
+  font-size: clamp(1.45rem, 2vw, 1.85rem);
+}
+.app-shell-checkin-head p {
+  margin: 0;
+  color: var(--text-muted);
+  line-height: 1.55;
+}
+.app-shell-checkin-close {
+  flex-shrink: 0;
+  min-height: 42px;
+  padding: 10px 14px;
+  border: 1px solid rgba(168, 212, 240, 0.9);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--text);
+  font-weight: 700;
+}
+.app-shell-checkin-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.app-shell-checkin-question {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 22px;
+  border: 1px solid rgba(168, 212, 240, 0.76);
+  background: rgba(255, 255, 255, 0.78);
+}
+.app-shell-checkin-question h3 {
+  margin: 0;
+  font-size: 1.04rem;
+}
+.app-shell-checkin-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.app-shell-checkin-option {
+  min-height: 48px;
+  padding: 12px 14px;
+  border: 1px solid rgba(168, 212, 240, 0.92);
+  border-radius: 16px;
+  background: rgba(245, 250, 252, 0.94);
+  color: var(--text);
+  font-weight: 700;
+  text-align: center;
+  transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
+}
+.app-shell-checkin-option:hover {
+  transform: translateY(-1px);
+  border-color: rgba(0, 188, 222, 0.42);
+}
+.app-shell-checkin-option.active {
+  border-color: rgba(0, 188, 222, 0.6);
+  background: linear-gradient(135deg, rgba(0, 188, 222, 0.16), rgba(255, 208, 0, 0.16));
+  box-shadow: 0 10px 22px rgba(0, 188, 222, 0.16);
+}
+.app-shell-checkin-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+@media (max-width: 720px) {
+  .app-shell-checkin-shell {
+    align-items: flex-end;
+    padding: 16px 12px max(12px, env(safe-area-inset-bottom));
+  }
+
+  .app-shell-checkin-modal {
+    width: 100%;
+    max-height: min(86vh, 760px);
+    padding: 18px;
+    border-radius: 24px;
+  }
+
+  .app-shell-checkin-head {
+    flex-direction: column;
+  }
+
+  .app-shell-checkin-close,
+  .app-shell-checkin-actions .btn-secondary {
+    width: 100%;
+  }
+
+  .app-shell-checkin-options {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── Screen shell ── */
+.screen { min-height: 100%; }
+.screen-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: var(--screen-section-gap);
+}
+.screen-header h1 { margin: 0; font-size: 1.6rem; font-weight: 800; }
+.screen-loading { display: flex; align-items: center; justify-content: center; height: 60vh; color: var(--text-muted); }

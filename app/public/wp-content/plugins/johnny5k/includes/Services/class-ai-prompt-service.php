@@ -13,6 +13,7 @@ class AiPromptService {
 	 */
 	public static function build_system_prompt( array $context, string $memory_block, string $follow_up_block, string $mode = 'general', array $context_overrides = [] ): string {
 		$admin_prompt = get_option( 'jf_johnny_system_prompt', '' );
+		$support_block = SupportGuideService::build_prompt_block( (string) ( $context_overrides['latest_user_message'] ?? '' ), $context_overrides );
 
 		if ( $admin_prompt ) {
 			$persona = $admin_prompt . "\n\n" . self::behavioral_rules();
@@ -31,9 +32,9 @@ class AiPromptService {
 			$mode_block = "\n\n" . $mode_instr;
 		}
 
-		$action_block = "\n\nAction capability: When genuinely useful, you may wrap your response as JSON — {\"reply\":\"...\",\"why\":\"short reason grounded in the user's data\",\"confidence\":\"high|medium|low\",\"context_used\":[\"brief context bullet\"],\"actions\":[{\"type\":\"action_name\",\"payload\":{}}]} — so the app can take action and show your reasoning. Supported types: open_screen (payload: {\"screen\":\"name\"}), open_exercise_demo (payload: {\"exercise_name\":\"exercise\",\"query\":\"youtube search terms\"}), show_nutrition_summary, show_grocery_gap, highlight_goal_issue, create_saved_meal_draft (payload: {\"name\":\"meal name\",\"meal_type\":\"lunch\",\"items\":[]}), suggest_recipe_plan, queue_follow_up (payload: {\"prompt\":\"short follow-up prompt\",\"reason\":\"why ask later\",\"due_at\":\"YYYY-MM-DD HH:MM\",\"next_step\":\"what to do\",\"starter_prompt\":\"prompt to run later\"}), run_workflow (payload: {\"workflow\":\"fix_macros\",\"title\":\"short title\",\"summary\":\"why this workflow helps\",\"steps\":[\"step one\"],\"screen\":\"nutrition\",\"meal_type\":\"dinner\",\"starter_prompt\":\"prompt to kick it off\"}). If no action is needed, respond in plain text.";
+		$action_block = "\n\nAction capability: When genuinely useful, you may wrap your response as JSON — {\"reply\":\"...\",\"why\":\"short reason grounded in the user's data\",\"confidence\":\"high|medium|low\",\"context_used\":[\"brief context bullet\"],\"actions\":[{\"type\":\"action_name\",\"payload\":{}}]} — so the app can take action and show your reasoning. Supported types: open_screen (payload may include {\"screen\":\"name\",\"route_path\":\"/nutrition\",\"focus_section\":\"savedMeals\",\"focus_tab\":\"sleep\",\"guide_id\":\"save-meal\",\"action_label\":\"Open saved meals\",\"notice\":\"...\",\"starter_prompt\":\"...\",\"meal_type\":\"dinner\"}), open_exercise_demo (payload: {\"exercise_name\":\"exercise\",\"query\":\"youtube search terms\"}), show_nutrition_summary, show_grocery_gap, highlight_goal_issue, create_saved_meal_draft (payload: {\"name\":\"meal name\",\"meal_type\":\"lunch\",\"items\":[]}), suggest_recipe_plan, queue_follow_up (payload: {\"prompt\":\"short follow-up prompt\",\"reason\":\"why ask later\",\"due_at\":\"YYYY-MM-DD HH:MM\",\"next_step\":\"what to do\",\"starter_prompt\":\"prompt to run later\"}), run_workflow (payload: {\"workflow\":\"fix_macros\",\"title\":\"short title\",\"summary\":\"why this workflow helps\",\"steps\":[\"step one\"],\"screen\":\"nutrition\",\"meal_type\":\"dinner\",\"starter_prompt\":\"prompt to kick it off\"}). If no action is needed, respond in plain text.";
 
-		return $persona . $ctx_block . $memory_block . $follow_up_block . $tool_note . $format_note . $mode_block . $action_block;
+		return $persona . $ctx_block . $memory_block . $follow_up_block . $support_block . $tool_note . $format_note . $mode_block . $action_block;
 	}
 
 	/**

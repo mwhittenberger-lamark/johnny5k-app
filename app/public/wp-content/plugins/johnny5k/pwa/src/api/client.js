@@ -1,4 +1,15 @@
-export { BASE, api, clearPersistedAuth, decodeBase64ToBlob, refreshNonce, requestToUrl, WP_CORE_BASE } from './core/restClient'
+export {
+  BASE,
+  api,
+  clearPersistedAuth,
+  decodeBase64ToBlob,
+  flushOfflineWriteQueue,
+  initOfflineWriteQueue,
+  refreshNonce,
+  requestToUrl,
+  subscribeOfflineWriteQueue,
+  WP_CORE_BASE,
+} from './core/restClient'
 export { adminApi } from './modules/admin'
 export { aiApi } from './modules/ai'
 export { authApi } from './modules/auth'

@@ -6,15 +6,18 @@ import { bodyApi } from '../../api/modules/body'
 import { onboardingApi } from '../../api/modules/onboarding'
 import { pushApi } from '../../api/modules/push'
 import ClearableInput from '../../components/ui/ClearableInput'
+import SupportIconButton from '../../components/ui/SupportIconButton'
+import { reportClientDiagnostic } from '../../lib/clientDiagnostics'
 import { decodeVapidPublicKey, ensurePushRegistration, getCurrentPushSubscription, getNotificationPermission, getPushSupportState, requestNotificationPermission, serializeSubscription } from '../../lib/pushNotifications'
 import { useDashboardStore } from '../../store/dashboardStore'
 import { useAuthStore } from '../../store/authStore'
 import { useJohnnyAssistantStore } from '../../store/johnnyAssistantStore'
 import { formatOpenAiVoiceLabel, getDefaultLiveWorkoutVoicePrefs, LIVE_WORKOUT_VOICE_RATE_OPTIONS, OPENAI_TTS_VOICE_OPTIONS, readLiveWorkoutVoicePrefs, writeLiveWorkoutVoicePrefs } from '../../lib/liveWorkoutVoice'
 import { DAILY_CHECK_IN_QUESTIONS, normalizeDailyCheckInEntry } from '../../lib/dailyCheckIn'
-import { buildHeightCm, formatPhoneInput, formatReminderHour, formatMissingFields, getTimezoneRegion, getTimezoneRegions, getTimezonesForRegion, normalizePhoneNumber, normalizePushPromptStatus, normalizeTargets, reminderHourOptions, settingsFormFromState } from '../../lib/onboarding'
+import { buildHeightCm, buildPushPromptSnoozedUntil, formatPhoneInput, formatReminderHour, formatMissingFields, getTimezoneRegion, getTimezoneRegions, getTimezonesForRegion, isPushPromptSnoozed, normalizePhoneNumber, normalizePushPromptStatus, normalizeTargets, PUSH_PROMPT_SNOOZE_DAYS, reminderHourOptions, settingsFormFromState } from '../../lib/onboarding'
 import { DAY_TYPE_OPTIONS } from '../../lib/trainingDayTypes'
 import { formatUsShortDate } from '../../lib/dateFormat'
+import { openSupportGuide } from '../../lib/supportHelp'
 import { applyColorScheme, getColorSchemeOptions, normalizeColorScheme, setAvailableColorSchemes } from '../../lib/theme'
 
 const TIMEZONE_REGIONS = getTimezoneRegions()
@@ -28,11 +31,13 @@ const GOAL_CALORIE_DELTAS = {
 const PROFILE_ACCORDION_STORAGE_KEY_PREFIX = 'johnny5k.profile.accordions.v1'
 const PROFILE_ACCORDION_DEFAULTS = {
   overview: true,
-  profile: true,
-  defaults: false,
-  voice: false,
-  coaching: false,
-  setup: false,
+  personal: true,
+  targets: true,
+  notifications: false,
+  liveCoaching: false,
+  johnny: false,
+  images: false,
+  trainingApp: false,
 }
 
 export default function SettingsScreen() {
@@ -291,7 +296,16 @@ export default function SettingsScreen() {
         const config = configResponse?.push ?? {}
         const serializedSubscription = serializeSubscription(subscription)
         if (serializedSubscription?.endpoint) {
-          pushApi.subscribe(serializedSubscription).catch(() => {})
+          pushApi.subscribe(serializedSubscription).catch(error => {
+            reportClientDiagnostic({
+              source: 'settings_push_subscription_refresh',
+              message: 'Push subscription refresh failed while loading settings.',
+              error,
+              context: {
+                section: 'push_notifications',
+              },
+            })
+          })
         }
         setPushStatus(current => ({
           ...current,
@@ -324,7 +338,16 @@ export default function SettingsScreen() {
     loadSnapshot()
     bodyApi.getWeight(7)
       .then(rows => setWeeklyWeights(Array.isArray(rows) ? rows.slice(0, 7).reverse() : []))
-      .catch(() => {})
+      .catch(error => {
+        reportClientDiagnostic({
+          source: 'settings_weekly_weights_load',
+          message: 'Weekly weight history failed to load in settings.',
+          error,
+          context: {
+            screen: 'settings',
+          },
+        })
+      })
   }, [loadSnapshot])
 
   useEffect(() => {
@@ -334,14 +357,14 @@ export default function SettingsScreen() {
 
     setShowPushRefusalChoice(Boolean(location.state?.revealPushRefusal))
     setAccordionSections(current => {
-      if (current.defaults) {
+      if (current.notifications) {
         return current
       }
 
       return {
         ...writeStoredProfileAccordionSections(accordionStorageKey, {
           ...current,
-          defaults: true,
+          notifications: true,
         }),
       }
     })
@@ -691,6 +714,7 @@ export default function SettingsScreen() {
       await savePushPreferenceMetaPatch({
         push_enabled: true,
         push_prompt_status: 'accepted',
+        push_prompt_snoozed_until: '',
       }, {
         push_enabled: true,
         push_prompt_status: 'accepted',
@@ -782,9 +806,28 @@ export default function SettingsScreen() {
       if (subscription) {
         const payload = serializeSubscription(subscription)
         if (payload?.endpoint) {
-          await pushApi.unsubscribe({ endpoint: payload.endpoint }).catch(() => {})
+          await pushApi.unsubscribe({ endpoint: payload.endpoint }).catch(error => {
+            reportClientDiagnostic({
+              source: 'settings_push_refusal_unsubscribe_remote',
+              message: 'Remote push unsubscribe failed while refusing push notifications.',
+              error,
+              context: {
+                section: 'push_notifications',
+                endpoint: payload.endpoint,
+              },
+            })
+          })
         }
-        await subscription.unsubscribe().catch(() => {})
+        await subscription.unsubscribe().catch(error => {
+          reportClientDiagnostic({
+            source: 'settings_push_refusal_unsubscribe_local',
+            message: 'Browser push unsubscribe failed while refusing push notifications.',
+            error,
+            context: {
+              section: 'push_notifications',
+            },
+          })
+        })
       }
 
       await savePushPreferenceMetaPatch({
@@ -811,6 +854,26 @@ export default function SettingsScreen() {
       setShowPushRefusalChoice(false)
     } catch (err) {
       setPushError(err.message || 'Could not switch push reminders to SMS only.')
+    } finally {
+      setPushBusy(false)
+    }
+  }
+
+  async function handleSnoozePushPrompt() {
+    if (pushBusy || pushStatus.subscribed) return
+
+    setPushBusy(true)
+    setPushError('')
+    setPushMessage('')
+
+    try {
+      await savePushPreferenceMetaPatch({
+        push_prompt_snoozed_until: buildPushPromptSnoozedUntil(),
+      })
+      setShowPushRefusalChoice(false)
+      setPushMessage(`Push prompts hidden for ${PUSH_PROMPT_SNOOZE_DAYS} days. Johnny will ask again later if push is still off.`)
+    } catch (err) {
+      setPushError(err.message || 'Could not hide push prompts right now.')
     } finally {
       setPushBusy(false)
     }
@@ -883,11 +946,21 @@ export default function SettingsScreen() {
     window.dispatchEvent(new CustomEvent('johnny5k:open-daily-checkin'))
   }
 
+  function handleOpenSettingsSupport() {
+    openSupportGuide(openDrawer, {
+      screen: 'settings',
+      surface: 'settings_profile',
+      guideId: 'update-profile',
+      prompt: 'Show me where to update my profile, defaults, reminders, or Johnny settings and walk me to the right section.',
+    })
+  }
+
   if (loading) return <div className="screen-loading">Loading…</div>
 
   return (
     <div className="screen settings-screen">
-      <header className="screen-header">
+      <header className="screen-header support-icon-anchor">
+        <SupportIconButton label="Get help with profile settings" onClick={handleOpenSettingsSupport} />
         <div>
           <h1>Profile</h1>
           <p className="settings-subtitle">Update your identity, trajectory, and daily defaults.</p>
@@ -989,12 +1062,12 @@ export default function SettingsScreen() {
         </SettingsAccordionSection>
 
         <SettingsAccordionSection
-          sectionKey="profile"
-          eyebrow="Core inputs"
-          title="Profile Basics"
-          description="Identity, body stats, goal direction, plus headshot and AI image generation controls."
-          itemCountLabel="4 sections + image generation"
-          open={accordionSections.profile}
+          sectionKey="personal"
+          eyebrow="Profile"
+          title="Personal Info"
+          description="Daily check-in, identity, body stats, and the goal inputs Johnny uses as your baseline."
+          itemCountLabel="3 cards"
+          open={accordionSections.personal}
           onToggle={toggleAccordionSection}
         >
           <section className="settings-section dash-card settings-checkin-card">
@@ -1096,73 +1169,662 @@ export default function SettingsScreen() {
                   <option value="athlete">Athlete</option>
                 </select>
               </label>
+            </div>
+          </section>
+        </SettingsAccordionSection>
+
+        <SettingsAccordionSection
+          sectionKey="targets"
+          eyebrow="Daily goals"
+          title="Targets"
+          description="Step, sleep, and macro targets, plus the calorie logic Johnny uses each day."
+          itemCountLabel="2 cards"
+          open={accordionSections.targets}
+          onToggle={toggleAccordionSection}
+        >
+          <section className="settings-section dash-card">
+            <h3>Daily Targets</h3>
+            <div className="settings-grid">
+              <label className="settings-field"><span className="settings-field-label">Steps</span><input type="number" min="1000" max="30000" step="1" value={form.target_steps} onChange={e => update('target_steps', Number(e.target.value))} /></label>
+              <label className="settings-field"><span className="settings-field-label">Sleep (hours)</span><input type="number" min="4" max="12" step="0.5" value={form.target_sleep_hours} onChange={e => update('target_sleep_hours', Number(e.target.value))} /></label>
               <div className="settings-inline-panel settings-field-span-2">
-                <div className="switch-copy">
-                  <span className="settings-field-label">Live coach rest timing</span>
-                  <span className="settings-field-hint">Johnny uses these ranges for live coach timing toasts, the intro modal, and the rest window card during live workout mode.</span>
-                </div>
-                <div className="settings-grid settings-grid-compact">
-                  <label className="settings-subfield">
-                    <span>Set rest min</span>
-                    <div className="settings-input-suffix">
-                      <input
-                        type="number"
-                        min="5"
-                        max="900"
-                        step="5"
-                        value={form.rest_between_sets_min_seconds}
-                        onChange={e => update('rest_between_sets_min_seconds', Number(e.target.value))}
-                      />
-                      <span>sec</span>
-                    </div>
-                  </label>
-                  <label className="settings-subfield">
-                    <span>Set rest max</span>
-                    <div className="settings-input-suffix">
-                      <input
-                        type="number"
-                        min="5"
-                        max="900"
-                        step="5"
-                        value={form.rest_between_sets_max_seconds}
-                        onChange={e => update('rest_between_sets_max_seconds', Number(e.target.value))}
-                      />
-                      <span>sec</span>
-                    </div>
-                  </label>
-                  <label className="settings-subfield">
-                    <span>Exercise rest min</span>
-                    <div className="settings-input-suffix">
-                      <input
-                        type="number"
-                        min="0.5"
-                        max="15"
-                        step="0.5"
-                        value={formatExerciseRestMinutes(form.rest_between_exercises_min_seconds)}
-                        onChange={e => update('rest_between_exercises_min_seconds', Math.round(Number(e.target.value || 0) * 60))}
-                      />
-                      <span>min</span>
-                    </div>
-                  </label>
-                  <label className="settings-subfield">
-                    <span>Exercise rest max</span>
-                    <div className="settings-input-suffix">
-                      <input
-                        type="number"
-                        min="0.5"
-                        max="15"
-                        step="0.5"
-                        value={formatExerciseRestMinutes(form.rest_between_exercises_max_seconds)}
-                        onChange={e => update('rest_between_exercises_max_seconds', Math.round(Number(e.target.value || 0) * 60))}
-                      />
-                      <span>min</span>
-                    </div>
-                  </label>
-                </div>
+                <label className="switch-field">
+                  <span className="switch-copy">
+                    <span className="settings-field-label">Add burned workout calories back</span>
+                    <span className="settings-field-hint">Increase today&apos;s calorie target by logged cardio and completed workout burn.</span>
+                  </span>
+                  <span className="switch-control">
+                    <input className="switch-input" type="checkbox" checked={form.add_exercise_calories_to_target} onChange={e => update('add_exercise_calories_to_target', e.target.checked)} />
+                    <span className="switch-track" aria-hidden="true" />
+                  </span>
+                </label>
               </div>
             </div>
           </section>
 
+          <section className="settings-section dash-card target-preview-card">
+            <h3>Current Targets</h3>
+            <div className="target-preview-row">
+              <span>Calories</span>
+              <strong>{targets?.target_calories ?? '—'}</strong>
+            </div>
+            <div className="target-preview-row">
+              <span>Protein</span>
+              <strong>{targets?.target_protein_g ?? '—'}g</strong>
+            </div>
+            <div className="target-preview-row">
+              <span>Carbs</span>
+              <strong>{targets?.target_carbs_g ?? '—'}g</strong>
+            </div>
+            <div className="target-preview-row">
+              <span>Fat</span>
+              <strong>{targets?.target_fat_g ?? '—'}g</strong>
+            </div>
+          </section>
+        </SettingsAccordionSection>
+
+        <SettingsAccordionSection
+          sectionKey="notifications"
+          eyebrow="Reach me"
+          title="Notifications & Reminders"
+          description="SMS, browser notifications, and reminder schedules for how Johnny reaches you."
+          itemCountLabel="3 cards"
+          open={accordionSections.notifications}
+          onToggle={toggleAccordionSection}
+        >
+          <section className="settings-section dash-card settings-reminders-panel">
+            <label className="switch-field">
+              <span className="switch-copy">
+                <span className="settings-field-label">SMS reminders</span>
+                <span className="settings-field-hint">Enable text reminders and the weekly Monday summary.</span>
+              </span>
+              <span className="switch-control">
+                <input className="switch-input" type="checkbox" checked={form.notifications_enabled} onChange={e => update('notifications_enabled', e.target.checked)} />
+                <span className="switch-track" aria-hidden="true" />
+              </span>
+            </label>
+            <label className="settings-field notification-phone-field">
+              <span className="settings-field-label">Phone</span>
+              <ClearableInput type="tel" inputMode="tel" value={form.phone} onChange={e => updatePhone(e.target.value)} placeholder="(555) 123-4567" disabled={!form.notifications_enabled} />
+              <span className="settings-field-hint">Only used for reminder texts.</span>
+            </label>
+          </section>
+
+          <section className="settings-section dash-card settings-reminders-panel">
+            <div ref={pushPanelRef} className="settings-push-anchor" aria-hidden="true" />
+            <div className="switch-copy">
+              <span className="settings-field-label">Browser notifications</span>
+              <span className="settings-field-hint">Enable push on this device if you want Johnny to reach you faster than SMS or the drawer.</span>
+            </div>
+            <div className="settings-ai-actions">
+              {pushStatus.supported && pushStatus.subscribed ? (
+                <button type="button" className="btn-outline small" onClick={handleDisablePush} disabled={pushBusy}>
+                  {pushBusy ? 'Updating…' : 'Disable on this device'}
+                </button>
+              ) : (
+                <button
+                  ref={pushEnableButtonRef}
+                  type="button"
+                  className="btn-secondary small"
+                  onClick={handleEnablePush}
+                  disabled={pushBusy || !pushStatus.supported || !pushStatus.enabled || !pushStatus.configured}
+                >
+                  {pushBusy ? 'Updating…' : 'Enable browser notifications'}
+                </button>
+              )}
+              {!pushStatus.subscribed ? (
+                <button type="button" className="btn-outline small" onClick={handleSnoozePushPrompt} disabled={pushBusy}>
+                  {pushBusy ? 'Updating…' : `Hide ${PUSH_PROMPT_SNOOZE_DAYS} days`}
+                </button>
+              ) : null}
+            </div>
+            <p className="settings-field-hint">
+              {pushStatus.supported
+                ? (pushStatus.subscribed ? 'Enabled on this device.' : `Permission: ${pushStatus.permission}.`)
+                : pushStatus.supportReason}
+            </p>
+            {!pushStatus.subscribed && isPushPromptSnoozed(form.preference_meta) ? (
+              <p className="settings-field-hint">
+                Push prompts are hidden until {new Date(form.preference_meta.push_prompt_snoozed_until).toLocaleDateString()} unless you enable push sooner.
+              </p>
+            ) : null}
+            <p className="settings-field-hint">
+              {pushStatus.enabled && pushStatus.configured
+                ? `${pushStatus.activeCount} active notification device${pushStatus.activeCount === 1 ? '' : 's'} on your account.`
+                : 'Johnny push is not configured yet by the admin.'}
+            </p>
+            {showPushRefusalChoice && !pushStatus.subscribed ? (
+              <div className="settings-push-refusal">
+                <p>If you do not want push on this device, Johnny can switch these reminders to SMS only instead.</p>
+                <button type="button" className="btn-outline small" onClick={handleRefusePush} disabled={pushBusy}>
+                  {pushBusy ? 'Updating…' : 'Refuse push and use SMS only'}
+                </button>
+              </div>
+            ) : null}
+            {pushError ? <p className="error">{pushError}</p> : null}
+            {pushMessage ? <p className="success-message">{pushMessage}</p> : null}
+          </section>
+
+          {form.notifications_enabled ? (
+            <section className="settings-section dash-card">
+              <div className="settings-reminder-intro">
+                <strong>Reminder schedule</strong>
+                <p>All reminder times use your saved timezone. Weekly summary sends Mondays at {formatReminderHour(form.weekly_summary_hour)}.</p>
+              </div>
+              <div className="settings-grid settings-grid-compact reminder-grid">
+                <div className="reminder-setting-card">
+                  <div className="reminder-card-head">
+                    <div>
+                      <strong>Workout reminder</strong>
+                      <p>Keep your session start on a consistent clock.</p>
+                    </div>
+                    <label className="switch-control switch-control-compact">
+                      <input className="switch-input" type="checkbox" checked={form.workout_reminder_enabled} onChange={e => update('workout_reminder_enabled', e.target.checked)} />
+                      <span className="switch-track" aria-hidden="true" />
+                    </label>
+                  </div>
+                  <label className="settings-subfield">
+                    <span>Time</span>
+                    <select value={form.workout_reminder_hour} onChange={e => update('workout_reminder_hour', Number(e.target.value))} disabled={!form.workout_reminder_enabled}>
+                      {REMINDER_HOUR_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                    </select>
+                  </label>
+                </div>
+                <div className="reminder-setting-card">
+                  <div className="reminder-card-head">
+                    <div>
+                      <strong>Meal logging nudges</strong>
+                      <p>Johnny checks breakfast at 10am, lunch at 2pm, and dinner at 7pm in your saved timezone.</p>
+                    </div>
+                    <label className="switch-control switch-control-compact">
+                      <input className="switch-input" type="checkbox" checked={form.meal_reminder_enabled} onChange={e => update('meal_reminder_enabled', e.target.checked)} />
+                      <span className="switch-track" aria-hidden="true" />
+                    </label>
+                  </div>
+                  <p className="settings-field-hint">Push fires first. If you refuse push, Johnny switches these nudges to SMS. If both are off, only the latest nudge waits in the drawer for next open.</p>
+                </div>
+                <div className="reminder-setting-card">
+                  <div className="reminder-card-head">
+                    <div>
+                      <strong>Sleep reminder</strong>
+                      <p>Get a prompt before your sleep target window starts.</p>
+                    </div>
+                    <label className="switch-control switch-control-compact">
+                      <input className="switch-input" type="checkbox" checked={form.sleep_reminder_enabled} onChange={e => update('sleep_reminder_enabled', e.target.checked)} />
+                      <span className="switch-track" aria-hidden="true" />
+                    </label>
+                  </div>
+                  <label className="settings-subfield">
+                    <span>Time</span>
+                    <select value={form.sleep_reminder_hour} onChange={e => update('sleep_reminder_hour', Number(e.target.value))} disabled={!form.sleep_reminder_enabled}>
+                      {REMINDER_HOUR_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                    </select>
+                  </label>
+                </div>
+                <div className="reminder-setting-card">
+                  <div className="reminder-card-head">
+                    <div>
+                      <strong>Weekly summary</strong>
+                      <p>Receive a Monday recap in your current timezone.</p>
+                    </div>
+                    <label className="switch-control switch-control-compact">
+                      <input className="switch-input" type="checkbox" checked={form.weekly_summary_enabled} onChange={e => update('weekly_summary_enabled', e.target.checked)} />
+                      <span className="switch-track" aria-hidden="true" />
+                    </label>
+                  </div>
+                  <label className="settings-subfield">
+                    <span>Time</span>
+                    <select value={form.weekly_summary_hour} onChange={e => update('weekly_summary_hour', Number(e.target.value))} disabled={!form.weekly_summary_enabled}>
+                      {REMINDER_HOUR_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                    </select>
+                  </label>
+                </div>
+              </div>
+              <div className="settings-scheduled-reminders-card">
+                <div className="settings-scheduled-reminders-head">
+                  <div>
+                    <strong>Scheduled by Johnny</strong>
+                    <p>One-off SMS reminders Johnny creates for you appear here. Cancel anything that has not fired yet.</p>
+                  </div>
+                  <button type="button" className="btn-outline small" onClick={() => openDrawer('Show me my scheduled SMS reminders and help me manage them.')}>Ask Johnny</button>
+                </div>
+
+                {smsReminderLoading ? <p className="settings-subtitle">Loading scheduled reminders…</p> : null}
+                {smsReminderError ? <p className="error">{smsReminderError}</p> : null}
+                {smsReminderMessage ? <p className="success-message">{smsReminderMessage}</p> : null}
+
+                {!smsReminderLoading && !smsReminderError ? (
+                  <>
+                    <div className="settings-reminder-collection">
+                      <div className="settings-reminder-collection-head">
+                        <strong>Upcoming</strong>
+                        <span>{smsReminders.scheduled?.length ?? 0}</span>
+                      </div>
+                      {Array.isArray(smsReminders.scheduled) && smsReminders.scheduled.length > 0 ? (
+                        <div className="settings-scheduled-reminder-list">
+                          {smsReminders.scheduled.map(reminder => (
+                            <div key={reminder.id} className="settings-scheduled-reminder-row">
+                              <div className="settings-scheduled-reminder-copy">
+                                <strong>{formatReminderDateTime(reminder.send_at_local)}</strong>
+                                <p>{reminder.message}</p>
+                                <span>{smsReminders.timezone || reminder.timezone || form.timezone}</span>
+                              </div>
+                              <button
+                                type="button"
+                                className="btn-outline small"
+                                onClick={() => cancelSmsReminder(reminder.id)}
+                                disabled={cancelingReminderId === reminder.id}
+                              >
+                                {cancelingReminderId === reminder.id ? 'Canceling…' : 'Cancel'}
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="settings-subtitle">No one-off SMS reminders are queued right now.</p>
+                      )}
+                    </div>
+
+                    <div className="settings-reminder-collection">
+                      <div className="settings-reminder-collection-head">
+                        <strong>Recent activity</strong>
+                        <span>{smsReminders.history?.length ?? 0}</span>
+                      </div>
+                      {Array.isArray(smsReminders.history) && smsReminders.history.length > 0 ? (
+                        <div className="settings-scheduled-reminder-list history">
+                          {smsReminders.history.map(reminder => (
+                            <div key={reminder.id} className="settings-scheduled-reminder-row history">
+                              <div className="settings-scheduled-reminder-copy">
+                                <strong>{formatReminderDateTime(reminder.send_at_local)}</strong>
+                                <p>{reminder.message}</p>
+                                <span>{formatReminderHistoryMeta(reminder, smsReminders.timezone || reminder.timezone || form.timezone)}</span>
+                              </div>
+                              <span className={`settings-reminder-status ${reminder.status}`}>{formatReminderStatus(reminder.status)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="settings-subtitle">Sent, failed, or canceled reminder history will appear here.</p>
+                      )}
+                    </div>
+                  </>
+                ) : null}
+              </div>
+            </section>
+          ) : null}
+        </SettingsAccordionSection>
+
+        <SettingsAccordionSection
+          sectionKey="liveCoaching"
+          eyebrow="Live training"
+          title="Live Coaching"
+          description="Rest timing and spoken coaching behavior for Live Workout Mode on this device."
+          itemCountLabel="2 cards"
+          open={accordionSections.liveCoaching}
+          onToggle={toggleAccordionSection}
+        >
+          <section className="settings-section dash-card">
+            <h3>Rest Timing</h3>
+            <p className="settings-subtitle">Johnny uses these ranges for live coach timing toasts, the intro modal, and the rest window card during live workout mode.</p>
+            <div className="settings-grid settings-grid-compact">
+              <label className="settings-subfield">
+                <span>Set rest min</span>
+                <div className="settings-input-suffix">
+                  <input
+                    type="number"
+                    min="5"
+                    max="900"
+                    step="5"
+                    value={form.rest_between_sets_min_seconds}
+                    onChange={e => update('rest_between_sets_min_seconds', Number(e.target.value))}
+                  />
+                  <span>sec</span>
+                </div>
+              </label>
+              <label className="settings-subfield">
+                <span>Set rest max</span>
+                <div className="settings-input-suffix">
+                  <input
+                    type="number"
+                    min="5"
+                    max="900"
+                    step="5"
+                    value={form.rest_between_sets_max_seconds}
+                    onChange={e => update('rest_between_sets_max_seconds', Number(e.target.value))}
+                  />
+                  <span>sec</span>
+                </div>
+              </label>
+              <label className="settings-subfield">
+                <span>Exercise rest min</span>
+                <div className="settings-input-suffix">
+                  <input
+                    type="number"
+                    min="0.5"
+                    max="15"
+                    step="0.5"
+                    value={formatExerciseRestMinutes(form.rest_between_exercises_min_seconds)}
+                    onChange={e => update('rest_between_exercises_min_seconds', Math.round(Number(e.target.value || 0) * 60))}
+                  />
+                  <span>min</span>
+                </div>
+              </label>
+              <label className="settings-subfield">
+                <span>Exercise rest max</span>
+                <div className="settings-input-suffix">
+                  <input
+                    type="number"
+                    min="0.5"
+                    max="15"
+                    step="0.5"
+                    value={formatExerciseRestMinutes(form.rest_between_exercises_max_seconds)}
+                    onChange={e => update('rest_between_exercises_max_seconds', Math.round(Number(e.target.value || 0) * 60))}
+                  />
+                  <span>min</span>
+                </div>
+              </label>
+            </div>
+          </section>
+
+          <section className="settings-ai-grid">
+            <div className="dash-card settings-ai-card">
+              <div className="settings-ai-head">
+                <div>
+                  <span className="dashboard-chip coach">Live workout voice</span>
+                  <h3>Johnny spoken coaching</h3>
+                </div>
+              </div>
+              {!speechPlaybackSupported ? (
+                <p className="settings-subtitle">This browser cannot play inline audio, so spoken live-workout coaching is unavailable here.</p>
+              ) : (
+                <>
+                  <p className="settings-subtitle">These settings control OpenAI voice playback for Live Workout Mode on this device.</p>
+                  <div className="settings-grid settings-grid-compact">
+                    <div className="settings-inline-panel">
+                      <label className="switch-field">
+                        <span className="switch-copy">
+                          <span className="settings-field-label">Auto-speak Johnny</span>
+                          <span className="settings-field-hint">Speak each new live coaching reply automatically.</span>
+                        </span>
+                        <span className="switch-control">
+                          <input className="switch-input" type="checkbox" checked={liveVoicePrefs.autoSpeak} onChange={event => updateLiveVoicePref('autoSpeak', event.target.checked)} />
+                          <span className="switch-track" aria-hidden="true" />
+                        </span>
+                      </label>
+                    </div>
+                    <div className="settings-inline-panel">
+                      <label className="switch-field">
+                        <span className="switch-copy">
+                          <span className="settings-field-label">Auto-speak drawer replies</span>
+                          <span className="settings-field-hint">Read new Johnny Assistant drawer replies out loud automatically.</span>
+                        </span>
+                        <span className="switch-control">
+                          <input className="switch-input" type="checkbox" checked={liveVoicePrefs.assistantAutoSpeak} onChange={event => updateLiveVoicePref('assistantAutoSpeak', event.target.checked)} />
+                          <span className="switch-track" aria-hidden="true" />
+                        </span>
+                      </label>
+                    </div>
+                    <label className="settings-field settings-field-span-2">
+                      <span className="settings-field-label">Voice</span>
+                      <select value={liveVoicePrefs.openAiVoice} onChange={event => updateLiveVoicePref('openAiVoice', event.target.value)}>
+                        {OPENAI_TTS_VOICE_OPTIONS.map(voice => (
+                          <option key={voice} value={voice}>{formatOpenAiVoiceLabel(voice)}</option>
+                        ))}
+                      </select>
+                      <span className="settings-field-hint">Voice is generated by OpenAI instead of browser-native speech synthesis.</span>
+                    </label>
+                    <label className="settings-field">
+                      <span className="settings-field-label">Playback speed</span>
+                      <select value={String(liveVoicePrefs.rate)} onChange={event => updateLiveVoicePref('rate', Number(event.target.value))}>
+                        {LIVE_WORKOUT_VOICE_RATE_OPTIONS.map(rate => (
+                          <option key={rate} value={rate}>{rate.toFixed(rate % 1 === 0 ? 0 : 2)}x</option>
+                        ))}
+                      </select>
+                    </label>
+                    <div className="settings-inline-panel settings-live-voice-preview-card">
+                      <strong>Preview</strong>
+                      <p className="settings-subtitle">Play a short sample with the current OpenAI voice and speed, or reset this device back to Johnny’s defaults.</p>
+                      <div className="settings-ai-actions">
+                        <button type="button" className="btn-outline small" onClick={previewLiveVoice} disabled={voicePreviewBusy}>{voicePreviewBusy ? 'Playing…' : 'Play sample'}</button>
+                        <button type="button" className="btn-secondary small" onClick={() => setLiveVoicePrefs(getDefaultLiveWorkoutVoicePrefs())}>Reset defaults</button>
+                      </div>
+                      {voicePreviewError ? <p className="error">{voicePreviewError}</p> : null}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          </section>
+        </SettingsAccordionSection>
+
+        <SettingsAccordionSection
+          sectionKey="johnny"
+          eyebrow="Johnny"
+          title="Johnny"
+          description="Coaching memory, follow-through health, and advanced proactive delivery controls."
+          itemCountLabel="4 cards"
+          open={accordionSections.johnny}
+          onToggle={toggleAccordionSection}
+        >
+          <section className="settings-ai-grid">
+            <div className="dash-card settings-ai-card">
+              <div className="settings-ai-head">
+                <div>
+                  <span className="dashboard-chip ai">Johnny memory</span>
+                  <h3>What Johnny should keep in mind</h3>
+                </div>
+                <button type="button" className="btn-outline small" onClick={() => openDrawer('Review my coaching memory and tell me what should change.')}>Ask Johnny</button>
+              </div>
+              <p className="settings-subtitle">Keep this to durable preferences, recurring obstacles, and how you like to be coached.</p>
+              <div className="settings-ai-memory-list">
+                {(johnnyMemoryDraft.length ? johnnyMemoryDraft : ['']).map((bullet, index) => (
+                  <div key={`johnny-memory-${index}`} className="settings-ai-memory-row">
+                    <ClearableInput
+                      type="text"
+                      value={bullet}
+                      onChange={event => setJohnnyMemoryDraft(current => current.map((item, itemIndex) => (itemIndex === index ? event.target.value : item)))}
+                      placeholder="Example: I do better with blunt accountability than vague encouragement"
+                    />
+                    <button
+                      type="button"
+                      className="btn-outline small"
+                      onClick={() => setJohnnyMemoryDraft(current => current.filter((_, itemIndex) => itemIndex !== index))}
+                      disabled={johnnyMemoryDraft.length <= 1}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <div className="settings-ai-actions">
+                <button type="button" className="btn-secondary small" onClick={() => setJohnnyMemoryDraft(current => [...current, ''])}>Add memory</button>
+                <button type="button" className="btn-primary small" onClick={saveJohnnyMemory} disabled={savingJohnnyMemory}>{savingJohnnyMemory ? 'Saving…' : 'Save memory'}</button>
+              </div>
+              {johnnyError ? <p className="error">{johnnyError}</p> : null}
+              {johnnyMessage ? <p className="success-message">{johnnyMessage}</p> : null}
+              {!johnnyError && johnnyMemory.length > 0 ? <p className="settings-ai-note">Saved {johnnyMemory.length} long-term coaching notes.</p> : null}
+            </div>
+
+            <div className="dash-card settings-ai-card">
+              <div className="settings-ai-head">
+                <div>
+                  <span className="dashboard-chip subtle">Johnny follow-through</span>
+                  <h3>Coaching loop health</h3>
+                </div>
+                <button type="button" className="btn-outline small" onClick={() => openDrawer('Show me my current Johnny follow-ups and what I have been ignoring lately.')}>Open Johnny</button>
+              </div>
+              <p className="settings-subtitle">This gives Johnny a memory of what you finish, punt, or let slide.</p>
+              <div className="settings-ai-stats">
+                <div className="settings-ai-stat"><span>Pending</span><strong>{johnnyOverview?.pending_count ?? 0}</strong></div>
+                <div className="settings-ai-stat"><span>Missed</span><strong>{johnnyOverview?.missed_count ?? 0}</strong></div>
+                <div className="settings-ai-stat"><span>Overdue</span><strong>{johnnyOverview?.overdue_count ?? 0}</strong></div>
+                <div className="settings-ai-stat"><span>Completed 14d</span><strong>{johnnyOverview?.completed_last_14_days ?? 0}</strong></div>
+                <div className="settings-ai-stat"><span>Dismissed 14d</span><strong>{johnnyOverview?.dismissed_last_14_days ?? 0}</strong></div>
+              </div>
+              {johnnyOverview?.recent_summary ? <p className="settings-ai-note">Recent pattern: {johnnyOverview.recent_summary}.</p> : null}
+              {Array.isArray(johnnyOverview?.missed_items) && johnnyOverview.missed_items.length > 0 ? (
+                <div className="settings-ai-history-block">
+                  <strong>Missed commitments</strong>
+                  <ul className="settings-ai-history-list">
+                    {johnnyOverview.missed_items.slice(0, 3).map(item => (
+                      <li key={item.id}>{item.prompt}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+              {Array.isArray(johnnyOverview?.overdue_items) && johnnyOverview.overdue_items.length > 0 ? (
+                <div className="settings-ai-history-block">
+                  <strong>Overdue</strong>
+                  <ul className="settings-ai-history-list">
+                    {johnnyOverview.overdue_items.slice(0, 3).map(item => (
+                      <li key={item.id}>{item.prompt}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+              {Array.isArray(johnnyOverview?.history) && johnnyOverview.history.length > 0 ? (
+                <div className="settings-ai-history-block">
+                  <strong>Recent outcomes</strong>
+                  <ul className="settings-ai-history-list">
+                    {johnnyOverview.history.slice(0, 5).map(item => (
+                      <li key={`${item.id}-${item.changed_at}`}>
+                        <span className={`settings-ai-history-state ${item.state}`}>{formatFollowUpState(item.state)}</span>
+                        <span>{item.prompt}</span>
+                        <small>{formatUsShortDate(item.changed_at, item.changed_at)}</small>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : (
+                <p className="settings-subtitle">Johnny will start building a visible history here as you complete or dismiss follow-ups.</p>
+              )}
+            </div>
+          </section>
+
+          <section className="settings-section dash-card settings-reminders-panel">
+            <div className="switch-copy">
+              <span className="settings-field-label">Push delivery preferences</span>
+              <span className="settings-field-hint">These rules decide when Johnny is allowed to reach out proactively.</span>
+            </div>
+            <div className="settings-grid settings-grid-compact">
+              <label className="switch-field">
+                <span className="switch-copy">
+                  <span className="settings-field-label">Allow push nudges</span>
+                  <span className="settings-field-hint">Master switch for coach push delivery.</span>
+                </span>
+                <span className="switch-control">
+                  <input className="switch-input" type="checkbox" checked={form.push_enabled} onChange={e => update('push_enabled', e.target.checked)} />
+                  <span className="switch-track" aria-hidden="true" />
+                </span>
+              </label>
+              <label className="switch-field">
+                <span className="switch-copy">
+                  <span className="settings-field-label">Usual training day nudges</span>
+                  <span className="settings-field-hint">“You usually train on Mondays” type reminders.</span>
+                </span>
+                <span className="switch-control">
+                  <input className="switch-input" type="checkbox" checked={form.push_absence_nudges} onChange={e => update('push_absence_nudges', e.target.checked)} />
+                  <span className="switch-track" aria-hidden="true" />
+                </span>
+              </label>
+              <label className="switch-field">
+                <span className="switch-copy">
+                  <span className="settings-field-label">Milestone pushes</span>
+                  <span className="settings-field-hint">Recognition when momentum or streaks are real.</span>
+                </span>
+                <span className="switch-control">
+                  <input className="switch-input" type="checkbox" checked={form.push_milestones} onChange={e => update('push_milestones', e.target.checked)} />
+                  <span className="switch-track" aria-hidden="true" />
+                </span>
+              </label>
+              <label className="switch-field">
+                <span className="switch-copy">
+                  <span className="settings-field-label">Winback pushes</span>
+                  <span className="settings-field-hint">Reset prompts after missed sessions.</span>
+                </span>
+                <span className="switch-control">
+                  <input className="switch-input" type="checkbox" checked={form.push_winback} onChange={e => update('push_winback', e.target.checked)} />
+                  <span className="switch-track" aria-hidden="true" />
+                </span>
+              </label>
+              <label className="switch-field settings-field-span-2">
+                <span className="switch-copy">
+                  <span className="settings-field-label">Accountability pushes</span>
+                  <span className="settings-field-hint">Balance and drift prompts when your week gets lopsided.</span>
+                </span>
+                <span className="switch-control">
+                  <input className="switch-input" type="checkbox" checked={form.push_accountability} onChange={e => update('push_accountability', e.target.checked)} />
+                  <span className="switch-track" aria-hidden="true" />
+                </span>
+              </label>
+              <label className="settings-subfield">
+                <span>Quiet hours start</span>
+                <select value={form.push_quiet_hours_start} onChange={e => update('push_quiet_hours_start', Number(e.target.value))}>
+                  {REMINDER_HOUR_OPTIONS.map(option => <option key={`push-start-${option.value}`} value={option.value}>{option.label}</option>)}
+                </select>
+              </label>
+              <label className="settings-subfield">
+                <span>Quiet hours end</span>
+                <select value={form.push_quiet_hours_end} onChange={e => update('push_quiet_hours_end', Number(e.target.value))}>
+                  {REMINDER_HOUR_OPTIONS.map(option => <option key={`push-end-${option.value}`} value={option.value}>{option.label}</option>)}
+                </select>
+              </label>
+            </div>
+          </section>
+
+          <section className="settings-section dash-card settings-reminders-panel">
+            <div className="switch-copy">
+              <span className="settings-field-label">Push diagnostics</span>
+              <span className="settings-field-hint">This is the current delivery state Johnny sees for your account.</span>
+            </div>
+            <div className="settings-diagnostics-grid">
+              <div className="settings-diagnostics-card">
+                <strong>Local status</strong>
+                <span>Permission: {pushStatus.permission}</span>
+                <span>Supported: {pushStatus.supported ? 'yes' : 'no'}</span>
+                <span>Subscribed on this device: {pushStatus.subscribed ? 'yes' : 'no'}</span>
+                <span>Account devices: {pushStatus.activeCount}</span>
+                <span>Origin: {pushStatus.origin || '—'}</span>
+                <span>Service worker: {pushStatus.serviceWorkerRegistered ? 'registered' : 'missing'}</span>
+              </div>
+              <div className="settings-diagnostics-card">
+                <strong>Coach delivery</strong>
+                <span>Pending follow-ups: {deliveryDiagnostics?.follow_up_overview?.pending_count ?? 0}</span>
+                <span>Overdue: {deliveryDiagnostics?.follow_up_overview?.overdue_count ?? 0}</span>
+                <span>Dismissed last 14d: {deliveryDiagnostics?.counts?.dismissed_follow_ups_last_14d ?? 0}</span>
+                <span>Push last 24h: {deliveryDiagnostics?.counts?.sent_last_24h ?? 0}</span>
+              </div>
+              <div className="settings-diagnostics-card">
+                <strong>Timing</strong>
+                <span>Timezone: {deliveryDiagnostics?.local_time?.timezone || form.timezone}</span>
+                <span>Local now: {deliveryDiagnostics?.local_time?.now || '—'}</span>
+                <span>In quiet hours: {deliveryDiagnostics?.local_time?.in_quiet_hours ? 'yes' : 'no'}</span>
+                <span>Push configured: {deliveryDiagnostics?.push?.configured ? 'yes' : 'no'}</span>
+              </div>
+            </div>
+            {pendingFollowUps.length ? (
+              <div className="settings-diagnostics-list">
+                <strong>Current coach queue</strong>
+                {pendingFollowUps.slice(0, 3).map(followUp => (
+                  <div key={followUp.id} className="settings-diagnostics-list-row">
+                    <span>{followUp.reason || followUp.prompt}</span>
+                    <small>{followUp.last_delivery_channel ? `${followUp.last_delivery_channel} • ` : ''}{followUp.status || 'pending'}</small>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </section>
+        </SettingsAccordionSection>
+
+        <SettingsAccordionSection
+          sectionKey="images"
+          eyebrow="Photos"
+          title="Photos & Image Generation"
+          description="Upload your headshot, generate Johnny scenes, and manage the image gallery used in live workout rotation."
+          itemCountLabel="1 workspace"
+          open={accordionSections.images}
+          onToggle={toggleAccordionSection}
+        >
           <section className="settings-section dash-card settings-headshot-section">
             <div className="settings-headshot-head">
               <div>
@@ -1275,571 +1937,15 @@ export default function SettingsScreen() {
               )}
             </div>
           </section>
-
         </SettingsAccordionSection>
 
         <SettingsAccordionSection
-          sectionKey="defaults"
-          eyebrow="Daily defaults"
-          title="Targets & Reminders"
-          description="Steps, sleep, SMS reminders, and the live target preview for your current setup."
-          itemCountLabel="3 sections"
-          open={accordionSections.defaults}
-          onToggle={toggleAccordionSection}
-        >
-          <section className="settings-section dash-card">
-            <h3>Daily Targets</h3>
-            <div className="settings-grid">
-              <label className="settings-field"><span className="settings-field-label">Steps</span><input type="number" min="1000" max="30000" step="1" value={form.target_steps} onChange={e => update('target_steps', Number(e.target.value))} /></label>
-              <label className="settings-field"><span className="settings-field-label">Sleep (hours)</span><input type="number" min="4" max="12" step="0.5" value={form.target_sleep_hours} onChange={e => update('target_sleep_hours', Number(e.target.value))} /></label>
-              <div className="settings-inline-panel settings-field-span-2">
-                <label className="switch-field">
-                  <span className="switch-copy">
-                    <span className="settings-field-label">Add burned workout calories back</span>
-                    <span className="settings-field-hint">Increase today&apos;s calorie target by logged cardio and completed workout burn.</span>
-                  </span>
-                  <span className="switch-control">
-                    <input className="switch-input" type="checkbox" checked={form.add_exercise_calories_to_target} onChange={e => update('add_exercise_calories_to_target', e.target.checked)} />
-                    <span className="switch-track" aria-hidden="true" />
-                  </span>
-                </label>
-              </div>
-              <div className="settings-inline-panel settings-field-span-2 settings-reminders-panel">
-                <label className="switch-field">
-                  <span className="switch-copy">
-                    <span className="settings-field-label">SMS reminders</span>
-                    <span className="settings-field-hint">Enable text reminders and the weekly Monday summary.</span>
-                  </span>
-                  <span className="switch-control">
-                    <input className="switch-input" type="checkbox" checked={form.notifications_enabled} onChange={e => update('notifications_enabled', e.target.checked)} />
-                    <span className="switch-track" aria-hidden="true" />
-                  </span>
-                </label>
-                <label className="settings-field notification-phone-field">
-                  <span className="settings-field-label">Phone</span>
-                  <ClearableInput type="tel" inputMode="tel" value={form.phone} onChange={e => updatePhone(e.target.value)} placeholder="(555) 123-4567" disabled={!form.notifications_enabled} />
-                  <span className="settings-field-hint">Only used for reminder texts.</span>
-                </label>
-              </div>
-              <div className="settings-inline-panel settings-field-span-2 settings-reminders-panel">
-                <div ref={pushPanelRef} className="settings-push-anchor" aria-hidden="true" />
-                <div className="switch-copy">
-                  <span className="settings-field-label">Browser notifications</span>
-                  <span className="settings-field-hint">Control whether Johnny can use push for absence nudges, milestones, winback, and accountability check-ins.</span>
-                </div>
-                <div className="settings-ai-actions">
-                  {pushStatus.supported && pushStatus.subscribed ? (
-                    <button type="button" className="btn-outline small" onClick={handleDisablePush} disabled={pushBusy}>
-                      {pushBusy ? 'Updating…' : 'Disable on this device'}
-                    </button>
-                  ) : (
-                    <button
-                      ref={pushEnableButtonRef}
-                      type="button"
-                      className="btn-secondary small"
-                      onClick={handleEnablePush}
-                      disabled={pushBusy || !pushStatus.supported || !pushStatus.enabled || !pushStatus.configured}
-                    >
-                      {pushBusy ? 'Updating…' : 'Enable browser notifications'}
-                    </button>
-                  )}
-                </div>
-                <p className="settings-field-hint">
-                  {pushStatus.supported
-                    ? (pushStatus.subscribed ? 'Enabled on this device.' : `Permission: ${pushStatus.permission}.`)
-                    : pushStatus.supportReason}
-                </p>
-                <p className="settings-field-hint">
-                  {pushStatus.enabled && pushStatus.configured
-                    ? `${pushStatus.activeCount} active notification device${pushStatus.activeCount === 1 ? '' : 's'} on your account.`
-                    : 'Johnny push is not configured yet by the admin.'}
-                </p>
-                {showPushRefusalChoice && !pushStatus.subscribed ? (
-                  <div className="settings-push-refusal">
-                    <p>If you do not want push on this device, Johnny can switch these reminders to SMS only instead.</p>
-                    <button type="button" className="btn-outline small" onClick={handleRefusePush} disabled={pushBusy}>
-                      {pushBusy ? 'Updating…' : 'Refuse push and use SMS only'}
-                    </button>
-                  </div>
-                ) : null}
-                {pushError ? <p className="error">{pushError}</p> : null}
-                {pushMessage ? <p className="success-message">{pushMessage}</p> : null}
-              </div>
-              <div className="settings-inline-panel settings-field-span-2 settings-reminders-panel">
-                <div className="switch-copy">
-                  <span className="settings-field-label">Push delivery preferences</span>
-                  <span className="settings-field-hint">These rules decide when Johnny is allowed to reach out proactively.</span>
-                </div>
-                <div className="settings-grid settings-grid-compact">
-                  <label className="switch-field">
-                    <span className="switch-copy">
-                      <span className="settings-field-label">Allow push nudges</span>
-                      <span className="settings-field-hint">Master switch for coach push delivery.</span>
-                    </span>
-                    <span className="switch-control">
-                      <input className="switch-input" type="checkbox" checked={form.push_enabled} onChange={e => update('push_enabled', e.target.checked)} />
-                      <span className="switch-track" aria-hidden="true" />
-                    </span>
-                  </label>
-                  <label className="switch-field">
-                    <span className="switch-copy">
-                      <span className="settings-field-label">Usual training day nudges</span>
-                      <span className="settings-field-hint">“You usually train on Mondays” type reminders.</span>
-                    </span>
-                    <span className="switch-control">
-                      <input className="switch-input" type="checkbox" checked={form.push_absence_nudges} onChange={e => update('push_absence_nudges', e.target.checked)} />
-                      <span className="switch-track" aria-hidden="true" />
-                    </span>
-                  </label>
-                  <label className="switch-field">
-                    <span className="switch-copy">
-                      <span className="settings-field-label">Milestone pushes</span>
-                      <span className="settings-field-hint">Recognition when momentum or streaks are real.</span>
-                    </span>
-                    <span className="switch-control">
-                      <input className="switch-input" type="checkbox" checked={form.push_milestones} onChange={e => update('push_milestones', e.target.checked)} />
-                      <span className="switch-track" aria-hidden="true" />
-                    </span>
-                  </label>
-                  <label className="switch-field">
-                    <span className="switch-copy">
-                      <span className="settings-field-label">Winback pushes</span>
-                      <span className="settings-field-hint">Reset prompts after missed sessions.</span>
-                    </span>
-                    <span className="switch-control">
-                      <input className="switch-input" type="checkbox" checked={form.push_winback} onChange={e => update('push_winback', e.target.checked)} />
-                      <span className="switch-track" aria-hidden="true" />
-                    </span>
-                  </label>
-                  <label className="switch-field settings-field-span-2">
-                    <span className="switch-copy">
-                      <span className="settings-field-label">Accountability pushes</span>
-                      <span className="settings-field-hint">Balance and drift prompts when your week gets lopsided.</span>
-                    </span>
-                    <span className="switch-control">
-                      <input className="switch-input" type="checkbox" checked={form.push_accountability} onChange={e => update('push_accountability', e.target.checked)} />
-                      <span className="switch-track" aria-hidden="true" />
-                    </span>
-                  </label>
-                  <label className="settings-subfield">
-                    <span>Quiet hours start</span>
-                    <select value={form.push_quiet_hours_start} onChange={e => update('push_quiet_hours_start', Number(e.target.value))}>
-                      {REMINDER_HOUR_OPTIONS.map(option => <option key={`push-start-${option.value}`} value={option.value}>{option.label}</option>)}
-                    </select>
-                  </label>
-                  <label className="settings-subfield">
-                    <span>Quiet hours end</span>
-                    <select value={form.push_quiet_hours_end} onChange={e => update('push_quiet_hours_end', Number(e.target.value))}>
-                      {REMINDER_HOUR_OPTIONS.map(option => <option key={`push-end-${option.value}`} value={option.value}>{option.label}</option>)}
-                    </select>
-                  </label>
-                </div>
-              </div>
-              <div className="settings-inline-panel settings-field-span-2 settings-reminders-panel">
-                <div className="switch-copy">
-                  <span className="settings-field-label">Push diagnostics</span>
-                  <span className="settings-field-hint">This is the current delivery state Johnny sees for your account.</span>
-                </div>
-                <div className="settings-diagnostics-grid">
-                  <div className="settings-diagnostics-card">
-                    <strong>Local status</strong>
-                    <span>Permission: {pushStatus.permission}</span>
-                    <span>Supported: {pushStatus.supported ? 'yes' : 'no'}</span>
-                    <span>Subscribed on this device: {pushStatus.subscribed ? 'yes' : 'no'}</span>
-                    <span>Account devices: {pushStatus.activeCount}</span>
-                    <span>Origin: {pushStatus.origin || '—'}</span>
-                    <span>Service worker: {pushStatus.serviceWorkerRegistered ? 'registered' : 'missing'}</span>
-                  </div>
-                  <div className="settings-diagnostics-card">
-                    <strong>Coach delivery</strong>
-                    <span>Pending follow-ups: {deliveryDiagnostics?.follow_up_overview?.pending_count ?? 0}</span>
-                    <span>Overdue: {deliveryDiagnostics?.follow_up_overview?.overdue_count ?? 0}</span>
-                    <span>Dismissed last 14d: {deliveryDiagnostics?.counts?.dismissed_follow_ups_last_14d ?? 0}</span>
-                    <span>Push last 24h: {deliveryDiagnostics?.counts?.sent_last_24h ?? 0}</span>
-                  </div>
-                  <div className="settings-diagnostics-card">
-                    <strong>Timing</strong>
-                    <span>Timezone: {deliveryDiagnostics?.local_time?.timezone || form.timezone}</span>
-                    <span>Local now: {deliveryDiagnostics?.local_time?.now || '—'}</span>
-                    <span>In quiet hours: {deliveryDiagnostics?.local_time?.in_quiet_hours ? 'yes' : 'no'}</span>
-                    <span>Push configured: {deliveryDiagnostics?.push?.configured ? 'yes' : 'no'}</span>
-                  </div>
-                </div>
-                {pendingFollowUps.length ? (
-                  <div className="settings-diagnostics-list">
-                    <strong>Current coach queue</strong>
-                    {pendingFollowUps.slice(0, 3).map(followUp => (
-                      <div key={followUp.id} className="settings-diagnostics-list-row">
-                        <span>{followUp.reason || followUp.prompt}</span>
-                        <small>{followUp.last_delivery_channel ? `${followUp.last_delivery_channel} • ` : ''}{followUp.status || 'pending'}</small>
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-            </div>
-            {form.notifications_enabled ? (
-              <div className="settings-reminder-stack">
-                <div className="settings-reminder-intro">
-                  <strong>Reminder schedule</strong>
-                  <p>All reminder times use your saved timezone. Weekly summary sends Mondays at {formatReminderHour(form.weekly_summary_hour)}.</p>
-                </div>
-                <div className="settings-grid settings-grid-compact reminder-grid">
-                  <div className="reminder-setting-card">
-                    <div className="reminder-card-head">
-                      <div>
-                        <strong>Workout reminder</strong>
-                        <p>Keep your session start on a consistent clock.</p>
-                      </div>
-                      <label className="switch-control switch-control-compact">
-                        <input className="switch-input" type="checkbox" checked={form.workout_reminder_enabled} onChange={e => update('workout_reminder_enabled', e.target.checked)} />
-                        <span className="switch-track" aria-hidden="true" />
-                      </label>
-                    </div>
-                    <label className="settings-subfield">
-                      <span>Time</span>
-                      <select value={form.workout_reminder_hour} onChange={e => update('workout_reminder_hour', Number(e.target.value))} disabled={!form.workout_reminder_enabled}>
-                        {REMINDER_HOUR_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-                      </select>
-                    </label>
-                  </div>
-                  <div className="reminder-setting-card">
-                    <div className="reminder-card-head">
-                      <div>
-                        <strong>Meal logging nudges</strong>
-                        <p>Johnny checks breakfast at 10am, lunch at 2pm, and dinner at 7pm in your saved timezone.</p>
-                      </div>
-                      <label className="switch-control switch-control-compact">
-                        <input className="switch-input" type="checkbox" checked={form.meal_reminder_enabled} onChange={e => update('meal_reminder_enabled', e.target.checked)} />
-                        <span className="switch-track" aria-hidden="true" />
-                      </label>
-                    </div>
-                    <p className="settings-field-hint">Push fires first. If you refuse push, Johnny switches these nudges to SMS. If both are off, only the latest nudge waits in the drawer for next open.</p>
-                  </div>
-                  <div className="reminder-setting-card">
-                    <div className="reminder-card-head">
-                      <div>
-                        <strong>Sleep reminder</strong>
-                        <p>Get a prompt before your sleep target window starts.</p>
-                      </div>
-                      <label className="switch-control switch-control-compact">
-                        <input className="switch-input" type="checkbox" checked={form.sleep_reminder_enabled} onChange={e => update('sleep_reminder_enabled', e.target.checked)} />
-                        <span className="switch-track" aria-hidden="true" />
-                      </label>
-                    </div>
-                    <label className="settings-subfield">
-                      <span>Time</span>
-                      <select value={form.sleep_reminder_hour} onChange={e => update('sleep_reminder_hour', Number(e.target.value))} disabled={!form.sleep_reminder_enabled}>
-                        {REMINDER_HOUR_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-                      </select>
-                    </label>
-                  </div>
-                  <div className="reminder-setting-card">
-                    <div className="reminder-card-head">
-                      <div>
-                        <strong>Weekly summary</strong>
-                        <p>Receive a Monday recap in your current timezone.</p>
-                      </div>
-                      <label className="switch-control switch-control-compact">
-                        <input className="switch-input" type="checkbox" checked={form.weekly_summary_enabled} onChange={e => update('weekly_summary_enabled', e.target.checked)} />
-                        <span className="switch-track" aria-hidden="true" />
-                      </label>
-                    </div>
-                    <label className="settings-subfield">
-                      <span>Time</span>
-                      <select value={form.weekly_summary_hour} onChange={e => update('weekly_summary_hour', Number(e.target.value))} disabled={!form.weekly_summary_enabled}>
-                        {REMINDER_HOUR_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-                      </select>
-                    </label>
-                  </div>
-                </div>
-                <div className="settings-scheduled-reminders-card">
-                  <div className="settings-scheduled-reminders-head">
-                    <div>
-                      <strong>Scheduled by Johnny</strong>
-                      <p>One-off SMS reminders Johnny creates for you appear here. Cancel anything that has not fired yet.</p>
-                    </div>
-                    <button type="button" className="btn-outline small" onClick={() => openDrawer('Show me my scheduled SMS reminders and help me manage them.')}>Ask Johnny</button>
-                  </div>
-
-                  {smsReminderLoading ? <p className="settings-subtitle">Loading scheduled reminders…</p> : null}
-                  {smsReminderError ? <p className="error">{smsReminderError}</p> : null}
-                  {smsReminderMessage ? <p className="success-message">{smsReminderMessage}</p> : null}
-
-                  {!smsReminderLoading && !smsReminderError ? (
-                    <>
-                      <div className="settings-reminder-collection">
-                        <div className="settings-reminder-collection-head">
-                          <strong>Upcoming</strong>
-                          <span>{smsReminders.scheduled?.length ?? 0}</span>
-                        </div>
-                        {Array.isArray(smsReminders.scheduled) && smsReminders.scheduled.length > 0 ? (
-                          <div className="settings-scheduled-reminder-list">
-                            {smsReminders.scheduled.map(reminder => (
-                              <div key={reminder.id} className="settings-scheduled-reminder-row">
-                                <div className="settings-scheduled-reminder-copy">
-                                  <strong>{formatReminderDateTime(reminder.send_at_local)}</strong>
-                                  <p>{reminder.message}</p>
-                                  <span>{smsReminders.timezone || reminder.timezone || form.timezone}</span>
-                                </div>
-                                <button
-                                  type="button"
-                                  className="btn-outline small"
-                                  onClick={() => cancelSmsReminder(reminder.id)}
-                                  disabled={cancelingReminderId === reminder.id}
-                                >
-                                  {cancelingReminderId === reminder.id ? 'Canceling…' : 'Cancel'}
-                                </button>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <p className="settings-subtitle">No one-off SMS reminders are queued right now.</p>
-                        )}
-                      </div>
-
-                      <div className="settings-reminder-collection">
-                        <div className="settings-reminder-collection-head">
-                          <strong>Recent activity</strong>
-                          <span>{smsReminders.history?.length ?? 0}</span>
-                        </div>
-                        {Array.isArray(smsReminders.history) && smsReminders.history.length > 0 ? (
-                          <div className="settings-scheduled-reminder-list history">
-                            {smsReminders.history.map(reminder => (
-                              <div key={reminder.id} className="settings-scheduled-reminder-row history">
-                                <div className="settings-scheduled-reminder-copy">
-                                  <strong>{formatReminderDateTime(reminder.send_at_local)}</strong>
-                                  <p>{reminder.message}</p>
-                                  <span>{formatReminderHistoryMeta(reminder, smsReminders.timezone || reminder.timezone || form.timezone)}</span>
-                                </div>
-                                <span className={`settings-reminder-status ${reminder.status}`}>{formatReminderStatus(reminder.status)}</span>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <p className="settings-subtitle">Sent, failed, or canceled reminder history will appear here.</p>
-                        )}
-                      </div>
-                    </>
-                  ) : null}
-                </div>
-              </div>
-            ) : null}
-          </section>
-
-          <section className="settings-section dash-card target-preview-card">
-            <h3>Current Targets</h3>
-            <div className="target-preview-row">
-              <span>Calories</span>
-              <strong>{targets?.target_calories ?? '—'}</strong>
-            </div>
-            <div className="target-preview-row">
-              <span>Protein</span>
-              <strong>{targets?.target_protein_g ?? '—'}g</strong>
-            </div>
-            <div className="target-preview-row">
-              <span>Carbs</span>
-              <strong>{targets?.target_carbs_g ?? '—'}g</strong>
-            </div>
-            <div className="target-preview-row">
-              <span>Fat</span>
-              <strong>{targets?.target_fat_g ?? '—'}g</strong>
-            </div>
-          </section>
-        </SettingsAccordionSection>
-
-        <SettingsAccordionSection
-          sectionKey="voice"
-          eyebrow="Live training"
-          title="Spoken Voice"
-          description="Device-specific voice playback controls for Johnny during Live Workout Mode."
-          itemCountLabel="1 card"
-          open={accordionSections.voice}
-          onToggle={toggleAccordionSection}
-        >
-          <section className="settings-ai-grid">
-            <div className="dash-card settings-ai-card">
-              <div className="settings-ai-head">
-                <div>
-                  <span className="dashboard-chip coach">Live workout voice</span>
-                  <h3>Johnny spoken coaching</h3>
-                </div>
-              </div>
-              {!speechPlaybackSupported ? (
-                <p className="settings-subtitle">This browser cannot play inline audio, so spoken live-workout coaching is unavailable here.</p>
-              ) : (
-                <>
-                  <p className="settings-subtitle">These settings control OpenAI voice playback for Live Workout Mode on this device.</p>
-                  <div className="settings-grid settings-grid-compact">
-                    <div className="settings-inline-panel">
-                      <label className="switch-field">
-                        <span className="switch-copy">
-                          <span className="settings-field-label">Auto-speak Johnny</span>
-                          <span className="settings-field-hint">Speak each new live coaching reply automatically.</span>
-                        </span>
-                        <span className="switch-control">
-                          <input className="switch-input" type="checkbox" checked={liveVoicePrefs.autoSpeak} onChange={event => updateLiveVoicePref('autoSpeak', event.target.checked)} />
-                          <span className="switch-track" aria-hidden="true" />
-                        </span>
-                      </label>
-                    </div>
-                    <div className="settings-inline-panel">
-                      <label className="switch-field">
-                        <span className="switch-copy">
-                          <span className="settings-field-label">Auto-speak drawer replies</span>
-                          <span className="settings-field-hint">Read new Johnny Assistant drawer replies out loud automatically.</span>
-                        </span>
-                        <span className="switch-control">
-                          <input className="switch-input" type="checkbox" checked={liveVoicePrefs.assistantAutoSpeak} onChange={event => updateLiveVoicePref('assistantAutoSpeak', event.target.checked)} />
-                          <span className="switch-track" aria-hidden="true" />
-                        </span>
-                      </label>
-                    </div>
-                    <label className="settings-field settings-field-span-2">
-                      <span className="settings-field-label">Voice</span>
-                      <select value={liveVoicePrefs.openAiVoice} onChange={event => updateLiveVoicePref('openAiVoice', event.target.value)}>
-                        {OPENAI_TTS_VOICE_OPTIONS.map(voice => (
-                          <option key={voice} value={voice}>{formatOpenAiVoiceLabel(voice)}</option>
-                        ))}
-                      </select>
-                      <span className="settings-field-hint">Voice is generated by OpenAI instead of browser-native speech synthesis.</span>
-                    </label>
-                    <label className="settings-field">
-                      <span className="settings-field-label">Playback speed</span>
-                      <select value={String(liveVoicePrefs.rate)} onChange={event => updateLiveVoicePref('rate', Number(event.target.value))}>
-                        {LIVE_WORKOUT_VOICE_RATE_OPTIONS.map(rate => (
-                          <option key={rate} value={rate}>{rate.toFixed(rate % 1 === 0 ? 0 : 2)}x</option>
-                        ))}
-                      </select>
-                    </label>
-                    <div className="settings-inline-panel settings-live-voice-preview-card">
-                      <strong>Preview</strong>
-                      <p className="settings-subtitle">Play a short sample with the current OpenAI voice and speed, or reset this device back to Johnny’s defaults.</p>
-                      <div className="settings-ai-actions">
-                        <button type="button" className="btn-outline small" onClick={previewLiveVoice} disabled={voicePreviewBusy}>{voicePreviewBusy ? 'Playing…' : 'Play sample'}</button>
-                        <button type="button" className="btn-secondary small" onClick={() => setLiveVoicePrefs(getDefaultLiveWorkoutVoicePrefs())}>Reset defaults</button>
-                      </div>
-                      {voicePreviewError ? <p className="error">{voicePreviewError}</p> : null}
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
-          </section>
-        </SettingsAccordionSection>
-
-        <SettingsAccordionSection
-          sectionKey="coaching"
-          eyebrow="Johnny"
-          title="Coaching Memory"
-          description="Long-term coaching notes, follow-through health, and the history Johnny uses to coach you."
-          itemCountLabel="2 cards"
-          open={accordionSections.coaching}
-          onToggle={toggleAccordionSection}
-        >
-          <section className="settings-ai-grid">
-            <div className="dash-card settings-ai-card">
-              <div className="settings-ai-head">
-                <div>
-                  <span className="dashboard-chip ai">Johnny memory</span>
-                  <h3>What Johnny should keep in mind</h3>
-                </div>
-                <button type="button" className="btn-outline small" onClick={() => openDrawer('Review my coaching memory and tell me what should change.')}>Ask Johnny</button>
-              </div>
-              <p className="settings-subtitle">Keep this to durable preferences, recurring obstacles, and how you like to be coached.</p>
-              <div className="settings-ai-memory-list">
-                {(johnnyMemoryDraft.length ? johnnyMemoryDraft : ['']).map((bullet, index) => (
-                  <div key={`johnny-memory-${index}`} className="settings-ai-memory-row">
-                    <ClearableInput
-                      type="text"
-                      value={bullet}
-                      onChange={event => setJohnnyMemoryDraft(current => current.map((item, itemIndex) => (itemIndex === index ? event.target.value : item)))}
-                      placeholder="Example: I do better with blunt accountability than vague encouragement"
-                    />
-                    <button
-                      type="button"
-                      className="btn-outline small"
-                      onClick={() => setJohnnyMemoryDraft(current => current.filter((_, itemIndex) => itemIndex !== index))}
-                      disabled={johnnyMemoryDraft.length <= 1}
-                    >
-                      Remove
-                    </button>
-                  </div>
-                ))}
-              </div>
-              <div className="settings-ai-actions">
-                <button type="button" className="btn-secondary small" onClick={() => setJohnnyMemoryDraft(current => [...current, ''])}>Add memory</button>
-                <button type="button" className="btn-primary small" onClick={saveJohnnyMemory} disabled={savingJohnnyMemory}>{savingJohnnyMemory ? 'Saving…' : 'Save memory'}</button>
-              </div>
-              {johnnyError ? <p className="error">{johnnyError}</p> : null}
-              {johnnyMessage ? <p className="success-message">{johnnyMessage}</p> : null}
-              {!johnnyError && johnnyMemory.length > 0 ? <p className="settings-ai-note">Saved {johnnyMemory.length} long-term coaching notes.</p> : null}
-            </div>
-
-            <div className="dash-card settings-ai-card">
-              <div className="settings-ai-head">
-                <div>
-                  <span className="dashboard-chip subtle">Johnny follow-through</span>
-                  <h3>Coaching loop health</h3>
-                </div>
-                <button type="button" className="btn-outline small" onClick={() => openDrawer('Show me my current Johnny follow-ups and what I have been ignoring lately.')}>Open Johnny</button>
-              </div>
-              <p className="settings-subtitle">This gives Johnny a memory of what you finish, punt, or let slide.</p>
-              <div className="settings-ai-stats">
-                <div className="settings-ai-stat"><span>Pending</span><strong>{johnnyOverview?.pending_count ?? 0}</strong></div>
-                <div className="settings-ai-stat"><span>Missed</span><strong>{johnnyOverview?.missed_count ?? 0}</strong></div>
-                <div className="settings-ai-stat"><span>Overdue</span><strong>{johnnyOverview?.overdue_count ?? 0}</strong></div>
-                <div className="settings-ai-stat"><span>Completed 14d</span><strong>{johnnyOverview?.completed_last_14_days ?? 0}</strong></div>
-                <div className="settings-ai-stat"><span>Dismissed 14d</span><strong>{johnnyOverview?.dismissed_last_14_days ?? 0}</strong></div>
-              </div>
-              {johnnyOverview?.recent_summary ? <p className="settings-ai-note">Recent pattern: {johnnyOverview.recent_summary}.</p> : null}
-              {Array.isArray(johnnyOverview?.missed_items) && johnnyOverview.missed_items.length > 0 ? (
-                <div className="settings-ai-history-block">
-                  <strong>Missed commitments</strong>
-                  <ul className="settings-ai-history-list">
-                    {johnnyOverview.missed_items.slice(0, 3).map(item => (
-                      <li key={item.id}>{item.prompt}</li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-              {Array.isArray(johnnyOverview?.overdue_items) && johnnyOverview.overdue_items.length > 0 ? (
-                <div className="settings-ai-history-block">
-                  <strong>Overdue</strong>
-                  <ul className="settings-ai-history-list">
-                    {johnnyOverview.overdue_items.slice(0, 3).map(item => (
-                      <li key={item.id}>{item.prompt}</li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-              {Array.isArray(johnnyOverview?.history) && johnnyOverview.history.length > 0 ? (
-                <div className="settings-ai-history-block">
-                  <strong>Recent outcomes</strong>
-                  <ul className="settings-ai-history-list">
-                    {johnnyOverview.history.slice(0, 5).map(item => (
-                      <li key={`${item.id}-${item.changed_at}`}>
-                        <span className={`settings-ai-history-state ${item.state}`}>{formatFollowUpState(item.state)}</span>
-                        <span>{item.prompt}</span>
-                        <small>{formatUsShortDate(item.changed_at, item.changed_at)}</small>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ) : (
-                <p className="settings-subtitle">Johnny will start building a visible history here as you complete or dismiss follow-ups.</p>
-              )}
-            </div>
-          </section>
-        </SettingsAccordionSection>
-
-        <SettingsAccordionSection
-          sectionKey="setup"
-          eyebrow="Plan and app"
-          title="Theme & Training Setup"
-          description="Color palette, weekly split order, and onboarding tools if you want to redo the guided setup."
-          itemCountLabel="3 sections"
-          open={accordionSections.setup}
+          sectionKey="trainingApp"
+          eyebrow="Training and app"
+          title="Training & App"
+          description="Color palette, weekly split order, and quick access to your exercise library."
+          itemCountLabel="3 cards"
+          open={accordionSections.trainingApp}
           onToggle={toggleAccordionSection}
         >
           <section className="settings-section dash-card">
@@ -1890,18 +1996,18 @@ export default function SettingsScreen() {
               </button>
             </div>
           </section>
-
-          <section className="settings-section dash-card settings-onboarding-section">
-            <h3>Onboarding</h3>
-            <p className="settings-subtitle">Run through the guided setup again if you want to update your training background, equipment, food preferences, or recovery defaults step by step.</p>
-            <div className="settings-actions settings-actions-single">
-              <button className="btn-secondary" onClick={restartOnboarding} disabled={saving}>
-                {saving ? 'Working…' : 'Restart Onboarding'}
-              </button>
-            </div>
-          </section>
         </SettingsAccordionSection>
       </div>
+
+      <section className="settings-section dash-card settings-onboarding-section">
+        <h3>Restart Onboarding</h3>
+        <p className="settings-subtitle">Run through the guided setup again if you want to update your training background, equipment, food preferences, or recovery defaults step by step.</p>
+        <div className="settings-actions settings-actions-single">
+          <button className="btn-secondary" onClick={restartOnboarding} disabled={saving}>
+            {saving ? 'Working…' : 'Restart Onboarding'}
+          </button>
+        </div>
+      </section>
 
       {zoomedImage && generatedImageSrcs[zoomedImage.id] ? (
         <div className="settings-image-zoom-modal" role="dialog" aria-modal="true" aria-label="Generated image preview">

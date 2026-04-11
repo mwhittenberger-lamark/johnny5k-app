@@ -3,6 +3,7 @@ import { bodyApi } from '../../../api/modules/body'
 import { dashboardApi } from '../../../api/modules/dashboard'
 import { nutritionApi } from '../../../api/modules/nutrition'
 import { onboardingApi } from '../../../api/modules/onboarding'
+import { reportClientDiagnostic } from '../../../lib/clientDiagnostics'
 
 export function useDashboardSupplementalData({ loadSnapshot, loadAwards }) {
   const [weeklyWeights, setWeeklyWeights] = useState([])
@@ -25,14 +26,32 @@ export function useDashboardSupplementalData({ loadSnapshot, loadAwards }) {
         if (!active) return
         setWeeklyWeights(Array.isArray(rows) ? rows.slice(0, 7).reverse() : [])
       })
-      .catch(() => {})
+      .catch(error => {
+        reportClientDiagnostic({
+          source: 'dashboard_weekly_weights_load',
+          message: 'Dashboard weekly weight history failed to load.',
+          error,
+          context: {
+            surface: 'dashboard',
+          },
+        })
+      })
 
     nutritionApi.getGroceryGap()
       .then(data => {
         if (!active) return
         setGroceryGap(data || null)
       })
-      .catch(() => {})
+      .catch(error => {
+        reportClientDiagnostic({
+          source: 'dashboard_grocery_gap_load',
+          message: 'Dashboard grocery gap failed to load.',
+          error,
+          context: {
+            surface: 'dashboard',
+          },
+        })
+      })
 
     onboardingApi.getSmsReminders()
       .then(data => {
@@ -42,7 +61,16 @@ export function useDashboardSupplementalData({ loadSnapshot, loadAwards }) {
           scheduled: Array.isArray(data?.scheduled) ? data.scheduled : [],
         })
       })
-      .catch(() => {})
+      .catch(error => {
+        reportClientDiagnostic({
+          source: 'dashboard_sms_reminders_load',
+          message: 'Dashboard SMS reminders failed to load.',
+          error,
+          context: {
+            surface: 'dashboard',
+          },
+        })
+      })
 
     onboardingApi.getGeneratedImages()
       .then(async data => {
@@ -71,7 +99,15 @@ export function useDashboardSupplementalData({ loadSnapshot, loadAwards }) {
         if (!active) return
         setGeneratedImageGallery(nextGallery.filter(Boolean))
       })
-      .catch(() => {
+      .catch(error => {
+        reportClientDiagnostic({
+          source: 'dashboard_generated_images_load',
+          message: 'Dashboard generated image gallery failed to load.',
+          error,
+          context: {
+            surface: 'dashboard',
+          },
+        })
         if (active) {
           setGeneratedImageGallery([])
         }

@@ -5,6 +5,10 @@ declare(strict_types=1);
 define( 'ABSPATH', dirname( __DIR__ ) . '/' );
 define( 'JF_REST_NAMESPACE', 'fit/v1' );
 
+if ( ! defined( 'JF_PLUGIN_URL' ) ) {
+	define( 'JF_PLUGIN_URL', 'https://example.test/wp-content/plugins/johnny5k/' );
+}
+
 if ( ! defined( 'OBJECT' ) ) {
 	define( 'OBJECT', 'OBJECT' );
 }
@@ -168,6 +172,17 @@ if ( ! function_exists( '__return_true' ) ) {
 	}
 }
 
+if ( ! function_exists( 'rest_sanitize_boolean' ) ) {
+	function rest_sanitize_boolean( mixed $value ): bool {
+		if ( is_bool( $value ) ) {
+			return $value;
+		}
+
+		$normalized = strtolower( trim( (string) $value ) );
+		return in_array( $normalized, [ '1', 'true', 'yes', 'on' ], true );
+	}
+}
+
 if ( ! function_exists( 'register_rest_route' ) ) {
 	function register_rest_route( string $namespace, string $route, array $args ): bool {
 		return true;
@@ -200,10 +215,88 @@ if ( ! function_exists( 'update_user_meta' ) ) {
 	}
 }
 
+if ( ! function_exists( 'get_option' ) ) {
+	function get_option( string $key, mixed $default = false ): mixed {
+		return $GLOBALS['johnny5k_test_options'][ $key ] ?? $default;
+	}
+}
+
+if ( ! function_exists( 'update_option' ) ) {
+	function update_option( string $key, mixed $value ): bool {
+		$GLOBALS['johnny5k_test_options'][ $key ] = $value;
+		return true;
+	}
+}
+
+if ( ! function_exists( 'delete_option' ) ) {
+	function delete_option( string $key ): bool {
+		unset( $GLOBALS['johnny5k_test_options'][ $key ] );
+		return true;
+	}
+}
+
+if ( ! function_exists( 'get_transient' ) ) {
+	function get_transient( string $key ): mixed {
+		return $GLOBALS['johnny5k_test_transients'][ $key ] ?? false;
+	}
+}
+
+if ( ! function_exists( 'set_transient' ) ) {
+	function set_transient( string $key, mixed $value, int $expiration = 0 ): bool {
+		$GLOBALS['johnny5k_test_transients'][ $key ] = $value;
+		return true;
+	}
+}
+
+if ( ! function_exists( 'delete_transient' ) ) {
+	function delete_transient( string $key ): bool {
+		unset( $GLOBALS['johnny5k_test_transients'][ $key ] );
+		return true;
+	}
+}
+
 if ( ! function_exists( 'delete_user_meta' ) ) {
 	function delete_user_meta( int $user_id, string $key ): bool {
 		unset( $GLOBALS['johnny5k_test_user_meta'][ $user_id ][ $key ] );
 		return true;
+	}
+}
+
+if ( ! function_exists( 'wp_schedule_single_event' ) ) {
+	function wp_schedule_single_event( int $timestamp, string $hook, array $args = [] ): bool {
+		$GLOBALS['johnny5k_test_scheduled_events'][] = [
+			'timestamp' => $timestamp,
+			'hook' => $hook,
+			'args' => $args,
+		];
+		return true;
+	}
+}
+
+if ( ! function_exists( 'wp_next_scheduled' ) ) {
+	function wp_next_scheduled( string $hook, array $args = [] ): int|false {
+		foreach ( $GLOBALS['johnny5k_test_scheduled_events'] ?? [] as $event ) {
+			if ( $event['hook'] === $hook && $event['args'] === $args ) {
+				return (int) $event['timestamp'];
+			}
+		}
+
+		return false;
+	}
+}
+
+if ( ! function_exists( 'wp_unschedule_event' ) ) {
+	function wp_unschedule_event( int $timestamp, string $hook, array $args = [] ): bool {
+		$events = $GLOBALS['johnny5k_test_scheduled_events'] ?? [];
+		foreach ( $events as $index => $event ) {
+			if ( (int) $event['timestamp'] === $timestamp && $event['hook'] === $hook && $event['args'] === $args ) {
+				unset( $events[ $index ] );
+				$GLOBALS['johnny5k_test_scheduled_events'] = array_values( $events );
+				return true;
+			}
+		}
+
+		return false;
 	}
 }
 
@@ -310,6 +403,80 @@ if ( ! function_exists( 'wp_generate_uuid4' ) ) {
 	}
 }
 
+if ( ! function_exists( 'esc_url_raw' ) ) {
+	function esc_url_raw( string $value ): string {
+		return trim( $value );
+	}
+}
+
+if ( ! function_exists( 'wp_remote_post' ) ) {
+	function wp_remote_post( string $url, array $args = [] ): mixed {
+		$queue = &$GLOBALS['johnny5k_test_http']['post'];
+		if ( empty( $queue ) ) {
+			return new WP_Error( 'missing_http_stub', 'No stubbed wp_remote_post response available.' );
+		}
+
+		return array_shift( $queue );
+	}
+}
+
+if ( ! function_exists( 'wp_remote_request' ) ) {
+	function wp_remote_request( string $url, array $args = [] ): mixed {
+		$queue = &$GLOBALS['johnny5k_test_http']['request'];
+		if ( empty( $queue ) ) {
+			return new WP_Error( 'missing_http_stub', 'No stubbed wp_remote_request response available.' );
+		}
+
+		return array_shift( $queue );
+	}
+}
+
+if ( ! function_exists( 'wp_remote_retrieve_body' ) ) {
+	function wp_remote_retrieve_body( mixed $response ): string {
+		if ( is_array( $response ) ) {
+			return (string) ( $response['body'] ?? '' );
+		}
+
+		if ( is_object( $response ) && isset( $response->body ) ) {
+			return (string) $response->body;
+		}
+
+		return '';
+	}
+}
+
+if ( ! function_exists( 'wp_remote_retrieve_response_code' ) ) {
+	function wp_remote_retrieve_response_code( mixed $response ): int {
+		if ( is_array( $response ) ) {
+			return (int) ( $response['response']['code'] ?? 0 );
+		}
+
+		if ( is_object( $response ) && isset( $response->response['code'] ) ) {
+			return (int) $response->response['code'];
+		}
+
+		return 0;
+	}
+}
+
+if ( ! function_exists( 'mb_strlen' ) ) {
+	function mb_strlen( string $string, ?string $encoding = null ): int {
+		return strlen( $string );
+	}
+}
+
+if ( ! function_exists( 'mb_substr' ) ) {
+	function mb_substr( string $string, int $start, ?int $length = null, ?string $encoding = null ): string {
+		return null === $length ? substr( $string, $start ) : substr( $string, $start, $length );
+	}
+}
+
+if ( ! function_exists( 'mb_strtolower' ) ) {
+	function mb_strtolower( string $string, ?string $encoding = null ): string {
+		return strtolower( $string );
+	}
+}
+
 if ( ! function_exists( 'sanitize_title' ) ) {
 	function sanitize_title( string $value ): string {
 		$value = strtolower( trim( $value ) );
@@ -365,6 +532,8 @@ if ( ! function_exists( 'wp_create_nonce' ) ) {
 require_once __DIR__ . '/Support/FakeWpdb.php';
 require_once __DIR__ . '/Support/ServiceTestCase.php';
 
+$GLOBALS['johnny5k_test_now'] = '2026-04-09 12:00:00';
+
 require_once dirname( __DIR__ ) . '/includes/Auth/class-invite-codes.php';
 require_once dirname( __DIR__ ) . '/includes/Services/class-user-time.php';
 require_once dirname( __DIR__ ) . '/includes/Services/class-exercise-library-service.php';
@@ -373,13 +542,21 @@ require_once dirname( __DIR__ ) . '/includes/Services/class-calorie-engine.php';
 require_once dirname( __DIR__ ) . '/includes/Services/class-training-engine.php';
 require_once dirname( __DIR__ ) . '/includes/Services/class-exercise-calorie-service.php';
 require_once dirname( __DIR__ ) . '/includes/Services/class-ai-memory-service.php';
+require_once dirname( __DIR__ ) . '/includes/Services/class-support-guide-service.php';
 require_once dirname( __DIR__ ) . '/includes/Services/class-ai-prompt-service.php';
 require_once dirname( __DIR__ ) . '/includes/Services/class-ai-service.php';
+require_once dirname( __DIR__ ) . '/includes/Services/class-coach-delivery-service.php';
 require_once dirname( __DIR__ ) . '/includes/Services/class-behavior-analytics-service.php';
 require_once dirname( __DIR__ ) . '/includes/Services/class-workout-action-service.php';
+require_once dirname( __DIR__ ) . '/includes/Services/class-sms-service.php';
+require_once dirname( __DIR__ ) . '/includes/Services/class-push-service.php';
+require_once dirname( __DIR__ ) . '/includes/Support/class-training-day-types.php';
 require_once dirname( __DIR__ ) . '/includes/REST/class-auth-controller.php';
+require_once dirname( __DIR__ ) . '/includes/REST/class-admin-api-controller.php';
 require_once dirname( __DIR__ ) . '/includes/REST/class-onboarding-controller.php';
 require_once dirname( __DIR__ ) . '/includes/REST/class-workout-controller.php';
 require_once dirname( __DIR__ ) . '/includes/REST/class-ai-chat-controller.php';
 require_once dirname( __DIR__ ) . '/includes/REST/class-ai-controller.php';
+require_once dirname( __DIR__ ) . '/includes/REST/class-body-metrics-controller.php';
+require_once dirname( __DIR__ ) . '/includes/REST/class-dashboard-controller.php';
 require_once __DIR__ . '/Support/ApiIntegrationTestCase.php';

@@ -3,6 +3,13 @@ const WP_CORE_BASE = '/wp-json/wp/v2'
 const NONCE_KEY = 'jf_rest_nonce'
 const AUTH_KEY = 'jf_auth'
 const NONCE_ENDPOINT = '/wp-admin/admin-ajax.php?action=rest-nonce'
+const OFFLINE_WRITE_QUEUE_KEY = 'jf_offline_write_queue_v1'
+const OFFLINE_WRITE_QUEUE_LIMIT = 100
+
+let queueFlushPromise = null
+let queueSyncing = false
+let queueInitialized = false
+const queueListeners = new Set()
 
 function getNonce() {
   return localStorage.getItem(NONCE_KEY)
@@ -14,6 +21,100 @@ function storeNonce(nonce) {
   } else {
     localStorage.removeItem(NONCE_KEY)
   }
+}
+
+function readOfflineWriteQueue() {
+  if (typeof window === 'undefined') {
+    return []
+  }
+
+  try {
+    const raw = window.localStorage.getItem(OFFLINE_WRITE_QUEUE_KEY)
+    const parsed = raw ? JSON.parse(raw) : []
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+function writeOfflineWriteQueue(entries) {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  try {
+    if (!entries.length) {
+      window.localStorage.removeItem(OFFLINE_WRITE_QUEUE_KEY)
+      return
+    }
+
+    window.localStorage.setItem(OFFLINE_WRITE_QUEUE_KEY, JSON.stringify(entries.slice(-OFFLINE_WRITE_QUEUE_LIMIT)))
+  } catch {
+    // Ignore storage failures. The request flow should still complete online.
+  }
+}
+
+function createOfflineWriteQueueSnapshot() {
+  const entries = readOfflineWriteQueue()
+
+  return {
+    count: entries.length,
+    syncing: queueSyncing,
+    entries,
+  }
+}
+
+function emitOfflineWriteQueueSnapshot() {
+  const snapshot = createOfflineWriteQueueSnapshot()
+
+  for (const listener of queueListeners) {
+    try {
+      listener(snapshot)
+    } catch {
+      // Keep queue state updates isolated from listener failures.
+    }
+  }
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('johnny5k:offline-write-queue', { detail: snapshot }))
+  }
+}
+
+function isNetworkFailure(error) {
+  if (!error) return false
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return true
+  if (error.name === 'TypeError') return true
+  return /failed to fetch|networkerror|load failed|network request failed/i.test(String(error.message || ''))
+}
+
+function buildQueuedWriteResponse(entry) {
+  return {
+    queued: true,
+    offline: true,
+    queue_id: entry.id,
+    queued_at: entry.created_at,
+    local_id: entry.local_id,
+  }
+}
+
+function queueOfflineWrite(method, url, body, redirectPath, options = {}) {
+  const entry = {
+    id: `queue_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    local_id: `local_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    created_at: new Date().toISOString(),
+    method,
+    url,
+    body,
+    redirect_path: redirectPath,
+    label: options.queueLabel || '',
+  }
+
+  const entries = readOfflineWriteQueue()
+  entries.push(entry)
+  writeOfflineWriteQueue(entries)
+  emitOfflineWriteQueueSnapshot()
+
+  return buildQueuedWriteResponse(entry)
 }
 
 export function clearPersistedAuth() {
@@ -41,11 +142,7 @@ export async function refreshNonce() {
   return nonce
 }
 
-async function request(method, path, body = null, isFormData = false) {
-  return requestToUrl(method, `${BASE}${path}`, body, isFormData, path)
-}
-
-export async function requestToUrl(method, url, body = null, isFormData = false, redirectPath = '') {
+async function performRequest(method, url, body = null, isFormData = false, redirectPath = '', options = {}) {
   const nonce = getNonce()
   const headers = {}
 
@@ -76,7 +173,7 @@ export async function requestToUrl(method, url, body = null, isFormData = false,
   const authFailure = res.status === 401 || invalidNonce
 
   if (!res.ok) {
-    if (authFailure && !redirectPath.startsWith('/auth/login') && !redirectPath.startsWith('/auth/register')) {
+    if (!options.skipAuthRedirect && authFailure && !redirectPath.startsWith('/auth/login') && !redirectPath.startsWith('/auth/register')) {
       clearPersistedAuth()
       window.location.replace('/login')
     }
@@ -88,6 +185,124 @@ export async function requestToUrl(method, url, body = null, isFormData = false,
   }
 
   return data
+}
+
+async function request(method, path, body = null, isFormData = false, options = {}) {
+  return requestToUrl(method, `${BASE}${path}`, body, isFormData, path, options)
+}
+
+export async function requestToUrl(method, url, body = null, isFormData = false, redirectPath = '', options = {}) {
+  try {
+    return await performRequest(method, url, body, isFormData, redirectPath, options)
+  } catch (error) {
+    if (
+      !options.skipQueue
+      && options.queueOnNetworkFailure
+      && method !== 'GET'
+      && !isFormData
+      && body
+      && typeof body === 'object'
+      && isNetworkFailure(error)
+    ) {
+      return queueOfflineWrite(method, url, body, redirectPath, options)
+    }
+
+    throw error
+  }
+}
+
+export function subscribeOfflineWriteQueue(listener) {
+  if (typeof listener !== 'function') {
+    return () => {}
+  }
+
+  queueListeners.add(listener)
+  listener(createOfflineWriteQueueSnapshot())
+
+  return () => {
+    queueListeners.delete(listener)
+  }
+}
+
+export function initOfflineWriteQueue() {
+  if (queueInitialized || typeof window === 'undefined') {
+    return
+  }
+
+  queueInitialized = true
+
+  const flushSoon = () => {
+    if (navigator.onLine !== false) {
+      void flushOfflineWriteQueue()
+    }
+  }
+
+  window.addEventListener('online', flushSoon)
+  window.addEventListener('focus', flushSoon)
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      flushSoon()
+    }
+  })
+
+  emitOfflineWriteQueueSnapshot()
+  flushSoon()
+}
+
+export async function flushOfflineWriteQueue() {
+  if (queueFlushPromise) {
+    return queueFlushPromise
+  }
+
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    return { processed: 0, remaining: readOfflineWriteQueue().length }
+  }
+
+  queueFlushPromise = (async () => {
+    const remaining = [...readOfflineWriteQueue()]
+
+    if (!remaining.length) {
+      queueSyncing = false
+      emitOfflineWriteQueueSnapshot()
+      return { processed: 0, remaining: 0 }
+    }
+
+    queueSyncing = true
+    emitOfflineWriteQueueSnapshot()
+
+    let processed = 0
+
+    while (remaining.length) {
+      const entry = remaining[0]
+
+      try {
+        await performRequest(entry.method, entry.url, entry.body, false, entry.redirect_path || '', { skipQueue: true })
+        remaining.shift()
+        processed += 1
+        writeOfflineWriteQueue(remaining)
+        emitOfflineWriteQueueSnapshot()
+      } catch (error) {
+        if (isNetworkFailure(error) || error?.status === 401 || error?.status === 403) {
+          break
+        }
+
+        remaining.shift()
+        writeOfflineWriteQueue(remaining)
+        emitOfflineWriteQueueSnapshot()
+      }
+    }
+
+    queueSyncing = false
+    emitOfflineWriteQueueSnapshot()
+
+    return { processed, remaining: remaining.length }
+  })()
+
+  try {
+    return await queueFlushPromise
+  } finally {
+    queueFlushPromise = null
+  }
 }
 
 async function requestBlob(method, path) {
@@ -138,11 +353,11 @@ export function decodeBase64ToBlob(base64, mimeType = 'audio/mpeg') {
 }
 
 export const api = {
-  get: (path) => request('GET', path),
-  post: (path, body) => request('POST', path, body),
-  put: (path, body) => request('PUT', path, body),
-  del: (path, body) => request('DELETE', path, body),
-  upload: (path, form) => request('POST', path, form, true),
+  get: (path, options) => request('GET', path, null, false, options),
+  post: (path, body, options) => request('POST', path, body, false, options),
+  put: (path, body, options) => request('PUT', path, body, false, options),
+  del: (path, body, options) => request('DELETE', path, body, false, options),
+  upload: (path, form, options) => request('POST', path, form, true, options),
   blob: (path) => requestBlob('GET', path),
 }
 

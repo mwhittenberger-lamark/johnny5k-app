@@ -31,6 +31,7 @@ class AdminMenu {
 		add_submenu_page( 'johnny5k', 'User Analytics','User Analytics','manage_options','jf-retention-dashboard', [ RetentionDashboard::class, 'render' ] );
 		add_submenu_page( 'johnny5k', 'Exercise Library',  'Exercise Library',  'manage_options', 'jf-exercise-library',   [ ExerciseLibrary::class,    'render' ] );
 		add_submenu_page( 'johnny5k', 'Recipe Library',    'Recipe Library',    'manage_options', 'jf-recipe-library',     [ RecipeLibrary::class,      'render' ] );
+		add_submenu_page( 'johnny5k', 'Support Guides',    'Support Guides',    'manage_options', 'jf-support-guides',     [ SupportGuides::class,      'render' ] );
 		add_submenu_page( 'johnny5k', 'Settings',          'Settings',          'manage_options', 'jf-settings',           [ Settings::class,           'render' ] );
 	}
 

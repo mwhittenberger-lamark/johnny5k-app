@@ -3,6 +3,8 @@ import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { authApi } from './api/modules/auth'
 import { onboardingApi } from './api/modules/onboarding'
 import { pushApi } from './api/modules/push'
+import GlobalToastViewport from './components/ui/GlobalToastViewport'
+import { reportClientDiagnostic } from './lib/clientDiagnostics'
 import { normalizeDailyCheckInEntry } from './lib/dailyCheckIn'
 import { getCurrentPushSubscription, getPushSupportState, serializeSubscription } from './lib/pushNotifications'
 import { normalizePushPromptStatus } from './lib/onboarding'
@@ -66,7 +68,16 @@ export default function App() {
         if (!active) return
         setAppImages(data?.app_images)
       })
-      .catch(() => {})
+      .catch(error => {
+        reportClientDiagnostic({
+          source: 'app_public_config_bootstrap',
+          message: 'Public app configuration failed to load.',
+          error,
+          context: {
+            phase: 'public_config',
+          },
+        })
+      })
       .finally(() => {
         if (active) setPublicConfigComplete(true)
       })
@@ -94,7 +105,22 @@ export default function App() {
               setAvailableColorSchemes(data?.color_schemes)
               applyColorScheme(preferenceMeta?.color_scheme)
             })
-            .catch(() => {})
+            .catch(error => {
+              reportClientDiagnostic({
+                source: 'app_authenticated_bootstrap',
+                message: 'Authenticated bootstrap loaded with partial data.',
+                error,
+                context: {
+                  phase: 'onboarding_state',
+                },
+                toast: {
+                  title: 'Some settings did not load',
+                  message: 'Johnny opened the app, but a few saved preferences could not be restored yet.',
+                  tone: 'info',
+                  kind: 'auth-bootstrap-warning',
+                },
+              })
+            })
         })
         .finally(() => {
           if (active) setAuthBootstrapComplete(true)
@@ -110,13 +136,44 @@ export default function App() {
     const pushSupport = getPushSupportState()
 
     Promise.all([
-      pushApi.config().catch(() => ({ push: { enabled: false, configured: false } })),
-      pushSupport.supported ? getCurrentPushSubscription().catch(() => null) : Promise.resolve(null),
+      pushApi.config().catch(error => {
+        reportClientDiagnostic({
+          source: 'push_config_bootstrap',
+          message: 'Push configuration failed to load during bootstrap.',
+          error,
+          context: {
+            phase: 'push_config',
+          },
+        })
+        return { push: { enabled: false, configured: false } }
+      }),
+      pushSupport.supported ? getCurrentPushSubscription().catch(error => {
+        reportClientDiagnostic({
+          source: 'push_subscription_bootstrap',
+          message: 'Existing browser push subscription could not be read.',
+          error,
+          context: {
+            phase: 'push_subscription',
+            push_supported: true,
+          },
+        })
+        return null
+      }) : Promise.resolve(null),
     ])
       .then(([configResponse, subscription]) => {
         const payload = serializeSubscription(subscription)
         if (payload?.endpoint) {
-          pushApi.subscribe(payload).catch(() => null)
+          pushApi.subscribe(payload).catch(error => {
+            reportClientDiagnostic({
+              source: 'push_subscription_refresh',
+              message: 'Push subscription refresh failed during bootstrap.',
+              error,
+              context: {
+                phase: 'push_subscribe',
+              },
+            })
+            return null
+          })
         }
 
         const config = configResponse?.push ?? {}
@@ -127,13 +184,23 @@ export default function App() {
           ...(subscription ? { pushPromptStatus: 'accepted' } : {}),
         })
       })
-      .catch(() => {})
+      .catch(error => {
+        reportClientDiagnostic({
+          source: 'push_bootstrap',
+          message: 'Push bootstrap failed unexpectedly.',
+          error,
+          context: {
+            phase: 'push_bootstrap',
+          },
+        })
+      })
   }, [ready, isAuthenticated, setNotificationPrefs])
 
   if (!ready) return <div className="splash">Loading...</div>
 
   return (
     <>
+      <GlobalToastViewport />
       <ScrollToTopOnRouteChange />
       <Routes>
         <Route path="/login" element={<LazyRoute><LoginScreen /></LazyRoute>} />
