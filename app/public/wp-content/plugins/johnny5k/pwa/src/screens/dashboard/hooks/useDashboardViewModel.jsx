@@ -46,6 +46,7 @@ import {
   buildTrainingCardModel,
   buildTrainingQuickAction,
   countLoggedMealsByType,
+  dedupeSecondaryDashboardAction,
   formatDayType,
   formatFriendlyDate,
   getGreetingName,
@@ -183,7 +184,10 @@ export function useDashboardViewModel() {
   const coachMetrics = useMemo(() => buildCoachMetricGrid(johnnyReview.metrics), [johnnyReview.metrics])
   const coachNextStepMeta = useMemo(() => buildCoachNextStepMeta(s, johnnyReview.nextStepMeta), [johnnyReview.nextStepMeta, s])
   const coachBackupStep = useMemo(() => buildCoachBackupStep(s, johnnyReview.backupStep), [johnnyReview.backupStep, s])
-  const coachBackupAction = useMemo(() => buildCoachBackupAction(s, coachBackupStep), [coachBackupStep, s])
+  const coachBackupAction = useMemo(
+    () => dedupeSecondaryDashboardAction(bestNextMove, buildCoachBackupAction(s, coachBackupStep)),
+    [bestNextMove, coachBackupStep, s],
+  )
   const coachStarterPrompt = useMemo(() => buildCoachStarterPrompt(johnnyReview, coachNextStepMeta), [coachNextStepMeta, johnnyReview])
   const coachFreshness = useMemo(() => buildCoachFreshnessLabel(johnnyReview.generatedAt, johnnyReview.cached), [johnnyReview.cached, johnnyReview.generatedAt])
 

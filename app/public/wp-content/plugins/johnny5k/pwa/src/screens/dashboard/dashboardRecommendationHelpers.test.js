@@ -1,15 +1,23 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  areDashboardActionsEquivalent,
+  buildBestNextMove,
   buildCoachBackupAction,
   buildCoachBackupStep,
+  buildQuickPrompts,
   buildReminderQueueModel,
   buildTrainingCardModel,
+  dedupeSecondaryDashboardAction,
   getInspirationalThoughtWindow,
   getNextInspirationalThoughtBoundary,
 } from './dashboardRecommendationHelpers'
 
 describe('dashboardRecommendationHelpers', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   it('builds a completed strength training card model', () => {
     const model = buildTrainingCardModel({
       date: '2026-04-09',
@@ -40,6 +48,38 @@ describe('dashboardRecommendationHelpers', () => {
       state: { johnnyActionNotice: 'Johnny opened nutrition so you can handle the backup protein move.' },
       actionLabel: 'Open nutrition',
     })
+  })
+
+  it('dedupes a secondary coach action when it matches the primary destination', () => {
+    const primaryAction = {
+      href: '/nutrition',
+      state: { johnnyActionNotice: 'Primary nutrition move.' },
+      actionLabel: 'Plan the next meal',
+    }
+    const secondaryAction = {
+      href: '/nutrition',
+      state: { johnnyActionNotice: 'Primary nutrition move.' },
+      actionLabel: 'Open nutrition',
+    }
+
+    expect(areDashboardActionsEquivalent(primaryAction, secondaryAction)).toBe(true)
+    expect(dedupeSecondaryDashboardAction(primaryAction, secondaryAction)).toBe(null)
+  })
+
+  it('keeps the secondary coach action when it differs from the primary destination', () => {
+    const primaryAction = {
+      href: '/nutrition',
+      state: { johnnyActionNotice: 'Primary nutrition move.' },
+      actionLabel: 'Plan the next meal',
+    }
+    const secondaryAction = {
+      href: '/body',
+      state: { focusTab: 'sleep' },
+      actionLabel: 'Open sleep',
+    }
+
+    expect(areDashboardActionsEquivalent(primaryAction, secondaryAction)).toBe(false)
+    expect(dedupeSecondaryDashboardAction(primaryAction, secondaryAction)).toEqual(secondaryAction)
   })
 
   it('sorts queued reminders so the earliest reminder is surfaced first', () => {
@@ -79,5 +119,43 @@ describe('dashboardRecommendationHelpers', () => {
     expect([middayBoundary.getHours(), middayBoundary.getMinutes()]).toEqual([17, 0])
     expect([eveningBoundary.getHours(), eveningBoundary.getMinutes()]).toEqual([6, 0])
     expect(eveningBoundary.getDate()).toBe(new Date('2026-04-12T18:30:00').getDate())
+  })
+
+  it('shifts the best next move to bedtime at late night', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 3, 11, 23, 15))
+
+    const move = buildBestNextMove({
+      meals_today: [{ meal_type: 'dinner' }],
+      steps: { today: 7400, target: 8000 },
+      training_status: { recorded: false },
+      today_schedule: { day_type: 'push' },
+    })
+
+    expect(move.title).toBe('Go to bed instead of opening new loops')
+    expect(move.actionLabel).toBe('Open sleep')
+    expect(move.href).toBe('/body')
+  })
+
+  it('replaces late-night prompts with shutdown guidance', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 3, 11, 23, 15))
+
+    const prompts = buildQuickPrompts({
+      meals_today: [],
+      steps: { today: 1200, target: 8000 },
+      goal: { target_protein_g: 180, target_calories: 2400 },
+      nutrition_totals: { protein_g: 40, calories: 500 },
+      score_7d: 65,
+      today_schedule: { day_type: 'push' },
+      training_status: { recorded: false },
+    })
+
+    expect(prompts[0]).toEqual({
+      id: 'bedtime_shutdown',
+      label: 'Shut the day down cleanly',
+      prompt: 'It is late here. Based on my dashboard, tell me what to close quickly tonight and what to leave for tomorrow so I can get to bed.',
+    })
+    expect(prompts.some(prompt => /dinner/i.test(prompt.label))).toBe(false)
   })
 })

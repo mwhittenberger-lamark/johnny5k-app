@@ -94,6 +94,11 @@
   flex-shrink: 0;
 }
 
+.support-icon-anchor {
+  position: relative;
+  padding-right: calc(48px + var(--space-4));
+}
+
 @media (max-width: 720px) {
   .form-actions,
   .body-form-actions,
@@ -117,5 +122,9 @@
 
   .header-action-button {
     justify-content: center;
+  }
+
+  .support-icon-anchor {
+    padding-right: calc(48px + var(--space-3));
   }
 }

@@ -71,4 +71,30 @@ class CoachDeliveryServiceTest extends ServiceTestCase {
 
 		$this->assertSame( [], $pending );
 	}
+
+	public function test_workout_intent_trigger_uses_scheduled_training_day_without_session_row(): void {
+		$GLOBALS['johnny5k_test_now'] = '2026-04-11 10:23:00';
+
+		$db = $this->wpdb();
+		$db->expectGetVar( 'SELECT exercise_preferences_json FROM wp_fit_user_preferences', null );
+		$db->expectGetVar( 'SELECT timezone FROM wp_fit_user_profiles', 'America/New_York' );
+		$db->expectGetVar( 'SELECT id FROM wp_fit_user_training_plans WHERE user_id = 7', 22 );
+		$db->expectGetVar( 'SELECT timezone FROM wp_fit_user_profiles', 'America/New_York' );
+		$db->expectGetRow( 'FROM wp_fit_user_training_days', (object) [
+			'id' => 31,
+			'day_type' => 'push',
+			'day_order' => 6,
+			'time_tier' => 'medium',
+		] );
+		$db->expectGetRow( 'FROM wp_fit_workout_sessions', null );
+
+		$trigger = $this->invokePrivateStatic( CoachDeliveryService::class, 'build_workout_intent_trigger', [ 7 ] );
+
+		$this->assertIsArray( $trigger );
+		$this->assertSame( 'workout_accountability', $trigger['trigger_type'] );
+		$this->assertSame( 'workout_intent_2026-04-11', $trigger['commitment_key'] );
+		$this->assertSame( '/workout?coach_prompt=workout_intent', $trigger['url'] );
+		$this->assertSame( '2026-04-11 08:00:00', $trigger['due_at'] );
+		$this->assertStringContainsString( 'train, shorten it, or call recovery', $trigger['prompt'] );
+	}
 }

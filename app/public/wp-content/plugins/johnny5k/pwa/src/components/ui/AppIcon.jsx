@@ -129,6 +129,14 @@ export default function AppIcon({ name, className = '' }) {
           <path d="M13 3 6 13h5l-1 8 8-11h-5l0-7Z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       )
+    case 'question':
+      return (
+        <svg viewBox="0 0 24 24" className={classes} aria-hidden="true">
+          <circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" strokeWidth="1.8" />
+          <path d="M9.6 9.4a2.7 2.7 0 1 1 4.8 1.7c-.7.8-1.7 1.3-2.1 2.4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+          <circle cx="12" cy="16.8" r="1" fill="currentColor" />
+        </svg>
+      )
     case 'chevron-up':
       return (
         <svg viewBox="0 0 24 24" className={classes} aria-hidden="true">

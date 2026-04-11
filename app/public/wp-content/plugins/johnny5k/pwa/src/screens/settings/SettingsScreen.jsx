@@ -6,6 +6,7 @@ import { bodyApi } from '../../api/modules/body'
 import { onboardingApi } from '../../api/modules/onboarding'
 import { pushApi } from '../../api/modules/push'
 import ClearableInput from '../../components/ui/ClearableInput'
+import SupportIconButton from '../../components/ui/SupportIconButton'
 import { reportClientDiagnostic } from '../../lib/clientDiagnostics'
 import { decodeVapidPublicKey, ensurePushRegistration, getCurrentPushSubscription, getNotificationPermission, getPushSupportState, requestNotificationPermission, serializeSubscription } from '../../lib/pushNotifications'
 import { useDashboardStore } from '../../store/dashboardStore'
@@ -958,13 +959,11 @@ export default function SettingsScreen() {
 
   return (
     <div className="screen settings-screen">
-      <header className="screen-header">
+      <header className="screen-header support-icon-anchor">
+        <SupportIconButton label="Get help with profile settings" onClick={handleOpenSettingsSupport} />
         <div>
           <h1>Profile</h1>
           <p className="settings-subtitle">Update your identity, trajectory, and daily defaults.</p>
-        </div>
-        <div className="header-actions">
-          <button className="btn-secondary" type="button" onClick={handleOpenSettingsSupport}>Need help?</button>
         </div>
       </header>
 

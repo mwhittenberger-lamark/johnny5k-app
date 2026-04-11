@@ -5,6 +5,7 @@ import { normalizeAppIconName } from './AppIcon.utils'
 describe('normalizeAppIconName', () => {
   it('returns known icon names unchanged', () => {
     expect(normalizeAppIconName('coach')).toBe('coach')
+    expect(normalizeAppIconName('question')).toBe('question')
   })
 
   it('maps legacy emoji tokens to supported icons', () => {

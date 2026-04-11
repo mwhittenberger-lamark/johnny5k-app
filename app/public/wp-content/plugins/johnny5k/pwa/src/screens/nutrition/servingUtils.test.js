@@ -28,6 +28,9 @@ describe('servingUtils', () => {
 
   it('normalises raw serving labels and dedupes ingredient lists', () => {
     expect(normaliseRawServingUnitLabel('a scoop')).toBe('1 scoop')
+    expect(normaliseRawServingUnitLabel('1 1 tbsp')).toBe('1 tbsp')
+    expect(normaliseRawServingUnitLabel('1 1 serving')).toBe('1 serving')
+    expect(normaliseRawServingUnitLabel('1 1 large')).toBe('1 large')
     expect(dedupeIngredientList(['Spinach', ' spinach ', 'spinach!', 'Chicken', 'chicken breast'])).toEqual([
       'Spinach',
       'Chicken',

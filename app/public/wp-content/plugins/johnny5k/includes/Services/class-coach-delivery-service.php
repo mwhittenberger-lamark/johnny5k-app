@@ -161,6 +161,7 @@ class CoachDeliveryService {
 		}
 
 		$candidates = array_filter( array_merge( [
+			self::build_workout_intent_trigger( $user_id ),
 			self::build_absence_trigger( $user_id ),
 			self::build_reset_trigger( $user_id ),
 			self::build_balance_trigger( $user_id ),
@@ -263,6 +264,8 @@ class CoachDeliveryService {
 
 	public static function default_delivery_preferences(): array {
 		return [
+			'workout_reminder_enabled' => true,
+			'workout_reminder_hour' => 8,
 			'meal_reminder_enabled' => true,
 			'push_enabled' => true,
 			'push_absence_nudges' => true,
@@ -475,6 +478,8 @@ class CoachDeliveryService {
 		$defaults = self::default_delivery_preferences();
 
 		return [
+			'workout_reminder_enabled' => array_key_exists( 'workout_reminder_enabled', $raw ) ? (bool) $raw['workout_reminder_enabled'] : $defaults['workout_reminder_enabled'],
+			'workout_reminder_hour' => self::normalize_hour( $raw['workout_reminder_hour'] ?? $defaults['workout_reminder_hour'], $defaults['workout_reminder_hour'] ),
 			'meal_reminder_enabled' => array_key_exists( 'meal_reminder_enabled', $raw ) ? (bool) $raw['meal_reminder_enabled'] : $defaults['meal_reminder_enabled'],
 			'push_enabled' => array_key_exists( 'push_enabled', $raw ) ? (bool) $raw['push_enabled'] : $defaults['push_enabled'],
 			'push_absence_nudges' => array_key_exists( 'push_absence_nudges', $raw ) ? (bool) $raw['push_absence_nudges'] : $defaults['push_absence_nudges'],
@@ -491,6 +496,7 @@ class CoachDeliveryService {
 			'absence_nudge' => ! empty( $preferences['push_absence_nudges'] ),
 			'milestone' => ! empty( $preferences['push_milestones'] ),
 			'reset_offer' => ! empty( $preferences['push_winback'] ),
+			'workout_accountability' => ! empty( $preferences['push_accountability'] ),
 			'balance_prompt' => ! empty( $preferences['push_accountability'] ),
 			default => ! empty( $preferences['push_enabled'] ),
 		};
@@ -587,6 +593,49 @@ class CoachDeliveryService {
 			'priority' => 90,
 			'url' => '/workout?coach_prompt=absence',
 			'due_at' => $local_now->format( 'Y-m-d H:i:s' ),
+		];
+	}
+
+	private static function build_workout_intent_trigger( int $user_id ): ?array {
+		$preferences = self::get_user_delivery_preferences( $user_id );
+		if ( empty( $preferences['workout_reminder_enabled'] ) ) {
+			return null;
+		}
+
+		$local_now = UserTime::now( $user_id );
+		$local_date = $local_now->format( 'Y-m-d' );
+		$current_hour = (int) $local_now->format( 'G' );
+		$reminder_hour = (int) ( $preferences['workout_reminder_hour'] ?? 8 );
+		if ( $current_hour < $reminder_hour ) {
+			return null;
+		}
+
+		$scheduled_day = self::get_scheduled_training_day_for_date( $user_id, $local_date );
+		$scheduled_day_type = TrainingDayTypes::normalize( $scheduled_day->day_type ?? '' ) ?? '';
+		if ( '' === $scheduled_day_type || 'rest' === $scheduled_day_type ) {
+			return null;
+		}
+
+		$session = self::get_latest_workout_session_for_date( $user_id, $local_date );
+		if ( ! self::has_open_workout_for_date( $session ) ) {
+			return null;
+		}
+
+		$day_label = strtolower( str_replace( '_', ' ', $scheduled_day_type ) );
+		$time_tier = sanitize_key( (string) ( $scheduled_day->time_tier ?? '' ) );
+		$time_note = in_array( $time_tier, [ 'short', 'medium', 'full' ], true ) ? ' (' . $time_tier . ')' : '';
+
+		return [
+			'prompt' => sprintf( 'Today is your %s%s day. Are you planning to train, shorten it, or call recovery based on how you feel right now?', $day_label, $time_note ),
+			'reason' => 'Workout day check-in',
+			'next_step' => 'Make a clear yes, shorten, or recover decision before the day drifts later.',
+			'starter_prompt' => 'It is my workout day. Help me decide whether I should train today, shorten it, or recover based on my current board.',
+			'commitment_key' => 'workout_intent_' . $local_date,
+			'source' => 'system_trigger',
+			'trigger_type' => 'workout_accountability',
+			'priority' => 92,
+			'url' => '/workout?coach_prompt=workout_intent',
+			'due_at' => sprintf( '%s %02d:00:00', $local_date, $reminder_hour ),
 		];
 	}
 
@@ -965,6 +1014,59 @@ class CoachDeliveryService {
 			$user_id,
 			$date
 		) ) > 0;
+	}
+
+	private static function get_latest_workout_session_for_date( int $user_id, string $date ): ?object {
+		global $wpdb;
+
+		$session = $wpdb->get_row( $wpdb->prepare(
+			"SELECT id, completed, skip_requested, started_at, planned_day_type, actual_day_type
+			 FROM {$wpdb->prefix}fit_workout_sessions
+			 WHERE user_id = %d AND session_date = %s
+			 ORDER BY id DESC LIMIT 1",
+			$user_id,
+			$date
+		) );
+
+		return $session ?: null;
+	}
+
+	private static function has_open_workout_for_date( ?object $session ): bool {
+		if ( null === $session ) {
+			return true;
+		}
+
+		if ( ! empty( $session->completed ) || ! empty( $session->skip_requested ) ) {
+			return false;
+		}
+
+		return empty( $session->started_at );
+	}
+
+	private static function get_scheduled_training_day_for_date( int $user_id, string $date ): ?object {
+		global $wpdb;
+		$p = $wpdb->prefix;
+
+		$plan_id = (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT id FROM {$p}fit_user_training_plans WHERE user_id = %d AND active = 1 ORDER BY created_at DESC LIMIT 1",
+			$user_id
+		) );
+
+		if ( ! $plan_id ) {
+			return null;
+		}
+
+		$weekday_order = UserTime::weekday_order_for_date( $user_id, $date );
+		$day = $wpdb->get_row( $wpdb->prepare(
+			"SELECT id, day_type, day_order, time_tier
+			 FROM {$p}fit_user_training_days
+			 WHERE training_plan_id = %d AND day_order = %d
+			 LIMIT 1",
+			$plan_id,
+			$weekday_order
+		) );
+
+		return $day ?: null;
 	}
 
 	private static function count_workout_streak( int $user_id ): int {

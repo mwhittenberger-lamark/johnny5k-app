@@ -144,4 +144,22 @@ class SmsServiceTest extends ServiceTestCase {
 		$stored = \get_user_meta( 55, 'jf_scheduled_sms_reminders', true );
 		self::assertSame( 'queued', $stored[1]['status'] );
 	}
+
+	public function test_workout_context_falls_back_to_scheduled_day_when_session_is_missing(): void {
+		$GLOBALS['johnny5k_test_now'] = '2026-04-11 10:23:00';
+
+		$db = $this->wpdb();
+		$db->expectGetVar( 'SELECT timezone FROM', 'America/New_York' );
+		$db->expectGetRow( 'SELECT planned_day_type, actual_day_type FROM wp_fit_workout_sessions', null );
+		$db->expectGetVar( 'SELECT id FROM wp_fit_user_training_plans WHERE user_id = 55', 44 );
+		$db->expectGetVar( 'SELECT timezone FROM', 'America/New_York' );
+		$db->expectGetVar( 'SELECT day_type FROM wp_fit_user_training_days', 'pull' );
+		$db->expectGetVar( 'SELECT timezone FROM', 'America/New_York' );
+
+		$context = $this->invokePrivateStatic( SmsService::class, 'workout_context', [ 55 ] );
+
+		self::assertSame( 'pull', $context['day_type_label'] );
+		self::assertSame( '2026-04-11', $context['local_date'] );
+		self::assertSame( 'Sat', $context['weekday_label'] );
+	}
 }

@@ -10,6 +10,7 @@ import { useAuthStore } from '../../store/authStore'
 import { useDashboardStore } from '../../store/dashboardStore'
 import { useJohnnyAssistantStore } from '../../store/johnnyAssistantStore'
 import { useWorkoutStore } from '../../store/workoutStore'
+import { renderChatMessageBlocks } from './chatMessageFormatter'
 import AppIcon from '../ui/AppIcon'
 import ClearableInput from '../ui/ClearableInput'
 
@@ -59,12 +60,6 @@ const AUTO_EXECUTABLE_MODEL_ACTIONS = new Set([
   'suggest_recipe_plan',
 ])
 
-const STARTER_SUGGESTIONS = [
-  'Plan my dinner',
-  'Fix my macros',
-  'Adjust tomorrow based on today',
-]
-
 export default function JohnnyAssistantDrawer() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -96,6 +91,7 @@ export default function JohnnyAssistantDrawer() {
   const playbackSupported = typeof window !== 'undefined' && typeof window.Audio !== 'undefined'
   const chatMode = deriveJohnnyMode(location.pathname, messages)
   const johnnyDrawerImage = getAppImageUrl(appImages, 'johnny_drawer')
+  const starterSuggestions = getStarterSuggestionsForCurrentTime()
 
   async function hydrateThread() {
     try {
@@ -617,7 +613,7 @@ export default function JohnnyAssistantDrawer() {
               <div className="chat-welcome johnny-drawer-welcome">
                 <p>Ask Johnny to log steps or sleep, log food, update pantry or grocery gap, swap a workout exercise, build a training plan, or talk through your next move.</p>
                 <div className="johnny-drawer-suggestions">
-                  {STARTER_SUGGESTIONS.map(prompt => (
+                  {starterSuggestions.map(prompt => (
                     <button key={prompt} type="button" className="johnny-drawer-suggestion" onClick={() => sendPrompt(prompt)}>
                       {prompt}
                     </button>
@@ -708,127 +704,6 @@ export default function JohnnyAssistantDrawer() {
       </aside>
     </>
   )
-}
-
-function renderChatMessageBlocks(text) {
-  const safeText = typeof text === 'string' ? text : ''
-  const lines = safeText.split('\n')
-  const blocks = []
-  let paragraphLines = []
-  let listItems = []
-  let listType = null
-
-  function flushParagraph() {
-    if (!paragraphLines.length) return
-    const joined = paragraphLines.join('\n')
-    blocks.push(
-      <p key={`paragraph-${blocks.length}`}>
-        {renderMultilineInlineText(joined, `paragraph-${blocks.length}`)}
-      </p>,
-    )
-    paragraphLines = []
-  }
-
-  function flushList() {
-    if (!listItems.length || !listType) return
-    const ListTag = listType
-    blocks.push(
-      <ListTag key={`list-${blocks.length}`}>
-        {listItems.map((item, index) => (
-          <li key={`item-${blocks.length}-${index}`}>{renderMultilineInlineText(item, `list-${blocks.length}-${index}`)}</li>
-        ))}
-      </ListTag>,
-    )
-    listItems = []
-    listType = null
-  }
-
-  lines.forEach(line => {
-    const trimmed = line.trim()
-    const unorderedMatch = /^[-*]\s+(.+)$/.exec(trimmed)
-    const orderedMatch = /^\d+\.\s+(.+)$/.exec(trimmed)
-
-    if (!trimmed) {
-      flushParagraph()
-      flushList()
-      return
-    }
-
-    if (unorderedMatch) {
-      flushParagraph()
-      if (listType && listType !== 'ul') flushList()
-      listType = 'ul'
-      listItems.push(unorderedMatch[1])
-      return
-    }
-
-    if (orderedMatch) {
-      flushParagraph()
-      if (listType && listType !== 'ol') flushList()
-      listType = 'ol'
-      listItems.push(orderedMatch[1])
-      return
-    }
-
-    flushList()
-    paragraphLines.push(line)
-  })
-
-  flushParagraph()
-  flushList()
-
-  return blocks.length ? blocks : [<p key="paragraph-empty">{safeText}</p>]
-}
-
-function renderMultilineInlineText(text, keyPrefix) {
-  const lines = text.split('\n')
-
-  return lines.flatMap((line, index) => {
-    const nodes = renderInlineEmphasis(line, `${keyPrefix}-line-${index}`)
-    if (index === lines.length - 1) return nodes
-    return [...nodes, <br key={`${keyPrefix}-br-${index}`} />]
-  })
-}
-
-function renderInlineEmphasis(text, keyPrefix) {
-  const parts = []
-  const pattern = /(\*\*\*([^*]+)\*\*\*|\*\*([^*]+)\*\*|\*([^*]+)\*)/g
-  let match
-  let lastIndex = 0
-
-  while ((match = pattern.exec(text)) !== null) {
-    if (match.index > lastIndex) {
-      parts.push(text.slice(lastIndex, match.index))
-    }
-
-    if (match[2]) {
-      parts.push(
-        <strong key={`${keyPrefix}-strong-em-${match.index}`}>
-          <em>{renderInlineEmphasis(match[2], `${keyPrefix}-strong-em-${match.index}`)}</em>
-        </strong>,
-      )
-    } else if (match[3]) {
-      parts.push(
-        <strong key={`${keyPrefix}-strong-${match.index}`}>
-          {renderInlineEmphasis(match[3], `${keyPrefix}-strong-${match.index}`)}
-        </strong>,
-      )
-    } else if (match[4]) {
-      parts.push(
-        <em key={`${keyPrefix}-em-${match.index}`}>
-          {renderInlineEmphasis(match[4], `${keyPrefix}-em-${match.index}`)}
-        </em>,
-      )
-    }
-
-    lastIndex = pattern.lastIndex
-  }
-
-  if (lastIndex < text.length) {
-    parts.push(text.slice(lastIndex))
-  }
-
-  return parts
 }
 
 function DurableMemoryCard({ bullets, draft, editing, saving, onStartEdit, onCancelEdit, onChangeDraft, onSave }) {
@@ -1642,4 +1517,38 @@ function pluraliseItems(count, label) {
     return `${label}s updated`
   }
   return `${count} ${label.toLowerCase()}${count === 1 ? '' : 's'}`
+}
+
+function getStarterSuggestionsForCurrentTime(now = new Date()) {
+  const currentHour = now.getHours()
+
+  if (currentHour >= 22 || currentHour < 5) {
+    return [
+      'Should I eat anything else tonight or just go to bed?',
+      'Fix my macros',
+      'Adjust tomorrow based on today',
+    ]
+  }
+
+  if (currentHour < 11) {
+    return [
+      'Plan my breakfast',
+      'Fix my macros',
+      'Adjust tomorrow based on today',
+    ]
+  }
+
+  if (currentHour < 15) {
+    return [
+      'Plan my lunch',
+      'Fix my macros',
+      'Adjust tomorrow based on today',
+    ]
+  }
+
+  return [
+    'Plan my dinner',
+    'Fix my macros',
+    'Adjust tomorrow based on today',
+  ]
 }

@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { bodyApi } from '../../api/modules/body'
 import { workoutApi } from '../../api/modules/workout'
 import ClearableInput from '../../components/ui/ClearableInput'
+import SupportIconButton from '../../components/ui/SupportIconButton'
 import { formatUsShortDate } from '../../lib/dateFormat'
 import { openSupportGuide } from '../../lib/supportHelp'
 import { DAY_TYPE_OPTIONS } from '../../lib/trainingDayTypes'
@@ -440,13 +441,13 @@ export default function BodyScreen() {
 
   return (
     <div className="screen body-screen">
-      <header className="screen-header body-screen-header">
+      <header className="screen-header body-screen-header support-icon-anchor">
+        <SupportIconButton label="Get help with progress tracking" onClick={handleOpenBodySupport} />
         <div>
           <h1>Progress</h1>
           <p className="body-screen-subtitle">Track bodyweight, recovery, movement, and cardio in one place.</p>
         </div>
         <div className="header-actions">
-          <button className="btn-secondary" type="button" onClick={handleOpenBodySupport}>Need help?</button>
           <button className="btn-secondary" type="button" onClick={() => navigate('/activity-log')}>
             Activity Log
           </button>

@@ -764,6 +764,9 @@ function buildCoachPromptFromQuery(coachPrompt, triggerType) {
   if (normalizedPrompt === 'milestone' || normalizedTrigger === 'milestone') {
     return 'Use my current momentum and build the right next move.'
   }
+  if (normalizedPrompt === 'workout_intent' || normalizedTrigger === 'workout_accountability') {
+    return 'It is my workout day. Help me decide whether I should train today, shorten it, or recover based on my current board.'
+  }
 
   return ''
 }

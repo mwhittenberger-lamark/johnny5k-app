@@ -93,6 +93,7 @@ class NutritionRecipeController {
 		$recipes   = is_array( $recipes ) ? $recipes : [];
 		$sanitized = self::sanitize_recipe_cookbook_items( $recipes );
 		self::set_recipe_cookbook_items( $user_id, $sanitized );
+		self::sync_recipe_cookbook_missing_ingredients_to_grocery_gap( $user_id, $sanitized );
 
 		return new \WP_REST_Response( [
 			'updated' => true,
@@ -746,6 +747,50 @@ class NutritionRecipeController {
 
 			$wpdb->insert( $table, $payload );
 		}
+	}
+
+	private static function sync_recipe_cookbook_missing_ingredients_to_grocery_gap( int $user_id, array $recipes ): void {
+		global $wpdb;
+		$p = $wpdb->prefix;
+
+		$pantry_rows = $wpdb->get_results( $wpdb->prepare(
+			"SELECT item_name FROM {$p}fit_pantry_items WHERE user_id = %d ORDER BY item_name",
+			$user_id
+		) );
+		$pantry_items = array_values( array_filter( array_map(
+			static fn( $row ): string => self::normalise_food_name( (string) ( is_object( $row ) ? ( $row->item_name ?? '' ) : ( $row['item_name'] ?? '' ) ) ),
+			is_array( $pantry_rows ) ? $pantry_rows : []
+		) ) );
+
+		$items_by_key = [];
+		foreach ( self::get_manual_grocery_gap_items( $user_id ) as $item ) {
+			$key = self::normalise_food_name( (string) ( $item['item_name'] ?? '' ) );
+			if ( '' === $key ) {
+				continue;
+			}
+
+			$items_by_key[ $key ] = $item;
+		}
+
+		foreach ( $recipes as $recipe ) {
+			$raw_ingredients = ! empty( $recipe['missing_ingredients'] ) ? (array) $recipe['missing_ingredients'] : (array) ( $recipe['ingredients'] ?? [] );
+			foreach ( self::unique_recipe_ingredients( $raw_ingredients ) as $ingredient ) {
+				$key = self::normalise_food_name( $ingredient );
+				if ( '' === $key || self::pantry_has_ingredient( $pantry_items, $ingredient ) ) {
+					continue;
+				}
+
+				if ( isset( $items_by_key[ $key ] ) ) {
+					continue;
+				}
+
+				$items_by_key[ $key ] = self::sanitise_grocery_gap_payload( [
+					'item_name' => $ingredient,
+				] );
+			}
+		}
+
+		self::save_manual_grocery_gap_items( $user_id, array_values( $items_by_key ) );
 	}
 
 	private static function maybe_migrate_recipe_cookbook_meta_to_table( int $user_id ): void {

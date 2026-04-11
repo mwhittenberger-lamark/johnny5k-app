@@ -463,6 +463,30 @@ export function buildCoachStarterPrompt(review, nextStepMeta) {
   return `${basePrompt} My current recommended ${label} is: ${nextStep} Help me execute that plan, or tell me if there is a better move.`
 }
 
+export function areDashboardActionsEquivalent(primaryAction, secondaryAction) {
+  if (!primaryAction || !secondaryAction) {
+    return false
+  }
+
+  const primaryHref = String(primaryAction?.href || '').trim()
+  const secondaryHref = String(secondaryAction?.href || '').trim()
+  if (primaryHref && secondaryHref) {
+    return primaryHref === secondaryHref && normalizeDashboardActionState(primaryAction?.state) === normalizeDashboardActionState(secondaryAction?.state)
+  }
+
+  const primaryPrompt = normalizeDashboardActionPrompt(primaryAction?.prompt)
+  const secondaryPrompt = normalizeDashboardActionPrompt(secondaryAction?.prompt)
+  if (primaryPrompt && secondaryPrompt) {
+    return primaryPrompt === secondaryPrompt
+  }
+
+  return false
+}
+
+export function dedupeSecondaryDashboardAction(primaryAction, secondaryAction) {
+  return areDashboardActionsEquivalent(primaryAction, secondaryAction) ? null : secondaryAction
+}
+
 export function buildCoachFreshnessLabel(generatedAt, cached) {
   const relative = formatRelativeTime(generatedAt)
 
@@ -499,6 +523,21 @@ function formatRelativeTime(value) {
 
   const diffDays = Math.round(diffMs / 86_400_000)
   return `${diffDays}d ago`
+}
+
+function normalizeDashboardActionState(state) {
+  if (!state || typeof state !== 'object') {
+    return ''
+  }
+
+  return JSON.stringify(Object.keys(state).sort().reduce((normalized, key) => {
+    normalized[key] = state[key]
+    return normalized
+  }, {}))
+}
+
+function normalizeDashboardActionPrompt(value) {
+  return String(value || '').trim().replace(/\s+/g, ' ').toLowerCase()
 }
 
 export function buildDashboardReviewTrigger(snapshot) {
@@ -587,8 +626,19 @@ export function buildJohnnyDashboardReview(snapshot) {
   let nextStep = 'Pick the next clean action and close it before you chase anything extra.'
   let encouragement = 'You do not need a perfect day here. One solid decision is enough to push momentum back in your favor.'
   let starterPrompt = 'Review my current dashboard stats and tell me exactly what I should do next today.'
+  const timing = getLocalDayTimingContext()
 
-  if (recordedType === 'cardio') {
+  if (timing.lateNight) {
+    title = 'Late-night decisions should get simpler.'
+    message = trainingRecorded
+      ? 'Johnny sees the main work already on the board. At this hour the job is shutting the day down cleanly, not opening new loops.'
+      : 'Johnny sees it is late. This is not the time to open more tasks or keep chasing logs. The smart move is to close the day and get to bed.'
+    nextStep = trainingRecorded
+      ? 'Keep any last food light, stop scrolling for extra ideas, and start your bedtime routine now.'
+      : 'Skip new training or food cleanup unless something is truly unfinished, log only what matters, and go to bed.'
+    encouragement = 'A boring late-night shutdown usually does more for progress than one more forced task.'
+    starterPrompt = 'It is late here. Based on my dashboard, tell me what to close quickly and what to leave for tomorrow.'
+  } else if (recordedType === 'cardio') {
     title = 'Cardio is logged for today.'
     message = 'Johnny sees your conditioning already recorded. The training box is checked, so the best use of the rest of today is recovery, food quality, and not creating cleanup for tomorrow.'
     nextStep = sleepHours < targetSleep
@@ -691,6 +741,7 @@ export function buildCoachBackupStep(snapshot, explicitBackupStep = '') {
   const provided = String(explicitBackupStep || '').trim()
   if (provided) return provided
 
+  const timing = getLocalDayTimingContext()
   const training = getTrainingStatus(snapshot)
   const plannedType = getScheduledTrainingType(snapshot)
   const sleepHours = Number(snapshot?.sleep?.hours_sleep ?? 0)
@@ -701,6 +752,7 @@ export function buildCoachBackupStep(snapshot, explicitBackupStep = '') {
   const protein = Number(snapshot?.nutrition_totals?.protein_g ?? 0)
   const mealTiming = getCoachMealTimingContext(snapshot)
 
+  if (timing.lateNight) return 'If the main move feels messy this late, skip the extra cleanup and start your bedtime routine.'
   if (plannedType === 'cardio' && !training?.recorded) return 'If the full cardio block is not realistic yet, take a brisk 10-minute walk now so the day still moves forward.'
   if (plannedType === 'rest' || training?.recorded_type === 'rest') return 'If recovery still feels hard to organize, start with a protein-first meal and an easy walk.'
   if (sleepHours > 0 && sleepHours < Math.max(6.5, targetSleep - 1)) return 'If the full plan feels too aggressive, shrink the ask and just protect food quality plus bedtime.'
@@ -711,6 +763,7 @@ export function buildCoachBackupStep(snapshot, explicitBackupStep = '') {
 }
 
 export function buildCoachBackupAction(snapshot, backupStep = '') {
+  const timing = getLocalDayTimingContext()
   const training = getTrainingStatus(snapshot)
   const plannedType = getScheduledTrainingType(snapshot)
   const sleepHours = Number(snapshot?.sleep?.hours_sleep ?? 0)
@@ -720,6 +773,10 @@ export function buildCoachBackupAction(snapshot, backupStep = '') {
   const proteinTarget = Number(snapshot?.goal?.target_protein_g ?? 0)
   const protein = Number(snapshot?.nutrition_totals?.protein_g ?? 0)
   const normalizedBackupStep = String(backupStep || '').toLowerCase()
+
+  if (timing.lateNight) {
+    return null
+  }
 
   if (normalizedBackupStep) {
     if (/\bcardio\b|\bconditioning\b/.test(normalizedBackupStep)) {
@@ -824,6 +881,7 @@ export function buildQuickPrompts(snapshot) {
   const stepTarget = Number(snapshot?.steps?.target ?? 8000)
   const stepPct = stepTarget > 0 ? stepsToday / stepTarget : 0
   const weeklyScore = Number(snapshot?.score_7d ?? 0)
+  const timing = getLocalDayTimingContext()
   const prompts = []
   let order = 0
   const clamp = (value, min, max) => Math.min(max, Math.max(min, value))
@@ -838,6 +896,46 @@ export function buildQuickPrompts(snapshot) {
   const calorieCeilingSeverity = calorieTarget > 0 ? clamp((caloriePct - 0.85) / 0.3, 0, 1) : 0
   const strongMomentum = weeklyScore >= 80 && stepPct >= 0.75
   const noWorkoutPlanned = !plannedType && !training?.recorded
+
+  if (timing.lateNight) {
+    pushPrompt({
+      id: 'bedtime_shutdown',
+      label: 'Shut the day down cleanly',
+      prompt: 'It is late here. Based on my dashboard, tell me what to close quickly tonight and what to leave for tomorrow so I can get to bed.',
+      score: 100,
+    })
+    pushPrompt({
+      id: 'bedtime_recovery',
+      label: 'Protect bedtime',
+      prompt: 'It is late and I do not want to create cleanup for tomorrow. What should I do right now for recovery, food, and bedtime?',
+      score: 96,
+    })
+    pushPrompt({
+      id: 'tomorrow_setup',
+      label: 'Set up tomorrow morning',
+      prompt: 'Before I go to bed, what is the one setup move that will make tomorrow easier based on my current board?',
+      score: 88,
+    })
+    pushPrompt({
+      id: 'late_night_skip',
+      label: 'Decide what not to do',
+      prompt: 'It is late. What should I stop trying to force tonight so I do not turn this into a cleanup day tomorrow?',
+      score: 84,
+    })
+
+    return prompts
+      .sort((left, right) => {
+        if (right.score !== left.score) return right.score - left.score
+        return left.order - right.order
+      })
+      .slice(0, 4)
+      .map(prompt => {
+        const nextPrompt = { ...prompt }
+        delete nextPrompt.score
+        delete nextPrompt.order
+        return nextPrompt
+      })
+  }
 
   if (plannedType === 'rest') {
     pushPrompt({
@@ -982,6 +1080,7 @@ export function buildEditorialCard(snapshot) {
   const stepTarget = snapshot?.steps?.target ?? 8000
   const meals = countLoggedMealsByType(snapshot?.meals_today)
   const skipWarning = snapshot?.skip_warning
+  const timing = getLocalDayTimingContext()
 
   if (skipWarning) {
     return {
@@ -990,6 +1089,17 @@ export function buildEditorialCard(snapshot) {
       body: 'You do not need a heroic comeback. One workout start or one clean meal is enough to stop drift and make the week feel organized again.',
       actionLabel: 'Open training',
       href: '/workout',
+    }
+  }
+
+  if (timing.lateNight) {
+    return {
+      chip: 'Tonight',
+      title: 'Stop trying to win the day this late',
+      body: 'Late-night cleanup usually creates more drag than progress. Close whatever truly matters, then aim at sleep instead of squeezing in one more task.',
+      actionLabel: 'Open sleep',
+      href: '/body',
+      state: { focusTab: 'sleep' },
     }
   }
 
@@ -1045,6 +1155,18 @@ export function buildBestNextMove(snapshot) {
   const training = getTrainingStatus(snapshot)
   const plannedType = getScheduledTrainingType(snapshot)
   const recoveryMode = snapshot?.recovery_summary?.mode || 'normal'
+  const timing = getLocalDayTimingContext()
+
+  if (timing.lateNight) {
+    return {
+      title: 'Go to bed instead of opening new loops',
+      body: 'At this hour, sleep usually does more for tomorrow than one more forced log, meal idea, or training decision.',
+      context: 'Late-night recovery is the highest-leverage move',
+      actionLabel: 'Open sleep',
+      href: '/body',
+      state: { focusTab: 'sleep' },
+    }
+  }
 
   if (!mealsLogged) {
     return {
@@ -1264,9 +1386,12 @@ export function buildRecoveryActionPlan(recoverySummary, activeFlagItems) {
   const flagLoad = Number(recoverySummary?.active_flag_load || 0)
   const recommendedTier = String(recoverySummary?.recommended_time_tier || '').trim()
   const hasFlags = Array.isArray(activeFlagItems) && activeFlagItems.length > 0
+  const timing = getLocalDayTimingContext()
 
   if (!hasRecentSleep) {
-    items.push('Log last night sleep first so today’s recovery read is accurate.')
+    items.push(timing.lateNight
+      ? 'Do not turn tonight into more admin. Get to bed and log sleep when the day turns over.'
+      : 'Log last night sleep first so today’s recovery read is accurate.')
   }
   if (hasRecentSleep && lastSleepHours > 0 && lastSleepHours < 6.5) {
     items.push('Keep training in short or medium range today and skip failure sets.')
@@ -1541,20 +1666,64 @@ function getRemainingMealWindows(meals) {
 }
 
 function getNextMealWindow(windows) {
-  const currentHour = getCurrentLocalHour()
-  const preferredOrder = currentHour < 11
-    ? ['breakfast', 'lunch', 'dinner', 'snack']
-    : currentHour < 16
-      ? ['lunch', 'dinner', 'snack', 'breakfast']
-      : ['dinner', 'snack', 'breakfast', 'lunch']
+  const timing = getLocalDayTimingContext()
+  const preferredOrder = timing.lateNight
+    ? ['snack', 'breakfast', 'lunch', 'dinner']
+    : timing.daypartKey === 'morning'
+      ? ['breakfast', 'lunch', 'dinner', 'snack']
+      : timing.daypartKey === 'midday'
+        ? ['lunch', 'dinner', 'snack', 'breakfast']
+        : ['dinner', 'snack', 'breakfast', 'lunch']
 
   return preferredOrder
     .map(key => windows.find(window => window.key === key))
     .find(window => window && !window.logged) || windows.find(window => !window.logged) || null
 }
 
-function getCurrentLocalHour() {
-  return new Date().getHours()
+function getCurrentLocalHour(now = new Date()) {
+  return now.getHours()
+}
+
+function getLocalDayTimingContext(now = new Date()) {
+  const currentHour = getCurrentLocalHour(now)
+
+  if (currentHour >= 22 || currentHour < 5) {
+    return {
+      currentHour,
+      lateNight: true,
+      daypartKey: 'late_night',
+      currentAnchorKey: 'dinner',
+      currentAnchorLabel: 'Tonight',
+    }
+  }
+
+  if (currentHour < 11) {
+    return {
+      currentHour,
+      lateNight: false,
+      daypartKey: 'morning',
+      currentAnchorKey: 'breakfast',
+      currentAnchorLabel: 'Breakfast',
+    }
+  }
+
+  if (currentHour < 16) {
+    return {
+      currentHour,
+      lateNight: false,
+      daypartKey: 'midday',
+      currentAnchorKey: 'lunch',
+      currentAnchorLabel: 'Lunch',
+    }
+  }
+
+  return {
+    currentHour,
+    lateNight: false,
+    daypartKey: 'evening',
+    currentAnchorKey: 'dinner',
+    currentAnchorLabel: 'Dinner',
+  }
 }
 
 function getLoggedMealTypes(meals) {
@@ -1566,18 +1735,20 @@ function getLoggedMealTypes(meals) {
 }
 
 function getCoachMealTimingContext(snapshot, now = new Date()) {
-  const currentHour = now.getHours()
+  const timing = getLocalDayTimingContext(now)
+  const currentHour = timing.currentHour
   const windows = getRemainingMealWindows(snapshot?.meals_today)
   const loggedMealTypes = getLoggedMealTypes(snapshot?.meals_today)
-  const currentAnchorKey = currentHour < 11 ? 'breakfast' : currentHour < 16 ? 'lunch' : 'dinner'
+  const currentAnchorKey = timing.currentAnchorKey
   const currentAnchorWindow = windows.find(window => window.key === currentAnchorKey) || null
   const nextAnchorWindow = getNextAnchorMealWindow(windows, currentHour)
 
   return {
-    daypartKey: currentHour < 11 ? 'morning' : currentHour < 16 ? 'midday' : 'evening',
+    daypartKey: timing.daypartKey,
+    lateNight: timing.lateNight,
     loggedMealTypes,
     currentAnchorKey,
-    currentAnchorLabel: formatMealWindowLabel(currentAnchorKey),
+    currentAnchorLabel: timing.currentAnchorLabel,
     currentAnchorLogged: Boolean(currentAnchorWindow?.logged),
     nextAnchorKey: nextAnchorWindow?.key || '',
     nextAnchorLabel: nextAnchorWindow?.label || formatMealWindowLabel(currentAnchorKey),
@@ -1586,11 +1757,14 @@ function getCoachMealTimingContext(snapshot, now = new Date()) {
 
 function getNextAnchorMealWindow(windows, currentHour = getCurrentLocalHour()) {
   const anchorWindows = (Array.isArray(windows) ? windows : []).filter(window => window.isAnchor)
-  const preferredOrder = currentHour < 11
+  const timing = getLocalDayTimingContext(new Date(`2000-01-01T${String(currentHour).padStart(2, '0')}:00:00`))
+  const preferredOrder = timing.lateNight
     ? ['breakfast', 'lunch', 'dinner']
-    : currentHour < 16
-      ? ['lunch', 'dinner', 'breakfast']
-      : ['dinner', 'breakfast', 'lunch']
+    : timing.daypartKey === 'morning'
+      ? ['breakfast', 'lunch', 'dinner']
+      : timing.daypartKey === 'midday'
+        ? ['lunch', 'dinner', 'breakfast']
+        : ['dinner', 'breakfast', 'lunch']
 
   return preferredOrder
     .map(key => anchorWindows.find(window => window.key === key))

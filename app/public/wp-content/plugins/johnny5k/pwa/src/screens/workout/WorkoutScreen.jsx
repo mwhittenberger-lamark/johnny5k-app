@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useLocation, useNavigate } from 'react-router-dom'
 import ClearableInput from '../../components/ui/ClearableInput'
 import OfflineState from '../../components/ui/OfflineState'
+import SupportIconButton from '../../components/ui/SupportIconButton'
 import ExerciseCard from '../../components/workout/ExerciseCard'
 import LiveWorkoutMode from '../../components/workout/LiveWorkoutMode'
 import PlanOverviewSwapDrawer from '../../components/workout/PlanOverviewSwapDrawer'
@@ -961,7 +962,8 @@ export default function WorkoutScreen() {
   if (!session) {
     return (
       <div className="screen workout-start workout-launchpad">
-        <div className="dash-card workout-start-card">
+        <div className="dash-card workout-start-card support-icon-anchor">
+          <SupportIconButton label="Get help with starting today’s workout" onClick={handleOpenWorkoutSupport} />
           <p className="dashboard-eyebrow">Training</p>
           <h1>Start today with a readiness check</h1>
           <p className="settings-subtitle">Pick your available time, mark how ready you feel, and review the next session before you start.</p>
@@ -1081,7 +1083,6 @@ export default function WorkoutScreen() {
 
           {error ? <p className="error">{error}</p> : null}
           <div className="settings-actions">
-            <button className="btn-secondary" onClick={handleOpenWorkoutSupport} type="button">Need help?</button>
             {isCardioSelection ? (
               <>
                 <button className="btn-primary" onClick={handleLogCardio}>
@@ -1316,7 +1317,8 @@ export default function WorkoutScreen() {
 
   return (
     <div className="screen workout-active workout-upgraded">
-      <header className="screen-header workout-session-header">
+      <header className="screen-header workout-session-header support-icon-anchor">
+        <SupportIconButton label="Get help with this workout session" onClick={handleOpenWorkoutSupport} />
         <div className="workout-session-header-main">
           <div className="workout-session-header-topline">
             <p className="dashboard-eyebrow">Today</p>
@@ -1333,9 +1335,6 @@ export default function WorkoutScreen() {
           {restartError ? <p className="error">{restartError}</p> : null}
         </div>
         <div className="workout-session-header-actions">
-          <button type="button" className="btn-secondary" onClick={handleOpenWorkoutSupport}>
-            Need help?
-          </button>
           <button type="button" className="btn-primary" onClick={() => setLiveModeOpen(true)}>
             Live Workout Mode
           </button>

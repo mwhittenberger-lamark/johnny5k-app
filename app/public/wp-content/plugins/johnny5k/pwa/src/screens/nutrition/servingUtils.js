@@ -81,7 +81,17 @@ export function normaliseServingUnitLabel(amount, unit) {
 export function normaliseRawServingUnitLabel(unit) {
   const rawUnit = String(unit || '').trim().replace(/\s+/g, ' ')
   const quantifiedUnit = parseQuantifiedServingUnit(rawUnit)
-  return quantifiedUnit ? quantifiedUnit.normalized : rawUnit || 'serving'
+  if (!quantifiedUnit) {
+    return rawUnit || 'serving'
+  }
+
+  const rest = rawUnit.replace(/^(\d+\s+\d+\/\d+|\d+\/\d+|\d+(?:\.\d+)?|one|a|an)(?:\s*(?:x|×))?\s+/i, '').trim()
+  const nestedQuantifiedUnit = parseQuantifiedServingUnit(rest)
+  if (nestedQuantifiedUnit && approximatelyEqualServingCount(quantifiedUnit.value, nestedQuantifiedUnit.value)) {
+    return nestedQuantifiedUnit.normalized
+  }
+
+  return quantifiedUnit.normalized
 }
 
 export function normalisePantryMatchText(value) {

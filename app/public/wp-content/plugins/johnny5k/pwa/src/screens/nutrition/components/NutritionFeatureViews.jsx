@@ -3,6 +3,7 @@
 import { nutritionApi } from '../../../api/modules/nutrition'
 import AppIcon from '../../../components/ui/AppIcon'
 import ClearableInput from '../../../components/ui/ClearableInput'
+import SupportIconButton from '../../../components/ui/SupportIconButton'
 
 export function PantryPageContent({ screen, deps }) {
   const {
@@ -15,17 +16,14 @@ export function PantryPageContent({ screen, deps }) {
 
   return (
     <div className="screen nutrition-screen upgraded-nutrition-screen">
-      <header className="screen-header nutrition-header">
+      <header className="screen-header nutrition-header support-icon-anchor">
+        <SupportIconButton label="Get help with pantry" onClick={screen.openPantrySupport} />
         <div>
           <p className="dashboard-eyebrow">Nutrition</p>
           <h1>Pantry by category</h1>
           <p className="settings-subtitle">Group what you have on hand by food type, then add, edit, or clean up items without digging through the full nutrition dashboard.</p>
         </div>
         <div className="header-actions nutrition-pantry-header-actions">
-          <button className="btn-secondary header-action-button" onClick={screen.openPantrySupport} type="button">
-            <AppIcon name="coach" />
-            <span>Need help?</span>
-          </button>
           <button className="btn-secondary header-action-button" onClick={screen.closePantryPage} type="button">
             <span>Back to nutrition</span>
           </button>
