@@ -1,0 +1,30 @@
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  overflow-x: hidden;
+  font-size: 1rem;
+  line-height: 1.55;
+}
+
+h1, h2, h3 {
+  font-family: 'Exo 2', 'Trebuchet MS', system-ui, sans-serif;
+  color: var(--text);
+}
+p {
+  margin: 4px 0;
+  font-size: 1rem;
+}
+a { color: var(--accent); text-decoration: none; }
+.app-icon {
+  width: 20px;
+  height: 20px;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+button {
+  font: inherit;
+}

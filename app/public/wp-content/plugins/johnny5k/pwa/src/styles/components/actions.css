@@ -1,0 +1,121 @@
+.form-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+
+.body-form-actions,
+.header-actions,
+.nutrition-card-actions,
+.nutrition-composer-head-actions,
+.exercise-panel-actions,
+.exercise-description-actions,
+.workout-session-header-actions,
+.workout-quickadd-grid,
+.nutrition-row-actions,
+.ai-result-actions,
+.progress-compare-actions,
+.progress-angle-actions,
+.progress-photo-actions,
+.settings-actions,
+.johnny-drawer-actions,
+.undo-toast-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.body-form-actions > .btn-primary,
+.body-form-actions > .btn-secondary,
+.header-actions > .btn-primary,
+.header-actions > .btn-secondary,
+.header-actions > .btn-outline,
+.nutrition-card-actions > .btn-primary,
+.nutrition-card-actions > .btn-secondary,
+.nutrition-card-actions > .btn-ghost,
+.nutrition-composer-head-actions > .btn-primary,
+.nutrition-composer-head-actions > .btn-secondary,
+.nutrition-composer-head-actions > .btn-ghost,
+.exercise-panel-actions > .btn-primary,
+.exercise-panel-actions > .btn-secondary,
+.exercise-panel-actions > .btn-outline,
+.exercise-description-actions > .btn-primary,
+.exercise-description-actions > .btn-secondary,
+.exercise-description-actions > .btn-outline,
+.workout-session-header-actions > .btn-primary,
+.workout-session-header-actions > .btn-secondary,
+.workout-session-header-actions > .btn-outline,
+.workout-quickadd-grid > .btn-primary,
+.workout-quickadd-grid > .btn-secondary,
+.workout-quickadd-grid > .btn-outline,
+.nutrition-row-actions > .btn-primary,
+.nutrition-row-actions > .btn-secondary,
+.nutrition-row-actions > .btn-outline,
+.ai-result-actions > .btn-primary,
+.ai-result-actions > .btn-secondary,
+.progress-compare-actions > .btn-primary,
+.progress-compare-actions > .btn-secondary,
+.progress-angle-actions > .btn-primary,
+.progress-angle-actions > .btn-secondary,
+.progress-photo-actions > .btn-primary,
+.progress-photo-actions > .btn-secondary,
+.progress-photo-actions > .btn-outline,
+.settings-actions > .btn-primary,
+.settings-actions > .btn-secondary,
+.johnny-drawer-actions > .btn-primary,
+.johnny-drawer-actions > .btn-secondary,
+.johnny-drawer-actions > .btn-outline,
+.undo-toast-actions > .btn-primary,
+.undo-toast-actions > .btn-secondary,
+.undo-toast-actions > .btn-outline {
+  width: 100%;
+}
+
+.header-actions {
+  grid-template-columns: 1fr;
+}
+
+.header-action-button {
+  width: 100%;
+  min-height: 54px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 18px;
+  min-inline-size: 0;
+  text-align: center;
+}
+
+.header-action-button .app-icon {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+@media (max-width: 720px) {
+  .form-actions,
+  .body-form-actions,
+  .header-actions,
+  .nutrition-card-actions,
+  .nutrition-composer-head-actions,
+  .exercise-panel-actions,
+  .exercise-description-actions,
+  .workout-session-header-actions,
+  .workout-quickadd-grid,
+  .nutrition-row-actions,
+  .ai-result-actions,
+  .progress-compare-actions,
+  .progress-angle-actions,
+  .progress-photo-actions,
+  .settings-actions,
+  .johnny-drawer-actions,
+  .undo-toast-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .header-action-button {
+    justify-content: center;
+  }
+}
