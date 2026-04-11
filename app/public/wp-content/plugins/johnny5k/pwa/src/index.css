@@ -7,6 +7,7 @@
 @import './styles/components/buttons.css' layer(components);
 @import './styles/components/actions.css' layer(components);
 @import './styles/components/feedback.css' layer(components);
+@import './styles/components/resilience.css' layer(components);
 @import './styles/components/shell.css' layer(components);
 @import './styles/components/theme-picker.css' layer(components);
 @import './styles/screens/dashboard.css' layer(screens);

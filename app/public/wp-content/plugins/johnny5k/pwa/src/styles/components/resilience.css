@@ -1,0 +1,154 @@
+.resilience-panel {
+  width: min(100%, 760px);
+  margin: 0 auto;
+}
+
+.resilience-panel-surface {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: clamp(24px, 4vw, 36px);
+  border: 1px solid rgba(151, 185, 215, 0.72);
+  border-radius: 30px;
+  background:
+    radial-gradient(circle at top right, rgba(255, 177, 42, 0.14), transparent 28%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(238, 247, 252, 0.98));
+  box-shadow: 0 24px 48px rgba(8, 21, 51, 0.14);
+}
+
+.resilience-screen {
+  padding: clamp(24px, 7vw, 64px) var(--screen-gutter-x) calc(var(--space-7) + 20px);
+}
+
+.resilience-eyebrow {
+  margin: 0;
+  color: #1c6088;
+  font-size: 0.82rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.resilience-panel h1 {
+  margin: 0;
+  font-size: clamp(1.9rem, 4vw, 3rem);
+  line-height: 0.95;
+}
+
+.resilience-message,
+.resilience-detail {
+  margin: 0;
+  line-height: 1.6;
+}
+
+.resilience-message {
+  color: var(--text);
+  font-size: 1.02rem;
+}
+
+.resilience-detail {
+  color: var(--text-muted);
+}
+
+.resilience-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding-top: 4px;
+}
+
+.startup-issue-tray {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px var(--screen-gutter-x) 0;
+}
+
+.startup-issue-card {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 16px 18px;
+  border-radius: 22px;
+  border: 1px solid rgba(39, 82, 119, 0.16);
+  background: rgba(255, 252, 244, 0.94);
+  box-shadow: 0 14px 30px rgba(12, 30, 57, 0.08);
+}
+
+.startup-issue-card.info {
+  background: rgba(239, 247, 255, 0.94);
+}
+
+.startup-issue-card.error,
+.startup-issue-card.blocking {
+  background: rgba(255, 241, 241, 0.96);
+  border-color: rgba(162, 53, 53, 0.24);
+}
+
+.startup-issue-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.startup-issue-copy p,
+.startup-issue-copy strong {
+  margin: 0;
+}
+
+.startup-issue-kicker {
+  color: #1c6088;
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.startup-issue-copy strong {
+  font-family: 'Exo 2', system-ui, sans-serif;
+  font-size: 1rem;
+}
+
+.startup-issue-copy p {
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+.startup-issue-detail {
+  font-size: 0.88rem;
+}
+
+.startup-issue-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.startup-issue-dismiss {
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.86rem;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 0.14em;
+}
+
+@media (max-width: 720px) {
+  .startup-issue-card {
+    flex-direction: column;
+  }
+
+  .startup-issue-actions,
+  .resilience-actions {
+    width: 100%;
+  }
+
+  .startup-issue-actions > *,
+  .resilience-actions > * {
+    flex: 1 1 0;
+  }
+}
