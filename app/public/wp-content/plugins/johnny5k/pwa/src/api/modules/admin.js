@@ -1,6 +1,7 @@
 import { api } from '../core/restClient'
 
 export const adminApi = {
+  logClientDiagnostic: (data) => api.post('/client-diagnostics', data, { skipAuthRedirect: true }),
   users: () => api.get('/admin/users'),
   inviteCodes: () => api.get('/admin/invite-codes'),
   generateCode: () => api.post('/admin/invite-codes', {}),
@@ -21,9 +22,11 @@ export const adminApi = {
   saveSettings: (data) => api.post('/admin/settings', data),
   getPersona: () => api.get('/admin/persona'),
   savePersona: (data) => api.post('/admin/persona', data),
+  supportGuides: () => api.get('/admin/support-guides'),
   testPersona: (message) => api.post('/admin/persona/test', { message }),
   previewPersonaTime: (message) => api.post('/admin/persona/time-preview', { message }),
   previewPersonaActions: (message) => api.post('/admin/persona/action-preview', { message }),
   personaFollowUps: (userId) => api.get(userId ? `/admin/persona/follow-ups?user_id=${userId}` : '/admin/persona/follow-ups'),
   testPush: (data) => api.post('/admin/push/test', data),
+  diagnostics: (limit = 50) => api.get(`/admin/diagnostics?limit=${limit}`),
 }

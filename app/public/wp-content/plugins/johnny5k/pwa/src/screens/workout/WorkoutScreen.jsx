@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useLocation, useNavigate } from 'react-router-dom'
 import ClearableInput from '../../components/ui/ClearableInput'
+import OfflineState from '../../components/ui/OfflineState'
 import ExerciseCard from '../../components/workout/ExerciseCard'
 import LiveWorkoutMode from '../../components/workout/LiveWorkoutMode'
 import PlanOverviewSwapDrawer from '../../components/workout/PlanOverviewSwapDrawer'
@@ -9,10 +10,14 @@ import { onboardingApi } from '../../api/modules/onboarding'
 import { trainingApi } from '../../api/modules/training'
 import { workoutApi } from '../../api/modules/workout'
 import { formatUsShortDate, formatUsWeekday } from '../../lib/dateFormat'
+import { openSupportGuide } from '../../lib/supportHelp'
 import { DEFAULT_CUSTOM_WORKOUT_DAY_TYPE } from '../../lib/trainingDayTypes'
+import { useOnlineStatus } from '../../lib/useOnlineStatus'
+import { useJohnnyAssistantStore } from '../../store/johnnyAssistantStore'
 import { useWorkoutStore } from '../../store/workoutStore'
 
 export default function WorkoutScreen() {
+  const openDrawer = useJohnnyAssistantStore(state => state.openDrawer)
   const {
     session,
     loading,
@@ -79,6 +84,7 @@ export default function WorkoutScreen() {
   const pendingPreviewScrollPlanExerciseIdRef = useRef(0)
   const location = useLocation()
   const navigate = useNavigate()
+  const isOnline = useOnlineStatus()
   const queryClient = useQueryClient()
   const invalidateWorkoutQueries = useMemo(() => () => {
     void queryClient.invalidateQueries({ queryKey: ['training-plan'] })
@@ -266,6 +272,18 @@ export default function WorkoutScreen() {
       })
     },
   })
+
+  function handleOpenWorkoutSupport() {
+    openSupportGuide(openDrawer, {
+      screen: 'workout',
+      surface: session ? 'workout_active' : 'workout_launchpad',
+      guideId: session ? 'swap-exercise' : 'plan-workout',
+      prompt: session
+        ? 'Help me understand this workout screen, how to adjust it safely, and what to do next in this session.'
+        : 'Show me how to review today\'s workout, change the split if needed, and start the right session.',
+      context: { has_active_session: session ? '1' : '0' },
+    })
+  }
   const previewSession = previewQuery.data ?? null
   const previewLoading = previewQuery.isFetching
   const previewError = previewQuery.error?.message || ''
@@ -870,6 +888,20 @@ export default function WorkoutScreen() {
 
   if (!bootstrapped || loading) return <div className="screen-loading">Loading workout...</div>
 
+  if (!session && !plan && !planLoading && !isOnline) {
+    return (
+      <OfflineState
+        title="Workout planning needs one online load"
+        body="Johnny5k can keep workout planning available offline after the current split and exercises have been fetched online at least once. Reconnect briefly to pull today’s plan."
+        actionLabel="Reload workout"
+        onAction={() => {
+          void planQuery.refetch()
+          void bootstrapSession()
+        }}
+      />
+    )
+  }
+
   if (completionReview) {
     return (
       <div className="workout-complete-review-shell" role="dialog" aria-modal="true" aria-labelledby="workout-complete-review-title">
@@ -1049,6 +1081,7 @@ export default function WorkoutScreen() {
 
           {error ? <p className="error">{error}</p> : null}
           <div className="settings-actions">
+            <button className="btn-secondary" onClick={handleOpenWorkoutSupport} type="button">Need help?</button>
             {isCardioSelection ? (
               <>
                 <button className="btn-primary" onClick={handleLogCardio}>
@@ -1300,6 +1333,9 @@ export default function WorkoutScreen() {
           {restartError ? <p className="error">{restartError}</p> : null}
         </div>
         <div className="workout-session-header-actions">
+          <button type="button" className="btn-secondary" onClick={handleOpenWorkoutSupport}>
+            Need help?
+          </button>
           <button type="button" className="btn-primary" onClick={() => setLiveModeOpen(true)}>
             Live Workout Mode
           </button>

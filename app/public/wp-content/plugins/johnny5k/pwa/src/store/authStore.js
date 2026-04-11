@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { authApi } from '../api/modules/auth'
+import { reportClientDiagnostic } from '../lib/clientDiagnostics'
 import { DEFAULT_APP_IMAGES, normalizeAppImages } from '../lib/appImages'
 import { normalizeDailyCheckInEntry } from '../lib/dailyCheckIn'
 import { applyColorScheme, clearStoredColorScheme, DEFAULT_COLOR_SCHEME } from '../lib/theme'
@@ -117,7 +118,22 @@ export const useAuthStore = create(
           const data = await authApi.validate()
           get().setAuth(data)
           return true
-        } catch {
+        } catch (error) {
+          reportClientDiagnostic({
+            source: 'auth_revalidate',
+            message: 'Stored session revalidation failed.',
+            error,
+            context: {
+              had_nonce: Boolean(nonce),
+              was_authenticated: Boolean(isAuthenticated),
+            },
+            toast: {
+              title: 'Session ended',
+              message: 'Sign in again to keep using Johnny5k.',
+              tone: 'info',
+              kind: 'session-ended',
+            },
+          })
           get().clearAuth()
           return false
         }

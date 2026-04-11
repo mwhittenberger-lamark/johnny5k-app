@@ -4,13 +4,35 @@ import { BrowserRouter } from 'react-router-dom'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { registerSW } from 'virtual:pwa-register'
 import App from './App.jsx'
+import { initOfflineWriteQueue } from './api/core/restClient'
 import { queryClient } from './lib/queryClient'
 import './index.css'
 
 const LOCAL_SW_RESET_KEY = 'jf-local-sw-reset-v1'
 
 void resetLocalServiceWorkerCaches()
-registerSW({ immediate: true })
+initOfflineWriteQueue()
+
+const updateServiceWorker = registerSW({
+  immediate: true,
+  onOfflineReady() {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('johnny5k:pwa-offline-ready'))
+    }
+  },
+  onNeedRefresh() {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('johnny5k:pwa-update-ready'))
+    }
+  },
+  onRegisterError(error) {
+    console.error('Service worker registration failed.', error)
+  },
+})
+
+if (typeof window !== 'undefined') {
+  window.__jfUpdateServiceWorker = updateServiceWorker
+}
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>

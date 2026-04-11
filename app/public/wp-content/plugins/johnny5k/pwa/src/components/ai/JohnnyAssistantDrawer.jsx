@@ -4,6 +4,7 @@ import { aiApi } from '../../api/modules/ai'
 import { analyticsApi } from '../../api/modules/analytics'
 import { formatUsShortDate } from '../../lib/dateFormat'
 import { getAppImageUrl } from '../../lib/appImages'
+import { reportClientDiagnostic } from '../../lib/clientDiagnostics'
 import { readLiveWorkoutVoicePrefs } from '../../lib/liveWorkoutVoice'
 import { useAuthStore } from '../../store/authStore'
 import { useDashboardStore } from '../../store/dashboardStore'
@@ -68,7 +69,7 @@ export default function JohnnyAssistantDrawer() {
   const navigate = useNavigate()
   const location = useLocation()
   const appImages = useAuthStore(state => state.appImages)
-  const { isOpen, closeDrawer, consumeStarterPrompt } = useJohnnyAssistantStore()
+  const { isOpen, closeDrawer, consumeStarterPayload } = useJohnnyAssistantStore()
   const { invalidate, loadSnapshot } = useDashboardStore()
   const workoutSession = useWorkoutStore(state => state.session)
   const reloadWorkoutSession = useWorkoutStore(state => state.reloadSession)
@@ -104,8 +105,16 @@ export default function JohnnyAssistantDrawer() {
       const bullets = Array.isArray(data.durable_memory?.bullets) ? data.durable_memory.bullets : []
       setDurableMemory(bullets)
       setMemoryDraft(bullets)
-    } catch {
-      // noop
+    } catch (error) {
+      reportClientDiagnostic({
+        source: 'johnny_drawer_thread_hydrate',
+        message: 'Johnny assistant history failed to load.',
+        error,
+        context: {
+          thread_key: THREAD_KEY,
+        },
+      })
+      setStatusMessage('Johnny opened, but earlier chat history did not load. You can still start a new conversation.')
     } finally {
       setInitialising(false)
     }
@@ -238,6 +247,19 @@ export default function JohnnyAssistantDrawer() {
     const nextMessage = message.trim()
     if (!nextMessage || loading) return
 
+    const supportMeta = normalizeSupportStarterMeta(options.meta)
+
+    if (supportMeta.isSupport) {
+      analyticsApi.event('support_prompt_started', {
+        screen: supportMeta.screen,
+        context: supportMeta.surface,
+        metadata: {
+          guide_id: supportMeta.guideId,
+          surface: supportMeta.surface,
+        },
+      }).catch(() => {})
+    }
+
     setInput('')
     setStatusMessage('')
     setMessages(current => [...current, { role: 'user', message_text: nextMessage }])
@@ -272,7 +294,17 @@ export default function JohnnyAssistantDrawer() {
         invalidate()
         loadSnapshot(true)
         if (actionTools.includes('swap_workout_exercise')) {
-          reloadWorkoutSession().catch(() => {})
+          reloadWorkoutSession().catch(error => {
+            reportClientDiagnostic({
+              source: 'johnny_drawer_workout_refresh',
+              message: 'Workout session refresh failed after Johnny action.',
+              error,
+              context: {
+                action_tools: actionTools,
+              },
+            })
+            setStatusMessage('Johnny made the change, but the workout screen needs a refresh to show it.')
+          })
         }
         setStatusMessage(buildActionStatus(actionResults, actionTools))
         window.dispatchEvent(new CustomEvent('johnny-assistant-action', { detail: { usedTools: actionTools, actionResults } }))
@@ -286,10 +318,54 @@ export default function JohnnyAssistantDrawer() {
         setStatusMessage(buildModelActionStatus(modelActions, autoAction))
         window.dispatchEvent(new CustomEvent('johnny-assistant-action', { detail: { actions: modelActions, autoAction: autoAction?.type || null } }))
       }
+
+      if (supportMeta.isSupport) {
+        const supportDestination = autoAction
+          ? getModelActionDestination(autoAction)
+          : getFirstModelActionDestination(modelActions)
+
+        if (actionTools.length || supportDestination) {
+          analyticsApi.event('support_navigation_used', {
+            screen: supportMeta.screen,
+            context: supportMeta.surface,
+            metadata: {
+              guide_id: supportMeta.guideId,
+              surface: supportMeta.surface,
+              destination_path: supportDestination?.path || '',
+              auto_action: autoAction?.type || '',
+              tool_count: actionTools.length,
+            },
+          }).catch(() => {})
+        } else {
+          analyticsApi.event('support_help_unresolved', {
+            screen: supportMeta.screen,
+            context: supportMeta.surface,
+            metadata: {
+              guide_id: supportMeta.guideId,
+              surface: supportMeta.surface,
+              confidence: String(data.confidence || ''),
+              action_count: modelActions.length,
+            },
+          }).catch(() => {})
+        }
+      }
     } catch (err) {
       const messageText = err?.message || 'Something went wrong.'
       setMessages(current => [...current, { role: 'assistant', message_text: `⚠️ ${messageText}` }])
       setStatusMessage(messageText)
+
+      const supportMeta = normalizeSupportStarterMeta(options.meta)
+      if (supportMeta.isSupport) {
+        analyticsApi.event('support_help_unresolved', {
+          screen: supportMeta.screen,
+          context: supportMeta.surface,
+          metadata: {
+            guide_id: supportMeta.guideId,
+            surface: supportMeta.surface,
+            error: messageText,
+          },
+        }).catch(() => {})
+      }
     } finally {
       setLoading(false)
     }
@@ -298,10 +374,10 @@ export default function JohnnyAssistantDrawer() {
   useEffect(() => {
     if (!isOpen || initialising || loading) return
 
-    const starterPrompt = consumeStarterPrompt()
-    if (!starterPrompt) return
-    sendPrompt(starterPrompt)
-  }, [isOpen, initialising, loading, consumeStarterPrompt, sendPrompt])
+    const starterPayload = consumeStarterPayload()
+    if (!starterPayload?.prompt) return
+    sendPrompt(starterPayload.prompt, starterPayload)
+  }, [isOpen, initialising, loading, consumeStarterPayload, sendPrompt])
 
   useEffect(() => {
     if (!isOpen || initialising || !voicePrefs.assistantAutoSpeak || !playbackSupported) return
@@ -1268,7 +1344,50 @@ function getAutoExecutableModelAction(actions) {
   return actions.find(action => AUTO_EXECUTABLE_MODEL_ACTIONS.has(action.type) && getModelActionDestination(action)) || null
 }
 
+function getFirstModelActionDestination(actions) {
+  return (Array.isArray(actions) ? actions : []).map(getModelActionDestination).find(Boolean) || null
+}
+
+function normalizeSupportStarterMeta(meta = {}) {
+  return {
+    isSupport: Boolean(meta?.isSupport),
+    guideId: String(meta?.guideId || '').trim(),
+    surface: String(meta?.surface || '').trim(),
+    screen: String(meta?.screen || '').trim(),
+  }
+}
+
+function buildGuidedOpenScreenDestination(screen, payload = {}) {
+  const routePath = String(payload?.route_path || '').trim()
+  if (!routePath.startsWith('/')) {
+    return null
+  }
+
+  const state = {}
+  const focusSection = String(payload?.focus_section || '').trim()
+  const focusTab = String(payload?.focus_tab || '').trim()
+  const notice = String(payload?.notice || '').trim()
+  const mealType = String(payload?.meal_type || '').trim()
+
+  if (focusSection) state.focusSection = focusSection
+  if (focusTab) state.focusTab = focusTab
+  if (mealType && focusSection === 'recipes') state.recipeMealFilter = mealType
+  if (notice) state.johnnyActionNotice = notice
+
+  return {
+    path: routePath,
+    state: Object.keys(state).length ? state : undefined,
+    label: String(payload?.action_label || '').trim() || `Open ${String(screen || 'screen').replace(/_/g, ' ')}`,
+    actionLabel: 'Open again',
+  }
+}
+
 function resolveOpenScreenDestination(screen, payload = {}) {
+  const guidedDestination = buildGuidedOpenScreenDestination(screen, payload)
+  if (guidedDestination) {
+    return guidedDestination
+  }
+
   switch (screen) {
     case 'nutrition':
       return { path: '/nutrition', state: { johnnyActionNotice: 'Johnny opened Nutrition for the next step.' }, label: 'Open nutrition', actionLabel: 'Open again' }
@@ -1300,6 +1419,8 @@ function resolveOpenScreenDestination(screen, payload = {}) {
       }
     case 'dashboard':
       return { path: '/dashboard', state: { johnnyActionNotice: 'Johnny opened your dashboard to anchor the next decision in your live progress.' }, label: 'Open dashboard', actionLabel: 'Open again' }
+    case 'settings':
+      return { path: '/settings', state: { johnnyActionNotice: 'Johnny opened Profile so you can handle the setting that matters here.' }, label: 'Open profile', actionLabel: 'Open again' }
     default:
       return null
   }

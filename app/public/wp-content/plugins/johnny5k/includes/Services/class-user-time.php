@@ -30,6 +30,15 @@ class UserTime {
 	}
 
 	public static function now( int $user_id ): \DateTimeImmutable {
+		$test_now = $GLOBALS['johnny5k_test_now'] ?? null;
+		if ( is_string( $test_now ) && '' !== trim( $test_now ) ) {
+			try {
+				return new \DateTimeImmutable( $test_now, self::timezone( $user_id ) );
+			} catch ( \Exception $e ) {
+				// Fall through to real time when the override is invalid.
+			}
+		}
+
 		return new \DateTimeImmutable( 'now', self::timezone( $user_id ) );
 	}
 

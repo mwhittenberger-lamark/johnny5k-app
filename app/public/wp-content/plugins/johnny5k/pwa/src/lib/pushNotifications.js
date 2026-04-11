@@ -93,7 +93,8 @@ export async function ensurePushRegistration() {
     return existingRegistration
   }
 
-  const registration = await navigator.serviceWorker.register('/sw.js')
+  const serviceWorkerUrl = new URL('sw.js', window.location.origin + (import.meta.env.BASE_URL || '/')).pathname
+  const registration = await navigator.serviceWorker.register(serviceWorkerUrl)
   await navigator.serviceWorker.ready
   return registration
 }

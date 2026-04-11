@@ -786,21 +786,29 @@ class CoachDeliveryService {
 		global $wpdb;
 
 		$today = UserTime::now( $user_id );
-		$week_start = $today->modify( 'monday this week' )->format( 'Y-m-d' );
+		$week_start_dt = $today->modify( 'monday this week' )->setTime( 0, 0, 0 );
+		$week_start = $week_start_dt->format( 'Y-m-d' );
 		$week_end = $today->modify( 'sunday this week' )->format( 'Y-m-d' );
 		$weekday_index = (int) $today->format( 'N' );
 
-		$raw_schedule = $wpdb->get_var( $wpdb->prepare(
-			"SELECT preferred_workout_days_json FROM {$wpdb->prefix}fit_user_preferences WHERE user_id = %d LIMIT 1",
+		$preferences = $wpdb->get_row( $wpdb->prepare(
+			"SELECT preferred_workout_days_json, created_at FROM {$wpdb->prefix}fit_user_preferences WHERE user_id = %d LIMIT 1",
 			$user_id
 		) );
-		$schedule = json_decode( (string) $raw_schedule, true );
+		$schedule = json_decode( (string) ( $preferences->preferred_workout_days_json ?? '' ), true );
+		$expectation_start = self::get_weekly_expectation_start(
+			$user_id,
+			$week_start_dt,
+			$today->setTime( 0, 0, 0 ),
+			(string) ( $preferences->created_at ?? '' )
+		);
+		$expectation_start_index = (int) $expectation_start->format( 'N' );
 		$expected = 0;
 		foreach ( is_array( $schedule ) ? $schedule : [] as $entry ) {
 			$day_type = sanitize_key( (string) ( $entry['day_type'] ?? 'rest' ) );
 			$day = sanitize_text_field( (string) ( $entry['day'] ?? '' ) );
 			$day_order = [ 'Mon' => 1, 'Tue' => 2, 'Wed' => 3, 'Thu' => 4, 'Fri' => 5, 'Sat' => 6, 'Sun' => 7 ][ $day ] ?? 0;
-			if ( $day_order > 0 && $day_order <= $weekday_index && 'rest' !== $day_type ) {
+			if ( $day_order > 0 && $day_order >= $expectation_start_index && $day_order <= $weekday_index && 'rest' !== $day_type ) {
 				$expected += 1;
 			}
 		}
@@ -818,6 +826,52 @@ class CoachDeliveryService {
 			'sessions_this_week' => $sessions_this_week,
 			'missed_expected_sessions' => max( 0, $expected - $sessions_this_week ),
 		];
+	}
+
+	private static function get_weekly_expectation_start( int $user_id, \DateTimeImmutable $week_start, \DateTimeImmutable $today, string $preferences_created_at = '' ): \DateTimeImmutable {
+		global $wpdb;
+
+		$candidates = [ $week_start ];
+		$user_registered = $wpdb->get_var( $wpdb->prepare(
+			"SELECT user_registered FROM {$wpdb->prefix}users WHERE ID = %d LIMIT 1",
+			$user_id
+		) );
+
+		foreach ( [ (string) $user_registered, $preferences_created_at ] as $candidate ) {
+			$local_date = self::parse_local_tracking_date( $user_id, $candidate );
+			if ( $local_date instanceof \DateTimeImmutable ) {
+				$candidates[] = $local_date;
+			}
+		}
+
+		usort( $candidates, static function( \DateTimeImmutable $left, \DateTimeImmutable $right ): int {
+			return $left <=> $right;
+		} );
+
+		$start = end( $candidates );
+		if ( ! $start instanceof \DateTimeImmutable ) {
+			return $week_start;
+		}
+
+		if ( $start > $today ) {
+			return $today;
+		}
+
+		return $start;
+	}
+
+	private static function parse_local_tracking_date( int $user_id, string $datetime ): ?\DateTimeImmutable {
+		$datetime = trim( $datetime );
+		if ( '' === $datetime || '0000-00-00 00:00:00' === $datetime ) {
+			return null;
+		}
+
+		$parsed = \DateTimeImmutable::createFromFormat( 'Y-m-d H:i:s', $datetime, UserTime::timezone( $user_id ) );
+		if ( false === $parsed ) {
+			return null;
+		}
+
+		return $parsed->setTime( 0, 0, 0 );
 	}
 
 	private static function get_recent_training_balance( int $user_id ): array {

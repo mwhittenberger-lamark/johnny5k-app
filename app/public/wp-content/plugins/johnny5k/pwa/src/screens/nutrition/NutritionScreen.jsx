@@ -4,6 +4,9 @@ import { aiApi } from '../../api/modules/ai'
 import { nutritionApi } from '../../api/modules/nutrition'
 import AppIcon from '../../components/ui/AppIcon'
 import ClearableInput from '../../components/ui/ClearableInput'
+import OfflineState from '../../components/ui/OfflineState'
+import { openSupportGuide } from '../../lib/supportHelp'
+import { useOnlineStatus } from '../../lib/useOnlineStatus'
 import { useDashboardStore } from '../../store/dashboardStore'
 import { useJohnnyAssistantStore } from '../../store/johnnyAssistantStore'
 import {
@@ -18,6 +21,13 @@ import {
   useNutritionPlanningViewState,
   useNutritionToastQueue,
 } from './hooks/nutritionScreenHooks'
+import {
+  approximatelyEqualServingCount,
+  dedupeIngredientList,
+  normaliseRawServingUnitLabel,
+  normaliseServingUnitLabel,
+  parseQuantifiedServingUnit,
+} from './servingUtils'
 
 const MEAL_TYPES = ['breakfast', 'lunch', 'dinner', 'snack']
 const RECIPE_CARD_VISIBLE_LIMIT = 5
@@ -99,6 +109,7 @@ function scrollNodeIntoView(node) {
 }
 
 export default function NutritionScreen() {
+  const isOnline = useOnlineStatus()
   const location = useLocation()
   const navigate = useNavigate()
   const isPantryPage = location.pathname.endsWith('/pantry')
@@ -189,6 +200,42 @@ export default function NutritionScreen() {
   const groceryGapSectionRef = useRef(null)
   const invalidate = useDashboardStore(state => state.invalidate)
   const openDrawer = useJohnnyAssistantStore(state => state.openDrawer)
+
+  function handleOpenNutritionSupport() {
+    const supportConfigByView = {
+      today: {
+        guideId: 'log-meal',
+        prompt: 'Show me exactly how to log a meal here and what to do if the food is not easy to find.',
+      },
+      library: {
+        guideId: 'save-meal',
+        prompt: 'Show me where saved meals and saved foods live and how to reuse them fast.',
+      },
+      plan: {
+        guideId: 'plan-recipes',
+        prompt: 'Show me how to plan my next meal here using recipes, pantry, and grocery gap.',
+      },
+    }
+
+    const config = supportConfigByView[activeView] || supportConfigByView.today
+    openSupportGuide(openDrawer, {
+      screen: 'nutrition',
+      surface: `nutrition_${activeView}`,
+      guideId: config.guideId,
+      prompt: config.prompt,
+      context: { nutrition_view: activeView },
+    })
+  }
+
+  function handleOpenPantrySupport() {
+    openSupportGuide(openDrawer, {
+      screen: 'nutrition',
+      surface: 'nutrition_pantry',
+      guideId: 'manage-pantry',
+      prompt: 'Show me how Pantry works here, how to add items cleanly, and what belongs in grocery gap instead.',
+      context: { nutrition_view: 'pantry' },
+    })
+  }
 
   const latestMeal = meals[0] ?? null
   const latestMealLabel = useMemo(() => formatMealTimeLabel(latestMeal?.meal_datetime), [latestMeal?.meal_datetime])
@@ -1134,6 +1181,7 @@ export default function NutritionScreen() {
     mealsSectionAnchor: mealsSectionRef,
     mergedMeals,
     openDrawer,
+    openPantrySupport: handleOpenPantrySupport,
     openPantryPage,
     orderedSavedFoods,
     pantry,
@@ -1213,6 +1261,19 @@ export default function NutritionScreen() {
     visibleSavedMeals,
   }
 
+  if (!isOnline && !summary && meals.length === 0 && recentFoods.length === 0 && savedFoods.length === 0 && savedMeals.length === 0 && pantry.length === 0) {
+    return (
+      <OfflineState
+        title="Nutrition needs an online refresh first"
+        body="This screen can work from cached reads once Johnny5k has loaded your nutrition data online. Reconnect briefly to pull meals, foods, pantry items, and planning data."
+        actionLabel="Reload nutrition"
+        onAction={() => {
+          void loadData()
+        }}
+      />
+    )
+  }
+
   if (isPantryPage) {
     return <PantryPageContent screen={screen} deps={featureViewDeps} />
   }
@@ -1226,6 +1287,10 @@ export default function NutritionScreen() {
           <p className="settings-subtitle">Keep today&apos;s meals fast and obvious. Planning, shopping, and pantry upkeep stay one tap away when you need them.</p>
         </div>
         <div className="header-actions nutrition-header-actions">
+          <button className="btn-secondary header-action-button" title="Get help with nutrition" onClick={handleOpenNutritionSupport} type="button">
+            <AppIcon name="coach" />
+            <span>Need help?</span>
+          </button>
           <button className="btn-primary header-action-button nutrition-primary-header-action" title="Add manually" onClick={() => {
             setActiveView('today')
             setShowAddForm(current => !current)
@@ -4097,114 +4162,9 @@ function formatMealServing(amount, unit) {
   return `${roundTo(servingAmount, servingAmount % 1 === 0 ? 0 : 2)} ${unitLabel}`
 }
 
-function normaliseServingUnitLabel(amount, unit) {
-  const rawUnit = String(unit || '').trim().replace(/\s+/g, ' ')
-  if (!rawUnit) {
-    return 'serving'
-  }
-
-  const numericAmount = Number(amount)
-  if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
-    return rawUnit
-  }
-
-  const quantifiedUnit = parseQuantifiedServingUnit(rawUnit)
-  if (quantifiedUnit) {
-    if (approximatelyEqualServingCount(quantifiedUnit.value, numericAmount) || approximatelyEqualServingCount(numericAmount, 1)) {
-      return '__raw_unit__'
-    }
-
-    return `__repeat__${quantifiedUnit.normalized}`
-  }
-
-  const normalizedAmount = String(roundTo(numericAmount, numericAmount % 1 === 0 ? 0 : 2))
-  if (rawUnit === normalizedAmount) {
-    return 'serving'
-  }
-
-  const strippedUnit = rawUnit.replace(new RegExp(`^${normalizedAmount.replace('.', '\\.')}(?:\\.0+)?\\s+`, 'i'), '').trim()
-  return strippedUnit || rawUnit
-}
-
-function parseQuantifiedServingUnit(unit) {
-  const match = String(unit || '').trim().match(/^(\d+\s+\d+\/\d+|\d+\/\d+|\d+(?:\.\d+)?|one|a|an)(?:\s*(?:x|×))?\s+(.+)$/i)
-  if (!match) {
-    return null
-  }
-
-  const quantityToken = String(match[1] || '').trim().toLowerCase()
-  const rest = String(match[2] || '').trim()
-  if (!rest) {
-    return null
-  }
-
-  return {
-    value: parseServingCountToken(quantityToken),
-    normalized: ['a', 'an', 'one'].includes(quantityToken) ? `1 ${rest}` : `${match[1].trim()} ${rest}`,
-  }
-}
-
-function parseServingCountToken(token) {
-  const value = String(token || '').trim().toLowerCase()
-  if (['a', 'an', 'one'].includes(value)) {
-    return 1
-  }
-
-  if (/^\d+\s+\d+\/\d+$/.test(value)) {
-    const [wholePart, fractionPart] = value.split(/\s+/)
-    return (Number(wholePart) || 0) + parseServingCountFraction(fractionPart)
-  }
-
-  if (/^\d+\/\d+$/.test(value)) {
-    return parseServingCountFraction(value)
-  }
-
-  return Number(value) || 0
-}
-
-function parseServingCountFraction(value) {
-  const [numerator, denominator] = String(value || '').split('/')
-  const safeDenominator = Number(denominator) || 1
-  return (Number(numerator) || 0) / safeDenominator
-}
-
-function approximatelyEqualServingCount(left, right) {
-  return Math.abs((Number(left) || 0) - (Number(right) || 0)) < 0.001
-}
-
-function normaliseRawServingUnitLabel(unit) {
-  const rawUnit = String(unit || '').trim().replace(/\s+/g, ' ')
-  const quantifiedUnit = parseQuantifiedServingUnit(rawUnit)
-  return quantifiedUnit ? quantifiedUnit.normalized : rawUnit || 'serving'
-}
-
 function formatMealMacroValue(value) {
   const numeric = Number(value) || 0
   return Number.isInteger(numeric) ? String(numeric) : String(roundTo(numeric, 1))
-}
-
-function normalisePantryMatchText(value) {
-  return String(value || '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim()
-}
-
-function dedupeIngredientList(list) {
-  const seen = new Set()
-
-  return (Array.isArray(list) ? list : []).reduce((items, value) => {
-    const label = String(value || '').trim()
-    const key = normalisePantryMatchText(label)
-
-    if (!label || !key || seen.has(key)) {
-      return items
-    }
-
-    seen.add(key)
-    items.push(label)
-    return items
-  }, [])
 }
 
 function pantryContainsIngredient(pantry, ingredient) {

@@ -6,7 +6,9 @@ defined( 'ABSPATH' ) || exit;
 use Johnny5k\Auth\InviteCodes;
 use Johnny5k\Services\AiService;
 use Johnny5k\Services\CostTracker;
+use Johnny5k\Services\InternalDiagnosticsLogger;
 use Johnny5k\Services\PushService;
+use Johnny5k\Services\SupportGuideService;
 use Johnny5k\Services\UserTime;
 
 /**
@@ -21,6 +23,7 @@ use Johnny5k\Services\UserTime;
  * GET  /fit/v1/admin/costs            — cost summary (monthly total, per-user, daily)
  * GET  /fit/v1/admin/persona          — get Johnny5k persona settings
  * POST /fit/v1/admin/persona          — save Johnny5k persona settings
+ * GET  /fit/v1/admin/support-guides   — read support guides and support analytics
  * POST /fit/v1/admin/persona/test     — test persona with a message
  * POST /fit/v1/admin/sms/test         — send a test SMS reminder to a user
  */
@@ -333,6 +336,10 @@ class AdminApiController {
 			[ 'methods' => 'POST', 'callback' => [ __CLASS__, 'save_persona' ], 'permission_callback' => $admin ],
 		] );
 
+		register_rest_route( $ns, '/admin/support-guides', [
+			[ 'methods' => 'GET',  'callback' => [ __CLASS__, 'get_support_guides' ],  'permission_callback' => $admin ],
+		] );
+
 		register_rest_route( $ns, '/admin/persona/test', [
 			'methods'             => 'POST',
 			'callback'            => [ __CLASS__, 'test_persona' ],
@@ -367,6 +374,18 @@ class AdminApiController {
 			'methods'             => 'POST',
 			'callback'            => [ __CLASS__, 'test_push' ],
 			'permission_callback' => $admin,
+		] );
+
+		register_rest_route( $ns, '/admin/diagnostics', [
+			'methods'             => 'GET',
+			'callback'            => [ __CLASS__, 'get_diagnostics' ],
+			'permission_callback' => $admin,
+		] );
+
+		register_rest_route( $ns, '/client-diagnostics', [
+			'methods'             => 'POST',
+			'callback'            => [ __CLASS__, 'log_client_diagnostic' ],
+			'permission_callback' => [ 'Johnny5k\REST\AuthController', 'require_auth' ],
 		] );
 
 		register_rest_route( $ns, '/admin/analytics/retention', [
@@ -667,6 +686,15 @@ class AdminApiController {
 		return new \WP_REST_Response( [ 'saved' => true ] );
 	}
 
+	// ── GET /admin/support-guides ─────────────────────────────────────────────
+
+	public static function get_support_guides( \WP_REST_Request $req ): \WP_REST_Response {
+		return new \WP_REST_Response( [
+			'guides' => SupportGuideService::get_support_guides_config(),
+			'analytics' => SupportGuideService::support_analytics_payload( 30 ),
+		] );
+	}
+
 	// ── GET /admin/persona ────────────────────────────────────────────────────
 
 	public static function get_persona( \WP_REST_Request $req ): \WP_REST_Response {
@@ -855,6 +883,31 @@ class AdminApiController {
 		return new \WP_REST_Response( [
 			'sent'   => true,
 			'result' => $result,
+		] );
+	}
+
+	public static function get_diagnostics( \WP_REST_Request $req ): \WP_REST_Response {
+		$limit = max( 1, min( 100, (int) ( $req->get_param( 'limit' ) ?: 50 ) ) );
+
+		return new \WP_REST_Response( [
+			'entries' => InternalDiagnosticsLogger::list_entries( $limit ),
+		] );
+	}
+
+	public static function log_client_diagnostic( \WP_REST_Request $req ): \WP_REST_Response {
+		$params  = (array) $req->get_json_params();
+		$source  = sanitize_key( (string) ( $params['source'] ?? '' ) );
+		$message = sanitize_text_field( (string) ( $params['message'] ?? '' ) );
+
+		if ( '' === $source || '' === $message ) {
+			return new \WP_REST_Response( [ 'message' => 'source and message are required.' ], 400 );
+		}
+
+		$entry = InternalDiagnosticsLogger::record_client_event( $params, get_current_user_id() );
+
+		return new \WP_REST_Response( [
+			'logged' => true,
+			'entry'  => $entry,
 		] );
 	}
 

@@ -22,6 +22,10 @@ export function PantryPageContent({ screen, deps }) {
           <p className="settings-subtitle">Group what you have on hand by food type, then add, edit, or clean up items without digging through the full nutrition dashboard.</p>
         </div>
         <div className="header-actions nutrition-pantry-header-actions">
+          <button className="btn-secondary header-action-button" onClick={screen.openPantrySupport} type="button">
+            <AppIcon name="coach" />
+            <span>Need help?</span>
+          </button>
           <button className="btn-secondary header-action-button" onClick={screen.closePantryPage} type="button">
             <span>Back to nutrition</span>
           </button>
