@@ -8,6 +8,22 @@ import { applyColorScheme, clearStoredColorScheme, DEFAULT_COLOR_SCHEME } from '
 
 const NONCE_KEY = 'jf_rest_nonce'
 
+function inferRevalidateFailureReason(error) {
+  if (!error) {
+    return 'unknown'
+  }
+
+  if (Number(error.status || 0) === 401 || Number(error.status || 0) === 403) {
+    return 'session-ended'
+  }
+
+  if (/failed to fetch|networkerror|load failed|network request failed/i.test(String(error.message || ''))) {
+    return 'network'
+  }
+
+  return 'unknown'
+}
+
 export const useAuthStore = create(
   persist(
     (set, get) => ({
@@ -109,7 +125,14 @@ export const useAuthStore = create(
       // Called on app mount to re-validate a stored cookie session.
       revalidate: async () => {
         const { nonce, isAuthenticated } = get()
-        if (!nonce && !isAuthenticated) return false
+        if (!nonce && !isAuthenticated) {
+          return {
+            ok: false,
+            reason: 'skipped',
+            error: null,
+          }
+        }
+
         try {
           if (!get().nonce) {
             const freshNonce = await authApi.refreshNonce()
@@ -117,8 +140,14 @@ export const useAuthStore = create(
           }
           const data = await authApi.validate()
           get().setAuth(data)
-          return true
+          return {
+            ok: true,
+            reason: '',
+            error: null,
+          }
         } catch (error) {
+          const reason = inferRevalidateFailureReason(error)
+
           reportClientDiagnostic({
             source: 'auth_revalidate',
             message: 'Stored session revalidation failed.',
@@ -126,16 +155,16 @@ export const useAuthStore = create(
             context: {
               had_nonce: Boolean(nonce),
               was_authenticated: Boolean(isAuthenticated),
+              failure_reason: reason,
             },
-            toast: {
-              title: 'Session ended',
-              message: 'Sign in again to keep using Johnny5k.',
-              tone: 'info',
-              kind: 'session-ended',
-            },
+            toast: null,
           })
           get().clearAuth()
-          return false
+          return {
+            ok: false,
+            reason,
+            error,
+          }
         }
       },
     }),

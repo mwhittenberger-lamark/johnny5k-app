@@ -1,74 +1,98 @@
-import { lazy, Suspense, useEffect, useLayoutEffect, useState } from 'react'
-import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
+import { Suspense, useEffect, useLayoutEffect, useMemo, useState } from 'react'
+import { Navigate, Outlet, useLocation } from 'react-router-dom'
 import { authApi } from './api/modules/auth'
 import { onboardingApi } from './api/modules/onboarding'
 import { pushApi } from './api/modules/push'
+import RouteErrorScreen from './components/resilience/RouteErrorScreen'
+import StartupIssueTray from './components/resilience/StartupIssueTray'
+import ResiliencePanel from './components/resilience/ResiliencePanel'
 import GlobalToastViewport from './components/ui/GlobalToastViewport'
 import { reportClientDiagnostic } from './lib/clientDiagnostics'
 import { normalizeDailyCheckInEntry } from './lib/dailyCheckIn'
 import { getCurrentPushSubscription, getPushSupportState, serializeSubscription } from './lib/pushNotifications'
 import { normalizePushPromptStatus } from './lib/onboarding'
 import { useAuthStore } from './store/authStore'
+import { useStartupStatusStore } from './store/startupStatusStore'
 import AppShell from './components/layout/AppShell'
 import { applyColorScheme, getStoredColorScheme, setAvailableColorSchemes } from './lib/theme'
 
-const LoginScreen = lazy(() => import('./screens/auth/LoginScreen'))
-const RegisterScreen = lazy(() => import('./screens/auth/RegisterScreen'))
-const ForgotPasswordScreen = lazy(() => import('./screens/auth/ForgotPasswordScreen'))
-const ResetPasswordScreen = lazy(() => import('./screens/auth/ResetPasswordScreen'))
-const OnboardingRoutes = lazy(() => import('./screens/onboarding/OnboardingRoutes'))
-const DashboardScreen = lazy(() => import('./screens/dashboard/DashboardScreen'))
-const WorkoutScreen = lazy(() => import('./screens/workout/WorkoutScreen'))
-const ExerciseLibraryScreen = lazy(() => import('./screens/workout/ExerciseLibraryScreen'))
-const NutritionScreen = lazy(() => import('./screens/nutrition/NutritionScreen'))
-const BodyScreen = lazy(() => import('./screens/body/BodyScreen'))
-const ActivityLogScreen = lazy(() => import('./screens/activity/ActivityLogScreen'))
-const AiScreen = lazy(() => import('./screens/ai/AiScreen'))
-const AdminScreen = lazy(() => import('./screens/admin/AdminScreen'))
-const SettingsScreen = lazy(() => import('./screens/settings/SettingsScreen'))
-const ProgressPhotosScreen = lazy(() => import('./screens/progress/ProgressPhotosScreen'))
-const RewardsScreen = lazy(() => import('./screens/rewards/RewardsScreen'))
-
-function RequireAuth({ children }) {
-  const { isAuthenticated } = useAuthStore()
-  if (!isAuthenticated) return <Navigate to="/login" replace />
-  return children
+function buildIssueDetail(error) {
+  return String(error?.message || error?.data?.message || '').trim()
 }
 
-function RequireOnboarded({ children }) {
+function createReloadAction() {
+  return {
+    type: 'reload',
+    label: 'Reload app',
+  }
+}
+
+export function RequireAuthLayout() {
+  const { isAuthenticated } = useAuthStore()
+  if (!isAuthenticated) return <Navigate to="/login" replace />
+  return <Outlet />
+}
+
+export function RequireOnboardedLayout() {
   const { isAuthenticated, onboardingComplete } = useAuthStore()
   if (!isAuthenticated) return <Navigate to="/login" replace />
   if (!onboardingComplete) return <Navigate to="/onboarding/welcome" replace />
-  return children
+  return <Outlet />
 }
 
-function RequireAdmin({ children }) {
+export function RequireAdminLayout() {
   const { isAuthenticated, isAdmin } = useAuthStore()
   if (!isAuthenticated) return <Navigate to="/login" replace />
   if (!isAdmin) return <Navigate to="/dashboard" replace />
-  return children
+  return <Outlet />
 }
 
-export default function App() {
+export function RootLayout() {
+  return (
+    <>
+      <GlobalToastViewport />
+      <StartupIssueTray />
+      <ScrollToTopOnRouteChange />
+      <Outlet />
+    </>
+  )
+}
+
+export function AppBootstrapLayout() {
   const { nonce, isAuthenticated, revalidate, setAppImages, setDailyCheckInEntry, setNotificationPrefs, setPreferenceMeta } = useAuthStore()
+  const setIssue = useStartupStatusStore((state) => state.setIssue)
+  const clearIssue = useStartupStatusStore((state) => state.clearIssue)
+  const blockingIssues = useStartupStatusStore((state) => state.issues.filter((issue) => issue.blocking))
   const requiresBootstrap = Boolean(nonce || isAuthenticated)
   const [authBootstrapComplete, setAuthBootstrapComplete] = useState(() => !requiresBootstrap)
   const [publicConfigComplete, setPublicConfigComplete] = useState(false)
   const ready = publicConfigComplete && (!requiresBootstrap || authBootstrapComplete)
+  const primaryBlockingIssue = useMemo(() => blockingIssues[0] ?? null, [blockingIssues])
 
   useEffect(() => {
     applyColorScheme(getStoredColorScheme())
   }, [])
 
   useEffect(() => {
+    if (!requiresBootstrap) {
+      setAuthBootstrapComplete(true)
+    }
+  }, [requiresBootstrap])
+
+  useEffect(() => {
     let active = true
+
+    clearIssue('startup-public-config')
 
     authApi.publicConfig()
       .then(data => {
         if (!active) return
         setAppImages(data?.app_images)
+        clearIssue('startup-public-config')
       })
       .catch(error => {
+        if (!active) return
+
         reportClientDiagnostic({
           source: 'app_public_config_bootstrap',
           message: 'Public app configuration failed to load.',
@@ -77,21 +101,57 @@ export default function App() {
             phase: 'public_config',
           },
         })
+
+        setIssue({
+          key: 'startup-public-config',
+          title: 'Public app config did not load',
+          message: 'Johnny opened with fallback public settings. The app can keep running, but some images or non-auth config may look stale until the next successful refresh.',
+          detail: buildIssueDetail(error),
+          tone: 'warning',
+          dismissible: true,
+          action: createReloadAction(),
+        })
       })
       .finally(() => {
         if (active) setPublicConfigComplete(true)
       })
 
     return () => { active = false }
-  }, [setAppImages])
+  }, [clearIssue, setAppImages, setIssue])
 
   useEffect(() => {
     let active = true
 
+    clearIssue('startup-auth-session')
+    clearIssue('startup-auth-bootstrap')
+
     if (requiresBootstrap) {
       revalidate()
-        .then(valid => {
-          if (!valid || !active) return null
+        .then(result => {
+          if (!active) return null
+
+          if (!result?.ok) {
+            setIssue({
+              key: 'startup-auth-session',
+              title: result?.reason === 'network' ? 'Saved session could not be verified' : 'Saved session could not be restored',
+              message: result?.reason === 'network'
+                ? 'Johnny could not confirm your stored session during startup. Check the connection, then reload or sign in again.'
+                : 'Your previous session is no longer valid. Sign in again to continue where you left off.',
+              detail: buildIssueDetail(result?.error),
+              tone: result?.reason === 'network' ? 'error' : 'info',
+              dismissible: true,
+              action: {
+                type: 'navigate',
+                label: 'Go to sign in',
+                to: '/login',
+              },
+            })
+
+            return null
+          }
+
+          clearIssue('startup-auth-session')
+
           return onboardingApi.getState()
             .then(data => {
               if (!active) return
@@ -104,8 +164,11 @@ export default function App() {
               })
               setAvailableColorSchemes(data?.color_schemes)
               applyColorScheme(preferenceMeta?.color_scheme)
+              clearIssue('startup-auth-bootstrap')
             })
             .catch(error => {
+              if (!active) return
+
               reportClientDiagnostic({
                 source: 'app_authenticated_bootstrap',
                 message: 'Authenticated bootstrap loaded with partial data.',
@@ -120,6 +183,20 @@ export default function App() {
                   kind: 'auth-bootstrap-warning',
                 },
               })
+
+              setIssue({
+                key: 'startup-auth-bootstrap',
+                title: 'Some saved profile data did not restore',
+                message: 'Johnny signed you in, but part of your saved onboarding or preference state failed during startup. The app can still run; open Profile if you want to confirm the missing settings.',
+                detail: buildIssueDetail(error),
+                tone: 'warning',
+                dismissible: true,
+                action: {
+                  type: 'navigate',
+                  label: 'Open profile',
+                  to: '/settings',
+                },
+              })
             })
         })
         .finally(() => {
@@ -128,15 +205,21 @@ export default function App() {
     }
 
     return () => { active = false }
-  }, [requiresBootstrap, revalidate, setAppImages, setDailyCheckInEntry, setNotificationPrefs, setPreferenceMeta])
+  }, [clearIssue, requiresBootstrap, revalidate, setAppImages, setDailyCheckInEntry, setIssue, setNotificationPrefs, setPreferenceMeta])
 
   useEffect(() => {
     if (!ready || !isAuthenticated) return
 
     const pushSupport = getPushSupportState()
 
+    clearIssue('startup-push-config')
+    clearIssue('startup-push-subscription')
+    clearIssue('startup-push-bootstrap')
+
     Promise.all([
-      pushApi.config().catch(error => {
+      pushApi.config()
+        .then(response => ({ response, loadFailed: false }))
+        .catch(error => {
         reportClientDiagnostic({
           source: 'push_config_bootstrap',
           message: 'Push configuration failed to load during bootstrap.',
@@ -145,9 +228,31 @@ export default function App() {
             phase: 'push_config',
           },
         })
-        return { push: { enabled: false, configured: false } }
+
+        setIssue({
+          key: 'startup-push-config',
+          title: 'Push settings did not load',
+          message: 'Johnny could not restore push configuration during startup. The rest of the app still works, but notification status may be wrong until Profile reloads it.',
+          detail: buildIssueDetail(error),
+          tone: 'warning',
+          dismissible: true,
+          action: {
+            type: 'navigate',
+            label: 'Open push settings',
+            to: '/settings',
+            state: {
+              focusSection: 'pushNotifications',
+            },
+          },
+        })
+        return {
+          response: { push: { enabled: false, configured: false } },
+          loadFailed: true,
+        }
       }),
-      pushSupport.supported ? getCurrentPushSubscription().catch(error => {
+      pushSupport.supported ? getCurrentPushSubscription()
+        .then(subscription => ({ subscription, loadFailed: false }))
+        .catch(error => {
         reportClientDiagnostic({
           source: 'push_subscription_bootstrap',
           message: 'Existing browser push subscription could not be read.',
@@ -157,10 +262,32 @@ export default function App() {
             push_supported: true,
           },
         })
-        return null
-      }) : Promise.resolve(null),
+
+        setIssue({
+          key: 'startup-push-subscription',
+          title: 'Existing push subscription could not be checked',
+          message: 'Johnny could not confirm whether this browser is still subscribed for notifications. Open Profile to reconnect notifications if needed.',
+          detail: buildIssueDetail(error),
+          tone: 'warning',
+          dismissible: true,
+          action: {
+            type: 'navigate',
+            label: 'Review push settings',
+            to: '/settings',
+            state: {
+              focusSection: 'pushNotifications',
+            },
+          },
+        })
+        return {
+          subscription: null,
+          loadFailed: true,
+        }
+      }) : Promise.resolve({ subscription: null, loadFailed: false }),
     ])
-      .then(([configResponse, subscription]) => {
+      .then(([configState, subscriptionState]) => {
+        const configResponse = configState?.response ?? { push: { enabled: false, configured: false } }
+        const subscription = subscriptionState?.subscription ?? null
         const payload = serializeSubscription(subscription)
         if (payload?.endpoint) {
           pushApi.subscribe(payload).catch(error => {
@@ -177,6 +304,15 @@ export default function App() {
         }
 
         const config = configResponse?.push ?? {}
+
+        if (!configState?.loadFailed) {
+          clearIssue('startup-push-config')
+        }
+
+        if (pushSupport.supported && !subscriptionState?.loadFailed) {
+          clearIssue('startup-push-subscription')
+        }
+
         setNotificationPrefs({
           pushSupported: pushSupport.supported,
           pushConfigured: Boolean(config?.enabled && config?.configured),
@@ -193,40 +329,57 @@ export default function App() {
             phase: 'push_bootstrap',
           },
         })
+
+        setIssue({
+          key: 'startup-push-bootstrap',
+          title: 'Push startup failed unexpectedly',
+          message: 'Push setup hit an unexpected startup failure. Notifications are non-blocking, but you should reopen Profile if you rely on them.',
+          detail: buildIssueDetail(error),
+          tone: 'warning',
+          dismissible: true,
+          action: {
+            type: 'navigate',
+            label: 'Open profile',
+            to: '/settings',
+          },
+        })
       })
-  }, [ready, isAuthenticated, setNotificationPrefs])
+  }, [clearIssue, isAuthenticated, ready, setIssue, setNotificationPrefs])
+
+  if (primaryBlockingIssue) {
+    return (
+      <ResiliencePanel
+        className="resilience-screen"
+        eyebrow="Startup blocked"
+        title={primaryBlockingIssue.title || 'Johnny could not finish startup'}
+        message={primaryBlockingIssue.message || 'The app hit a blocking startup failure before it could finish bootstrapping.'}
+        detail={primaryBlockingIssue.detail}
+        actions={[
+          {
+            label: primaryBlockingIssue.action?.label || 'Reload app',
+            onClick: primaryBlockingIssue.action?.type === 'navigate' && primaryBlockingIssue.action?.to
+              ? () => { window.location.assign(primaryBlockingIssue.action.to) }
+              : () => window.location.reload(),
+          },
+        ]}
+      />
+    )
+  }
 
   if (!ready) return <div className="splash">Loading...</div>
 
+  return <Outlet />
+}
+
+export function ShellLayout() {
   return (
-    <>
-      <GlobalToastViewport />
-      <ScrollToTopOnRouteChange />
-      <Routes>
-        <Route path="/login" element={<LazyRoute><LoginScreen /></LazyRoute>} />
-        <Route path="/register" element={<LazyRoute><RegisterScreen /></LazyRoute>} />
-        <Route path="/forgot-password" element={<LazyRoute><ForgotPasswordScreen /></LazyRoute>} />
-        <Route path="/reset-password" element={<LazyRoute><ResetPasswordScreen /></LazyRoute>} />
-        <Route path="/onboarding/*" element={<RequireAuth><LazyRoute><OnboardingRoutes /></LazyRoute></RequireAuth>} />
-        <Route path="/" element={<RequireOnboarded><AppShell><LazyRoute><DashboardScreen /></LazyRoute></AppShell></RequireOnboarded>} />
-        <Route path="/dashboard" element={<RequireOnboarded><AppShell><LazyRoute><DashboardScreen /></LazyRoute></AppShell></RequireOnboarded>} />
-        <Route path="/workout" element={<RequireOnboarded><AppShell><LazyRoute><WorkoutScreen /></LazyRoute></AppShell></RequireOnboarded>} />
-        <Route path="/workout/library" element={<RequireOnboarded><AppShell><LazyRoute><ExerciseLibraryScreen /></LazyRoute></AppShell></RequireOnboarded>} />
-        <Route path="/nutrition/*" element={<RequireOnboarded><AppShell><LazyRoute><NutritionScreen /></LazyRoute></AppShell></RequireOnboarded>} />
-        <Route path="/body" element={<RequireOnboarded><AppShell><LazyRoute><BodyScreen /></LazyRoute></AppShell></RequireOnboarded>} />
-        <Route path="/activity-log" element={<RequireOnboarded><AppShell><LazyRoute><ActivityLogScreen /></LazyRoute></AppShell></RequireOnboarded>} />
-        <Route path="/progress-photos" element={<RequireOnboarded><AppShell><LazyRoute><ProgressPhotosScreen /></LazyRoute></AppShell></RequireOnboarded>} />
-        <Route path="/rewards" element={<RequireOnboarded><AppShell><LazyRoute><RewardsScreen /></LazyRoute></AppShell></RequireOnboarded>} />
-        <Route path="/ai" element={<RequireOnboarded><AppShell><LazyRoute><AiScreen /></LazyRoute></AppShell></RequireOnboarded>} />
-        <Route path="/settings" element={<RequireOnboarded><AppShell><LazyRoute><SettingsScreen /></LazyRoute></AppShell></RequireOnboarded>} />
-        <Route path="/admin" element={<RequireAdmin><AppShell><LazyRoute><AdminScreen /></LazyRoute></AppShell></RequireAdmin>} />
-        <Route path="*"          element={<Navigate to="/dashboard" replace />} />
-      </Routes>
-    </>
+    <AppShell>
+      <Outlet />
+    </AppShell>
   )
 }
 
-function LazyRoute({ children }) {
+export function LazyRoute({ children }) {
   return <Suspense fallback={<div className="screen-loading">Loading…</div>}>{children}</Suspense>
 }
 
@@ -249,4 +402,8 @@ function ScrollToTopOnRouteChange() {
   }, [location.pathname])
 
   return null
+}
+
+export function AppShellErrorElement() {
+  return <RouteErrorScreen area="shell" />
 }

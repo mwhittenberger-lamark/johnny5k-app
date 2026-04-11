@@ -1,11 +1,12 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { BrowserRouter } from 'react-router-dom'
+import { RouterProvider } from 'react-router-dom'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { registerSW } from 'virtual:pwa-register'
-import App from './App.jsx'
+import AppErrorBoundary from './components/resilience/AppErrorBoundary'
 import { initOfflineWriteQueue } from './api/core/restClient'
 import { queryClient } from './lib/queryClient'
+import { router } from './router'
 import './index.css'
 
 const LOCAL_SW_RESET_KEY = 'jf-local-sw-reset-v1'
@@ -36,11 +37,11 @@ if (typeof window !== 'undefined') {
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <App />
-      </BrowserRouter>
-    </QueryClientProvider>
+    <AppErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>
+    </AppErrorBoundary>
   </StrictMode>,
 )
 
