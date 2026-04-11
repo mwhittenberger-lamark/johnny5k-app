@@ -195,6 +195,7 @@ class AiMemoryService {
 				'next_step'      => sanitize_text_field( (string) ( $item['next_step'] ?? '' ) ),
 				'starter_prompt' => sanitize_textarea_field( (string) ( $item['starter_prompt'] ?? '' ) ),
 				'commitment_key' => sanitize_key( (string) ( $item['commitment_key'] ?? '' ) ),
+				'queue_scope'    => sanitize_key( (string) ( $item['queue_scope'] ?? '' ) ),
 				'source'         => sanitize_key( (string) ( $item['source'] ?? 'ai_queue' ) ),
 				'trigger_type'   => sanitize_key( (string) ( $item['trigger_type'] ?? '' ) ),
 				'priority'       => max( 0, (int) ( $item['priority'] ?? 0 ) ),
@@ -342,12 +343,23 @@ class AiMemoryService {
 	public static function store_queued_follow_ups( int $user_id, array $actions ): array {
 		$current = self::get_pending_follow_ups( $user_id );
 		$index   = [];
-		foreach ( $current as $item ) {
-			$key = strtolower( trim( (string) ( $item['prompt'] ?? '' ) ) );
-			if ( '' !== $key ) {
-				$index[ $key ] = $item;
+		$commitment_index = [];
+		$rebuild_indexes = static function( array $items ) use ( &$index, &$commitment_index ): void {
+			$index = [];
+			$commitment_index = [];
+			foreach ( $items as $item ) {
+				$key = strtolower( trim( (string) ( $item['prompt'] ?? '' ) ) );
+				if ( '' !== $key ) {
+					$index[ $key ] = $item;
+				}
+
+				$commitment_key = sanitize_key( (string) ( $item['commitment_key'] ?? '' ) );
+				if ( '' !== $commitment_key ) {
+					$commitment_index[ $commitment_key ] = $item;
+				}
 			}
-		}
+		};
+		$rebuild_indexes( $current );
 
 		$created = [];
 		foreach ( $actions as $action ) {
@@ -358,8 +370,18 @@ class AiMemoryService {
 			$payload = is_array( $action['payload'] ?? null ) ? $action['payload'] : [];
 			$prompt  = sanitize_textarea_field( (string) ( $payload['prompt'] ?? '' ) );
 			$reason  = sanitize_text_field( (string) ( $payload['reason'] ?? '' ) );
+			$commitment_key = sanitize_key( (string) ( $payload['commitment_key'] ?? '' ) );
+			$queue_scope = sanitize_key( (string) ( $payload['queue_scope'] ?? '' ) );
 			$key     = strtolower( trim( $prompt ) );
-			if ( '' === $key || isset( $index[ $key ] ) ) {
+
+			if ( '' !== $queue_scope ) {
+				$current = array_values( array_filter( $current, static function( array $item ) use ( $queue_scope ): bool {
+					return $queue_scope !== sanitize_key( (string) ( $item['queue_scope'] ?? '' ) );
+				} ) );
+				$rebuild_indexes( $current );
+			}
+
+			if ( '' === $key || isset( $index[ $key ] ) || ( '' !== $commitment_key && isset( $commitment_index[ $commitment_key ] ) ) ) {
 				continue;
 			}
 
@@ -370,7 +392,8 @@ class AiMemoryService {
 				'reason'         => $reason,
 				'next_step'      => sanitize_text_field( (string) ( $payload['next_step'] ?? '' ) ),
 				'starter_prompt' => sanitize_textarea_field( (string) ( $payload['starter_prompt'] ?? '' ) ),
-				'commitment_key' => sanitize_key( (string) ( $payload['commitment_key'] ?? '' ) ),
+				'commitment_key' => $commitment_key,
+				'queue_scope'    => $queue_scope,
 				'source'         => sanitize_key( (string) ( $payload['source'] ?? 'ai_queue' ) ) ?: 'ai_queue',
 				'trigger_type'   => sanitize_key( (string) ( $payload['trigger_type'] ?? '' ) ),
 				'priority'       => max( 0, (int) ( $payload['priority'] ?? 0 ) ),
@@ -385,6 +408,9 @@ class AiMemoryService {
 			];
 			$current[]     = $item;
 			$index[ $key ] = $item;
+			if ( '' !== $commitment_key ) {
+				$commitment_index[ $commitment_key ] = $item;
+			}
 			$created[]     = $item;
 		}
 

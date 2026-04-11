@@ -21,6 +21,12 @@ class CostTracker {
 		'gpt-4.1-nano'        => [ 'in' => 0.0001, 'out' => 0.0004 ],
 	];
 
+	// Current Gemini Developer API prices (USD) for text input/output tokens.
+	// gemini-3-pro-image-preview is estimated using Gemini 3 Pro token rates.
+	private const GEMINI_PRICE_PER_1M = [
+		'gemini-3-pro-image-preview' => [ 'in' => 2.00, 'out' => 12.00 ],
+	];
+
 	// ── Log OpenAI call ───────────────────────────────────────────────────────
 
 	/**
@@ -78,6 +84,38 @@ class CostTracker {
 			'units'         => 1,
 			'cost_usd'      => $cost_usd,
 			'metadata_json' => $metadata ? wp_json_encode( $metadata ) : null,
+		] );
+	}
+
+	/**
+	 * Log a completed Gemini API image call.
+	 *
+	 * @param int    $user_id
+	 * @param string $model
+	 * @param string $endpoint
+	 * @param int    $tokens_in
+	 * @param int    $tokens_out
+	 * @param array  $metadata
+	 */
+	public static function log_gemini_image(
+		int $user_id,
+		string $model,
+		string $endpoint,
+		int $tokens_in,
+		int $tokens_out,
+		array $metadata = []
+	): void {
+		$cost = self::estimate_gemini_cost( $model, $tokens_in, $tokens_out );
+
+		self::insert( [
+			'user_id'       => $user_id ?: null,
+			'service'       => 'gemini',
+			'endpoint'      => $endpoint,
+			'tokens_in'     => $tokens_in,
+			'tokens_out'    => $tokens_out,
+			'units'         => $tokens_in + $tokens_out,
+			'cost_usd'      => $cost,
+			'metadata_json' => wp_json_encode( array_merge( $metadata, [ 'model' => $model ] ) ),
 		] );
 	}
 
@@ -151,6 +189,16 @@ class CostTracker {
 		return round(
 			( $in  / 1000 * $prices['in']  ) +
 			( $out / 1000 * $prices['out'] ),
+			6
+		);
+	}
+
+	private static function estimate_gemini_cost( string $model, int $in, int $out ): float {
+		$prices = self::GEMINI_PRICE_PER_1M[ $model ] ?? self::GEMINI_PRICE_PER_1M['gemini-3-pro-image-preview'];
+
+		return round(
+			( $in  / 1000000 * $prices['in'] ) +
+			( $out / 1000000 * $prices['out'] ),
 			6
 		);
 	}

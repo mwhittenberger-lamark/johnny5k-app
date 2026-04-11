@@ -2,10 +2,12 @@ const LIVE_WORKOUT_VOICE_STORAGE_KEY = 'johnny5k:live-workout:voice'
 
 export const LIVE_WORKOUT_VOICE_RATE_OPTIONS = [0.85, 1, 1.1, 1.2, 1.3]
 export const OPENAI_TTS_VOICE_OPTIONS = ['alloy', 'ash', 'ballad', 'coral', 'echo', 'fable', 'nova', 'onyx', 'sage', 'shimmer']
+export const LIVE_WORKOUT_VOICE_MODE_OPTIONS = ['premium', 'instant', 'auto', 'mute']
 
 const DEFAULT_LIVE_WORKOUT_VOICE_PREFS = {
   autoSpeak: true,
   assistantAutoSpeak: false,
+  liveModeVoiceMode: 'premium',
   openAiVoice: 'alloy',
   rate: 1,
 }
@@ -19,15 +21,22 @@ export function normalizeLiveWorkoutVoicePrefs(value) {
   const rate = Number(next.rate)
   const openAiVoice = String(next.openAiVoice || '').trim().toLowerCase()
   const legacyVoiceUri = String(next.voiceURI || '').trim().toLowerCase()
+  const liveModeVoiceMode = String(next.liveModeVoiceMode || '').trim().toLowerCase()
   const resolvedVoice = OPENAI_TTS_VOICE_OPTIONS.includes(openAiVoice)
     ? openAiVoice
     : OPENAI_TTS_VOICE_OPTIONS.includes(legacyVoiceUri)
       ? legacyVoiceUri
       : DEFAULT_LIVE_WORKOUT_VOICE_PREFS.openAiVoice
+  const resolvedMode = LIVE_WORKOUT_VOICE_MODE_OPTIONS.includes(liveModeVoiceMode)
+    ? liveModeVoiceMode
+    : typeof next.autoSpeak === 'boolean'
+      ? (next.autoSpeak ? DEFAULT_LIVE_WORKOUT_VOICE_PREFS.liveModeVoiceMode : 'mute')
+      : DEFAULT_LIVE_WORKOUT_VOICE_PREFS.liveModeVoiceMode
 
   return {
-    autoSpeak: typeof next.autoSpeak === 'boolean' ? next.autoSpeak : DEFAULT_LIVE_WORKOUT_VOICE_PREFS.autoSpeak,
+    autoSpeak: resolvedMode !== 'mute',
     assistantAutoSpeak: typeof next.assistantAutoSpeak === 'boolean' ? next.assistantAutoSpeak : DEFAULT_LIVE_WORKOUT_VOICE_PREFS.assistantAutoSpeak,
+    liveModeVoiceMode: resolvedMode,
     openAiVoice: resolvedVoice,
     rate: LIVE_WORKOUT_VOICE_RATE_OPTIONS.includes(rate) ? rate : DEFAULT_LIVE_WORKOUT_VOICE_PREFS.rate,
   }
@@ -62,4 +71,18 @@ export function formatOpenAiVoiceLabel(voice) {
   const key = String(voice || '').trim().toLowerCase()
   if (!key) return 'Default'
   return key.charAt(0).toUpperCase() + key.slice(1)
+}
+
+export function formatLiveWorkoutVoiceModeLabel(mode) {
+  const key = String(mode || '').trim().toLowerCase()
+  if (key === 'instant') return 'Instant'
+  if (key === 'auto') return 'Auto'
+  if (key === 'mute') return 'Mute'
+  return 'Premium'
+}
+
+export function cycleLiveWorkoutVoiceMode(mode) {
+  const currentIndex = LIVE_WORKOUT_VOICE_MODE_OPTIONS.indexOf(String(mode || '').trim().toLowerCase())
+  const safeIndex = currentIndex >= 0 ? currentIndex : 0
+  return LIVE_WORKOUT_VOICE_MODE_OPTIONS[(safeIndex + 1) % LIVE_WORKOUT_VOICE_MODE_OPTIONS.length]
 }

@@ -3,7 +3,9 @@ import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { authApi } from './api/modules/auth'
 import { onboardingApi } from './api/modules/onboarding'
 import { pushApi } from './api/modules/push'
-import { getCurrentPushSubscription, serializeSubscription } from './lib/pushNotifications'
+import { normalizeDailyCheckInEntry } from './lib/dailyCheckIn'
+import { getCurrentPushSubscription, getPushSupportState, serializeSubscription } from './lib/pushNotifications'
+import { normalizePushPromptStatus } from './lib/onboarding'
 import { useAuthStore } from './store/authStore'
 import AppShell from './components/layout/AppShell'
 import { applyColorScheme, getStoredColorScheme, setAvailableColorSchemes } from './lib/theme'
@@ -46,7 +48,7 @@ function RequireAdmin({ children }) {
 }
 
 export default function App() {
-  const { nonce, isAuthenticated, revalidate, setAppImages } = useAuthStore()
+  const { nonce, isAuthenticated, revalidate, setAppImages, setDailyCheckInEntry, setNotificationPrefs, setPreferenceMeta } = useAuthStore()
   const requiresBootstrap = Boolean(nonce || isAuthenticated)
   const [authBootstrapComplete, setAuthBootstrapComplete] = useState(() => !requiresBootstrap)
   const [publicConfigComplete, setPublicConfigComplete] = useState(false)
@@ -82,9 +84,15 @@ export default function App() {
           return onboardingApi.getState()
             .then(data => {
               if (!active) return
+              const preferenceMeta = data?.prefs?.exercise_preferences_json ?? {}
               setAppImages(data?.app_images)
+              setPreferenceMeta(preferenceMeta)
+              setDailyCheckInEntry(normalizeDailyCheckInEntry(preferenceMeta?.daily_check_in))
+              setNotificationPrefs({
+                pushPromptStatus: normalizePushPromptStatus(preferenceMeta?.push_prompt_status),
+              })
               setAvailableColorSchemes(data?.color_schemes)
-              applyColorScheme(data?.prefs?.exercise_preferences_json?.color_scheme)
+              applyColorScheme(preferenceMeta?.color_scheme)
             })
             .catch(() => {})
         })
@@ -94,21 +102,33 @@ export default function App() {
     }
 
     return () => { active = false }
-  }, [requiresBootstrap, revalidate, setAppImages])
+  }, [requiresBootstrap, revalidate, setAppImages, setDailyCheckInEntry, setNotificationPrefs, setPreferenceMeta])
 
   useEffect(() => {
     if (!ready || !isAuthenticated) return
 
-    getCurrentPushSubscription()
-      .then(subscription => {
+    const pushSupport = getPushSupportState()
+
+    Promise.all([
+      pushApi.config().catch(() => ({ push: { enabled: false, configured: false } })),
+      pushSupport.supported ? getCurrentPushSubscription().catch(() => null) : Promise.resolve(null),
+    ])
+      .then(([configResponse, subscription]) => {
         const payload = serializeSubscription(subscription)
         if (payload?.endpoint) {
-          return pushApi.subscribe(payload).catch(() => null)
+          pushApi.subscribe(payload).catch(() => null)
         }
-        return null
+
+        const config = configResponse?.push ?? {}
+        setNotificationPrefs({
+          pushSupported: pushSupport.supported,
+          pushConfigured: Boolean(config?.enabled && config?.configured),
+          pushSubscribed: Boolean(subscription),
+          ...(subscription ? { pushPromptStatus: 'accepted' } : {}),
+        })
       })
       .catch(() => {})
-  }, [ready, isAuthenticated])
+  }, [ready, isAuthenticated, setNotificationPrefs])
 
   if (!ready) return <div className="splash">Loading...</div>
 

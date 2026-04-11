@@ -1,27 +1,22 @@
-import { useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { aiApi } from '../../api/modules/ai'
 import { analyticsApi } from '../../api/modules/analytics'
 import { bodyApi } from '../../api/modules/body'
 import { onboardingApi } from '../../api/modules/onboarding'
 import { pushApi } from '../../api/modules/push'
+import ClearableInput from '../../components/ui/ClearableInput'
 import { decodeVapidPublicKey, ensurePushRegistration, getCurrentPushSubscription, getNotificationPermission, getPushSupportState, requestNotificationPermission, serializeSubscription } from '../../lib/pushNotifications'
 import { useDashboardStore } from '../../store/dashboardStore'
 import { useAuthStore } from '../../store/authStore'
 import { useJohnnyAssistantStore } from '../../store/johnnyAssistantStore'
 import { formatOpenAiVoiceLabel, getDefaultLiveWorkoutVoicePrefs, LIVE_WORKOUT_VOICE_RATE_OPTIONS, OPENAI_TTS_VOICE_OPTIONS, readLiveWorkoutVoicePrefs, writeLiveWorkoutVoicePrefs } from '../../lib/liveWorkoutVoice'
-import { buildHeightCm, formatPhoneInput, formatReminderHour, formatMissingFields, getTimezoneRegion, getTimezoneRegions, getTimezonesForRegion, normalizePhoneNumber, normalizeTargets, reminderHourOptions, settingsFormFromState } from '../../lib/onboarding'
+import { DAILY_CHECK_IN_QUESTIONS, normalizeDailyCheckInEntry } from '../../lib/dailyCheckIn'
+import { buildHeightCm, formatPhoneInput, formatReminderHour, formatMissingFields, getTimezoneRegion, getTimezoneRegions, getTimezonesForRegion, normalizePhoneNumber, normalizePushPromptStatus, normalizeTargets, reminderHourOptions, settingsFormFromState } from '../../lib/onboarding'
+import { DAY_TYPE_OPTIONS } from '../../lib/trainingDayTypes'
 import { formatUsShortDate } from '../../lib/dateFormat'
 import { applyColorScheme, getColorSchemeOptions, normalizeColorScheme, setAvailableColorSchemes } from '../../lib/theme'
 
-const DAY_TYPE_OPTIONS = [
-  ['push', 'Push'],
-  ['pull', 'Pull'],
-  ['legs', 'Legs'],
-  ['arms_shoulders', 'Bonus arms + shoulders'],
-  ['cardio', 'Cardio'],
-  ['rest', 'Rest'],
-]
 const TIMEZONE_REGIONS = getTimezoneRegions()
 const REMINDER_HOUR_OPTIONS = reminderHourOptions()
 const GOAL_CALORIE_DELTAS = {
@@ -30,6 +25,7 @@ const GOAL_CALORIE_DELTAS = {
   gain: { slow: 250, moderate: 400, aggressive: 500 },
   recomp: { slow: -250, moderate: -250, aggressive: -250 },
 }
+const PROFILE_ACCORDION_STORAGE_KEY_PREFIX = 'johnny5k.profile.accordions.v1'
 const PROFILE_ACCORDION_DEFAULTS = {
   overview: true,
   profile: true,
@@ -41,11 +37,16 @@ const PROFILE_ACCORDION_DEFAULTS = {
 
 export default function SettingsScreen() {
   const initialPushSupport = getPushSupportState()
+  const location = useLocation()
   const navigate = useNavigate()
   const invalidate = useDashboardStore(s => s.invalidate)
   const loadSnapshot = useDashboardStore(s => s.loadSnapshot)
   const snapshot = useDashboardStore(s => s.snapshot)
+  const authEmail = useAuthStore(s => s.email)
+  const dailyCheckInEntry = useAuthStore(s => s.dailyCheckInEntry)
   const setAuth = useAuthStore(s => s.setAuth)
+  const setNotificationPrefs = useAuthStore(s => s.setNotificationPrefs)
+  const setPreferenceMeta = useAuthStore(s => s.setPreferenceMeta)
   const openDrawer = useJohnnyAssistantStore(state => state.openDrawer)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -82,8 +83,9 @@ export default function SettingsScreen() {
   const [pushBusy, setPushBusy] = useState(false)
   const [pushError, setPushError] = useState('')
   const [pushMessage, setPushMessage] = useState('')
+  const [showPushRefusalChoice, setShowPushRefusalChoice] = useState(false)
   const [cancelingReminderId, setCancelingReminderId] = useState('')
-  const [accordionSections, setAccordionSections] = useState(PROFILE_ACCORDION_DEFAULTS)
+  const [accordionSections, setAccordionSections] = useState(() => readStoredProfileAccordionSections(buildProfileAccordionStorageKey(authEmail)))
   const [liveVoicePrefs, setLiveVoicePrefs] = useState(() => readLiveWorkoutVoicePrefs())
   const [voicePreviewBusy, setVoicePreviewBusy] = useState(false)
   const [voicePreviewError, setVoicePreviewError] = useState('')
@@ -102,6 +104,9 @@ export default function SettingsScreen() {
   const [generationMessage, setGenerationMessage] = useState('')
   const [zoomedImageId, setZoomedImageId] = useState('')
   const [zoomScale, setZoomScale] = useState(1)
+  const pushPanelRef = useRef(null)
+  const pushEnableButtonRef = useRef(null)
+  const accordionStorageKey = useMemo(() => buildProfileAccordionStorageKey(authEmail), [authEmail])
   const speechPlaybackSupported = typeof window !== 'undefined' && typeof window.Audio !== 'undefined'
 
   function update(field, value) {
@@ -121,10 +126,16 @@ export default function SettingsScreen() {
 
   function toggleAccordionSection(sectionKey) {
     setAccordionSections(current => ({
-      ...current,
-      [sectionKey]: !current[sectionKey],
+      ...writeStoredProfileAccordionSections(accordionStorageKey, {
+        ...current,
+        [sectionKey]: !current[sectionKey],
+      }),
     }))
   }
+
+  useEffect(() => {
+    setAccordionSections(readStoredProfileAccordionSections(accordionStorageKey))
+  }, [accordionStorageKey])
 
   useEffect(() => {
     let active = true
@@ -140,6 +151,10 @@ export default function SettingsScreen() {
           color_scheme: normalizeColorScheme(nextForm.color_scheme),
           phone: formatPhoneInput(nextForm.phone),
         })
+        setPreferenceMeta(data?.prefs?.exercise_preferences_json ?? {})
+        setNotificationPrefs({
+          pushPromptStatus: normalizePushPromptStatus(nextForm.push_prompt_status),
+        })
         setHeadshot(data?.headshot ?? { configured: false })
         setGeneratedImages(Array.isArray(data?.generated_images) ? data.generated_images : [])
         setTimezoneRegion(getTimezoneRegion(nextForm.timezone))
@@ -154,7 +169,7 @@ export default function SettingsScreen() {
       })
 
     return () => { active = false }
-  }, [])
+  }, [setNotificationPrefs, setPreferenceMeta])
 
   useEffect(() => {
     applyColorScheme(form.color_scheme)
@@ -236,7 +251,7 @@ export default function SettingsScreen() {
       })
 
     return () => { active = false }
-  }, [])
+  }, [setNotificationPrefs])
 
   useEffect(() => {
     let active = true
@@ -259,7 +274,7 @@ export default function SettingsScreen() {
       })
 
     return () => { active = false }
-  }, [])
+  }, [setNotificationPrefs])
 
   useEffect(() => {
     let active = true
@@ -291,13 +306,19 @@ export default function SettingsScreen() {
           origin: typeof window !== 'undefined' ? window.location.origin : '',
           serviceWorkerRegistered: Boolean(registration),
         }))
+        setNotificationPrefs({
+          pushSupported: support.supported,
+          pushConfigured: Boolean(config?.enabled && config?.configured),
+          pushSubscribed: Boolean(subscription),
+          ...(subscription ? { pushPromptStatus: 'accepted' } : {}),
+        })
       })
       .catch(err => {
         if (active) setPushError(err.message)
       })
 
     return () => { active = false }
-  }, [])
+  }, [setNotificationPrefs])
 
   useEffect(() => {
     loadSnapshot()
@@ -306,9 +327,37 @@ export default function SettingsScreen() {
       .catch(() => {})
   }, [loadSnapshot])
 
+  useEffect(() => {
+    if (location.state?.focusSection !== 'pushNotifications') {
+      return
+    }
+
+    setShowPushRefusalChoice(Boolean(location.state?.revealPushRefusal))
+    setAccordionSections(current => {
+      if (current.defaults) {
+        return current
+      }
+
+      return {
+        ...writeStoredProfileAccordionSections(accordionStorageKey, {
+          ...current,
+          defaults: true,
+        }),
+      }
+    })
+
+    requestAnimationFrame(() => {
+      pushPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      pushEnableButtonRef.current?.focus()
+    })
+  }, [accordionStorageKey, location.state])
+
   function updateLiveVoicePref(field, value) {
     setLiveVoicePrefs(current => ({
       ...current,
+      ...(field === 'autoSpeak'
+        ? { liveModeVoiceMode: value ? (current.liveModeVoiceMode === 'mute' ? 'premium' : current.liveModeVoiceMode) : 'mute' }
+        : null),
       [field]: value,
     }))
   }
@@ -356,6 +405,10 @@ export default function SettingsScreen() {
         current_goal: form.current_goal,
         goal_rate: form.goal_rate,
         activity_level: form.activity_level,
+        rest_between_sets_min_seconds: normalizePositiveInt(form.rest_between_sets_min_seconds, 30),
+        rest_between_sets_max_seconds: normalizeRangeMax(form.rest_between_sets_max_seconds, form.rest_between_sets_min_seconds, 60),
+        rest_between_exercises_min_seconds: normalizePositiveInt(form.rest_between_exercises_min_seconds, 60),
+        rest_between_exercises_max_seconds: normalizeRangeMax(form.rest_between_exercises_max_seconds, form.rest_between_exercises_min_seconds, 120),
         phone: normalizePhoneNumber(form.phone),
       })
 
@@ -375,6 +428,7 @@ export default function SettingsScreen() {
           sleep_reminder_hour: Number(form.sleep_reminder_hour),
           weekly_summary_enabled: form.weekly_summary_enabled,
           weekly_summary_hour: Number(form.weekly_summary_hour),
+          push_prompt_status: normalizePushPromptStatus(form.push_prompt_status),
           push_enabled: form.push_enabled,
           push_absence_nudges: form.push_absence_nudges,
           push_milestones: form.push_milestones,
@@ -400,6 +454,7 @@ export default function SettingsScreen() {
       }
 
       const state = await onboardingApi.getState()
+      setPreferenceMeta(state?.prefs?.exercise_preferences_json ?? {})
       setMissingFields(formatMissingFields(state.missing_profile_fields))
       setHeadshot(state?.headshot ?? { configured: false })
       setGeneratedImages(Array.isArray(state?.generated_images) ? state.generated_images : [])
@@ -633,6 +688,13 @@ export default function SettingsScreen() {
       }
 
       await pushApi.subscribe(payload)
+      await savePushPreferenceMetaPatch({
+        push_enabled: true,
+        push_prompt_status: 'accepted',
+      }, {
+        push_enabled: true,
+        push_prompt_status: 'accepted',
+      })
       analyticsApi.event('push_subscription_enabled', {
         screen: 'settings',
         context: 'push_preferences',
@@ -649,6 +711,11 @@ export default function SettingsScreen() {
         activeCount: Number(subscriptionsResponse?.active_count ?? 1),
         serviceWorkerRegistered: true,
       }))
+      setNotificationPrefs({
+        pushPromptStatus: 'accepted',
+        pushSubscribed: true,
+      })
+      setShowPushRefusalChoice(false)
       setPushMessage('Browser notifications enabled on this device.')
     } catch (err) {
       setPushError(err.message || 'Could not enable browser notifications.')
@@ -680,18 +747,102 @@ export default function SettingsScreen() {
       }
 
       const subscriptionsResponse = await pushApi.subscriptions().catch(() => ({ active_count: 0 }))
+      await savePushPreferenceMetaPatch({
+        push_prompt_status: 'pending',
+      }, {
+        push_prompt_status: 'pending',
+      })
       setPushStatus(current => ({
         ...current,
         permission: getNotificationPermission(),
         subscribed: false,
         activeCount: Number(subscriptionsResponse?.active_count ?? 0),
       }))
+      setNotificationPrefs({
+        pushPromptStatus: 'pending',
+        pushSubscribed: false,
+      })
       setPushMessage('Browser notifications disabled on this device.')
     } catch (err) {
       setPushError(err.message || 'Could not disable browser notifications.')
     } finally {
       setPushBusy(false)
     }
+  }
+
+  async function handleRefusePush() {
+    if (pushBusy) return
+
+    setPushBusy(true)
+    setPushError('')
+    setPushMessage('')
+
+    try {
+      const subscription = await getCurrentPushSubscription().catch(() => null)
+      if (subscription) {
+        const payload = serializeSubscription(subscription)
+        if (payload?.endpoint) {
+          await pushApi.unsubscribe({ endpoint: payload.endpoint }).catch(() => {})
+        }
+        await subscription.unsubscribe().catch(() => {})
+      }
+
+      await savePushPreferenceMetaPatch({
+        push_enabled: false,
+        push_prompt_status: 'refused',
+      }, {
+        notifications_enabled: true,
+        push_enabled: false,
+        push_prompt_status: 'refused',
+      })
+
+      const subscriptionsResponse = await pushApi.subscriptions().catch(() => ({ active_count: 0 }))
+      setPushStatus(current => ({
+        ...current,
+        permission: getNotificationPermission(),
+        subscribed: false,
+        activeCount: Number(subscriptionsResponse?.active_count ?? 0),
+      }))
+      setNotificationPrefs({
+        pushPromptStatus: 'refused',
+        pushSubscribed: false,
+      })
+      setPushMessage('Push notifications refused. Johnny will use SMS when available, then fall back to the drawer if SMS is also off.')
+      setShowPushRefusalChoice(false)
+    } catch (err) {
+      setPushError(err.message || 'Could not switch push reminders to SMS only.')
+    } finally {
+      setPushBusy(false)
+    }
+  }
+
+  async function savePushPreferenceMetaPatch(preferencePatch, formPatch = {}) {
+    const nextPreferenceMeta = {
+      ...(form.preference_meta ?? {}),
+      ...(preferencePatch ?? {}),
+    }
+    const nextPushPromptStatus = Object.prototype.hasOwnProperty.call(preferencePatch ?? {}, 'push_prompt_status')
+      ? normalizePushPromptStatus(preferencePatch.push_prompt_status)
+      : form.push_prompt_status
+
+    await onboardingApi.savePrefs({
+      notifications_enabled: Object.prototype.hasOwnProperty.call(formPatch, 'notifications_enabled')
+        ? formPatch.notifications_enabled
+        : form.notifications_enabled,
+      exercise_preferences_json: nextPreferenceMeta,
+    })
+
+    setForm(current => ({
+      ...current,
+      ...formPatch,
+      push_prompt_status: nextPushPromptStatus,
+      preference_meta: nextPreferenceMeta,
+    }))
+    setPreferenceMeta(nextPreferenceMeta)
+
+    setNotificationPrefs({
+      pushPromptStatus: nextPushPromptStatus,
+    })
   }
 
   const regionTimezones = useMemo(() => getTimezonesForRegion(timezoneRegion), [timezoneRegion])
@@ -713,8 +864,24 @@ export default function SettingsScreen() {
     pace: form.goal_rate,
     timezone: form.timezone,
   }), [form.current_goal, form.goal_rate, form.timezone, latestWeight, snapshot?.nutrition_totals?.calories, targets?.target_calories])
+  const currentDailyCheckIn = useMemo(() => normalizeDailyCheckInEntry(dailyCheckInEntry), [dailyCheckInEntry])
+  const dailyCheckInResponses = useMemo(() => DAILY_CHECK_IN_QUESTIONS
+    .map(question => ({
+      key: question.key,
+      label: question.label,
+      value: currentDailyCheckIn.answers?.[question.key] || '',
+    }))
+    .filter(question => question.value), [currentDailyCheckIn])
   const zoomedImage = generatedImages.find(image => image.id === zoomedImageId) || null
   const favoritedImageCount = generatedImages.filter(image => image?.favorited).length
+
+  function handleOpenDailyCheckIn() {
+    if (typeof window === 'undefined') {
+      return
+    }
+
+    window.dispatchEvent(new CustomEvent('johnny5k:open-daily-checkin'))
+  }
 
   if (loading) return <div className="screen-loading">Loading…</div>
 
@@ -826,15 +993,43 @@ export default function SettingsScreen() {
           eyebrow="Core inputs"
           title="Profile Basics"
           description="Identity, body stats, goal direction, plus headshot and AI image generation controls."
-          itemCountLabel="3 sections + image generation"
+          itemCountLabel="4 sections + image generation"
           open={accordionSections.profile}
           onToggle={toggleAccordionSection}
         >
+          <section className="settings-section dash-card settings-checkin-card">
+            <div className="settings-checkin-head">
+              <div>
+                <span className="dashboard-chip subtle">Daily check-in</span>
+                <h3>Reopen today&apos;s check-in</h3>
+                <p className="settings-subtitle">Use this from Profile whenever you want to update the water-first check-in answers Johnny will use later.</p>
+              </div>
+            </div>
+            <div className="settings-checkin-actions">
+              <button type="button" className="btn-secondary small settings-checkin-button" onClick={handleOpenDailyCheckIn}>Open check-in</button>
+            </div>
+            {dailyCheckInResponses.length ? (
+              <div className="settings-checkin-summary">
+                <div className="settings-checkin-answer-list">
+                  {dailyCheckInResponses.map(response => (
+                    <div key={response.key} className="settings-checkin-answer">
+                      <span>{response.label}</span>
+                      <strong>{response.value}</strong>
+                    </div>
+                  ))}
+                </div>
+                <p className="settings-checkin-meta">Saved for {currentDailyCheckIn.day_key || 'today'}.</p>
+              </div>
+            ) : (
+              <p className="settings-checkin-meta">No answers saved yet for today. Open the check-in to log them.</p>
+            )}
+          </section>
+
           <section className="settings-section dash-card">
             <h3>About You</h3>
             <div className="settings-grid">
-              <label className="settings-field"><span className="settings-field-label">First Name</span><input value={form.first_name} onChange={e => update('first_name', e.target.value)} /></label>
-              <label className="settings-field"><span className="settings-field-label">Last Name</span><input value={form.last_name} onChange={e => update('last_name', e.target.value)} /></label>
+              <label className="settings-field"><span className="settings-field-label">First Name</span><ClearableInput value={form.first_name} onChange={e => update('first_name', e.target.value)} /></label>
+              <label className="settings-field"><span className="settings-field-label">Last Name</span><ClearableInput value={form.last_name} onChange={e => update('last_name', e.target.value)} /></label>
               <label className="settings-field"><span className="settings-field-label">Date of Birth</span><input type="date" value={form.date_of_birth} onChange={e => update('date_of_birth', e.target.value)} /></label>
               <label className="settings-field"><span className="settings-field-label">Sex</span>
                 <select value={form.sex} onChange={e => update('sex', e.target.value)}>
@@ -901,6 +1096,70 @@ export default function SettingsScreen() {
                   <option value="athlete">Athlete</option>
                 </select>
               </label>
+              <div className="settings-inline-panel settings-field-span-2">
+                <div className="switch-copy">
+                  <span className="settings-field-label">Live coach rest timing</span>
+                  <span className="settings-field-hint">Johnny uses these ranges for live coach timing toasts, the intro modal, and the rest window card during live workout mode.</span>
+                </div>
+                <div className="settings-grid settings-grid-compact">
+                  <label className="settings-subfield">
+                    <span>Set rest min</span>
+                    <div className="settings-input-suffix">
+                      <input
+                        type="number"
+                        min="5"
+                        max="900"
+                        step="5"
+                        value={form.rest_between_sets_min_seconds}
+                        onChange={e => update('rest_between_sets_min_seconds', Number(e.target.value))}
+                      />
+                      <span>sec</span>
+                    </div>
+                  </label>
+                  <label className="settings-subfield">
+                    <span>Set rest max</span>
+                    <div className="settings-input-suffix">
+                      <input
+                        type="number"
+                        min="5"
+                        max="900"
+                        step="5"
+                        value={form.rest_between_sets_max_seconds}
+                        onChange={e => update('rest_between_sets_max_seconds', Number(e.target.value))}
+                      />
+                      <span>sec</span>
+                    </div>
+                  </label>
+                  <label className="settings-subfield">
+                    <span>Exercise rest min</span>
+                    <div className="settings-input-suffix">
+                      <input
+                        type="number"
+                        min="0.5"
+                        max="15"
+                        step="0.5"
+                        value={formatExerciseRestMinutes(form.rest_between_exercises_min_seconds)}
+                        onChange={e => update('rest_between_exercises_min_seconds', Math.round(Number(e.target.value || 0) * 60))}
+                      />
+                      <span>min</span>
+                    </div>
+                  </label>
+                  <label className="settings-subfield">
+                    <span>Exercise rest max</span>
+                    <div className="settings-input-suffix">
+                      <input
+                        type="number"
+                        min="0.5"
+                        max="15"
+                        step="0.5"
+                        value={formatExerciseRestMinutes(form.rest_between_exercises_max_seconds)}
+                        onChange={e => update('rest_between_exercises_max_seconds', Math.round(Number(e.target.value || 0) * 60))}
+                      />
+                      <span>min</span>
+                    </div>
+                  </label>
+                </div>
+              </div>
             </div>
           </section>
 
@@ -1058,11 +1317,12 @@ export default function SettingsScreen() {
                 </label>
                 <label className="settings-field notification-phone-field">
                   <span className="settings-field-label">Phone</span>
-                  <input type="tel" inputMode="tel" value={form.phone} onChange={e => updatePhone(e.target.value)} placeholder="(555) 123-4567" disabled={!form.notifications_enabled} />
+                  <ClearableInput type="tel" inputMode="tel" value={form.phone} onChange={e => updatePhone(e.target.value)} placeholder="(555) 123-4567" disabled={!form.notifications_enabled} />
                   <span className="settings-field-hint">Only used for reminder texts.</span>
                 </label>
               </div>
               <div className="settings-inline-panel settings-field-span-2 settings-reminders-panel">
+                <div ref={pushPanelRef} className="settings-push-anchor" aria-hidden="true" />
                 <div className="switch-copy">
                   <span className="settings-field-label">Browser notifications</span>
                   <span className="settings-field-hint">Control whether Johnny can use push for absence nudges, milestones, winback, and accountability check-ins.</span>
@@ -1074,6 +1334,7 @@ export default function SettingsScreen() {
                     </button>
                   ) : (
                     <button
+                      ref={pushEnableButtonRef}
                       type="button"
                       className="btn-secondary small"
                       onClick={handleEnablePush}
@@ -1093,6 +1354,14 @@ export default function SettingsScreen() {
                     ? `${pushStatus.activeCount} active notification device${pushStatus.activeCount === 1 ? '' : 's'} on your account.`
                     : 'Johnny push is not configured yet by the admin.'}
                 </p>
+                {showPushRefusalChoice && !pushStatus.subscribed ? (
+                  <div className="settings-push-refusal">
+                    <p>If you do not want push on this device, Johnny can switch these reminders to SMS only instead.</p>
+                    <button type="button" className="btn-outline small" onClick={handleRefusePush} disabled={pushBusy}>
+                      {pushBusy ? 'Updating…' : 'Refuse push and use SMS only'}
+                    </button>
+                  </div>
+                ) : null}
                 {pushError ? <p className="error">{pushError}</p> : null}
                 {pushMessage ? <p className="success-message">{pushMessage}</p> : null}
               </div>
@@ -1237,20 +1506,15 @@ export default function SettingsScreen() {
                   <div className="reminder-setting-card">
                     <div className="reminder-card-head">
                       <div>
-                        <strong>Meal reminder</strong>
-                        <p>Set a default nudge for your midday meal window.</p>
+                        <strong>Meal logging nudges</strong>
+                        <p>Johnny checks breakfast at 10am, lunch at 2pm, and dinner at 7pm in your saved timezone.</p>
                       </div>
                       <label className="switch-control switch-control-compact">
                         <input className="switch-input" type="checkbox" checked={form.meal_reminder_enabled} onChange={e => update('meal_reminder_enabled', e.target.checked)} />
                         <span className="switch-track" aria-hidden="true" />
                       </label>
                     </div>
-                    <label className="settings-subfield">
-                      <span>Time</span>
-                      <select value={form.meal_reminder_hour} onChange={e => update('meal_reminder_hour', Number(e.target.value))} disabled={!form.meal_reminder_enabled}>
-                        {REMINDER_HOUR_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-                      </select>
-                    </label>
+                    <p className="settings-field-hint">Push fires first. If you refuse push, Johnny switches these nudges to SMS. If both are off, only the latest nudge waits in the drawer for next open.</p>
                   </div>
                   <div className="reminder-setting-card">
                     <div className="reminder-card-head">
@@ -1486,7 +1750,7 @@ export default function SettingsScreen() {
               <div className="settings-ai-memory-list">
                 {(johnnyMemoryDraft.length ? johnnyMemoryDraft : ['']).map((bullet, index) => (
                   <div key={`johnny-memory-${index}`} className="settings-ai-memory-row">
-                    <input
+                    <ClearableInput
                       type="text"
                       value={bullet}
                       onChange={event => setJohnnyMemoryDraft(current => current.map((item, itemIndex) => (itemIndex === index ? event.target.value : item)))}
@@ -1766,6 +2030,74 @@ function formatReminderHistoryMeta(reminder, timezoneLabel) {
   }
 
   return `${statusLabel} • ${timezoneLabel}`
+}
+
+function buildProfileAccordionStorageKey(email) {
+  const normalizedEmail = String(email || '').trim().toLowerCase()
+  return `${PROFILE_ACCORDION_STORAGE_KEY_PREFIX}.${normalizedEmail || 'guest'}`
+}
+
+function normalizePositiveInt(value, fallback) {
+  const parsed = Number.parseInt(value, 10)
+  if (Number.isNaN(parsed)) return fallback
+  return Math.min(900, Math.max(5, parsed))
+}
+
+function normalizeRangeMax(value, minValue, fallback) {
+  const nextMin = normalizePositiveInt(minValue, fallback)
+  const parsed = normalizePositiveInt(value, fallback)
+  return Math.max(nextMin, parsed)
+}
+
+function formatExerciseRestMinutes(value) {
+  const seconds = Number(value || 0)
+  if (!Number.isFinite(seconds) || seconds <= 0) return 1
+  const minutes = seconds / 60
+  return Number.isInteger(minutes) ? minutes : minutes.toFixed(1)
+}
+
+function normalizeProfileAccordionSections(value) {
+  const payload = value && typeof value === 'object' ? value : {}
+
+  return Object.fromEntries(
+    Object.keys(PROFILE_ACCORDION_DEFAULTS).map(sectionKey => [
+      sectionKey,
+      typeof payload[sectionKey] === 'boolean' ? payload[sectionKey] : PROFILE_ACCORDION_DEFAULTS[sectionKey],
+    ])
+  )
+}
+
+function readStoredProfileAccordionSections(storageKey) {
+  if (typeof window === 'undefined' || !storageKey) {
+    return { ...PROFILE_ACCORDION_DEFAULTS }
+  }
+
+  try {
+    const rawValue = window.localStorage.getItem(storageKey)
+    if (!rawValue) {
+      return { ...PROFILE_ACCORDION_DEFAULTS }
+    }
+
+    return normalizeProfileAccordionSections(JSON.parse(rawValue))
+  } catch {
+    return { ...PROFILE_ACCORDION_DEFAULTS }
+  }
+}
+
+function writeStoredProfileAccordionSections(storageKey, value) {
+  const normalizedValue = normalizeProfileAccordionSections(value)
+
+  if (typeof window === 'undefined' || !storageKey) {
+    return normalizedValue
+  }
+
+  try {
+    window.localStorage.setItem(storageKey, JSON.stringify(normalizedValue))
+  } catch {
+    return normalizedValue
+  }
+
+  return normalizedValue
 }
 
 function buildProfileGoalHeadline(goal, pace) {

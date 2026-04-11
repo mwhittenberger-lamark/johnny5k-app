@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { authApi } from '../../api/modules/auth'
+import ClearableInput from '../../components/ui/ClearableInput'
 
 export default function ForgotPasswordScreen() {
   const [email, setEmail] = useState('')
@@ -30,7 +31,7 @@ export default function ForgotPasswordScreen() {
       <p className="tagline">Enter your email and we’ll send a reset link.</p>
 
       <form onSubmit={handleSubmit} className="auth-form">
-        <input type="email" placeholder="Email" value={email} onChange={event => setEmail(event.target.value)} required />
+        <ClearableInput type="email" placeholder="Email" value={email} onChange={event => setEmail(event.target.value)} required />
         {error ? <p className="error">{error}</p> : null}
         {message ? <p className="success-message">{message}</p> : null}
         <button type="submit" className="btn-primary" disabled={loading}>

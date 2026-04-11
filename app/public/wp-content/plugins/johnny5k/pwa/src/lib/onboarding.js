@@ -1,3 +1,5 @@
+import { DEFAULT_DAY_TYPES } from './trainingDayTypes'
+
 const DEFAULT_PROFILE_FORM = {
   first_name: '',
   last_name: '',
@@ -22,7 +24,6 @@ const DEFAULT_GOALS_FORM = {
 }
 
 const WEEKDAY_ORDER = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-const DEFAULT_DAY_TYPES = ['push', 'pull', 'legs', 'arms_shoulders', 'cardio']
 
 const DEFAULT_TRAINING_FORM = {
   training_experience: 'beginner',
@@ -30,6 +31,10 @@ const DEFAULT_TRAINING_FORM = {
   preferred_workout_days: [],
   weekly_schedule: defaultWeeklySchedule(),
   workout_confidence: 'building',
+  rest_between_sets_min_seconds: 30,
+  rest_between_sets_max_seconds: 60,
+  rest_between_exercises_min_seconds: 60,
+  rest_between_exercises_max_seconds: 120,
 }
 
 const DEFAULT_INJURIES_FORM = {
@@ -64,6 +69,7 @@ const DEFAULT_HABITS_FORM = {
   sleep_reminder_hour: 20,
   weekly_summary_enabled: true,
   weekly_summary_hour: 9,
+  push_prompt_status: 'pending',
   push_enabled: true,
   push_absence_nudges: true,
   push_milestones: true,
@@ -204,6 +210,15 @@ export function reminderSettingsFromPreferences(preferenceMeta = {}) {
   }
 }
 
+export function normalizePushPromptStatus(value) {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (normalized === 'accepted' || normalized === 'refused') {
+    return normalized
+  }
+
+  return 'pending'
+}
+
 export function cmToImperialParts(heightCm) {
   const totalInches = Number(heightCm || 0) / 2.54
   if (!totalInches) {
@@ -262,6 +277,9 @@ export function trainingFormFromState(profile, prefs) {
   const preferenceMeta = prefs?.exercise_preferences_json ?? {}
   const preferredDays = Array.isArray(prefs?.preferred_workout_days_json) ? prefs.preferred_workout_days_json : []
 
+  const restBetweenSetsMinSeconds = normalizeRestSeconds(profile?.rest_between_sets_min_seconds, DEFAULT_TRAINING_FORM.rest_between_sets_min_seconds)
+  const restBetweenExercisesMinSeconds = normalizeRestSeconds(profile?.rest_between_exercises_min_seconds, DEFAULT_TRAINING_FORM.rest_between_exercises_min_seconds)
+
   return {
     ...DEFAULT_TRAINING_FORM,
     training_experience: profile?.training_experience ?? DEFAULT_TRAINING_FORM.training_experience,
@@ -269,6 +287,10 @@ export function trainingFormFromState(profile, prefs) {
     preferred_workout_days: preferredDays.filter(value => typeof value === 'string'),
     weekly_schedule: buildWeeklySchedule(preferredDays),
     workout_confidence: preferenceMeta?.workout_confidence ?? DEFAULT_TRAINING_FORM.workout_confidence,
+    rest_between_sets_min_seconds: restBetweenSetsMinSeconds,
+    rest_between_sets_max_seconds: Math.max(restBetweenSetsMinSeconds, normalizeRestSeconds(profile?.rest_between_sets_max_seconds, DEFAULT_TRAINING_FORM.rest_between_sets_max_seconds)),
+    rest_between_exercises_min_seconds: restBetweenExercisesMinSeconds,
+    rest_between_exercises_max_seconds: Math.max(restBetweenExercisesMinSeconds, normalizeRestSeconds(profile?.rest_between_exercises_max_seconds, DEFAULT_TRAINING_FORM.rest_between_exercises_max_seconds)),
   }
 }
 
@@ -320,6 +342,7 @@ export function habitsFormFromState(profile, prefs, goal) {
     phone: profile?.phone ?? '',
     timezone: profile?.timezone ?? detectBrowserTimezone(),
     ...reminderSettings,
+    push_prompt_status: normalizePushPromptStatus(preferenceMeta?.push_prompt_status),
     push_enabled: preferenceMeta?.push_enabled ?? DEFAULT_HABITS_FORM.push_enabled,
     push_absence_nudges: preferenceMeta?.push_absence_nudges ?? DEFAULT_HABITS_FORM.push_absence_nudges,
     push_milestones: preferenceMeta?.push_milestones ?? DEFAULT_HABITS_FORM.push_milestones,
@@ -351,6 +374,7 @@ export function settingsFormFromState(profile, prefs, goal) {
     ...bodyFormFromState(profile),
     ...goalsFormFromState(goal),
     ...notificationsFormFromState(profile, prefs),
+    push_prompt_status: habits.push_prompt_status,
     push_enabled: habits.push_enabled,
     push_absence_nudges: habits.push_absence_nudges,
     push_milestones: habits.push_milestones,
@@ -359,6 +383,10 @@ export function settingsFormFromState(profile, prefs, goal) {
     push_quiet_hours_start: habits.push_quiet_hours_start,
     push_quiet_hours_end: habits.push_quiet_hours_end,
     weekly_schedule: training.weekly_schedule,
+    rest_between_sets_min_seconds: training.rest_between_sets_min_seconds,
+    rest_between_sets_max_seconds: training.rest_between_sets_max_seconds,
+    rest_between_exercises_min_seconds: training.rest_between_exercises_min_seconds,
+    rest_between_exercises_max_seconds: training.rest_between_exercises_max_seconds,
     color_scheme: preferenceMeta?.color_scheme ?? 'classic',
     add_exercise_calories_to_target: Boolean(preferenceMeta?.add_exercise_calories_to_target),
     preference_meta: preferenceMeta,
@@ -422,4 +450,10 @@ function buildWeeklySchedule(preferredDays) {
     nextIndex += 1
     return { day, day_type: dayType }
   })
+}
+
+function normalizeRestSeconds(value, fallback) {
+  const parsed = Number.parseInt(value, 10)
+  if (Number.isNaN(parsed)) return fallback
+  return Math.min(900, Math.max(5, parsed))
 }

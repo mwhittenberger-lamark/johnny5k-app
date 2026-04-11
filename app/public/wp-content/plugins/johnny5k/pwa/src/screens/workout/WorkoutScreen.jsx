@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useLocation, useNavigate } from 'react-router-dom'
+import ClearableInput from '../../components/ui/ClearableInput'
 import ExerciseCard from '../../components/workout/ExerciseCard'
 import LiveWorkoutMode from '../../components/workout/LiveWorkoutMode'
 import PlanOverviewSwapDrawer from '../../components/workout/PlanOverviewSwapDrawer'
@@ -8,6 +9,7 @@ import { onboardingApi } from '../../api/modules/onboarding'
 import { trainingApi } from '../../api/modules/training'
 import { workoutApi } from '../../api/modules/workout'
 import { formatUsShortDate, formatUsWeekday } from '../../lib/dateFormat'
+import { DEFAULT_CUSTOM_WORKOUT_DAY_TYPE } from '../../lib/trainingDayTypes'
 import { useWorkoutStore } from '../../store/workoutStore'
 
 export default function WorkoutScreen() {
@@ -29,7 +31,11 @@ export default function WorkoutScreen() {
     setReadinessScore,
     setActiveExerciseIdx,
     setPreviewDayType,
+    resetPlanningState,
     setPreviewExerciseOrder,
+    setPreviewRepAdjustments,
+    setPreviewExerciseRemovals,
+    setPreviewExerciseAdditions,
     syncPreviewExerciseOrder,
     applyPreviewSwap,
     clearPreviewSwap,
@@ -62,15 +68,15 @@ export default function WorkoutScreen() {
   const [restartError, setRestartError] = useState('')
   const [liveModeOpen, setLiveModeOpen] = useState(false)
   const [liveWorkoutFrames, setLiveWorkoutFrames] = useState([])
-  const [manualRepAdjustments, setManualRepAdjustments] = useState({})
-  const [previewRemovedExerciseIds, setPreviewRemovedExerciseIds] = useState([])
-  const [previewAddedExercises, setPreviewAddedExercises] = useState([])
   const [addExerciseQuery, setAddExerciseQuery] = useState('')
   const [addExerciseResults, setAddExerciseResults] = useState([])
   const [addExerciseLoading, setAddExerciseLoading] = useState(false)
   const [addExerciseError, setAddExerciseError] = useState('')
   const [timerNow, setTimerNow] = useState(() => Date.now())
   const [completionReview, setCompletionReview] = useState(null)
+  const [recoveryLoopTierOverride, setRecoveryLoopTierOverride] = useState(null)
+  const previewExerciseRowRefs = useRef(new Map())
+  const pendingPreviewScrollPlanExerciseIdRef = useRef(0)
   const location = useLocation()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -145,10 +151,16 @@ export default function WorkoutScreen() {
   const normalizedCustomWorkoutDayType = hasCustomWorkoutDraft
     ? normalizeCustomWorkoutDayType(customWorkoutDraft?.day_type, scheduledDayType)
     : ''
+  const planningDraftKey = hasCustomWorkoutDraft
+    ? `custom:${Number(customWorkoutDraft?.id || 0)}`
+    : `day:${String(selectedDayType || scheduledDayType || '').trim().toLowerCase()}`
   const previewDayType = session?.session?.planned_day_type || normalizedCustomWorkoutDayType || selectedDayType || scheduledDayType
-  const currentPreviewDraft = previewDayType ? (previewDrafts?.[previewDayType] ?? { exerciseSwaps: {}, exerciseOrder: [] }) : { exerciseSwaps: {}, exerciseOrder: [] }
+  const currentPreviewDraft = planningDraftKey ? (previewDrafts?.[planningDraftKey] ?? { exerciseSwaps: {}, exerciseOrder: [], repAdjustments: {}, exerciseRemovals: [], exerciseAdditions: [] }) : { exerciseSwaps: {}, exerciseOrder: [], repAdjustments: {}, exerciseRemovals: [], exerciseAdditions: [] }
   const previewExerciseSwaps = useMemo(() => currentPreviewDraft.exerciseSwaps ?? {}, [currentPreviewDraft.exerciseSwaps])
   const previewExerciseOrder = useMemo(() => currentPreviewDraft.exerciseOrder ?? [], [currentPreviewDraft.exerciseOrder])
+  const manualRepAdjustments = useMemo(() => currentPreviewDraft.repAdjustments ?? {}, [currentPreviewDraft.repAdjustments])
+  const previewRemovedExerciseIds = useMemo(() => currentPreviewDraft.exerciseRemovals ?? [], [currentPreviewDraft.exerciseRemovals])
+  const previewAddedExercises = useMemo(() => currentPreviewDraft.exerciseAdditions ?? [], [currentPreviewDraft.exerciseAdditions])
   const plannedDayReference = previewDayType === 'rest'
     ? { day_type: 'rest', exercises: [], time_tier: timeTier, last_completed_session: null }
     : plan?.days?.find(day => day.day_type === previewDayType) ?? scheduledPlan
@@ -387,14 +399,32 @@ export default function WorkoutScreen() {
     if (session || !previewSession) return
     const nextExercises = Array.isArray(previewSession?.exercises) ? previewSession.exercises : []
     const nextIds = nextExercises.map(exercise => Number(exercise.plan_exercise_id)).filter(Boolean)
-    if (!hasCustomWorkoutDraft && requestedDayType) {
-      syncPreviewExerciseOrder(requestedDayType, nextIds)
+    if (planningDraftKey) {
+      syncPreviewExerciseOrder(planningDraftKey, nextIds)
     }
     setSwapDrawerExercise(current => {
       if (!current?.plan_exercise_id) return null
       return nextExercises.find(exercise => Number(exercise.plan_exercise_id) === Number(current.plan_exercise_id)) ?? null
     })
-  }, [hasCustomWorkoutDraft, previewSession, requestedDayType, session, syncPreviewExerciseOrder])
+  }, [planningDraftKey, previewSession, session, syncPreviewExerciseOrder])
+
+  useEffect(() => {
+    const targetPlanExerciseId = Number(pendingPreviewScrollPlanExerciseIdRef.current || 0)
+    if (!targetPlanExerciseId || session || isCardioSelection || isRestSelection) {
+      return undefined
+    }
+
+    const frameId = window.requestAnimationFrame(() => {
+      const targetRow = previewExerciseRowRefs.current.get(targetPlanExerciseId)
+      if (!targetRow) return
+
+      targetRow.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      targetRow.focus({ preventScroll: true })
+      pendingPreviewScrollPlanExerciseIdRef.current = 0
+    })
+
+    return () => window.cancelAnimationFrame(frameId)
+  }, [isCardioSelection, isRestSelection, previewExerciseOrderSignature, previewSwapPayloadSignature, session])
 
   useEffect(() => {
     if (!exercises.length && activeExerciseIdx !== 0) {
@@ -422,6 +452,28 @@ export default function WorkoutScreen() {
 
     return () => window.clearTimeout(timer)
   }, [dismissUndoToast, undoToast])
+
+  useEffect(() => {
+    const nextTier = normalizeWorkoutTimeTier(locationStateRef.current?.recoveryLoopWorkoutTier)
+    const source = String(locationStateRef.current?.recoveryLoopWorkoutSource || '')
+    const shouldApplyRecoveryLoopTier = !session && source === 'dashboard_recovery_loop' && nextTier
+
+    if (!shouldApplyRecoveryLoopTier) {
+      return undefined
+    }
+
+    const nextState = { ...(locationStateRef.current || {}) }
+    delete nextState.recoveryLoopWorkoutTier
+    delete nextState.recoveryLoopWorkoutSource
+
+    if (nextTier !== timeTier) {
+      setTimeTier(nextTier)
+      setRecoveryLoopTierOverride({ tier: nextTier })
+    }
+
+    navigate(location.pathname, { replace: true, state: Object.keys(nextState).length ? nextState : null })
+    return undefined
+  }, [location.pathname, navigate, locationStateRef, location.state?.recoveryLoopWorkoutSource, location.state?.recoveryLoopWorkoutTier, session, setTimeTier, timeTier])
 
   useEffect(() => {
     const notice = locationStateRef.current?.johnnyActionNotice
@@ -479,13 +531,10 @@ export default function WorkoutScreen() {
   }, [completionReview, navigate])
 
   useEffect(() => {
-    setManualRepAdjustments({})
-    setPreviewRemovedExerciseIds([])
-    setPreviewAddedExercises([])
     setAddExerciseQuery('')
     setAddExerciseResults([])
     setAddExerciseError('')
-  }, [customWorkoutDraft?.id, previewDayType])
+  }, [planningDraftKey])
 
   useEffect(() => {
     if (activeSessionId || isCardioSelection || isRestSelection) {
@@ -653,70 +702,75 @@ export default function WorkoutScreen() {
 
   function handleAdjustExerciseReps(planExerciseId, direction) {
     const normalizedPlanExerciseId = Number(planExerciseId)
-    if (!normalizedPlanExerciseId || !Number.isFinite(direction)) return
+    if (!normalizedPlanExerciseId || !Number.isFinite(direction) || !planningDraftKey) return
 
-    setManualRepAdjustments(current => {
-      const next = { ...current }
-      const currentManual = Number(next[normalizedPlanExerciseId] || 0)
-      const currentTotal = currentManual + readinessRepDelta
-      const nextTotal = Math.max(-6, Math.min(6, currentTotal + Number(direction)))
-      const nextManual = nextTotal - readinessRepDelta
+    const next = { ...manualRepAdjustments }
+    const currentManual = Number(next[normalizedPlanExerciseId] || 0)
+    const currentTotal = currentManual + readinessRepDelta
+    const nextTotal = Math.max(-6, Math.min(6, currentTotal + Number(direction)))
+    const nextManual = nextTotal - readinessRepDelta
 
-      if (nextManual === 0) {
-        delete next[normalizedPlanExerciseId]
-      } else {
-        next[normalizedPlanExerciseId] = nextManual
-      }
+    if (nextManual === 0) {
+      delete next[normalizedPlanExerciseId]
+    } else {
+      next[normalizedPlanExerciseId] = nextManual
+    }
 
-      return next
-    })
+    setPreviewRepAdjustments(planningDraftKey, next)
   }
 
   function handleToggleExerciseRemoval(planExerciseId) {
     const normalizedId = Number(planExerciseId)
-    if (!normalizedId) return
+    if (!normalizedId || !planningDraftKey) return
 
     const isAddedExercise = normalizedId >= 900000
     if (isAddedExercise) {
-      setPreviewAddedExercises(current => current.filter(item => Number(item.plan_exercise_id || 0) !== normalizedId))
+      setPreviewExerciseAdditions(
+        planningDraftKey,
+        previewAddedExercises.filter(item => Number(item.plan_exercise_id || 0) !== normalizedId)
+      )
       return
     }
 
-    setPreviewRemovedExerciseIds(current => (
-      current.includes(normalizedId)
-        ? current.filter(id => id !== normalizedId)
-        : [...current, normalizedId]
-    ))
+    setPreviewExerciseRemovals(
+      planningDraftKey,
+      previewRemovedExerciseIds.includes(normalizedId)
+        ? previewRemovedExerciseIds.filter(id => id !== normalizedId)
+        : [...previewRemovedExerciseIds, normalizedId]
+    )
   }
 
   function handleAddExerciseCandidate(candidate) {
-    if (!candidate?.id) return
+    if (!candidate?.id || !planningDraftKey) return
 
-    setPreviewAddedExercises(current => {
-      if (current.some(item => Number(item.exercise_id) === Number(candidate.id))) {
-        return current
-      }
+    if (previewAddedExercises.some(item => Number(item.exercise_id) === Number(candidate.id))) {
+      return
+    }
 
-      const nextTempPlanExerciseId = 900000 + current.length + 1
-      return [
-        ...current,
-        {
-          plan_exercise_id: nextTempPlanExerciseId,
-          exercise_id: Number(candidate.id),
-          exercise_name: candidate.name || 'Added exercise',
-          slot_type: 'accessory',
-          rep_min: Number(candidate.default_rep_min || 8),
-          rep_max: Number(candidate.default_rep_max || 12),
-          sets: Number(candidate.default_sets || 3),
-        },
-      ]
-    })
+    const nextTempPlanExerciseId = 900000 + previewAddedExercises.length + 1
+    setPreviewExerciseAdditions(planningDraftKey, [
+      ...previewAddedExercises,
+      {
+        plan_exercise_id: nextTempPlanExerciseId,
+        exercise_id: Number(candidate.id),
+        exercise_name: candidate.name || 'Added exercise',
+        slot_type: 'accessory',
+        rep_min: Number(candidate.default_rep_min || 8),
+        rep_max: Number(candidate.default_rep_max || 12),
+        sets: Number(candidate.default_sets || 3),
+      },
+    ])
     setAddExerciseQuery('')
     setAddExerciseResults([])
   }
 
   function handleLogCardio() {
     navigate('/body', { state: { focusTab: 'cardio' } })
+  }
+
+  function handleSelectTimeTier(nextTier) {
+    setTimeTier(nextTier)
+    setRecoveryLoopTierOverride(null)
   }
 
   function handleOpenExerciseDemo(exerciseName) {
@@ -732,6 +786,7 @@ export default function WorkoutScreen() {
     setRestartError('')
     try {
       await restartSessionMutation.mutateAsync()
+      resetPlanningState()
       setPreviewDayType(scheduledDayType || '')
       setRestartNotice(`Session cleared. ${todayLabel} resets to ${formatDayType(scheduledDayType)} from your saved schedule, but you can override it before starting again.`)
     } catch (error) {
@@ -758,15 +813,29 @@ export default function WorkoutScreen() {
   }
 
   async function handlePreviewSwap(planExerciseId, exerciseId) {
-    applyPreviewSwap(previewDayType, planExerciseId, exerciseId)
+    pendingPreviewScrollPlanExerciseIdRef.current = Number(planExerciseId) || 0
+    applyPreviewSwap(planningDraftKey, planExerciseId, exerciseId)
   }
 
   async function handleClearPreviewSwap(planExerciseId) {
-    clearPreviewSwap(previewDayType, planExerciseId)
+    pendingPreviewScrollPlanExerciseIdRef.current = Number(planExerciseId) || 0
+    clearPreviewSwap(planningDraftKey, planExerciseId)
   }
 
   function handlePreviewDragStart(planExerciseId) {
     setDraggedPlanExerciseId(planExerciseId)
+  }
+
+  function registerPreviewExerciseRow(planExerciseId, node) {
+    const normalizedPlanExerciseId = Number(planExerciseId)
+    if (!normalizedPlanExerciseId) return
+
+    if (node) {
+      previewExerciseRowRefs.current.set(normalizedPlanExerciseId, node)
+      return
+    }
+
+    previewExerciseRowRefs.current.delete(normalizedPlanExerciseId)
   }
 
   function handlePreviewDrop(targetPlanExerciseId) {
@@ -775,17 +844,20 @@ export default function WorkoutScreen() {
       return
     }
 
-    setPreviewExerciseOrder(previewDayType, reorderPreviewExerciseOrder(previewExerciseOrder, draggedPlanExerciseId, targetPlanExerciseId, previewExercises))
+    pendingPreviewScrollPlanExerciseIdRef.current = Number(draggedPlanExerciseId) || 0
+    setPreviewExerciseOrder(planningDraftKey, reorderPreviewExerciseOrder(previewExerciseOrder, draggedPlanExerciseId, targetPlanExerciseId, previewExercises))
     setDraggedPlanExerciseId(0)
   }
 
   function handlePreviewMove(planExerciseId, direction) {
-    setPreviewExerciseOrder(previewDayType, movePreviewExerciseOrder(previewExerciseOrder, planExerciseId, direction, previewExercises))
+    pendingPreviewScrollPlanExerciseIdRef.current = Number(planExerciseId) || 0
+    setPreviewExerciseOrder(planningDraftKey, movePreviewExerciseOrder(previewExerciseOrder, planExerciseId, direction, previewExercises))
   }
 
   async function handleUseScheduledSplit() {
     try {
       await clearCustomWorkoutDraft()
+      resetPlanningState()
       setPreviewDayType(scheduledDayType || '')
       setRestartNotice('Johnny’s custom workout was cleared. You are back on your scheduled split.')
       setRestartError('')
@@ -876,13 +948,18 @@ export default function WorkoutScreen() {
                     key={option.id}
                     type="button"
                     className={`tier-btn${timeTier === option.id ? ' active' : ''}`}
-                    onClick={() => setTimeTier(option.id)}
+                    onClick={() => handleSelectTimeTier(option.id)}
                   >
                     <strong>{option.label}</strong>
                     <span>{option.detail}</span>
                   </button>
                 ))}
               </div>
+              {recoveryLoopTierOverride?.tier ? (
+                <p className="settings-subtitle workout-launchpad-helper">
+                  Recovery Loop switched this to <strong>{recoveryLoopTierOverride.tier}</strong>. You can switch back to medium or full if you want a longer session.
+                </p>
+              ) : null}
             </div>
           ) : null}
 
@@ -1051,7 +1128,7 @@ export default function WorkoutScreen() {
                     <span className="dashboard-chip subtle">Add exercise</span>
                     <span className="dashboard-chip subtle">{previewAddedExercises.length} added</span>
                   </div>
-                  <input
+                  <ClearableInput
                     type="search"
                     className="input"
                     placeholder="Search exercise library to add..."
@@ -1086,7 +1163,9 @@ export default function WorkoutScreen() {
                     {adjustedPreviewExercises.map((exercise, index) => (
                       <div
                         key={exercise.plan_exercise_id}
+                        ref={node => registerPreviewExerciseRow(exercise.plan_exercise_id, node)}
                         className={`workout-plan-row workout-preview-row ${draggedPlanExerciseId === exercise.plan_exercise_id ? 'dragging' : ''}`}
+                        tabIndex={-1}
                         draggable={!hasCustomWorkoutDraft}
                         onDragStart={() => !hasCustomWorkoutDraft && handlePreviewDragStart(exercise.plan_exercise_id)}
                         onDragOver={event => !hasCustomWorkoutDraft && event.preventDefault()}
@@ -1533,6 +1612,11 @@ function maxInt(minimumValue, value) {
   return Math.max(minimumValue, normalizedValue)
 }
 
+function normalizeWorkoutTimeTier(value) {
+  const normalizedValue = String(value || '').trim().toLowerCase()
+  return ['short', 'medium', 'full'].includes(normalizedValue) ? normalizedValue : ''
+}
+
 function normalizeExerciseCandidate(value) {
   const payload = value && typeof value === 'object' ? value : {}
   return {
@@ -1573,7 +1657,7 @@ function normalizeCustomWorkoutDayType(dayType, scheduledDayType) {
     return scheduled
   }
 
-  return 'arms_shoulders'
+  return DEFAULT_CUSTOM_WORKOUT_DAY_TYPE
 }
 
 function useLatest(value) {

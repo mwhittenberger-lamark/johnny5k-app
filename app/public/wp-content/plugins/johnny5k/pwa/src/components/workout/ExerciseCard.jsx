@@ -1,5 +1,6 @@
 import { memo, useEffect, useState } from 'react'
 import { aiApi } from '../../api/modules/ai'
+import ClearableInput from '../ui/ClearableInput'
 import { formatUsShortDate } from '../../lib/dateFormat'
 import {
   buildExerciseMeta,
@@ -481,26 +482,26 @@ function ExerciseCard({
                         <p className="workout-swap-row-meta">{buildExerciseMeta(option)}</p>
                         {isEditing ? (
                           <div className="personal-exercise-editor">
-                            <input
+                            <ClearableInput
                               type="text"
                               value={editDraft.name}
                               onChange={event => handleEditDraftChange('name', event.target.value)}
                               placeholder="Exercise name"
                             />
                             <div className="personal-exercise-editor-grid">
-                              <input
+                              <ClearableInput
                                 type="text"
                                 value={editDraft.primary_muscle}
                                 onChange={event => handleEditDraftChange('primary_muscle', event.target.value)}
                                 placeholder="Primary muscle"
                               />
-                              <input
+                              <ClearableInput
                                 type="text"
                                 value={editDraft.movement_pattern}
                                 onChange={event => handleEditDraftChange('movement_pattern', event.target.value)}
                                 placeholder="Movement pattern"
                               />
-                              <input
+                              <ClearableInput
                                 type="text"
                                 value={editDraft.equipment}
                                 onChange={event => handleEditDraftChange('equipment', event.target.value)}

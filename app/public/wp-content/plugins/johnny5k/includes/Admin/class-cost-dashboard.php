@@ -17,6 +17,29 @@ class CostDashboard {
 		$monthly_total = CostTracker::monthly_total();
 		$by_user       = CostTracker::monthly_by_user();
 		$daily_30      = CostTracker::daily_totals_last_30();
+		$monthly_calls = 0;
+		$monthly_spend = 0.0;
+		$monthly_gemini_calls = 0;
+		$monthly_gemini_spend = 0.0;
+		$daily_calls = 0;
+		$daily_spend = 0.0;
+
+		foreach ( $by_user as $row ) {
+			$calls = (int) ( $row->call_count ?? 0 );
+			$cost  = (float) ( $row->total_cost_usd ?? 0 );
+			$monthly_calls += $calls;
+			$monthly_spend += $cost;
+
+			if ( 'gemini' === (string) ( $row->service ?? '' ) ) {
+				$monthly_gemini_calls += $calls;
+				$monthly_gemini_spend += $cost;
+			}
+		}
+
+		foreach ( $daily_30 as $row ) {
+			$daily_calls += (int) ( $row->call_count ?? 0 );
+			$daily_spend += (float) ( $row->total_cost_usd ?? 0 );
+		}
 
 		echo '<div class="wrap">';
 		echo '<h1>API Cost Dashboard</h1>';
@@ -45,7 +68,9 @@ class CostDashboard {
 			);
 		}
 
-		echo '</tbody></table>';
+		echo '</tbody><tfoot><tr>
+			<th colspan="3" style="text-align:right">Totals</th><th>' . esc_html( (string) $monthly_calls ) . '</th><th>$' . esc_html( number_format( $monthly_spend, 4 ) ) . '</th>
+		</tr></tfoot></table>';
 
 		// Daily table (last 30 days)
 		echo '<h2>Daily Totals — Last 30 Days</h2>';
@@ -66,6 +91,20 @@ class CostDashboard {
 			);
 		}
 
-		echo '</tbody></table></div>';
+		echo '</tbody><tfoot><tr>
+			<th colspan="2" style="text-align:right">Totals</th><th>' . esc_html( (string) $daily_calls ) . '</th><th>$' . esc_html( number_format( $daily_spend, 4 ) ) . '</th>
+		</tr></tfoot></table>';
+
+		echo '<h2>Totals</h2>';
+		echo '<table class="widefat striped"><tbody>';
+		echo '<tr><th style="width:280px">Monthly API calls</th><td>' . esc_html( (string) $monthly_calls ) . '</td></tr>';
+		echo '<tr><th>Monthly Gemini calls</th><td>' . esc_html( (string) $monthly_gemini_calls ) . '</td></tr>';
+		echo '<tr><th>Monthly Gemini spend</th><td>$' . esc_html( number_format( $monthly_gemini_spend, 4 ) ) . '</td></tr>';
+		echo '<tr><th>Last 30 days API calls</th><td>' . esc_html( (string) $daily_calls ) . '</td></tr>';
+		echo '<tr><th>Last 30 days spend</th><td>$' . esc_html( number_format( $daily_spend, 4 ) ) . '</td></tr>';
+		echo '<tr><th>Total spent this month</th><td><strong>$' . esc_html( number_format( (float) ( $monthly_total->total_cost_usd ?? 0 ), 4 ) ) . '</strong></td></tr>';
+		echo '</tbody></table>';
+		echo '<p class="description">Gemini image calls are estimated from Gemini usage metadata and current token pricing.</p>';
+		echo '</div>';
 	}
 }

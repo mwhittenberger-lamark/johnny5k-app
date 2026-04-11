@@ -10,6 +10,7 @@ use Johnny5k\Services\AiService;
 use Johnny5k\Services\AwardEngine;
 use Johnny5k\Services\BehaviorAnalyticsService;
 use Johnny5k\Services\WorkoutActionService;
+use Johnny5k\Support\TrainingDayTypes;
 
 /**
  * REST Controller: Workout (active session)
@@ -916,7 +917,7 @@ class WorkoutController {
 
 		$id = sanitize_text_field( (string) ( $draft['id'] ?? '' ) );
 		$name = sanitize_text_field( (string) ( $draft['name'] ?? '' ) );
-		$day_type = self::normalize_day_type( $draft['day_type'] ?? '' ) ?: 'arms_shoulders';
+		$day_type = self::normalize_day_type( $draft['day_type'] ?? '' ) ?: TrainingDayTypes::custom_workout_fallback();
 		$coach_note = sanitize_textarea_field( (string) ( $draft['coach_note'] ?? '' ) );
 		$created_at = sanitize_text_field( (string) ( $draft['created_at'] ?? '' ) );
 		$items = is_array( $draft['exercises'] ?? null ) ? array_values( array_filter( array_map( static function( $item ) {
@@ -962,7 +963,7 @@ class WorkoutController {
 			return new \WP_Error( 'missing_custom_workout_name', 'A workout name is required.' );
 		}
 
-		$day_type = self::normalize_day_type( $payload['day_type'] ?? '' ) ?: 'arms_shoulders';
+		$day_type = self::normalize_day_type( $payload['day_type'] ?? '' ) ?: TrainingDayTypes::custom_workout_fallback();
 		$coach_note = sanitize_textarea_field( (string) ( $payload['coach_note'] ?? '' ) );
 		$raw_exercises = is_array( $payload['exercises'] ?? null ) ? $payload['exercises'] : [];
 		$resolved_exercises = [];
@@ -1075,7 +1076,7 @@ class WorkoutController {
 		$ordered_exercises = self::apply_rep_adjustments_to_custom_exercises( $ordered_exercises, $rep_adjustments );
 
 		return [
-			'day_type'            => (string) ( $draft['day_type'] ?? 'arms_shoulders' ),
+			'day_type'            => (string) ( $draft['day_type'] ?? TrainingDayTypes::custom_workout_fallback() ),
 			'custom_title'        => (string) ( $draft['name'] ?? 'Custom workout' ),
 			'coach_note'          => (string) ( $draft['coach_note'] ?? '' ),
 			'time_tier'           => $time_tier,
@@ -1099,7 +1100,7 @@ class WorkoutController {
 		$wpdb->insert( $p . 'fit_workout_sessions', [
 			'user_id'             => $user_id,
 			'session_date'        => UserTime::today( $user_id ),
-			'planned_day_type'    => (string) ( $draft['day_type'] ?? 'arms_shoulders' ),
+			'planned_day_type'    => (string) ( $draft['day_type'] ?? TrainingDayTypes::custom_workout_fallback() ),
 			'time_tier'           => $time_tier,
 			'completed'           => 0,
 			'skip_requested'      => 0,
@@ -1123,7 +1124,7 @@ class WorkoutController {
 
 		return [
 			'session_id'   => $session_id,
-			'day_type'     => (string) ( $draft['day_type'] ?? 'arms_shoulders' ),
+			'day_type'     => (string) ( $draft['day_type'] ?? TrainingDayTypes::custom_workout_fallback() ),
 			'exercises'    => $ordered_exercises,
 			'skip_count'   => TrainingEngine::rolling_skip_count( $user_id ),
 			'skip_warning' => TrainingEngine::rolling_skip_count( $user_id ) >= 3,
@@ -1789,10 +1790,7 @@ class WorkoutController {
 			return null;
 		}
 
-		$day_type = sanitize_key( $value );
-		$allowed  = [ 'push', 'pull', 'legs', 'arms_shoulders', 'cardio', 'rest' ];
-
-		return in_array( $day_type, $allowed, true ) ? $day_type : null;
+		return TrainingDayTypes::normalize( $value );
 	}
 
 	protected static function build_training_session( int $user_id, string $time_tier, bool $maintenance_mode, ?string $day_type_override, array $exercise_swaps, array $exercise_order, array $rep_adjustments = [], array $exercise_removals = [], array $exercise_additions = [] ) {

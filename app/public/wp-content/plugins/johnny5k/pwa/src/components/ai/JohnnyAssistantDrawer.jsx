@@ -10,6 +10,7 @@ import { useDashboardStore } from '../../store/dashboardStore'
 import { useJohnnyAssistantStore } from '../../store/johnnyAssistantStore'
 import { useWorkoutStore } from '../../store/workoutStore'
 import AppIcon from '../ui/AppIcon'
+import ClearableInput from '../ui/ClearableInput'
 
 const THREAD_KEY = 'main'
 const ACTION_TOOLS = new Set([
@@ -769,7 +770,7 @@ function DurableMemoryCard({ bullets, draft, editing, saving, onStartEdit, onCan
         <div className="johnny-memory-editor">
           {(draft.length ? draft : ['']).map((bullet, index) => (
             <div key={`memory-${index}`} className="johnny-memory-editor-row">
-              <input
+              <ClearableInput
                 type="text"
                 value={bullet}
                 onChange={event => onChangeDraft(current => current.map((item, itemIndex) => (itemIndex === index ? event.target.value : item)))}

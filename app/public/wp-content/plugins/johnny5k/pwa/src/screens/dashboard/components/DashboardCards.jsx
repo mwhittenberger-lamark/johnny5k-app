@@ -21,7 +21,7 @@ export function BestNextMoveCard({ model, onAction }) {
   )
 }
 
-export function TodayIntakeCard({ caloriesRemaining, mealCount, nt, goal, calPct, proPct, carbPct, fatPct, body, onOpenNutrition }) {
+export function TodayIntakeCard({ caloriesRemaining, mealCount, nt, goal, calPct, proPct, carbPct, fatPct, exerciseCalories, body, onOpenNutrition }) {
   return (
     <button className="dash-card dashboard-card-button dashboard-hero-card" type="button" onClick={onOpenNutrition}>
       <div className="dashboard-card-head">
@@ -35,43 +35,72 @@ export function TodayIntakeCard({ caloriesRemaining, mealCount, nt, goal, calPct
         <MacroPill label="Protein" current={nt?.protein_g} target={goal?.target_protein_g} pct={proPct} compact suffix="g" />
         <MacroPill label="Carbs" current={nt?.carbs_g} target={goal?.target_carbs_g} pct={carbPct} compact suffix="g" />
         <MacroPill label="Fat" current={nt?.fat_g} target={goal?.target_fat_g} pct={fatPct} compact suffix="g" />
+        <MacroPill label="Burned" current={exerciseCalories} compact valueLabel={`${Math.round(exerciseCalories ?? 0)} cal`} />
       </div>
       <span className="dashboard-card-cta">Open nutrition</span>
     </button>
   )
 }
 
-export function RecoveryLoopCard({ recoverySummary, recoverySleepLabel, recoveryWindowLabel, recoveryFlagItems, onOpenRecovery, onQuickAction }) {
+export function RecoveryLoopCard({
+  recoverySummary,
+  recoverySleepLabel,
+  recoveryWindowLabel,
+  recoveryFlagItems,
+  activeFlagLoad,
+  flagLoadLabel,
+  flagLoadExplanation,
+  recoveryActionPlan,
+  onOpenRecovery,
+  onOpenWorkout,
+  onQuickAction,
+}) {
   if (!recoverySummary) return null
 
   return (
-    <section className="dash-card dashboard-recovery-summary-card">
-      <div className="dashboard-card-head">
-        <span className="dashboard-chip subtle">Recovery Loop</span>
+    <section className="dash-card body-recovery-card dashboard-recovery-summary-card">
+      <div className="body-card-header">
+        <div>
+          <div className="dashboard-card-head">
+            <span className="dashboard-chip subtle">Recovery Loop</span>
+          </div>
+          <h3>Recovery Loop</h3>
+          <p>{recoverySummary.headline}</p>
+        </div>
         <span className={`dashboard-chip ${recoverySummary.mode === 'normal' ? 'success' : 'subtle'}`}>{recoverySummary.mode}</span>
       </div>
-      <h3>{recoverySummary.headline}</h3>
-      <div className="dashboard-recovery-summary-grid">
+      <div className="body-mini-stats dashboard-recovery-summary-grid">
         <div>
-          <strong>{recoverySummary.last_sleep_is_recent ? `${recoverySummary.last_sleep_hours || '—'}h` : '—'}</strong>
           <span>{recoverySleepLabel}</span>
+          <strong>{recoverySummary.last_sleep_is_recent ? `${recoverySummary.last_sleep_hours || '—'}h` : '—'}</strong>
         </div>
         <div>
-          <strong>{recoverySummary.avg_sleep_3d || '—'}h</strong>
           <span>{recoveryWindowLabel}</span>
+          <strong>{recoverySummary.avg_sleep_3d || '—'}h</strong>
         </div>
         <div>
-          <strong>{recoverySummary.active_flag_load || 0}</strong>
-          <span>Weighted flag load</span>
+          <span>Cardio min / 7d</span>
+          <strong>{recoverySummary.cardio_minutes_7d || 0}</strong>
+        </div>
+        <div>
+          <span>{flagLoadLabel}</span>
+          <strong>{activeFlagLoad}</strong>
         </div>
       </div>
-      <p className="dashboard-recovery-summary-note">Training tier: <strong>{recoverySummary.recommended_time_tier}</strong></p>
-      {recoverySummary.why_summary ? (
-        <p className="dashboard-recovery-summary-note">Why: <strong>{recoverySummary.why_summary}</strong></p>
-      ) : null}
-      {recoverySummary.trend_summary ? (
-        <p className="dashboard-recovery-summary-note">Trend: <strong>{recoverySummary.trend_summary}</strong></p>
-      ) : null}
+      <div className="body-recovery-insights">
+        <p className="body-recovery-note">
+          <strong>Weighted flag load:</strong> This is your recovery friction score. It combines active flags with severity, not just count.
+        </p>
+        <p className="body-recovery-note">
+          <strong>Current read:</strong> {flagLoadExplanation}
+        </p>
+        {recoverySummary.why_summary ? (
+          <p className="body-recovery-note">Why: <strong>{recoverySummary.why_summary}</strong></p>
+        ) : null}
+        {recoverySummary.trend_summary ? (
+          <p className="body-recovery-note">Trend: <strong>{recoverySummary.trend_summary}</strong></p>
+        ) : null}
+      </div>
       {Array.isArray(recoverySummary.reason_items) && recoverySummary.reason_items.length ? (
         <div className="dashboard-johnny-metric-row">
           {recoverySummary.reason_items.map(reason => (
@@ -88,11 +117,21 @@ export function RecoveryLoopCard({ recoverySummary, recoverySleepLabel, recovery
           ))}
         </div>
       ) : (
-        <p className="dashboard-recovery-summary-note">No active flags right now.</p>
+        <p className="body-recovery-note">Active flags: <strong>None</strong></p>
       )}
+      <p className="body-recovery-note">Recommended training tier: <strong>{recoverySummary.recommended_time_tier || 'medium'}</strong></p>
+      <div className="body-recovery-next-steps">
+        <strong>What to do next</strong>
+        <ul className="body-recovery-action-list">
+          {(Array.isArray(recoveryActionPlan) ? recoveryActionPlan : []).map(item => <li key={item}>{item}</li>)}
+        </ul>
+      </div>
       <div className="dashboard-recovery-action-row">
         <button className="btn-outline small" type="button" onClick={onOpenRecovery}>Open recovery</button>
-        <button className="btn-primary small" type="button" onClick={onQuickAction}>{recoverySummary?.recommended_action?.label || 'Take action'}</button>
+        <button className="btn-secondary small" type="button" onClick={onQuickAction}>{recoverySummary?.recommended_action?.label || 'Take action'}</button>
+        <button className="btn-primary small" type="button" onClick={onOpenWorkout}>
+          Open {recoverySummary.recommended_time_tier || 'medium'} workout
+        </button>
       </div>
     </section>
   )
@@ -672,16 +711,19 @@ function buildDashboardWeeklyTrendBars(weights) {
   }))
 }
 
-function MacroPill({ label, current, target, pct, compact = false, suffix = '' }) {
+function MacroPill({ label, current, target, pct, compact = false, suffix = '', valueLabel = '' }) {
+  const resolvedValueLabel = valueLabel || `${Math.round(current ?? 0)} / ${Math.round(target ?? 0)}${suffix}`
   return (
     <div className={`dashboard-macro-pill ${compact ? 'compact' : ''}`}>
       <div className="dashboard-macro-top">
         <span>{label}</span>
-        <strong>{Math.round(current ?? 0)} / {Math.round(target ?? 0)}{suffix}</strong>
+        <strong>{resolvedValueLabel}</strong>
       </div>
-      <div className="bar-track thin">
-        <div className="bar-fill" style={{ width: `${Math.min(100, pct)}%` }} />
-      </div>
+      {target != null ? (
+        <div className="bar-track thin">
+          <div className="bar-fill" style={{ width: `${Math.min(100, pct)}%` }} />
+        </div>
+      ) : null}
     </div>
   )
 }

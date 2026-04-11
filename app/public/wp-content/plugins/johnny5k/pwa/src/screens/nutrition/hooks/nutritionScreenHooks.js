@@ -82,6 +82,7 @@ export function useNutritionPlanningViewState({
   const [collapsedPantryCategories, setCollapsedPantryCategories] = useState({})
   const [expandedSections, setExpandedSections] = useState({
     meals: false,
+    recentFoods: false,
     savedFoods: false,
     savedMeals: false,
     pantry: false,

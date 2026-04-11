@@ -42,6 +42,8 @@ const DASHBOARD_CARD_DEFS = [
   { id: 'quick_add_sleep', bucket: 'quick_actions', label: 'Quick action · Add sleep', description: 'Jump directly to sleep logging.', iconName: 'star', iconTone: 'slate' },
   { id: 'quick_add_cardio', bucket: 'quick_actions', label: 'Quick action · Add cardio', description: 'Jump directly to cardio logging.', iconName: 'bolt', iconTone: 'gold' },
   { id: 'quick_progress_photos', bucket: 'quick_actions', label: 'Quick action · Progress photos', description: 'Open the progress photo timeline.', iconName: 'camera', iconTone: 'pink' },
+  { id: 'snapshot_section_title', bucket: 'snapshot_stats', label: 'Today’s Snapshot', description: 'The section title for your daily snapshot block.', iconName: 'progress', iconTone: 'teal', sectionControl: true },
+  { id: 'snapshot_edit_targets', bucket: 'snapshot_stats', label: 'Edit targets', description: 'The shortcut button that opens your targets and profile settings.', iconName: 'profile', iconTone: 'pink', sectionControl: true },
   { id: 'snapshot_steps', bucket: 'snapshot_stats', label: 'Snapshot · Steps', description: 'Today\'s steps versus your target.', iconName: 'bolt', iconTone: 'gold' },
   { id: 'snapshot_sleep', bucket: 'snapshot_stats', label: 'Snapshot · Sleep', description: 'Latest sleep entry and recovery timing.', iconName: 'star', iconTone: 'slate' },
   { id: 'snapshot_weight', bucket: 'snapshot_stats', label: 'Snapshot · Weight', description: 'Latest logged bodyweight.', iconName: 'progress', iconTone: 'pink' },
@@ -75,7 +77,7 @@ const DASHBOARD_BUCKET_META = {
     description: 'Fast shortcuts for the most common actions.',
   },
   snapshot_stats: {
-    label: 'Today snapshot',
+    label: 'Today’s Snapshot',
     description: 'Core daily stats like steps, sleep, and weight.',
   },
   snapshot_detail: {
@@ -220,6 +222,7 @@ export default function DashboardScreen() {
   const proPct = goal && nt ? Math.round((nt.protein_g / goal.target_protein_g) * 100) : 0
   const carbPct = goal && nt ? Math.round((nt.carbs_g / goal.target_carbs_g) * 100) : 0
   const fatPct = goal && nt ? Math.round((nt.fat_g / goal.target_fat_g) * 100) : 0
+  const exerciseCaloriesBurned = Number(s?.exercise_calories?.total_calories ?? 0)
   const stepPct = s?.steps?.target ? Math.round((s.steps.today / s.steps.target) * 100) : 0
   const caloriesRemaining = goal ? Math.max(0, (goal.target_calories ?? 0) - (nt?.calories ?? 0)) : null
   const greetingName = getGreetingName(email)
@@ -232,6 +235,8 @@ export default function DashboardScreen() {
   const recoverySummary = s?.recovery_summary || {}
   const recoveryFlagItems = Array.isArray(recoverySummary?.active_flag_items) ? recoverySummary.active_flag_items : []
   const recoverySleepLabel = buildRecoverySleepLabel(recoverySummary)
+  const activeFlagLoad = Number(recoverySummary?.active_flag_load || 0)
+  const recoveryActionPlan = buildRecoveryActionPlan(recoverySummary, recoveryFlagItems)
 
   function handleDashboardAction(action) {
     if (!action) return
@@ -246,6 +251,17 @@ export default function DashboardScreen() {
 
   function handleRecoveryQuickAction() {
     routeRecoveryAction(recoverySummary, navigate)
+  }
+
+  function handleOpenRecoveryWorkout() {
+    const recommendedTimeTier = normalizeWorkoutTimeTier(recoverySummary?.recommended_time_tier)
+    navigate('/workout', {
+      state: {
+        recoveryLoopWorkoutTier: recommendedTimeTier,
+        recoveryLoopWorkoutSource: 'dashboard_recovery_loop',
+        johnnyActionNotice: `Recovery Loop lined today up as a ${recommendedTimeTier} workout.`,
+      },
+    })
   }
 
   async function handleRefreshReview() {
@@ -316,6 +332,7 @@ export default function DashboardScreen() {
         proPct={proPct}
         carbPct={carbPct}
         fatPct={fatPct}
+        exerciseCalories={exerciseCaloriesBurned}
         body={proteinTargetCopy(nt, goal, mealCount)}
         onOpenNutrition={() => navigate('/nutrition')}
       />
@@ -326,7 +343,12 @@ export default function DashboardScreen() {
         recoverySleepLabel={recoverySleepLabel}
         recoveryWindowLabel={recoveryWindowLabel}
         recoveryFlagItems={recoveryFlagItems}
+        activeFlagLoad={activeFlagLoad}
+        flagLoadLabel={buildFlagLoadLabel(activeFlagLoad)}
+        flagLoadExplanation={buildFlagLoadExplanation(activeFlagLoad)}
+        recoveryActionPlan={recoveryActionPlan}
         onOpenRecovery={() => navigate('/body')}
+        onOpenWorkout={handleOpenRecoveryWorkout}
         onQuickAction={handleRecoveryQuickAction}
       />
     )),
@@ -389,12 +411,24 @@ export default function DashboardScreen() {
     ...card,
     bucket: getDashboardCardBucket(card.id, dashboardLayout),
   }))
-  const orderedDashboardCards = orderDashboardCards(dashboardCards, dashboardLayout)
-  const visibleDashboardCards = orderedDashboardCards.filter(card => !dashboardLayout.hidden?.[card.id])
+  const dashboardSectionControls = DASHBOARD_CARD_DEFS
+    .filter(card => card.sectionControl)
+    .map(card => ({
+      ...card,
+      bucket: getDashboardCardBucket(card.id, dashboardLayout),
+      content: null,
+    }))
+  const orderedDashboardCards = orderDashboardCards([...dashboardCards, ...dashboardSectionControls], dashboardLayout)
+  const visibleDashboardCards = orderedDashboardCards.filter(card => !dashboardLayout.hidden?.[card.id] && !card.sectionControl)
   const hiddenDashboardCards = orderedDashboardCards.filter(card => dashboardLayout.hidden?.[card.id])
   const dashboardCardsByBucket = groupDashboardCardsByBucket(visibleDashboardCards)
+  const snapshotSectionTitleHidden = Boolean(dashboardLayout.hidden?.snapshot_section_title)
+  const snapshotEditTargetsHidden = Boolean(dashboardLayout.hidden?.snapshot_edit_targets)
+  const showSnapshotSectionRow = !snapshotSectionTitleHidden || !snapshotEditTargetsHidden
 
   function renderDashboardCardSlot(card, visibleBucketIds = []) {
+    if (card.sectionControl) return null
+
     const index = visibleBucketIds.indexOf(card.id)
     const canCrossBucketUp = Boolean(card.optional) && canMoveDashboardCardAcrossBuckets(card.id, dashboardLayout, -1)
     const canCrossBucketDown = Boolean(card.optional) && canMoveDashboardCardAcrossBuckets(card.id, dashboardLayout, 1)
@@ -478,10 +512,40 @@ export default function DashboardScreen() {
 
           {(dashboardCardsByBucket.snapshot_stats?.length || dashboardCardsByBucket.snapshot_detail?.length) ? (
             <section className="dashboard-section">
-              <div className="dashboard-section-title-row">
-                <h2>Today snapshot</h2>
-                <button className="btn-outline small" onClick={() => navigate('/settings')}>Edit targets</button>
-              </div>
+              {showSnapshotSectionRow ? (
+                <div className="dashboard-section-title-row">
+                  {!snapshotSectionTitleHidden ? (
+                    <div className="dashboard-section-inline-control">
+                      <h2>Today&apos;s Snapshot</h2>
+                      {customizeOpen ? (
+                        <button
+                          type="button"
+                          className="btn-secondary small dashboard-slot-icon-control"
+                          onClick={() => toggleDashboardCard('snapshot_section_title')}
+                          aria-label="Hide Today’s Snapshot title"
+                        >
+                          <AppIcon name="close" />
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : <div />}
+                  {!snapshotEditTargetsHidden ? (
+                    <div className="dashboard-section-inline-control">
+                      <button className="btn-outline small" onClick={() => navigate('/settings')}>Edit targets</button>
+                      {customizeOpen ? (
+                        <button
+                          type="button"
+                          className="btn-secondary small dashboard-slot-icon-control"
+                          onClick={() => toggleDashboardCard('snapshot_edit_targets')}
+                          aria-label="Hide Edit targets button"
+                        >
+                          <AppIcon name="close" />
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
               {dashboardCardsByBucket.snapshot_stats?.length ? (
                 <div className="dashboard-stat-grid">
                   {dashboardCardsByBucket.snapshot_stats.map(card => renderDashboardCardSlot(card, dashboardCardsByBucket.snapshot_stats.map(bucketCard => bucketCard.id)))}
@@ -1324,9 +1388,14 @@ function buildDashboardReviewTrigger(snapshot) {
   const sleep = snapshot?.sleep || {}
   const training = getTrainingStatus(snapshot)
   const streaks = snapshot?.streaks || {}
+  const mealTiming = getCoachMealTimingContext(snapshot)
 
   return JSON.stringify({
     date: snapshot?.date || '',
+    daypart: mealTiming.daypartKey,
+    currentMealWindow: mealTiming.currentAnchorKey,
+    nextMealWindow: mealTiming.nextAnchorKey,
+    loggedMealTypes: mealTiming.loggedMealTypes,
     score7d: Number(snapshot?.score_7d ?? 0),
     stepsToday,
     stepsTarget,
@@ -1369,6 +1438,13 @@ function buildJohnnyDashboardReview(snapshot) {
   const plannedDayType = getScheduledTrainingType(snapshot)
   const trainingRecorded = Boolean(training?.recorded)
   const recordedType = training?.recorded_type || ''
+  const mealTiming = getCoachMealTimingContext(snapshot)
+  const currentMealLabel = mealTiming.currentAnchorLabel
+  const nextMealLabel = mealTiming.nextAnchorLabel
+  const nextMealLabelLower = nextMealLabel.toLowerCase()
+  const currentMealLogged = mealTiming.currentAnchorLogged
+  const nextMealMissing = Boolean(mealTiming.nextAnchorKey)
+  const mealTypesLabel = mealTiming.loggedMealTypes.length ? mealTiming.loggedMealTypes.join(', ') : 'none'
   const streaks = snapshot?.streaks || {}
   const bestCurrentStreak = Math.max(
     streaks.logging_days ?? 0,
@@ -1409,8 +1485,12 @@ function buildJohnnyDashboardReview(snapshot) {
     title = 'Strong work. Today already has traction.'
     message = `Johnny sees your workout logged${proteinTarget > 0 ? ` and ${Math.round(protein)}g of ${Math.round(proteinTarget)}g protein in so far` : ''}. The lift is done, so the win now is finishing recovery instead of drifting after the hard part.`
     nextStep = sleepHours < targetSleep
-      ? 'Get dinner protein handled, keep the evening lighter, and protect bedtime so recovery catches up.'
-      : 'Close calories and protein cleanly, then shut the day down on time so tomorrow stays easy.'
+      ? nextMealMissing
+        ? `Get ${nextMealLabelLower} protein handled, keep the rest of the day lighter, and protect bedtime so recovery catches up.`
+        : 'Keep the rest of intake light, stop adding cleanup, and protect bedtime so recovery catches up.'
+      : nextMealMissing
+        ? `Close ${nextMealLabelLower} cleanly, hit the remaining protein on purpose, and shut the day down on time.`
+        : 'Close calories and protein cleanly, then shut the day down on time so tomorrow stays easy.'
     encouragement = 'The hard part is already on the board. Finish the easy details and let the day count twice.'
     starterPrompt = 'My workout is already logged. Based on my dashboard, what should I do to finish today strong?' 
   } else if (plannedDayType === 'cardio') {
@@ -1430,17 +1510,19 @@ function buildJohnnyDashboardReview(snapshot) {
   } else if (stepPct < 0.55) {
     title = 'Movement is the cleanest gap right now.'
     message = `Johnny sees ${stepsToday.toLocaleString()} of ${stepTarget.toLocaleString()} steps so far${mealsLogged ? ` with ${mealsLogged} meal${mealsLogged === 1 ? '' : 's'} logged` : ''}. The day is still recoverable, but movement is the missing lever.`
-    nextStep = 'Get a 15 to 20 minute walk in before the day gets later, then decide whether you need one more short block after dinner.'
+    nextStep = mealTiming.daypartKey === 'evening'
+      ? 'Get a 15 to 20 minute walk in now, then decide if you need one more short movement block before bed.'
+      : `Get a 15 to 20 minute walk in before ${nextMealLabelLower}, then decide whether you need one more short block later.`
     encouragement = 'This is a very fixable board. A couple of clean movement blocks can change how the whole day feels.'
     starterPrompt = 'I am behind on steps. Based on my dashboard, give me the simplest plan to recover the day.'
   } else if (mealsLogged === 0 || proteinPct < 0.55) {
     title = 'Today\'s intake is the next lever.'
     message = mealsLogged === 0
-      ? 'Johnny sees a pretty open nutrition board right now. That is not a problem yet, but the longer it stays blank, the harder the day gets to steer.'
-      : `Johnny sees protein sitting at ${Math.round(protein)}g of ${Math.round(proteinTarget)}g. The board is moving, but your recovery and appetite control will be better if the next meal fixes that gap.`
+      ? `Johnny sees a pretty open nutrition board right now. Logged meal types: ${mealTypesLabel}. That is not a problem yet, but the longer ${currentMealLogged ? 'the next anchor stays open' : `${currentMealLabel.toLowerCase()} stays unlogged`}, the harder the day gets to steer.`
+      : `Johnny sees protein sitting at ${Math.round(protein)}g of ${Math.round(proteinTarget)}g. The board is moving, but your recovery and appetite control will be better if ${nextMealMissing ? `${nextMealLabelLower} fixes that gap` : 'the next eating window fixes that gap'}.`
     nextStep = mealsLogged === 0
-      ? 'Log and eat your next meal on purpose, with protein leading the plate, so the rest of the day has structure.'
-      : 'Next meal: hit 40g protein and keep the extras boring so you can close the target without chasing calories late.'
+      ? `Log and eat ${currentMealLogged ? nextMealLabelLower : currentMealLabel.toLowerCase()} on purpose, with protein leading the plate, so the rest of the day has structure.`
+      : `${nextMealLabel}: hit 40g protein and keep the extras boring so you can close the target without chasing calories late.`
     encouragement = 'You are not behind beyond repair. One intentional meal can steady the entire rest of the day.'
     starterPrompt = 'Review my dashboard and tell me what my next meal should look like today.'
   } else if (weeklyScore >= 80 || bestCurrentStreak >= 5) {
@@ -1494,12 +1576,13 @@ function buildCoachBackupStep(snapshot, explicitBackupStep = '') {
   const stepsToday = Number(snapshot?.steps?.today ?? 0)
   const proteinTarget = Number(snapshot?.goal?.target_protein_g ?? 0)
   const protein = Number(snapshot?.nutrition_totals?.protein_g ?? 0)
+  const mealTiming = getCoachMealTimingContext(snapshot)
 
   if (plannedType === 'cardio' && !training?.recorded) return 'If the full cardio block is not realistic yet, take a brisk 10-minute walk now so the day still moves forward.'
   if (plannedType === 'rest' || training?.recorded_type === 'rest') return 'If recovery still feels hard to organize, start with a protein-first meal and an easy walk.'
   if (sleepHours > 0 && sleepHours < Math.max(6.5, targetSleep - 1)) return 'If the full plan feels too aggressive, shrink the ask and just protect food quality plus bedtime.'
-  if (stepsToday < stepTarget * 0.55) return 'If you cannot fit a longer walk, stack two short movement blocks before dinner.'
-  if (proteinTarget > 0 && protein < proteinTarget * 0.55) return 'If a full meal is not realistic yet, start with a high-protein snack that keeps the board moving.'
+  if (stepsToday < stepTarget * 0.55) return mealTiming.daypartKey === 'evening' ? 'If you cannot fit a longer walk, stack two short movement blocks before bed.' : `If you cannot fit a longer walk, stack two short movement blocks before ${mealTiming.nextAnchorLabel.toLowerCase()}.`
+  if (proteinTarget > 0 && protein < proteinTarget * 0.55) return `If a full ${mealTiming.nextAnchorLabel.toLowerCase()} is not realistic yet, start with a high-protein snack that keeps the board moving.`
 
   return 'If the main move is blocked, choose the smallest clean action you can finish in the next 10 minutes.'
 }
@@ -2036,6 +2119,56 @@ function buildRecoveryWindowLabel(recoverySummary) {
   return `${loggedDays}/3 nights logged`
 }
 
+function buildFlagLoadLabel(flagLoad) {
+  if (flagLoad <= 0) return 'Low friction'
+  if (flagLoad <= 2) return 'Light friction'
+  if (flagLoad <= 5) return 'Moderate friction'
+  return 'High friction'
+}
+
+function buildFlagLoadExplanation(flagLoad) {
+  if (flagLoad <= 0) return 'No active recovery warnings. Stay consistent and keep logging sleep.'
+  if (flagLoad <= 2) return 'Some recovery drag is present. Keep today clean and avoid extra training stress.'
+  if (flagLoad <= 5) return 'Recovery pressure is building. Prioritize sleep, protein, and a shorter training effort.'
+  return 'Recovery load is high right now. Downshift intensity and focus on restoring sleep and energy first.'
+}
+
+function buildRecoveryActionPlan(recoverySummary, activeFlagItems) {
+  const items = []
+  const hasRecentSleep = Boolean(recoverySummary?.last_sleep_is_recent)
+  const lastSleepHours = Number(recoverySummary?.last_sleep_hours || 0)
+  const avgSleep3d = Number(recoverySummary?.avg_sleep_3d || 0)
+  const flagLoad = Number(recoverySummary?.active_flag_load || 0)
+  const recommendedTier = String(recoverySummary?.recommended_time_tier || '').trim()
+  const hasFlags = Array.isArray(activeFlagItems) && activeFlagItems.length > 0
+
+  if (!hasRecentSleep) {
+    items.push('Log last night sleep first so today’s recovery read is accurate.')
+  }
+  if (hasRecentSleep && lastSleepHours > 0 && lastSleepHours < 6.5) {
+    items.push('Keep training in short or medium range today and skip failure sets.')
+  }
+  if (avgSleep3d > 0 && avgSleep3d < 6.5) {
+    items.push('Protect tonight’s bedtime window to reduce your 3-day sleep debt.')
+  }
+  if (flagLoad >= 4 || hasFlags) {
+    items.push('Use lower-friction movement: controlled lifting, easier cardio, and extra recovery between sessions.')
+  }
+  if (recommendedTier) {
+    items.push(`Follow the suggested ${recommendedTier} training tier for today’s session.`)
+  }
+  if (!items.length) {
+    items.push('Stay with your planned session, keep movement consistent, and maintain normal protein + hydration.')
+  }
+
+  return items.slice(0, 3)
+}
+
+function normalizeWorkoutTimeTier(value) {
+  const normalizedValue = String(value || '').trim().toLowerCase()
+  return ['short', 'medium', 'full'].includes(normalizedValue) ? normalizedValue : 'medium'
+}
+
 function routeRecoveryAction(recoverySummary, navigate) {
   const action = recoverySummary?.recommended_action
   const target = action?.target || 'body'
@@ -2096,6 +2229,7 @@ function buildProteinRunwayModel(snapshot) {
   const remainingAnchorMeals = getRemainingMealWindows(snapshot?.meals_today).filter(window => !window.logged && window.isAnchor).length
   const mealSlotsLeft = Math.max(1, remainingAnchorMeals || Math.max(1, 3 - loggedMeals))
   const nextMealProtein = remaining > 0 ? roundToNearestFive(remaining / mealSlotsLeft) : 0
+  const mealTiming = getCoachMealTimingContext(snapshot)
 
   if (!target) {
     return {
@@ -2129,8 +2263,8 @@ function buildProteinRunwayModel(snapshot) {
     nextMealProteinLabel: `${nextMealProtein}g`,
     helper: mealSlotsLeft > 1
       ? `Spread the remaining protein across about ${mealSlotsLeft} meal windows so the night does not need a rescue move.`
-      : 'Make the next meal a clear protein anchor so the gap does not roll into tonight.',
-    prompt: `I have ${remaining} grams of protein left today. Based on my current dashboard, give me the cleanest next meal to close that gap.`,
+      : `Make ${mealTiming.nextAnchorLabel.toLowerCase()} a clear protein anchor so the gap does not roll later into the day.`,
+    prompt: `I have ${remaining} grams of protein left today. Based on my current dashboard and the fact that ${mealTiming.nextAnchorLabel.toLowerCase()} is the next realistic meal window, give me the cleanest next meal to close that gap.`,
   }
 }
 
@@ -2273,11 +2407,7 @@ function buildReminderQueueModel(reminders) {
 }
 
 function getRemainingMealWindows(meals) {
-  const loggedTypes = new Set(
-    (Array.isArray(meals) ? meals : [])
-      .map(meal => String(meal?.meal_type || '').trim().toLowerCase())
-      .filter(Boolean)
-  )
+  const loggedTypes = new Set(getLoggedMealTypes(meals))
 
   return [
     { key: 'breakfast', label: 'Breakfast', logged: loggedTypes.has('breakfast'), isAnchor: true },
@@ -2302,6 +2432,61 @@ function getNextMealWindow(windows) {
 
 function getCurrentLocalHour() {
   return new Date().getHours()
+}
+
+function getLoggedMealTypes(meals) {
+  return Array.from(new Set(
+    (Array.isArray(meals) ? meals : [])
+      .map(meal => String(meal?.meal_type || '').trim().toLowerCase())
+      .filter(Boolean)
+  ))
+}
+
+function getCoachMealTimingContext(snapshot, now = new Date()) {
+  const currentHour = now.getHours()
+  const windows = getRemainingMealWindows(snapshot?.meals_today)
+  const loggedMealTypes = getLoggedMealTypes(snapshot?.meals_today)
+  const currentAnchorKey = currentHour < 11 ? 'breakfast' : currentHour < 16 ? 'lunch' : 'dinner'
+  const currentAnchorWindow = windows.find(window => window.key === currentAnchorKey) || null
+  const nextAnchorWindow = getNextAnchorMealWindow(windows, currentHour)
+
+  return {
+    daypartKey: currentHour < 11 ? 'morning' : currentHour < 16 ? 'midday' : 'evening',
+    loggedMealTypes,
+    currentAnchorKey,
+    currentAnchorLabel: formatMealWindowLabel(currentAnchorKey),
+    currentAnchorLogged: Boolean(currentAnchorWindow?.logged),
+    nextAnchorKey: nextAnchorWindow?.key || '',
+    nextAnchorLabel: nextAnchorWindow?.label || formatMealWindowLabel(currentAnchorKey),
+  }
+}
+
+function getNextAnchorMealWindow(windows, currentHour = getCurrentLocalHour()) {
+  const anchorWindows = (Array.isArray(windows) ? windows : []).filter(window => window.isAnchor)
+  const preferredOrder = currentHour < 11
+    ? ['breakfast', 'lunch', 'dinner']
+    : currentHour < 16
+      ? ['lunch', 'dinner', 'breakfast']
+      : ['dinner', 'breakfast', 'lunch']
+
+  return preferredOrder
+    .map(key => anchorWindows.find(window => window.key === key))
+    .find(window => window && !window.logged) || anchorWindows.find(window => !window.logged) || null
+}
+
+function formatMealWindowLabel(value) {
+  switch (String(value || '').trim().toLowerCase()) {
+    case 'breakfast':
+      return 'Breakfast'
+    case 'lunch':
+      return 'Lunch'
+    case 'dinner':
+      return 'Dinner'
+    case 'snack':
+      return 'Snack'
+    default:
+      return 'Next meal'
+  }
 }
 
 function getDashboardGroceryGapItems(groceryGap) {

@@ -322,7 +322,7 @@ function formatDurationMinutes(value) {
 }
 
 function formatSessionTime(value) {
-  const parsed = new Date(String(value).replace(' ', 'T'))
+  const parsed = parseUtcSqlDateTime(value)
   if (Number.isNaN(parsed.getTime())) {
     return ''
   }
@@ -369,8 +369,21 @@ function getSortTimestamp(entry) {
   if (!rawValue) return 0
 
   const parsed = rawValue.includes('T') || rawValue.includes(' ')
-    ? new Date(rawValue.replace(' ', 'T'))
+    ? parseUtcSqlDateTime(rawValue)
     : new Date(`${rawValue}T12:00:00`)
 
   return Number.isNaN(parsed.getTime()) ? 0 : parsed.getTime()
+}
+
+function parseUtcSqlDateTime(value) {
+  const rawValue = String(value || '').trim()
+  if (!rawValue) {
+    return new Date('')
+  }
+
+  if (/z$/i.test(rawValue) || /[+-]\d{2}:?\d{2}$/.test(rawValue)) {
+    return new Date(rawValue)
+  }
+
+  return new Date(`${rawValue.replace(' ', 'T')}Z`)
 }

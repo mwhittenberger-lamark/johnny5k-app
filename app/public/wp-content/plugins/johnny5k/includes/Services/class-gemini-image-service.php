@@ -78,10 +78,28 @@ class GeminiImageService {
 					continue;
 				}
 
+				$usage      = is_array( $body['usageMetadata'] ?? null ) ? $body['usageMetadata'] : [];
+				$tokens_in  = (int) ( $usage['promptTokenCount'] ?? 0 );
+				$tokens_out = (int) ( $usage['candidatesTokenCount'] ?? 0 );
+
+				CostTracker::log_gemini_image(
+					$user_id,
+					self::DEFAULT_MODEL,
+					':generateContent',
+					$tokens_in,
+					$tokens_out,
+					[
+						'aspect_ratio'          => (string) ( $options['aspect_ratio'] ?? '1:1' ),
+						'image_size'            => (string) ( $options['image_size'] ?? '2K' ),
+						'reference_image_count' => count( $reference_images ),
+						'usage'                 => $usage,
+					]
+				);
+
 				return [
 					'mime_type' => $mime_type,
 					'data'      => $data,
-					'usage'     => $body['usageMetadata'] ?? [],
+					'usage'     => $usage,
 				];
 			}
 		}

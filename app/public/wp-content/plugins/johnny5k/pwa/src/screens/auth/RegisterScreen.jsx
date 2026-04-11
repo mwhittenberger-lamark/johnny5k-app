@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { authApi } from '../../api/modules/auth'
+import ClearableInput from '../../components/ui/ClearableInput'
 import { useAuthStore } from '../../store/authStore'
 
 export default function RegisterScreen() {
@@ -38,7 +39,7 @@ export default function RegisterScreen() {
       <p className="tagline">Join by invite. Let's build something.</p>
 
       <form onSubmit={handleSubmit} className="auth-form">
-        <input
+        <ClearableInput
           type="text"
           placeholder="Invite code (e.g. X7K2-PQ9R)"
           value={code}
@@ -46,9 +47,9 @@ export default function RegisterScreen() {
           maxLength={9}
           required
         />
-        <input type="email"    placeholder="Email"            value={email}    onChange={e => setEmail(e.target.value)}    required />
-        <input type="password" placeholder="Password"         value={password} onChange={e => setPassword(e.target.value)} required minLength={8} />
-        <input type="password" placeholder="Confirm password" value={confirm}  onChange={e => setConfirm(e.target.value)}  required />
+        <ClearableInput type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} required />
+        <ClearableInput type="password" placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} required minLength={8} />
+        <ClearableInput type="password" placeholder="Confirm password" value={confirm} onChange={e => setConfirm(e.target.value)} required />
         {error && <p className="error">{error}</p>}
         <button type="submit" className="btn-primary" disabled={loading}>
           {loading ? 'Creating account…' : 'Create Account'}

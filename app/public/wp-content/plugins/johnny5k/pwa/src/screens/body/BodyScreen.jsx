@@ -2,7 +2,9 @@ import { startTransition, useCallback, useEffect, useRef, useState } from 'react
 import { useLocation, useNavigate } from 'react-router-dom'
 import { bodyApi } from '../../api/modules/body'
 import { workoutApi } from '../../api/modules/workout'
+import ClearableInput from '../../components/ui/ClearableInput'
 import { formatUsShortDate } from '../../lib/dateFormat'
+import { DAY_TYPE_OPTIONS } from '../../lib/trainingDayTypes'
 import { useDashboardStore } from '../../store/dashboardStore'
 
 export default function BodyScreen() {
@@ -847,8 +849,8 @@ function WorkoutHistoryTab({ workoutLogs, currentWeight, invalidate, onRefreshSn
         <label>
         Workout type
         <select value={form.actual_day_type} onChange={e => updateField('actual_day_type', e.target.value)}>
-          {['push', 'pull', 'legs', 'arms_shoulders', 'cardio', 'rest'].map(option => (
-          <option key={option} value={option}>{formatDayType(option)}</option>
+          {DAY_TYPE_OPTIONS.map(([option, label]) => (
+          <option key={option} value={option}>{label}</option>
           ))}
         </select>
         </label>
@@ -1079,7 +1081,7 @@ function CardioTab({ invalidate, cardioLogs, cardioSeries, cardioRange, currentW
           <p className="cardio-estimate-note">Auto-estimated from your latest weight, modality, intensity, and duration. You can override it.</p>
           <label className="cardio-notes-field">
             Notes
-            <input type="text" placeholder="Intervals, hills, or steady state" value={form.notes} onChange={e => update('notes', e.target.value)} />
+            <ClearableInput type="text" placeholder="Intervals, hills, or steady state" value={form.notes} onChange={e => update('notes', e.target.value)} />
           </label>
           <div className="body-form-actions body-form-actions-full">
             <button className="btn-outline small" type="button" onClick={() => setCaloriesDirty(false)}>Recalculate calories</button>

@@ -27,6 +27,7 @@ use Johnny5k\Services\UserTime;
  */
 class AiController {
 	private const PANTRY_CATEGORY_OVERRIDES_META_KEY = 'johnny5k_pantry_category_overrides';
+	private const HIDDEN_RECENT_FOOD_KEYS_META_KEY = 'johnny5k_hidden_recent_food_keys';
 
 	public static function register_routes(): void {
 		$ns   = JF_REST_NAMESPACE;
@@ -721,32 +722,12 @@ class AiController {
 			$like,
 			$like
 		) );
-
-		$recent_items = $wpdb->get_results( $wpdb->prepare(
-			"SELECT 0 AS id, mi.food_name AS canonical_name, '' AS brand, mi.serving_unit AS serving_size,
-				ROUND(AVG(mi.calories)) AS calories,
-				ROUND(AVG(mi.protein_g), 2) AS protein_g,
-				ROUND(AVG(mi.carbs_g), 2) AS carbs_g,
-				ROUND(AVG(mi.fat_g), 2) AS fat_g,
-				ROUND(AVG(COALESCE(mi.fiber_g, 0)), 2) AS fiber_g,
-				ROUND(AVG(COALESCE(mi.sugar_g, 0)), 2) AS sugar_g,
-				ROUND(AVG(COALESCE(mi.sodium_mg, 0)), 2) AS sodium_mg,
-				MAX(mi.micros_json) AS micros_json,
-				'recent_item' AS match_type
-			 FROM {$p}fit_meal_items mi
-			 JOIN {$p}fit_meals m ON m.id = mi.meal_id
-			 WHERE m.user_id = %d AND mi.food_name LIKE %s
-			 GROUP BY mi.food_name, mi.serving_unit
-			 ORDER BY MAX(m.meal_datetime) DESC
-			 LIMIT 8",
-			$user_id,
-			$like
-		) );
+		$recent_items = self::get_recent_food_entries( $user_id, $query, 12 );
 
 		$merged = [];
 		$seen = [];
-		foreach ( array_merge( $saved_foods ?: [], $recent_items ?: [] ) as $row ) {
-			$key = strtolower( trim( (string) $row->canonical_name ) . '|' . trim( (string) $row->brand ) . '|' . trim( (string) $row->serving_size ) );
+		foreach ( $saved_foods ?: [] as $row ) {
+			$key = self::build_food_match_dedupe_key( (string) $row->canonical_name, (string) $row->brand, (string) $row->serving_size );
 			if ( isset( $seen[ $key ] ) ) {
 				continue;
 			}
@@ -756,6 +737,7 @@ class AiController {
 				'id'           => (int) $row->id,
 				'canonical_name'=> (string) $row->canonical_name,
 				'brand'        => (string) $row->brand,
+				'serving_amount' => 1,
 				'serving_size' => (string) $row->serving_size,
 				'calories'     => (int) round( (float) $row->calories ),
 				'protein_g'    => round( (float) $row->protein_g, 2 ),
@@ -769,7 +751,104 @@ class AiController {
 			];
 		}
 
+		foreach ( $recent_items as $row ) {
+			$key = self::build_food_match_dedupe_key( (string) ( $row['canonical_name'] ?? '' ), (string) ( $row['brand'] ?? '' ), (string) ( $row['serving_size'] ?? '' ) );
+			if ( isset( $seen[ $key ] ) ) {
+				continue;
+			}
+
+			$seen[ $key ] = true;
+			$merged[] = $row;
+		}
+
 		return new \WP_REST_Response( array_slice( $merged, 0, 10 ) );
+	}
+
+	public static function get_recent_foods( \WP_REST_Request $req ): \WP_REST_Response {
+		$user_id = get_current_user_id();
+		$limit = max( 1, min( 50, (int) ( $req->get_param( 'limit' ) ?: 20 ) ) );
+
+		return new \WP_REST_Response( self::get_recent_food_entries( $user_id, '', $limit ) );
+	}
+
+	public static function update_recent_food( \WP_REST_Request $req ): \WP_REST_Response {
+		global $wpdb;
+		$p       = $wpdb->prefix;
+		$user_id = get_current_user_id();
+		$item_id = (int) $req->get_param( 'id' );
+
+		$current = $wpdb->get_row( $wpdb->prepare(
+			"SELECT mi.*, m.user_id
+			 FROM {$p}fit_meal_items mi
+			 JOIN {$p}fit_meals m ON m.id = mi.meal_id
+			 WHERE mi.id = %d",
+			$item_id
+		), ARRAY_A );
+
+		if ( ! $current || (int) ( $current['user_id'] ?? 0 ) !== $user_id ) {
+			return new \WP_REST_Response( [ 'message' => 'Recent food not found.' ], 404 );
+		}
+
+		$payload = self::build_recent_food_payload( $req, $current );
+		$wpdb->update( $p . 'fit_meal_items', array_filter( [
+			'food_name'      => $payload['food_name'],
+			'serving_amount' => $payload['serving_amount'],
+			'serving_unit'   => $payload['serving_unit'],
+			'calories'       => $payload['calories'],
+			'protein_g'      => $payload['protein_g'],
+			'carbs_g'        => $payload['carbs_g'],
+			'fat_g'          => $payload['fat_g'],
+			'fiber_g'        => $payload['fiber_g'],
+			'sugar_g'        => $payload['sugar_g'],
+			'sodium_mg'      => $payload['sodium_mg'],
+			'micros_json'    => $payload['micros_json'],
+		], static fn( $value ) => null !== $value ), [ 'id' => $item_id ] );
+
+		static::sync_user_awards( $user_id );
+
+		return new \WP_REST_Response( [ 'updated' => true ] );
+	}
+
+	public static function delete_recent_food( \WP_REST_Request $req ): \WP_REST_Response {
+		$user_id = get_current_user_id();
+		$item_id = (int) $req->get_param( 'id' );
+		$row = self::get_recent_food_row_by_id( $user_id, $item_id );
+
+		if ( ! $row ) {
+			return new \WP_REST_Response( [ 'message' => 'Recent food not found.' ], 404 );
+		}
+
+		self::add_hidden_recent_food_keys( $user_id, [ self::build_recent_food_dedupe_key( (string) ( $row['food_name'] ?? '' ), $row['source_json'] ?? null ) ] );
+
+		return new \WP_REST_Response( [ 'deleted' => true ] );
+	}
+
+	public static function delete_recent_foods( \WP_REST_Request $req ): \WP_REST_Response {
+		$user_id = get_current_user_id();
+		$ids = $req->get_param( 'ids' );
+		$ids = is_array( $ids ) ? array_values( array_filter( array_map( 'intval', $ids ) ) ) : [];
+
+		if ( empty( $ids ) ) {
+			return new \WP_REST_Response( [ 'message' => 'Recent food ids are required.' ], 400 );
+		}
+
+		$keys = [];
+		foreach ( $ids as $item_id ) {
+			$row = self::get_recent_food_row_by_id( $user_id, $item_id );
+			if ( ! $row ) {
+				continue;
+			}
+
+			$keys[] = self::build_recent_food_dedupe_key( (string) ( $row['food_name'] ?? '' ), $row['source_json'] ?? null );
+		}
+
+		if ( empty( $keys ) ) {
+			return new \WP_REST_Response( [ 'message' => 'Recent foods not found.' ], 404 );
+		}
+
+		self::add_hidden_recent_food_keys( $user_id, $keys );
+
+		return new \WP_REST_Response( [ 'deleted' => true, 'count' => count( $keys ) ] );
 	}
 
 	private static function user_owns_row( string $table, int $row_id, int $user_id ): bool {
@@ -924,6 +1003,150 @@ class AiController {
 			'label_json'     => ! empty( $label ) ? wp_json_encode( $label ) : null,
 			'source_json'    => ! empty( $source_details ) ? wp_json_encode( $source_details ) : null,
 		];
+	}
+
+	private static function build_recent_food_payload( \WP_REST_Request $req, array $current ): array {
+		$micros = $req->get_param( 'micros' );
+		$micros = is_array( $micros ) ? array_values( $micros ) : self::decode_json_list( $current['micros_json'] ?? null );
+		$serving_multiplier = max( 0.1, (float) ( $current['serving_amount'] ?? 1 ) );
+
+		return [
+			'food_name'      => sanitize_text_field( (string) ( $req->get_param( 'canonical_name' ) ?: $req->get_param( 'food_name' ) ?: ( $current['food_name'] ?? 'Food item' ) ) ),
+			'serving_amount' => $serving_multiplier,
+			'serving_unit'   => sanitize_text_field( (string) ( $req->get_param( 'serving_unit' ) ?: $req->get_param( 'serving_size' ) ?: ( $current['serving_unit'] ?? 'serving' ) ) ),
+			'calories'       => (int) round( (float) ( $req->get_param( 'calories' ) !== null ? $req->get_param( 'calories' ) : ( $current['calories'] ?? 0 ) ) * $serving_multiplier ),
+			'protein_g'      => round( (float) ( $req->get_param( 'protein_g' ) !== null ? $req->get_param( 'protein_g' ) : ( $current['protein_g'] ?? 0 ) ) * $serving_multiplier, 2 ),
+			'carbs_g'        => round( (float) ( $req->get_param( 'carbs_g' ) !== null ? $req->get_param( 'carbs_g' ) : ( $current['carbs_g'] ?? 0 ) ) * $serving_multiplier, 2 ),
+			'fat_g'          => round( (float) ( $req->get_param( 'fat_g' ) !== null ? $req->get_param( 'fat_g' ) : ( $current['fat_g'] ?? 0 ) ) * $serving_multiplier, 2 ),
+			'fiber_g'        => $req->get_param( 'fiber_g' ) !== null ? round( (float) $req->get_param( 'fiber_g' ) * $serving_multiplier, 2 ) : ( isset( $current['fiber_g'] ) ? round( (float) $current['fiber_g'], 2 ) : null ),
+			'sugar_g'        => $req->get_param( 'sugar_g' ) !== null ? round( (float) $req->get_param( 'sugar_g' ) * $serving_multiplier, 2 ) : ( isset( $current['sugar_g'] ) ? round( (float) $current['sugar_g'], 2 ) : null ),
+			'sodium_mg'      => $req->get_param( 'sodium_mg' ) !== null ? round( (float) $req->get_param( 'sodium_mg' ) * $serving_multiplier, 2 ) : ( isset( $current['sodium_mg'] ) ? round( (float) $current['sodium_mg'], 2 ) : null ),
+			'micros_json'    => ! empty( $micros ) ? wp_json_encode( self::scale_micros( $micros, $serving_multiplier ) ) : null,
+		];
+	}
+
+	private static function get_recent_food_entries( int $user_id, string $query = '', int $limit = 20 ): array {
+		global $wpdb;
+		$p = $wpdb->prefix;
+		$hidden_keys = array_fill_keys( self::get_hidden_recent_food_keys( $user_id ), true );
+
+		$limit = max( 1, min( 100, $limit ) );
+		$sql = "SELECT mi.id, mi.food_id, mi.food_name, mi.serving_amount, mi.serving_unit, mi.calories, mi.protein_g, mi.carbs_g, mi.fat_g, mi.fiber_g, mi.sugar_g, mi.sodium_mg, mi.micros_json, mi.source_json, m.id AS meal_id, m.meal_datetime
+			FROM {$p}fit_meal_items mi
+			JOIN {$p}fit_meals m ON m.id = mi.meal_id
+			WHERE m.user_id = %d AND m.confirmed = 1";
+		$params = [ $user_id ];
+
+		if ( '' !== $query ) {
+			$sql .= ' AND mi.food_name LIKE %s';
+			$params[] = '%' . $wpdb->esc_like( $query ) . '%';
+		}
+
+		$sql .= ' ORDER BY m.meal_datetime DESC, mi.id DESC LIMIT %d';
+		$params[] = $limit * 4;
+
+		$rows = $wpdb->get_results( $wpdb->prepare( $sql, ...$params ), ARRAY_A );
+		$deduped = [];
+		$seen = [];
+
+		foreach ( is_array( $rows ) ? $rows : [] as $row ) {
+			$key = self::build_recent_food_dedupe_key( (string) ( $row['food_name'] ?? '' ), $row['source_json'] ?? null );
+			if ( '' === $key || isset( $seen[ $key ] ) || isset( $hidden_keys[ $key ] ) ) {
+				continue;
+			}
+
+			$seen[ $key ] = true;
+			$deduped[] = self::format_recent_food_entry( $row );
+
+			if ( count( $deduped ) >= $limit ) {
+				break;
+			}
+		}
+
+		return $deduped;
+	}
+
+	private static function get_recent_food_row_by_id( int $user_id, int $item_id ): ?array {
+		global $wpdb;
+		$p = $wpdb->prefix;
+
+		$row = $wpdb->get_row( $wpdb->prepare(
+			"SELECT mi.*, m.user_id, m.meal_datetime
+			 FROM {$p}fit_meal_items mi
+			 JOIN {$p}fit_meals m ON m.id = mi.meal_id
+			 WHERE mi.id = %d AND m.user_id = %d AND m.confirmed = 1",
+			$item_id,
+			$user_id
+		), ARRAY_A );
+
+		return is_array( $row ) ? $row : null;
+	}
+
+	private static function format_recent_food_entry( array $row ): array {
+		$source_details = ! empty( $row['source_json'] ) ? json_decode( (string) $row['source_json'], true ) : [];
+		$brand = is_array( $source_details ) && ! empty( $source_details['brand'] ) ? sanitize_text_field( (string) $source_details['brand'] ) : '';
+		$serving_multiplier = max( 0.1, (float) ( $row['serving_amount'] ?? 1 ) );
+		$per_serving_micros = ! empty( $row['micros_json'] ) ? self::scale_micros( self::decode_json_list( $row['micros_json'] ), 1 / $serving_multiplier ) : [];
+
+		return [
+			'id'             => (int) ( $row['id'] ?? 0 ),
+			'food_id'        => isset( $row['food_id'] ) ? (int) $row['food_id'] : null,
+			'canonical_name' => (string) ( $row['food_name'] ?? '' ),
+			'brand'          => $brand,
+			'serving_amount' => 1,
+			'serving_size'   => (string) ( $row['serving_unit'] ?? 'serving' ),
+			'calories'       => (int) round( (float) ( $row['calories'] ?? 0 ) / $serving_multiplier ),
+			'protein_g'      => round( (float) ( $row['protein_g'] ?? 0 ) / $serving_multiplier, 2 ),
+			'carbs_g'        => round( (float) ( $row['carbs_g'] ?? 0 ) / $serving_multiplier, 2 ),
+			'fat_g'          => round( (float) ( $row['fat_g'] ?? 0 ) / $serving_multiplier, 2 ),
+			'fiber_g'        => round( (float) ( $row['fiber_g'] ?? 0 ) / $serving_multiplier, 2 ),
+			'sugar_g'        => round( (float) ( $row['sugar_g'] ?? 0 ) / $serving_multiplier, 2 ),
+			'sodium_mg'      => round( (float) ( $row['sodium_mg'] ?? 0 ) / $serving_multiplier, 2 ),
+			'micros'         => $per_serving_micros,
+			'match_type'     => 'recent_item',
+			'meal_id'        => isset( $row['meal_id'] ) ? (int) $row['meal_id'] : null,
+			'meal_datetime'  => (string) ( $row['meal_datetime'] ?? '' ),
+			'source'         => is_array( $source_details ) ? $source_details : null,
+		];
+	}
+
+	private static function build_recent_food_dedupe_key( string $food_name, $source_json = null ): string {
+		$source_details = is_array( $source_json ) ? $source_json : json_decode( (string) $source_json, true );
+		$brand = is_array( $source_details ) && ! empty( $source_details['brand'] ) ? sanitize_text_field( (string) $source_details['brand'] ) : '';
+
+		return self::build_food_match_dedupe_key( $food_name, $brand, '' );
+	}
+
+	private static function get_hidden_recent_food_keys( int $user_id ): array {
+		$stored = get_user_meta( $user_id, self::HIDDEN_RECENT_FOOD_KEYS_META_KEY, true );
+		$stored_keys = is_array( $stored ) ? $stored : [];
+
+		return array_values( array_filter( array_unique( array_map( 'strval', $stored_keys ) ) ) );
+	}
+
+	private static function save_hidden_recent_food_keys( int $user_id, array $keys ): void {
+		$keys = array_values( array_filter( array_unique( array_map( 'strval', $keys ) ) ) );
+
+		if ( empty( $keys ) ) {
+			delete_user_meta( $user_id, self::HIDDEN_RECENT_FOOD_KEYS_META_KEY );
+			return;
+		}
+
+		update_user_meta( $user_id, self::HIDDEN_RECENT_FOOD_KEYS_META_KEY, $keys );
+	}
+
+	private static function add_hidden_recent_food_keys( int $user_id, array $keys ): void {
+		$current = self::get_hidden_recent_food_keys( $user_id );
+		self::save_hidden_recent_food_keys( $user_id, array_merge( $current, $keys ) );
+	}
+
+	private static function build_food_match_dedupe_key( string $name, string $brand = '', string $serving_size = '' ): string {
+		$normalize = static function( string $value ): string {
+			$value = strtolower( trim( $value ) );
+			return preg_replace( '/\s+/', ' ', $value ) ?: '';
+		};
+
+		return $normalize( $name ) . '|' . $normalize( $brand ) . '|' . $normalize( $serving_size );
 	}
 
 	private static function enrich_meal_items_with_micros( int $user_id, array $items ): array {

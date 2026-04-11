@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { authApi } from '../../api/modules/auth'
+import ClearableInput from '../../components/ui/ClearableInput'
 
 export default function ResetPasswordScreen() {
   const navigate = useNavigate()
@@ -53,8 +54,8 @@ export default function ResetPasswordScreen() {
       <p className="tagline">Choose a new password for your Johnny5k account.</p>
 
       <form onSubmit={handleSubmit} className="auth-form">
-        <input type="password" placeholder="New password" value={password} onChange={event => setPassword(event.target.value)} required minLength={8} />
-        <input type="password" placeholder="Confirm password" value={confirmPassword} onChange={event => setConfirmPassword(event.target.value)} required minLength={8} />
+        <ClearableInput type="password" placeholder="New password" value={password} onChange={event => setPassword(event.target.value)} required minLength={8} />
+        <ClearableInput type="password" placeholder="Confirm password" value={confirmPassword} onChange={event => setConfirmPassword(event.target.value)} required minLength={8} />
         {error ? <p className="error">{error}</p> : null}
         {message ? <p className="success-message">{message}</p> : null}
         <button type="submit" className="btn-primary" disabled={loading || !hasToken}>

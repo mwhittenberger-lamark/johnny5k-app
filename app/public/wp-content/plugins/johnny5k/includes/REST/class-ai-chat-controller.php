@@ -125,12 +125,13 @@ class AiChatController {
 	public static function analyse_meal( \WP_REST_Request $req ): \WP_REST_Response {
 		$user_id = get_current_user_id();
 		$image   = $req->get_param( 'image_base64' );
+		$meal_note = sanitize_textarea_field( (string) ( $req->get_param( 'meal_note' ) ?: '' ) );
 
 		if ( ! $image ) {
 			return new \WP_REST_Response( [ 'message' => 'No image provided.' ], 400 );
 		}
 
-		$result = AiService::analyse_food_image( $user_id, $image, 'meal_photo' );
+		$result = AiService::analyse_food_image( $user_id, $image, 'meal_photo', $meal_note );
 		if ( is_wp_error( $result ) ) {
 			return new \WP_REST_Response( [ 'message' => $result->get_error_message() ], 500 );
 		}

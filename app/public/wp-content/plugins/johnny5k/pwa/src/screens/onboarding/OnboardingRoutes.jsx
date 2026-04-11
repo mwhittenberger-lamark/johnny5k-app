@@ -2,6 +2,7 @@ import { startTransition, useEffect, useMemo, useState } from 'react'
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { dashboardApi } from '../../api/modules/dashboard'
 import { onboardingApi } from '../../api/modules/onboarding'
+import ClearableInput from '../../components/ui/ClearableInput'
 import { useAuthStore } from '../../store/authStore'
 import {
   bodyFormFromState,
@@ -21,18 +22,11 @@ import {
   reminderHourOptions,
   trainingFormFromState,
 } from '../../lib/onboarding'
+import { DAY_TYPE_OPTIONS } from '../../lib/trainingDayTypes'
 
 const WORKOUT_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const BODY_AREAS = ['Shoulders', 'Knees', 'Back', 'Elbows', 'Hips', 'Neck']
 const EQUIPMENT_OPTIONS = ['Full gym', 'Dumbbells', 'Machines', 'Home gym', 'Bodyweight only']
-const DAY_TYPE_OPTIONS = [
-  ['push', 'Push'],
-  ['pull', 'Pull'],
-  ['legs', 'Legs'],
-  ['arms_shoulders', 'Bonus arms + shoulders'],
-  ['cardio', 'Cardio'],
-  ['rest', 'Rest'],
-]
 const TIMEZONE_REGIONS = getTimezoneRegions()
 const REMINDER_HOUR_OPTIONS = reminderHourOptions()
 const COMMON_EXERCISE_AVOIDS = [
@@ -230,8 +224,8 @@ function ProfileStep() {
     >
       <form className="onboarding-step-form" onSubmit={next}>
         <div className="onboarding-form">
-          <label>First name<input value={form.first_name} onChange={e => update('first_name', e.target.value)} required /></label>
-          <label>Last name<input value={form.last_name} onChange={e => update('last_name', e.target.value)} /></label>
+          <label>First name<ClearableInput value={form.first_name} onChange={e => update('first_name', e.target.value)} required /></label>
+          <label>Last name<ClearableInput value={form.last_name} onChange={e => update('last_name', e.target.value)} /></label>
           <label>Date of birth<input type="date" value={form.date_of_birth} onChange={e => update('date_of_birth', e.target.value)} required /></label>
           <label>Sex
             <select value={form.sex} onChange={e => update('sex', e.target.value)}>
@@ -593,7 +587,7 @@ function InjuriesStep() {
             ))}
           </div>
           <div className="onboarding-inline-action">
-            <input
+            <ClearableInput
               list="onboarding-exercise-avoid-suggestions"
               value={customAvoid}
               onChange={e => setCustomAvoid(e.target.value)}
@@ -636,7 +630,7 @@ function InjuriesStep() {
                 <option value="high">High</option>
               </select>
             </label>
-            <label>Notes<input value={flag.notes} onChange={e => updateFlag(flag.body_area, 'notes', e.target.value)} placeholder="What tends to flare it up?" /></label>
+            <label>Notes<ClearableInput value={flag.notes} onChange={e => updateFlag(flag.body_area, 'notes', e.target.value)} placeholder="What tends to flare it up?" /></label>
           </div>
         ))}
         {error && <p className="error">{error}</p>}
@@ -859,7 +853,7 @@ function HabitsStep() {
           <span>SMS reminders</span>
           <input type="checkbox" checked={form.notifications_enabled} onChange={e => update('notifications_enabled', e.target.checked)} />
         </label>
-        {form.notifications_enabled ? <label>Phone<input type="tel" value={form.phone} onChange={e => update('phone', e.target.value)} placeholder="+15551234567" /></label> : null}
+        {form.notifications_enabled ? <label>Phone<ClearableInput type="tel" value={form.phone} onChange={e => update('phone', e.target.value)} placeholder="+15551234567" /></label> : null}
         {form.notifications_enabled ? (
           <div className="settings-grid settings-grid-compact">
             <div className="reminder-setting-card">

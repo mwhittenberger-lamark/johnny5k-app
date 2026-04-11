@@ -16,6 +16,11 @@ class Seeder {
 		self::seed_program_templates();
 	}
 
+	public static function sync_training_day_type_catalog(): void {
+		self::sync_seeded_exercise_day_types();
+		self::seed_program_templates();
+	}
+
 	// ── Exercises ─────────────────────────────────────────────────────────────
 
 	private static function seed_exercises(): void {
@@ -24,39 +29,39 @@ class Seeder {
 
 		$exercises = [
 			// Push — main
-			[ 'barbell-bench-press',        'Barbell Bench Press',           'horizontal_push', 'chest',     'barbell',     'intermediate', 7, 3, 2, 5, 8,  3, 'double_progression',  '["push"]', '["main"]' ],
-			[ 'dumbbell-incline-press',      'Dumbbell Incline Press',        'horizontal_push', 'chest',     'dumbbell',    'intermediate', 8, 2, 1, 8, 12, 3, 'double_progression',  '["push"]', '["main","secondary"]' ],
-			[ 'dumbbell-flat-press',         'Dumbbell Flat Press',           'horizontal_push', 'chest',     'dumbbell',    'beginner',     9, 2, 1, 8, 12, 3, 'double_progression',  '["push"]', '["main","secondary"]' ],
-			[ 'cable-chest-fly',             'Cable Chest Fly',              'horizontal_push', 'chest',     'cable',       'beginner',     9, 1, 1, 12, 15, 3, 'double_progression', '["push"]', '["accessory"]' ],
-			[ 'push-up',                     'Push-Up',                      'horizontal_push', 'chest',     'bodyweight',  'beginner',     10, 1, 1, 10, 20, 3, 'double_progression', '["push"]', '["main","secondary","accessory"]' ],
-			[ 'dips',                        'Dips',                         'vertical_push',   'chest',     'bodyweight',  'intermediate', 7, 3, 1, 6, 12, 3, 'double_progression',  '["push"]', '["main","secondary"]' ],
+			[ 'barbell-bench-press',        'Barbell Bench Press',           'horizontal_push', 'chest',     'barbell',     'intermediate', 7, 3, 2, 5, 8,  3, 'double_progression',  '["push","chest"]', '["main"]' ],
+			[ 'dumbbell-incline-press',      'Dumbbell Incline Press',        'horizontal_push', 'chest',     'dumbbell',    'intermediate', 8, 2, 1, 8, 12, 3, 'double_progression',  '["push","chest"]', '["main","secondary"]' ],
+			[ 'dumbbell-flat-press',         'Dumbbell Flat Press',           'horizontal_push', 'chest',     'dumbbell',    'beginner',     9, 2, 1, 8, 12, 3, 'double_progression',  '["push","chest"]', '["main","secondary"]' ],
+			[ 'cable-chest-fly',             'Cable Chest Fly',              'horizontal_push', 'chest',     'cable',       'beginner',     9, 1, 1, 12, 15, 3, 'double_progression', '["push","chest"]', '["accessory"]' ],
+			[ 'push-up',                     'Push-Up',                      'horizontal_push', 'chest',     'bodyweight',  'beginner',     10, 1, 1, 10, 20, 3, 'double_progression', '["push","chest"]', '["main","secondary","accessory"]' ],
+			[ 'dips',                        'Dips',                         'vertical_push',   'chest',     'bodyweight',  'intermediate', 7, 3, 1, 6, 12, 3, 'double_progression',  '["push","chest"]', '["main","secondary"]' ],
 			// Push — triceps
-			[ 'tricep-pushdown',             'Tricep Pushdown',              'elbow_extension', 'triceps',   'cable',       'beginner',     10, 1, 1, 10, 15, 3, 'double_progression', '["push","arms_shoulders"]', '["accessory"]' ],
-			[ 'skull-crushers',              'Skull Crushers',               'elbow_extension', 'triceps',   'barbell',     'intermediate', 7, 3, 1, 8, 12, 3, 'double_progression',  '["push","arms_shoulders"]', '["accessory"]' ],
-			[ 'overhead-tricep-extension',   'Overhead Tricep Extension',    'elbow_extension', 'triceps',   'dumbbell',    'beginner',     9, 1, 1, 10, 15, 3, 'double_progression',  '["push","arms_shoulders"]', '["accessory"]' ],
-			[ 'close-grip-bench-press',      'Close Grip Bench Press',       'horizontal_push', 'triceps',   'barbell',     'intermediate', 7, 3, 2, 5, 8,  3, 'double_progression',  '["push","arms_shoulders"]', '["main","accessory"]' ],
+			[ 'tricep-pushdown',             'Tricep Pushdown',              'elbow_extension', 'triceps',   'cable',       'beginner',     10, 1, 1, 10, 15, 3, 'double_progression', '["push","arms","arms_shoulders"]', '["accessory"]' ],
+			[ 'skull-crushers',              'Skull Crushers',               'elbow_extension', 'triceps',   'barbell',     'intermediate', 7, 3, 1, 8, 12, 3, 'double_progression',  '["push","arms","arms_shoulders"]', '["accessory"]' ],
+			[ 'overhead-tricep-extension',   'Overhead Tricep Extension',    'elbow_extension', 'triceps',   'dumbbell',    'beginner',     9, 1, 1, 10, 15, 3, 'double_progression',  '["push","arms","arms_shoulders"]', '["accessory"]' ],
+			[ 'close-grip-bench-press',      'Close Grip Bench Press',       'horizontal_push', 'triceps',   'barbell',     'intermediate', 7, 3, 2, 5, 8,  3, 'double_progression',  '["push","chest","arms","arms_shoulders"]', '["main","accessory"]' ],
 			// Shoulders (included in push/pull/legs)
-			[ 'overhead-press-barbell',      'Overhead Press (Barbell)',     'vertical_push',   'shoulders', 'barbell',     'intermediate', 6, 4, 3, 4, 8,  3, 'load_progression',    '["push"]', '["main","shoulders"]' ],
-			[ 'dumbbell-shoulder-press',     'Dumbbell Shoulder Press',      'vertical_push',   'shoulders', 'dumbbell',    'beginner',     9, 2, 2, 8, 12, 3, 'double_progression',  '["push","arms_shoulders"]', '["main","shoulders"]' ],
-			[ 'dumbbell-lateral-raise',      'Dumbbell Lateral Raise',       'shoulder_abduct', 'shoulders', 'dumbbell',    'beginner',     10, 1, 1, 12, 20, 3, 'double_progression', '["push","pull","legs","arms_shoulders"]', '["shoulders","accessory"]' ],
-			[ 'cable-lateral-raise',         'Cable Lateral Raise',          'shoulder_abduct', 'shoulders', 'cable',       'beginner',     10, 1, 1, 12, 20, 3, 'double_progression', '["push","pull","legs","arms_shoulders"]', '["shoulders","accessory"]' ],
-			[ 'rear-delt-fly',               'Rear Delt Fly',                'shoulder_abduct', 'rear_delt', 'dumbbell',    'beginner',     10, 1, 1, 15, 20, 3, 'double_progression', '["push","pull","legs","arms_shoulders"]', '["shoulders","accessory"]' ],
-			[ 'face-pulls',                  'Face Pulls',                   'shoulder_abduct', 'rear_delt', 'cable',       'beginner',     10, 1, 1, 15, 20, 3, 'double_progression', '["push","pull","legs","arms_shoulders"]', '["shoulders","accessory"]' ],
-			[ 'arnold-press',                'Arnold Press',                 'vertical_push',   'shoulders', 'dumbbell',    'intermediate', 8, 2, 2, 8, 12, 3, 'double_progression',  '["push","arms_shoulders"]', '["shoulders","main"]' ],
+			[ 'overhead-press-barbell',      'Overhead Press (Barbell)',     'vertical_push',   'shoulders', 'barbell',     'intermediate', 6, 4, 3, 4, 8,  3, 'load_progression',    '["push","shoulders"]', '["main","shoulders"]' ],
+			[ 'dumbbell-shoulder-press',     'Dumbbell Shoulder Press',      'vertical_push',   'shoulders', 'dumbbell',    'beginner',     9, 2, 2, 8, 12, 3, 'double_progression',  '["push","shoulders","arms_shoulders"]', '["main","shoulders"]' ],
+			[ 'dumbbell-lateral-raise',      'Dumbbell Lateral Raise',       'shoulder_abduct', 'shoulders', 'dumbbell',    'beginner',     10, 1, 1, 12, 20, 3, 'double_progression', '["push","pull","legs","arms_shoulders","shoulders"]', '["shoulders","accessory"]' ],
+			[ 'cable-lateral-raise',         'Cable Lateral Raise',          'shoulder_abduct', 'shoulders', 'cable',       'beginner',     10, 1, 1, 12, 20, 3, 'double_progression', '["push","pull","legs","arms_shoulders","shoulders"]', '["shoulders","accessory"]' ],
+			[ 'rear-delt-fly',               'Rear Delt Fly',                'shoulder_abduct', 'rear_delt', 'dumbbell',    'beginner',     10, 1, 1, 15, 20, 3, 'double_progression', '["push","pull","legs","arms_shoulders","shoulders","back"]', '["shoulders","accessory"]' ],
+			[ 'face-pulls',                  'Face Pulls',                   'shoulder_abduct', 'rear_delt', 'cable',       'beginner',     10, 1, 1, 15, 20, 3, 'double_progression', '["push","pull","legs","arms_shoulders","shoulders","back"]', '["shoulders","accessory"]' ],
+			[ 'arnold-press',                'Arnold Press',                 'vertical_push',   'shoulders', 'dumbbell',    'intermediate', 8, 2, 2, 8, 12, 3, 'double_progression',  '["push","shoulders","arms_shoulders"]', '["shoulders","main"]' ],
 			// Pull — main
-			[ 'barbell-row',                 'Barbell Row',                  'horizontal_pull', 'back',      'barbell',     'intermediate', 6, 3, 3, 5, 8,  3, 'load_progression',    '["pull"]', '["main"]' ],
-			[ 'dumbbell-row',                'Dumbbell Row',                 'horizontal_pull', 'back',      'dumbbell',    'beginner',     9, 2, 1, 8, 12, 3, 'double_progression',  '["pull"]', '["main","secondary"]' ],
-			[ 'cable-row',                   'Cable Row',                    'horizontal_pull', 'back',      'cable',       'beginner',     9, 1, 1, 10, 15, 3, 'double_progression', '["pull"]', '["main","secondary"]' ],
-			[ 'lat-pulldown',                'Lat Pulldown',                 'vertical_pull',   'back',      'cable',       'beginner',     9, 1, 1, 8, 12, 3, 'double_progression',  '["pull"]', '["main"]' ],
-			[ 'pull-up',                     'Pull-Up',                      'vertical_pull',   'back',      'bodyweight',  'intermediate', 8, 2, 1, 4, 10, 3, 'double_progression',  '["pull"]', '["main"]' ],
-			[ 'chin-up',                     'Chin-Up',                      'vertical_pull',   'back',      'bodyweight',  'intermediate', 8, 2, 1, 4, 10, 3, 'double_progression',  '["pull","arms_shoulders"]', '["main"]' ],
-			[ 'chest-supported-row',         'Chest Supported Row',          'horizontal_pull', 'back',      'dumbbell',    'beginner',     10, 1, 1, 10, 15, 3, 'double_progression', '["pull"]', '["main","secondary"]' ],
+			[ 'barbell-row',                 'Barbell Row',                  'horizontal_pull', 'back',      'barbell',     'intermediate', 6, 3, 3, 5, 8,  3, 'load_progression',    '["pull","back"]', '["main"]' ],
+			[ 'dumbbell-row',                'Dumbbell Row',                 'horizontal_pull', 'back',      'dumbbell',    'beginner',     9, 2, 1, 8, 12, 3, 'double_progression',  '["pull","back"]', '["main","secondary"]' ],
+			[ 'cable-row',                   'Cable Row',                    'horizontal_pull', 'back',      'cable',       'beginner',     9, 1, 1, 10, 15, 3, 'double_progression', '["pull","back"]', '["main","secondary"]' ],
+			[ 'lat-pulldown',                'Lat Pulldown',                 'vertical_pull',   'back',      'cable',       'beginner',     9, 1, 1, 8, 12, 3, 'double_progression',  '["pull","back"]', '["main"]' ],
+			[ 'pull-up',                     'Pull-Up',                      'vertical_pull',   'back',      'bodyweight',  'intermediate', 8, 2, 1, 4, 10, 3, 'double_progression',  '["pull","back"]', '["main"]' ],
+			[ 'chin-up',                     'Chin-Up',                      'vertical_pull',   'back',      'bodyweight',  'intermediate', 8, 2, 1, 4, 10, 3, 'double_progression',  '["pull","back","arms","arms_shoulders"]', '["main"]' ],
+			[ 'chest-supported-row',         'Chest Supported Row',          'horizontal_pull', 'back',      'dumbbell',    'beginner',     10, 1, 1, 10, 15, 3, 'double_progression', '["pull","back"]', '["main","secondary"]' ],
 			// Pull — biceps
-			[ 'barbell-curl',                'Barbell Curl',                 'elbow_flexion',   'biceps',    'barbell',     'beginner',     9, 2, 1, 8, 12, 3, 'double_progression',  '["pull","arms_shoulders"]', '["accessory"]' ],
-			[ 'dumbbell-hammer-curl',        'Hammer Curl',                  'elbow_flexion',   'biceps',    'dumbbell',    'beginner',     9, 1, 1, 10, 15, 3, 'double_progression', '["pull","arms_shoulders"]', '["accessory"]' ],
-			[ 'preacher-curl',               'Preacher Curl',                'elbow_flexion',   'biceps',    'barbell',     'intermediate', 8, 2, 1, 8, 12, 3, 'double_progression',  '["pull","arms_shoulders"]', '["accessory"]' ],
-			[ 'cable-bicep-curl',            'Cable Bicep Curl',             'elbow_flexion',   'biceps',    'cable',       'beginner',     10, 1, 1, 10, 15, 3, 'double_progression', '["pull","arms_shoulders"]', '["accessory"]' ],
-			[ 'concentration-curl',          'Concentration Curl',           'elbow_flexion',   'biceps',    'dumbbell',    'beginner',     10, 1, 1, 10, 15, 3, 'double_progression', '["pull","arms_shoulders"]', '["accessory"]' ],
+			[ 'barbell-curl',                'Barbell Curl',                 'elbow_flexion',   'biceps',    'barbell',     'beginner',     9, 2, 1, 8, 12, 3, 'double_progression',  '["pull","arms","arms_shoulders"]', '["accessory"]' ],
+			[ 'dumbbell-hammer-curl',        'Hammer Curl',                  'elbow_flexion',   'biceps',    'dumbbell',    'beginner',     9, 1, 1, 10, 15, 3, 'double_progression', '["pull","arms","arms_shoulders"]', '["accessory"]' ],
+			[ 'preacher-curl',               'Preacher Curl',                'elbow_flexion',   'biceps',    'barbell',     'intermediate', 8, 2, 1, 8, 12, 3, 'double_progression',  '["pull","arms","arms_shoulders"]', '["accessory"]' ],
+			[ 'cable-bicep-curl',            'Cable Bicep Curl',             'elbow_flexion',   'biceps',    'cable',       'beginner',     10, 1, 1, 10, 15, 3, 'double_progression', '["pull","arms","arms_shoulders"]', '["accessory"]' ],
+			[ 'concentration-curl',          'Concentration Curl',           'elbow_flexion',   'biceps',    'dumbbell',    'beginner',     10, 1, 1, 10, 15, 3, 'double_progression', '["pull","arms","arms_shoulders"]', '["accessory"]' ],
 			// Legs — main
 			[ 'barbell-squat',               'Barbell Back Squat',           'squat',           'quads',     'barbell',     'intermediate', 5, 4, 5, 4, 6,  3, 'top_set_backoff',     '["legs"]', '["main"]' ],
 			[ 'goblet-squat',                'Goblet Squat',                 'squat',           'quads',     'dumbbell',    'beginner',     9, 2, 2, 10, 15, 3, 'double_progression', '["legs"]', '["main","secondary"]' ],
@@ -69,17 +74,17 @@ class Seeder {
 			[ 'hip-thrust',                  'Hip Thrust',                   'hip_extension',   'glutes',    'barbell',     'beginner',     9, 2, 2, 10, 15, 3, 'double_progression', '["legs"]', '["main","secondary"]' ],
 			[ 'calf-raise',                  'Calf Raise',                   'plantarflexion',  'calves',    'machine',     'beginner',     10, 1, 1, 15, 20, 3, 'double_progression', '["legs"]', '["accessory"]' ],
 			// Abs
-			[ 'crunch',                      'Crunch',                       'trunk_flexion',   'abs',       'bodyweight',  'beginner',     10, 1, 1, 15, 25, 3, 'double_progression', '["push","pull","legs","arms_shoulders"]', '["abs"]' ],
-			[ 'plank',                       'Plank',                        'trunk_stability', 'abs',       'bodyweight',  'beginner',     10, 1, 1, 20, 60, 3, 'double_progression', '["push","pull","legs","arms_shoulders"]', '["abs"]' ],
-			[ 'hanging-leg-raise',           'Hanging Leg Raise',            'trunk_flexion',   'abs',       'bodyweight',  'intermediate', 8, 2, 1, 8, 15, 3, 'double_progression', '["push","pull","legs","arms_shoulders"]', '["abs"]' ],
-			[ 'cable-crunch',                'Cable Crunch',                 'trunk_flexion',   'abs',       'cable',       'beginner',     9, 1, 1, 12, 20, 3, 'double_progression', '["push","pull","legs","arms_shoulders"]', '["abs"]' ],
-			[ 'russian-twist',               'Russian Twist',                'trunk_rotation',  'abs',       'bodyweight',  'beginner',     9, 1, 1, 15, 20, 3, 'double_progression', '["push","pull","legs","arms_shoulders"]', '["abs"]' ],
-			[ 'dead-bug',                    'Dead Bug',                     'trunk_stability', 'abs',       'bodyweight',  'beginner',     10, 1, 1, 8, 12, 3, 'double_progression', '["push","pull","legs","arms_shoulders"]', '["abs"]' ],
+			[ 'crunch',                      'Crunch',                       'trunk_flexion',   'abs',       'bodyweight',  'beginner',     10, 1, 1, 15, 25, 3, 'double_progression', '["push","pull","legs","arms_shoulders","chest","back","shoulders","arms"]', '["abs"]' ],
+			[ 'plank',                       'Plank',                        'trunk_stability', 'abs',       'bodyweight',  'beginner',     10, 1, 1, 20, 60, 3, 'double_progression', '["push","pull","legs","arms_shoulders","chest","back","shoulders","arms"]', '["abs"]' ],
+			[ 'hanging-leg-raise',           'Hanging Leg Raise',            'trunk_flexion',   'abs',       'bodyweight',  'intermediate', 8, 2, 1, 8, 15, 3, 'double_progression', '["push","pull","legs","arms_shoulders","chest","back","shoulders","arms"]', '["abs"]' ],
+			[ 'cable-crunch',                'Cable Crunch',                 'trunk_flexion',   'abs',       'cable',       'beginner',     9, 1, 1, 12, 20, 3, 'double_progression', '["push","pull","legs","arms_shoulders","chest","back","shoulders","arms"]', '["abs"]' ],
+			[ 'russian-twist',               'Russian Twist',                'trunk_rotation',  'abs',       'bodyweight',  'beginner',     9, 1, 1, 15, 20, 3, 'double_progression', '["push","pull","legs","arms_shoulders","chest","back","shoulders","arms"]', '["abs"]' ],
+			[ 'dead-bug',                    'Dead Bug',                     'trunk_stability', 'abs',       'bodyweight',  'beginner',     10, 1, 1, 8, 12, 3, 'double_progression', '["push","pull","legs","arms_shoulders","chest","back","shoulders","arms"]', '["abs"]' ],
 			// Challenge
-			[ 'burpees',                     'Burpees',                      'total_body',      'full_body', 'bodyweight',  'intermediate', 7, 2, 2, 10, 20, 3, 'double_progression', '["push","pull","legs","arms_shoulders"]', '["challenge"]' ],
-			[ 'box-jumps',                   'Box Jumps',                    'plyometric',      'quads',     'bodyweight',  'intermediate', 7, 3, 3, 6, 10, 3, 'double_progression', '["legs"]', '["challenge"]' ],
-			[ 'farmers-walk',                "Farmer's Walk",                'carry',           'full_body', 'dumbbell',    'beginner',     9, 2, 2, 20, 40, 3, 'double_progression', '["push","pull","legs","arms_shoulders"]', '["challenge"]' ],
-			[ 'battle-ropes',                'Battle Ropes',                 'total_body',      'full_body', 'other',       'beginner',     8, 2, 1, 20, 40, 3, 'double_progression', '["push","pull","legs","arms_shoulders"]', '["challenge"]' ],
+			[ 'burpees',                     'Burpees',                      'total_body',      'full_body', 'bodyweight',  'intermediate', 7, 2, 2, 10, 20, 3, 'double_progression', '["push","pull","legs","arms_shoulders","chest","back","shoulders","arms","cardio"]', '["challenge"]' ],
+			[ 'box-jumps',                   'Box Jumps',                    'plyometric',      'quads',     'bodyweight',  'intermediate', 7, 3, 3, 6, 10, 3, 'double_progression', '["legs","cardio"]', '["challenge"]' ],
+			[ 'farmers-walk',                "Farmer's Walk",                'carry',           'full_body', 'dumbbell',    'beginner',     9, 2, 2, 20, 40, 3, 'double_progression', '["push","pull","legs","arms_shoulders","chest","back","shoulders","arms","cardio"]', '["challenge"]' ],
+			[ 'battle-ropes',                'Battle Ropes',                 'total_body',      'full_body', 'other',       'beginner',     8, 2, 1, 20, 40, 3, 'double_progression', '["push","pull","legs","arms_shoulders","chest","back","shoulders","arms","cardio"]', '["challenge"]' ],
 		];
 
 		foreach ( $exercises as $e ) {
@@ -96,6 +101,91 @@ class Seeder {
 				$e[13], $e[14]
 			) );
 		}
+	}
+
+	private static function sync_seeded_exercise_day_types(): void {
+		global $wpdb;
+
+		$table = $wpdb->prefix . 'fit_exercises';
+		foreach ( self::seeded_exercise_day_type_map() as $slug => $seeded_day_types ) {
+			$current_json = $wpdb->get_var( $wpdb->prepare(
+				"SELECT day_types_json FROM `{$table}` WHERE slug = %s LIMIT 1",
+				$slug
+			) );
+			if ( null === $current_json ) {
+				continue;
+			}
+
+			$current_day_types = json_decode( (string) $current_json, true );
+			$current_day_types = is_array( $current_day_types ) ? array_values( array_filter( array_map( 'sanitize_key', $current_day_types ) ) ) : [];
+			$merged_day_types = array_values( array_unique( array_merge( $current_day_types, $seeded_day_types ) ) );
+
+			if ( wp_json_encode( $current_day_types ) === wp_json_encode( $merged_day_types ) ) {
+				continue;
+			}
+
+			$wpdb->update(
+				$table,
+				[ 'day_types_json' => wp_json_encode( $merged_day_types ) ],
+				[ 'slug' => $slug ],
+				[ '%s' ],
+				[ '%s' ]
+			);
+		}
+	}
+
+	private static function seeded_exercise_day_type_map(): array {
+		return [
+			'barbell-bench-press' => [ 'push', 'chest' ],
+			'dumbbell-incline-press' => [ 'push', 'chest' ],
+			'dumbbell-flat-press' => [ 'push', 'chest' ],
+			'cable-chest-fly' => [ 'push', 'chest' ],
+			'push-up' => [ 'push', 'chest' ],
+			'dips' => [ 'push', 'chest' ],
+			'tricep-pushdown' => [ 'push', 'arms', 'arms_shoulders' ],
+			'skull-crushers' => [ 'push', 'arms', 'arms_shoulders' ],
+			'overhead-tricep-extension' => [ 'push', 'arms', 'arms_shoulders' ],
+			'close-grip-bench-press' => [ 'push', 'chest', 'arms', 'arms_shoulders' ],
+			'overhead-press-barbell' => [ 'push', 'shoulders' ],
+			'dumbbell-shoulder-press' => [ 'push', 'shoulders', 'arms_shoulders' ],
+			'dumbbell-lateral-raise' => [ 'push', 'pull', 'legs', 'arms_shoulders', 'shoulders' ],
+			'cable-lateral-raise' => [ 'push', 'pull', 'legs', 'arms_shoulders', 'shoulders' ],
+			'rear-delt-fly' => [ 'push', 'pull', 'legs', 'arms_shoulders', 'shoulders', 'back' ],
+			'face-pulls' => [ 'push', 'pull', 'legs', 'arms_shoulders', 'shoulders', 'back' ],
+			'arnold-press' => [ 'push', 'shoulders', 'arms_shoulders' ],
+			'barbell-row' => [ 'pull', 'back' ],
+			'dumbbell-row' => [ 'pull', 'back' ],
+			'cable-row' => [ 'pull', 'back' ],
+			'lat-pulldown' => [ 'pull', 'back' ],
+			'pull-up' => [ 'pull', 'back' ],
+			'chin-up' => [ 'pull', 'back', 'arms', 'arms_shoulders' ],
+			'chest-supported-row' => [ 'pull', 'back' ],
+			'barbell-curl' => [ 'pull', 'arms', 'arms_shoulders' ],
+			'dumbbell-hammer-curl' => [ 'pull', 'arms', 'arms_shoulders' ],
+			'preacher-curl' => [ 'pull', 'arms', 'arms_shoulders' ],
+			'cable-bicep-curl' => [ 'pull', 'arms', 'arms_shoulders' ],
+			'concentration-curl' => [ 'pull', 'arms', 'arms_shoulders' ],
+			'barbell-squat' => [ 'legs' ],
+			'goblet-squat' => [ 'legs' ],
+			'leg-press' => [ 'legs' ],
+			'romanian-deadlift' => [ 'legs' ],
+			'dumbbell-romanian-deadlift' => [ 'legs' ],
+			'walking-lunges' => [ 'legs' ],
+			'leg-curl-machine' => [ 'legs' ],
+			'leg-extension-machine' => [ 'legs' ],
+			'hip-thrust' => [ 'legs' ],
+			'calf-raise' => [ 'legs' ],
+			'crunch' => [ 'push', 'pull', 'legs', 'arms_shoulders', 'chest', 'back', 'shoulders', 'arms' ],
+			'plank' => [ 'push', 'pull', 'legs', 'arms_shoulders', 'chest', 'back', 'shoulders', 'arms' ],
+			'hanging-leg-raise' => [ 'push', 'pull', 'legs', 'arms_shoulders', 'chest', 'back', 'shoulders', 'arms' ],
+			'cable-crunch' => [ 'push', 'pull', 'legs', 'arms_shoulders', 'chest', 'back', 'shoulders', 'arms' ],
+			'russian-twist' => [ 'push', 'pull', 'legs', 'arms_shoulders', 'chest', 'back', 'shoulders', 'arms' ],
+			'dead-bug' => [ 'push', 'pull', 'legs', 'arms_shoulders', 'chest', 'back', 'shoulders', 'arms' ],
+			'burpees' => [ 'push', 'pull', 'legs', 'arms_shoulders', 'chest', 'back', 'shoulders', 'arms', 'cardio' ],
+			'box-jumps' => [ 'legs', 'cardio' ],
+			'farmers-walk' => [ 'push', 'pull', 'legs', 'arms_shoulders', 'chest', 'back', 'shoulders', 'arms', 'cardio' ],
+			'battle-ropes' => [ 'push', 'pull', 'legs', 'arms_shoulders', 'chest', 'back', 'shoulders', 'arms', 'cardio' ],
+		];
 	}
 
 	// ── Substitutions ─────────────────────────────────────────────────────────
@@ -199,7 +289,7 @@ class Seeder {
 			$template_id = $wpdb->insert_id;
 		}
 
-		// Days: Push → Pull → Legs → Push → Pull → Legs → Arms+Shoulders (optional)
+		// Days: PPL base plus body-part templates used for schedule overrides and backfills.
 		$days = [
 			[ 'push',          1, 'medium' ],
 			[ 'pull',          2, 'medium' ],
@@ -208,6 +298,10 @@ class Seeder {
 			[ 'pull',          5, 'medium' ],
 			[ 'legs',          6, 'medium' ],
 			[ 'arms_shoulders',7, 'medium' ],
+			[ 'chest',         8, 'medium' ],
+			[ 'back',          9, 'medium' ],
+			[ 'shoulders',    10, 'medium' ],
+			[ 'arms',         11, 'medium' ],
 		];
 
 		// [ day_type => [ [slug, slot_type, priority, rep_min, rep_max, sets, rir, optional] ] ]
@@ -245,6 +339,38 @@ class Seeder {
 				[ 'overhead-tricep-extension','accessory', 5, 10, 15, 3, 2.0, 0 ],
 				[ 'dumbbell-lateral-raise',  'shoulders',  6, 15, 20, 3, null, 0 ],
 				[ 'rear-delt-fly',           'shoulders',  7, 15, 20, 3, null, 0 ],
+			],
+			'chest' => [
+				[ 'barbell-bench-press',     'main',       1, 5, 8,   3, 2.0, 0 ],
+				[ 'dumbbell-incline-press',  'secondary',  2, 8, 12,  3, 2.0, 0 ],
+				[ 'dumbbell-flat-press',     'secondary',  3, 8, 12,  3, 2.0, 0 ],
+				[ 'cable-chest-fly',         'accessory',  4, 12, 15, 3, 2.0, 0 ],
+				[ 'dips',                    'secondary',  5, 6, 12,  3, 2.0, 0 ],
+				[ 'tricep-pushdown',         'accessory',  6, 10, 15, 3, 2.0, 0 ],
+			],
+			'back' => [
+				[ 'barbell-row',             'main',       1, 5, 8,   3, 2.0, 0 ],
+				[ 'lat-pulldown',            'secondary',  2, 8, 12,  3, 2.0, 0 ],
+				[ 'cable-row',               'secondary',  3, 10, 15, 3, 2.0, 0 ],
+				[ 'chest-supported-row',     'secondary',  4, 10, 15, 3, 2.0, 0 ],
+				[ 'face-pulls',              'shoulders',  5, 15, 20, 3, null, 0 ],
+				[ 'barbell-curl',            'accessory',  6, 8, 12,  3, 2.0, 0 ],
+			],
+			'shoulders' => [
+				[ 'dumbbell-shoulder-press', 'main',       1, 8, 12,  3, 2.0, 0 ],
+				[ 'arnold-press',            'secondary',  2, 8, 12,  3, 2.0, 0 ],
+				[ 'dumbbell-lateral-raise',  'shoulders',  3, 12, 20, 3, 2.0, 0 ],
+				[ 'cable-lateral-raise',     'shoulders',  4, 12, 20, 3, 2.0, 0 ],
+				[ 'rear-delt-fly',           'shoulders',  5, 15, 20, 3, null, 0 ],
+				[ 'face-pulls',              'shoulders',  6, 15, 20, 3, null, 0 ],
+			],
+			'arms' => [
+				[ 'barbell-curl',            'accessory',  1, 8, 12,  3, 2.0, 0 ],
+				[ 'dumbbell-hammer-curl',    'accessory',  2, 10, 15, 3, 2.0, 0 ],
+				[ 'preacher-curl',           'accessory',  3, 8, 12,  3, 2.0, 0 ],
+				[ 'tricep-pushdown',         'accessory',  4, 10, 15, 3, 2.0, 0 ],
+				[ 'skull-crushers',          'accessory',  5, 8, 12,  3, 2.0, 0 ],
+				[ 'overhead-tricep-extension','accessory', 6, 10, 15, 3, 2.0, 0 ],
 			],
 		];
 

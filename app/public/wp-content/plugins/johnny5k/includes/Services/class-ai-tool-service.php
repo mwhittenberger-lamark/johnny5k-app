@@ -3,6 +3,8 @@ namespace Johnny5k\Services;
 
 defined( 'ABSPATH' ) || exit;
 
+use Johnny5k\Support\TrainingDayTypes;
+
 class AiToolService {
 
 	public static function tool_registry( int $max_tool_meal_rows, int $max_tool_pantry_rows, int $max_tool_recipe_rows ): array {
@@ -130,7 +132,7 @@ class AiToolService {
 					'type'                 => 'object',
 					'properties'           => [
 						'name'           => [ 'type' => 'string', 'description' => 'The custom workout name Johnny wants the user to see.' ],
-						'day_type'       => [ 'type' => 'string', 'description' => 'Optional base day type: push, pull, legs, arms_shoulders, or cardio.' ],
+						'day_type'       => [ 'type' => 'string', 'description' => 'Optional base day type: ' . TrainingDayTypes::ai_list() . '.' ],
 						'exercise_names' => [
 							'type'        => 'array',
 							'items'       => [ 'type' => 'string' ],

@@ -8,6 +8,7 @@ use Johnny5k\Services\AwardEngine;
 use Johnny5k\Services\BehaviorAnalyticsService;
 use Johnny5k\Services\TrainingEngine;
 use Johnny5k\Services\UserTime;
+use Johnny5k\Support\TrainingDayTypes;
 
 /**
  * REST Controller: Onboarding
@@ -416,9 +417,19 @@ class OnboardingController {
 		$allowed_profile = [
 			'first_name', 'last_name', 'date_of_birth', 'sex', 'height_cm',
 			'starting_weight_lb', 'current_goal', 'goal_rate', 'training_experience',
-			'activity_level', 'available_time_default', 'phone', 'timezone', 'units',
+			'activity_level', 'available_time_default',
+			'rest_between_sets_min_seconds', 'rest_between_sets_max_seconds',
+			'rest_between_exercises_min_seconds', 'rest_between_exercises_max_seconds',
+			'phone', 'timezone', 'units',
 		];
-		$numeric_fields = [ 'height_cm', 'starting_weight_lb' ];
+		$numeric_fields = [
+			'height_cm',
+			'starting_weight_lb',
+			'rest_between_sets_min_seconds',
+			'rest_between_sets_max_seconds',
+			'rest_between_exercises_min_seconds',
+			'rest_between_exercises_max_seconds',
+		];
 
 		$profile_data = [];
 		foreach ( $allowed_profile as $field ) {
@@ -461,6 +472,8 @@ class OnboardingController {
 		if ( isset( $profile_data['timezone'] ) ) {
 			$profile_data['timezone'] = UserTime::sanitize_timezone( $profile_data['timezone'] );
 		}
+
+		$profile_data = self::normalize_rest_timing_profile_data( $profile_data );
 
 		if ( ! $profile_data ) {
 			return new \WP_REST_Response( [ 'message' => 'No profile fields provided.' ], 400 );
@@ -1322,8 +1335,45 @@ class OnboardingController {
 		return $prefs;
 	}
 
+	private static function normalize_rest_timing_profile_data( array $profile_data ): array {
+		$defaults = [
+			'rest_between_sets_min_seconds'      => 30,
+			'rest_between_sets_max_seconds'      => 60,
+			'rest_between_exercises_min_seconds' => 60,
+			'rest_between_exercises_max_seconds' => 120,
+		];
+		$pairs = [
+			[ 'rest_between_sets_min_seconds', 'rest_between_sets_max_seconds' ],
+			[ 'rest_between_exercises_min_seconds', 'rest_between_exercises_max_seconds' ],
+		];
+
+		foreach ( $pairs as [ $min_key, $max_key ] ) {
+			$has_min = array_key_exists( $min_key, $profile_data );
+			$has_max = array_key_exists( $max_key, $profile_data );
+
+			if ( ! $has_min && ! $has_max ) {
+				continue;
+			}
+
+			$min_value = $has_min ? (int) round( (float) $profile_data[ $min_key ] ) : $defaults[ $min_key ];
+			$max_value = $has_max ? (int) round( (float) $profile_data[ $max_key ] ) : $defaults[ $max_key ];
+
+			$min_value = max( 5, min( 900, $min_value ) );
+			$max_value = max( 5, min( 900, $max_value ) );
+
+			if ( $max_value < $min_value ) {
+				$max_value = $min_value;
+			}
+
+			$profile_data[ $min_key ] = $min_value;
+			$profile_data[ $max_key ] = $max_value;
+		}
+
+		return $profile_data;
+	}
+
 	private static function normalize_preferred_schedule( $raw_schedule ): array {
-		$valid_day_types = [ 'push', 'pull', 'legs', 'arms_shoulders', 'cardio', 'rest' ];
+		$valid_day_types = TrainingDayTypes::all();
 		$valid_days = [ 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun' ];
 
 		if ( ! is_array( $raw_schedule ) ) {
@@ -1331,7 +1381,7 @@ class OnboardingController {
 		}
 
 		if ( ! empty( $raw_schedule ) && is_string( $raw_schedule[0] ?? null ) ) {
-			$default_cycle = [ 'push', 'pull', 'legs', 'arms_shoulders', 'cardio' ];
+			$default_cycle = TrainingDayTypes::default_cycle();
 			$index = 0;
 			$result = [];
 			foreach ( $valid_days as $day ) {

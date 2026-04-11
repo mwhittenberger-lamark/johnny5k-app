@@ -4,6 +4,7 @@ namespace Johnny5k\Admin;
 defined( 'ABSPATH' ) || exit;
 
 use Johnny5k\Services\AiService;
+use Johnny5k\Support\TrainingDayTypes;
 
 class ExerciseLibrary {
 
@@ -11,7 +12,11 @@ class ExerciseLibrary {
 		'push'           => 'Push',
 		'pull'           => 'Pull',
 		'legs'           => 'Legs',
-		'arms_shoulders' => 'Arms / Shoulders',
+		'arms_shoulders' => 'Bonus Arms / Shoulders',
+		'chest'          => 'Chest',
+		'back'           => 'Back',
+		'shoulders'      => 'Shoulders',
+		'arms'           => 'Arms',
 		'cardio'         => 'Cardio',
 		'rest'           => 'Rest',
 	];

@@ -1,8 +1,10 @@
-import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { analyticsApi } from '../../api/modules/analytics'
 import { authApi } from '../../api/modules/auth'
+import { onboardingApi } from '../../api/modules/onboarding'
 import { getAppImageUrl } from '../../lib/appImages'
+import { DAILY_CHECK_IN_QUESTIONS, createDailyCheckInAnswers, getDailyCheckInDateKey, getNextDailyCheckInBoundary, isDailyCheckInWindowOpen, normalizeDailyCheckInEntry } from '../../lib/dailyCheckIn'
 import { useAuthStore } from '../../store/authStore'
 import { useJohnnyAssistantStore } from '../../store/johnnyAssistantStore'
 import AppIcon from '../ui/AppIcon'
@@ -20,14 +22,38 @@ const tabs = [
 export default function AppShell({ children }) {
   const location = useLocation()
   const navigate = useNavigate()
-  const { isAdmin, clearAuth, appImages } = useAuthStore()
+  const { appImages, clearAuth, dailyCheckInEntry, isAdmin, notificationPrefs, preferenceMeta, setDailyCheckInEntry, setPreferenceMeta } = useAuthStore()
   const openDrawer = useJohnnyAssistantStore(state => state.openDrawer)
   const isDrawerOpen = useJohnnyAssistantStore(state => state.isOpen)
   const [loggingOut, setLoggingOut] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [dailyCheckInOpen, setDailyCheckInOpen] = useState(false)
+  const [dailyCheckInDayKey, setDailyCheckInDayKey] = useState('')
+  const [dailyCheckInAnswers, setDailyCheckInAnswers] = useState(() => createDailyCheckInAnswers())
+  const [dailyCheckInRefreshKey, setDailyCheckInRefreshKey] = useState(0)
   const menuButtonRef = useRef(null)
   const firstMobileLinkRef = useRef(null)
+  const dailyCheckInCloseRef = useRef(null)
+  const dailyCheckInStateRef = useRef(normalizeDailyCheckInEntry(dailyCheckInEntry))
+  const preferenceMetaRef = useRef(preferenceMeta ?? {})
   const brandmarkImage = getAppImageUrl(appImages, 'brandmark')
+  const showPushPromptNotice = notificationPrefs?.pushSupported
+    && notificationPrefs?.pushConfigured
+    && !notificationPrefs?.pushSubscribed
+    && notificationPrefs?.pushPromptStatus !== 'refused'
+
+  useEffect(() => {
+    preferenceMetaRef.current = preferenceMeta && typeof preferenceMeta === 'object' ? preferenceMeta : {}
+  }, [preferenceMeta])
+
+  useEffect(() => {
+    const normalizedEntry = normalizeDailyCheckInEntry(dailyCheckInEntry)
+    dailyCheckInStateRef.current = normalizedEntry
+    if (!dailyCheckInOpen) {
+      setDailyCheckInDayKey(normalizedEntry.day_key)
+      setDailyCheckInAnswers(normalizedEntry.answers)
+    }
+  }, [dailyCheckInEntry, dailyCheckInOpen])
 
   useEffect(() => {
     setMenuOpen(false)
@@ -94,6 +120,140 @@ export default function AppShell({ children }) {
     }
   }, [menuOpen])
 
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return undefined
+    }
+
+    const now = new Date()
+    const nextBoundary = getNextDailyCheckInBoundary(now)
+    const timeoutId = window.setTimeout(() => {
+      setDailyCheckInRefreshKey(current => current + 1)
+    }, Math.max(1000, nextBoundary.getTime() - now.getTime()))
+
+    return () => window.clearTimeout(timeoutId)
+  }, [dailyCheckInRefreshKey])
+
+  const persistDailyCheckInEntry = useCallback((value) => {
+    const normalizedEntry = normalizeDailyCheckInEntry(value)
+    const nextPreferenceMeta = {
+      ...(preferenceMetaRef.current ?? {}),
+      daily_check_in: normalizedEntry,
+    }
+
+    dailyCheckInStateRef.current = normalizedEntry
+    preferenceMetaRef.current = nextPreferenceMeta
+    setDailyCheckInEntry(normalizedEntry)
+    setPreferenceMeta(nextPreferenceMeta)
+
+    return onboardingApi.savePrefs({
+      exercise_preferences_json: nextPreferenceMeta,
+    }).catch(() => null)
+  }, [setDailyCheckInEntry, setPreferenceMeta])
+
+  const openDailyCheckInModal = useCallback(() => {
+    const now = new Date()
+    const dayKey = getDailyCheckInDateKey(now)
+    const currentEntry = normalizeDailyCheckInEntry(dailyCheckInStateRef.current)
+    const isCurrentDay = currentEntry.day_key === dayKey
+    const nextEntry = normalizeDailyCheckInEntry({
+      ...currentEntry,
+      day_key: dayKey,
+      seen_at: isCurrentDay && currentEntry.seen_at ? currentEntry.seen_at : now.toISOString(),
+      dismissed_at: isCurrentDay ? currentEntry.dismissed_at : '',
+      updated_at: isCurrentDay ? currentEntry.updated_at : '',
+      answers: isCurrentDay ? currentEntry.answers : createDailyCheckInAnswers(),
+    })
+
+    setMenuOpen(false)
+    setDailyCheckInDayKey(nextEntry.day_key)
+    setDailyCheckInAnswers(nextEntry.answers)
+    setDailyCheckInOpen(true)
+    void persistDailyCheckInEntry(nextEntry)
+  }, [persistDailyCheckInEntry])
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || dailyCheckInOpen) {
+      return
+    }
+
+    const now = new Date()
+    if (!isDailyCheckInWindowOpen(now)) {
+      return
+    }
+
+    const dayKey = getDailyCheckInDateKey(now)
+    const currentEntry = normalizeDailyCheckInEntry(dailyCheckInStateRef.current)
+    if (currentEntry.day_key === dayKey && currentEntry.seen_at) {
+      return
+    }
+
+    const nextEntry = normalizeDailyCheckInEntry({
+      ...currentEntry,
+      day_key: dayKey,
+      seen_at: now.toISOString(),
+      dismissed_at: '',
+      updated_at: '',
+      answers: createDailyCheckInAnswers(),
+    })
+
+    setMenuOpen(false)
+    setDailyCheckInDayKey(nextEntry.day_key)
+    setDailyCheckInAnswers(nextEntry.answers)
+    setDailyCheckInOpen(true)
+    void persistDailyCheckInEntry(nextEntry)
+  }, [dailyCheckInOpen, dailyCheckInRefreshKey, location.pathname, persistDailyCheckInEntry])
+
+  const handleCloseDailyCheckIn = useCallback(() => {
+    const currentEntry = normalizeDailyCheckInEntry(dailyCheckInStateRef.current)
+    void persistDailyCheckInEntry({
+      ...currentEntry,
+      dismissed_at: new Date().toISOString(),
+    })
+    setDailyCheckInOpen(false)
+  }, [persistDailyCheckInEntry])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return undefined
+    }
+
+    function handleOpenDailyCheckIn() {
+      openDailyCheckInModal()
+    }
+
+    window.addEventListener('johnny5k:open-daily-checkin', handleOpenDailyCheckIn)
+
+    return () => {
+      window.removeEventListener('johnny5k:open-daily-checkin', handleOpenDailyCheckIn)
+    }
+  }, [openDailyCheckInModal])
+
+  useEffect(() => {
+    if (!dailyCheckInOpen) {
+      return undefined
+    }
+
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    const frameId = window.requestAnimationFrame(() => {
+      dailyCheckInCloseRef.current?.focus()
+    })
+
+    function handleKeyDown(event) {
+      if (event.key !== 'Escape') return
+      handleCloseDailyCheckIn()
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+
+    return () => {
+      window.cancelAnimationFrame(frameId)
+      document.body.style.overflow = previousOverflow
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [dailyCheckInOpen, handleCloseDailyCheckIn])
+
   async function handleLogout() {
     if (loggingOut) return
 
@@ -110,55 +270,93 @@ export default function AppShell({ children }) {
     }
   }
 
+  function handlePushPromptNoticeClick() {
+    navigate('/settings', {
+      state: {
+        focusSection: 'pushNotifications',
+        revealPushRefusal: true,
+        johnnyActionNotice: 'Enable push here if you want Johnny to catch missing meal logs before they slip.',
+      },
+    })
+  }
+
+  function handleDailyCheckInAnswer(questionKey, value) {
+    const currentEntry = normalizeDailyCheckInEntry(dailyCheckInStateRef.current)
+    const nextAnswers = {
+      ...currentEntry.answers,
+      [questionKey]: value,
+    }
+    setDailyCheckInAnswers(nextAnswers)
+    void persistDailyCheckInEntry({
+      ...currentEntry,
+      day_key: currentEntry.day_key || dailyCheckInDayKey || getDailyCheckInDateKey(new Date()),
+      seen_at: currentEntry.seen_at || new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      answers: nextAnswers,
+    })
+  }
+
   return (
     <div className="app-shell">
       <header className="app-shell-header">
-        <NavLink to="/dashboard" className="app-shell-brand" aria-label="Johnny5k home">
-          <span className="app-shell-brand-mark">
-            <img src={brandmarkImage} alt="Johnny5k brandmark" />
-          </span>
-          <span className="app-shell-brand-copy">
-            <strong>Johnny5k</strong>
-            <small>Your AI Health Coach</small>
-          </span>
-        </NavLink>
-
-        <nav className="app-shell-desktop-nav" aria-label="Primary">
-          {tabs.map(tab => (
-            <NavLink key={tab.to} to={tab.to} className={({ isActive }) => `app-shell-desktop-link ${isActive ? 'active' : ''}`}>
-              <AppIcon name={tab.icon} />
-              <span>{tab.label}</span>
-            </NavLink>
-          ))}
-          {isAdmin ? (
-            <NavLink to="/admin" className={({ isActive }) => `app-shell-desktop-link ${isActive ? 'active' : ''}`}>
-              <AppIcon name="admin" />
-              <span>Admin</span>
-            </NavLink>
-          ) : null}
-        </nav>
-
-        <div className="app-shell-actions">
-          <button className="btn-secondary app-shell-coach" onClick={() => openDrawer()} type="button">
-            <AppIcon name="coach" />
-            <span>Ask Johnny</span>
-          </button>
-          <button
-            ref={menuButtonRef}
-            type="button"
-            className={`app-shell-menu-toggle ${menuOpen ? 'open' : ''}`}
-            onClick={() => setMenuOpen(open => !open)}
-            aria-expanded={menuOpen}
-            aria-controls="app-shell-mobile-nav"
-            aria-label={menuOpen ? 'Close navigation menu' : 'Open navigation menu'}
-          >
-            <span className="app-shell-menu-lines" aria-hidden="true">
-              <span />
-              <span />
-              <span />
+        {showPushPromptNotice ? (
+          <button type="button" className="app-shell-push-notice" onClick={handlePushPromptNoticeClick}>
+            <span className="app-shell-push-notice-copy">
+              <strong>Enable push notifications</strong>
+              <span>Breakfast, lunch, and dinner reminders are waiting for approval on this device.</span>
             </span>
-            <span className="app-shell-menu-label">Menu</span>
+            <span className="app-shell-push-notice-action">Open Profile</span>
           </button>
+        ) : null}
+
+        <div className="app-shell-header-main">
+          <NavLink to="/dashboard" className="app-shell-brand" aria-label="Johnny5k home">
+            <span className="app-shell-brand-mark">
+              <img src={brandmarkImage} alt="Johnny5k brandmark" />
+            </span>
+            <span className="app-shell-brand-copy">
+              <strong>Johnny5k</strong>
+              <small>Your AI Health Coach</small>
+            </span>
+          </NavLink>
+
+          <nav className="app-shell-desktop-nav" aria-label="Primary">
+            {tabs.map(tab => (
+              <NavLink key={tab.to} to={tab.to} className={({ isActive }) => `app-shell-desktop-link ${isActive ? 'active' : ''}`}>
+                <AppIcon name={tab.icon} />
+                <span>{tab.label}</span>
+              </NavLink>
+            ))}
+            {isAdmin ? (
+              <NavLink to="/admin" className={({ isActive }) => `app-shell-desktop-link ${isActive ? 'active' : ''}`}>
+                <AppIcon name="admin" />
+                <span>Admin</span>
+              </NavLink>
+            ) : null}
+          </nav>
+
+          <div className="app-shell-actions">
+            <button className="btn-secondary app-shell-coach" onClick={() => openDrawer()} type="button">
+              <AppIcon name="coach" />
+              <span>Ask Johnny</span>
+            </button>
+            <button
+              ref={menuButtonRef}
+              type="button"
+              className={`app-shell-menu-toggle ${menuOpen ? 'open' : ''}`}
+              onClick={() => setMenuOpen(open => !open)}
+              aria-expanded={menuOpen}
+              aria-controls="app-shell-mobile-nav"
+              aria-label={menuOpen ? 'Close navigation menu' : 'Open navigation menu'}
+            >
+              <span className="app-shell-menu-lines" aria-hidden="true">
+                <span />
+                <span />
+                <span />
+              </span>
+              <span className="app-shell-menu-label">Menu</span>
+            </button>
+          </div>
         </div>
       </header>
 
@@ -214,11 +412,67 @@ export default function AppShell({ children }) {
       </nav>
 
       <main className="app-content" data-route-scroll-root="true">{children}</main>
+      {dailyCheckInOpen ? (
+        <DailyCheckInModal
+          answers={dailyCheckInAnswers}
+          closeButtonRef={dailyCheckInCloseRef}
+          onAnswer={handleDailyCheckInAnswer}
+          onClose={handleCloseDailyCheckIn}
+        />
+      ) : null}
       {isDrawerOpen ? (
         <Suspense fallback={null}>
           <JohnnyAssistantDrawer />
         </Suspense>
       ) : null}
+    </div>
+  )
+}
+
+function DailyCheckInModal({ answers, closeButtonRef, onAnswer, onClose }) {
+  return (
+    <div className="app-shell-checkin-shell" role="dialog" aria-modal="true" aria-labelledby="daily-checkin-title">
+      <button type="button" className="app-shell-checkin-backdrop" aria-label="Close daily check-in" onClick={onClose} />
+      <section className="app-shell-checkin-modal">
+        <div className="app-shell-checkin-head">
+          <div>
+            <p className="dashboard-eyebrow">Daily check-in</p>
+            <h2 id="daily-checkin-title">Start the day on purpose</h2>
+            <p>Before coffee or breakfast, drink some water first. Then give Johnny a quick read on how today feels.</p>
+          </div>
+          <button ref={closeButtonRef} type="button" className="app-shell-checkin-close" onClick={onClose}>
+            Close
+          </button>
+        </div>
+
+        <div className="app-shell-checkin-body">
+          {DAILY_CHECK_IN_QUESTIONS.map(question => (
+            <section key={question.key} className="app-shell-checkin-question">
+              <div className="dashboard-card-head">
+                <span className="dashboard-chip subtle">{question.key}</span>
+              </div>
+              <h3>{question.label}</h3>
+              <div className="app-shell-checkin-options" role="group" aria-label={question.label}>
+                {question.options.map(option => (
+                  <button
+                    key={option}
+                    type="button"
+                    className={`app-shell-checkin-option ${answers?.[question.key] === option ? 'active' : ''}`}
+                    onClick={() => onAnswer(question.key, option)}
+                    aria-pressed={answers?.[question.key] === option}
+                  >
+                    {option}
+                  </button>
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+
+        <div className="app-shell-checkin-actions">
+          <button type="button" className="btn-secondary" onClick={onClose}>Continue to app</button>
+        </div>
+      </section>
     </div>
   )
 }

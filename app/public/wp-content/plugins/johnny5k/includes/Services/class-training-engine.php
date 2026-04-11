@@ -3,6 +3,8 @@ namespace Johnny5k\Services;
 
 defined( 'ABSPATH' ) || exit;
 
+use Johnny5k\Support\TrainingDayTypes;
+
 /**
  * Training Engine
  *
@@ -1366,10 +1368,7 @@ class TrainingEngine {
 			return null;
 		}
 
-		$day_type = sanitize_key( $value );
-		$allowed  = [ 'push', 'pull', 'legs', 'arms_shoulders', 'cardio', 'rest' ];
-
-		return in_array( $day_type, $allowed, true ) ? $day_type : null;
+		return TrainingDayTypes::normalize( $value );
 	}
 
 	private static function round_training_weight( float $weight, string $equipment = '' ): float {

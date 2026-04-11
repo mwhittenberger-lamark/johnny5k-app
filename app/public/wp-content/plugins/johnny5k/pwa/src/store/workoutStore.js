@@ -24,6 +24,13 @@ export const useWorkoutStore = create(persist((set, get) => ({
   setReadinessScore: (score) => set({ readinessScore: score, sessionMode: score <= 3 ? 'maintenance' : 'normal' }),
   setActiveExerciseIdx: (index) => set({ activeExerciseIdx: Math.max(0, index) }),
   setPreviewDayType: (dayType) => set({ previewDayType: dayType || '' }),
+  resetPlanningState: () => set({
+    timeTier: 'medium',
+    readinessScore: 7,
+    sessionMode: 'normal',
+    previewDayType: '',
+    previewDrafts: {},
+  }),
   setPreviewExerciseOrder: (dayType, exerciseOrder) => set((state) => ({
     previewDrafts: {
       ...state.previewDrafts,
@@ -39,6 +46,33 @@ export const useWorkoutStore = create(persist((set, get) => ({
       [dayType]: {
         ...getPreviewDraft(state.previewDrafts, dayType),
         exerciseOrder: syncDraftExerciseOrder(getPreviewDraft(state.previewDrafts, dayType).exerciseOrder, nextIds),
+      },
+    },
+  })),
+  setPreviewRepAdjustments: (dayType, repAdjustments) => set((state) => ({
+    previewDrafts: {
+      ...state.previewDrafts,
+      [dayType]: {
+        ...getPreviewDraft(state.previewDrafts, dayType),
+        repAdjustments: normalizeDraftRepAdjustments(repAdjustments),
+      },
+    },
+  })),
+  setPreviewExerciseRemovals: (dayType, exerciseRemovals) => set((state) => ({
+    previewDrafts: {
+      ...state.previewDrafts,
+      [dayType]: {
+        ...getPreviewDraft(state.previewDrafts, dayType),
+        exerciseRemovals: normalizeDraftIdList(exerciseRemovals),
+      },
+    },
+  })),
+  setPreviewExerciseAdditions: (dayType, exerciseAdditions) => set((state) => ({
+    previewDrafts: {
+      ...state.previewDrafts,
+      [dayType]: {
+        ...getPreviewDraft(state.previewDrafts, dayType),
+        exerciseAdditions: normalizeDraftExerciseAdditions(exerciseAdditions),
       },
     },
   })),
@@ -511,7 +545,7 @@ export const useWorkoutStore = create(persist((set, get) => ({
     const result = await workoutApi.complete(sessionId, {})
     get().clearDiscardedSession(sessionId)
     get().clearSessionState()
-    get().clearPreviewDrafts()
+    get().resetPlanningState()
     return result
   },
 
@@ -520,7 +554,7 @@ export const useWorkoutStore = create(persist((set, get) => ({
     const result = await workoutApi.skip(sessionId)
     get().clearDiscardedSession(sessionId)
     get().clearSessionState()
-    get().clearPreviewDrafts()
+    get().resetPlanningState()
     return result
   },
 
@@ -530,7 +564,7 @@ export const useWorkoutStore = create(persist((set, get) => ({
 
     if (session?.session?.completed) {
       get().clearSessionState()
-      get().clearPreviewDrafts()
+      get().resetPlanningState()
       return { restarted: true, clearedCompletedSession: true }
     }
 
@@ -538,12 +572,12 @@ export const useWorkoutStore = create(persist((set, get) => ({
       const result = await workoutApi.restart(sessionId)
       get().clearDiscardedSession(sessionId)
       get().clearSessionState()
-      get().clearPreviewDrafts()
+      get().resetPlanningState()
       return result
     } catch (err) {
       if (err?.message === 'Completed sessions cannot be restarted.') {
         get().clearSessionState()
-        get().clearPreviewDrafts()
+        get().resetPlanningState()
         return { restarted: true, clearedCompletedSession: true }
       }
 
@@ -560,7 +594,7 @@ export const useWorkoutStore = create(persist((set, get) => ({
     try {
       const result = await workoutApi.discard(sessionId)
       get().clearSessionState()
-      get().clearPreviewDrafts()
+      get().resetPlanningState()
       return result
     } catch (err) {
       get().clearDiscardedSession(sessionId)
@@ -584,7 +618,7 @@ export const useWorkoutStore = create(persist((set, get) => ({
     const result = await workoutApi.complete(sessionId, { actual_day_type: 'rest' })
     get().clearDiscardedSession(sessionId)
     get().clearSessionState()
-    get().clearPreviewDrafts()
+    get().resetPlanningState()
     return result
   },
 
@@ -647,7 +681,40 @@ function getPreviewDraft(previewDrafts, dayType) {
   return {
     exerciseSwaps: draft?.exerciseSwaps && typeof draft.exerciseSwaps === 'object' ? draft.exerciseSwaps : {},
     exerciseOrder: Array.isArray(draft?.exerciseOrder) ? draft.exerciseOrder.map(Number).filter(id => id > 0) : [],
+    repAdjustments: normalizeDraftRepAdjustments(draft?.repAdjustments),
+    exerciseRemovals: normalizeDraftIdList(draft?.exerciseRemovals),
+    exerciseAdditions: normalizeDraftExerciseAdditions(draft?.exerciseAdditions),
   }
+}
+
+function normalizeDraftRepAdjustments(repAdjustments) {
+  if (!repAdjustments || typeof repAdjustments !== 'object') return {}
+
+  return Object.fromEntries(
+    Object.entries(repAdjustments)
+      .map(([planExerciseId, repDelta]) => [Number(planExerciseId), Number(repDelta)])
+      .filter(([planExerciseId, repDelta]) => planExerciseId > 0 && Number.isFinite(repDelta) && repDelta !== 0)
+  )
+}
+
+function normalizeDraftIdList(values) {
+  return Array.isArray(values) ? values.map(Number).filter(id => id > 0) : []
+}
+
+function normalizeDraftExerciseAdditions(values) {
+  if (!Array.isArray(values)) return []
+
+  return values
+    .map((item) => ({
+      plan_exercise_id: Number(item?.plan_exercise_id || 0),
+      exercise_id: Number(item?.exercise_id || 0),
+      exercise_name: String(item?.exercise_name || '').trim(),
+      slot_type: String(item?.slot_type || 'accessory'),
+      rep_min: Number(item?.rep_min || 8),
+      rep_max: Number(item?.rep_max || 12),
+      sets: Number(item?.sets || 3),
+    }))
+    .filter(item => item.plan_exercise_id > 0 && item.exercise_id > 0)
 }
 
 function syncDraftExerciseOrder(currentOrder, nextIds) {

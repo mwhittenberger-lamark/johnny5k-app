@@ -74,8 +74,8 @@ button {
 .app-shell { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
 .app-shell-header {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
+  flex-direction: column;
+  align-items: stretch;
   gap: 12px;
   padding: 12px 16px 8px;
   position: sticky;
@@ -83,6 +83,49 @@ button {
   z-index: 20;
   background: linear-gradient(180deg, rgba(230, 243, 253, 0.96) 0%, rgba(230, 243, 253, 0.82) 65%, rgba(230, 243, 253, 0) 100%);
   backdrop-filter: blur(8px);
+}
+.app-shell-header-main {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+.app-shell-push-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+  padding: 14px 16px;
+  border: 1px solid rgba(255, 125, 84, 0.34);
+  border-radius: 20px;
+  background: linear-gradient(135deg, rgba(255, 247, 223, 0.95), rgba(255, 231, 221, 0.95));
+  box-shadow: 0 12px 26px rgba(116, 58, 24, 0.12);
+  color: var(--text);
+  text-align: left;
+}
+.app-shell-push-notice-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.app-shell-push-notice-copy strong {
+  font-family: 'Exo 2', system-ui, sans-serif;
+  font-size: 0.98rem;
+}
+.app-shell-push-notice-copy span {
+  color: rgba(44, 40, 33, 0.78);
+  font-size: 0.9rem;
+  line-height: 1.35;
+}
+.app-shell-push-notice-action {
+  flex-shrink: 0;
+  font-weight: 800;
+  font-size: 0.86rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #9d3e17;
 }
 .app-shell-brand {
   display: inline-flex;
@@ -335,6 +378,138 @@ button {
   text-align: center;
 }
 .app-content { flex: 1; overflow-y: auto; padding: 8px 16px 20px; }
+.app-shell-checkin-shell {
+  position: fixed;
+  inset: 0;
+  z-index: 75;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px 16px;
+}
+.app-shell-checkin-backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: rgba(8, 21, 51, 0.56);
+  backdrop-filter: blur(10px);
+}
+.app-shell-checkin-modal {
+  position: relative;
+  z-index: 1;
+  width: min(100%, 640px);
+  max-height: min(82vh, 760px);
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 22px;
+  border: 1px solid rgba(168, 212, 240, 0.88);
+  border-radius: 28px;
+  background:
+    radial-gradient(circle at top right, rgba(255, 208, 0, 0.16), transparent 30%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(238, 248, 252, 0.98));
+  box-shadow: 0 28px 56px rgba(8, 21, 51, 0.28);
+}
+.app-shell-checkin-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.app-shell-checkin-head h2 {
+  margin: 0 0 8px;
+  font-size: clamp(1.45rem, 2vw, 1.85rem);
+}
+.app-shell-checkin-head p {
+  margin: 0;
+  color: var(--text-muted);
+  line-height: 1.55;
+}
+.app-shell-checkin-close {
+  flex-shrink: 0;
+  min-height: 42px;
+  padding: 10px 14px;
+  border: 1px solid rgba(168, 212, 240, 0.9);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--text);
+  font-weight: 700;
+}
+.app-shell-checkin-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.app-shell-checkin-question {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 22px;
+  border: 1px solid rgba(168, 212, 240, 0.76);
+  background: rgba(255, 255, 255, 0.78);
+}
+.app-shell-checkin-question h3 {
+  margin: 0;
+  font-size: 1.04rem;
+}
+.app-shell-checkin-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.app-shell-checkin-option {
+  min-height: 48px;
+  padding: 12px 14px;
+  border: 1px solid rgba(168, 212, 240, 0.92);
+  border-radius: 16px;
+  background: rgba(245, 250, 252, 0.94);
+  color: var(--text);
+  font-weight: 700;
+  text-align: center;
+  transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
+}
+.app-shell-checkin-option:hover {
+  transform: translateY(-1px);
+  border-color: rgba(0, 188, 222, 0.42);
+}
+.app-shell-checkin-option.active {
+  border-color: rgba(0, 188, 222, 0.6);
+  background: linear-gradient(135deg, rgba(0, 188, 222, 0.16), rgba(255, 208, 0, 0.16));
+  box-shadow: 0 10px 22px rgba(0, 188, 222, 0.16);
+}
+.app-shell-checkin-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+@media (max-width: 720px) {
+  .app-shell-checkin-shell {
+    align-items: flex-end;
+    padding: 16px 12px max(12px, env(safe-area-inset-bottom));
+  }
+
+  .app-shell-checkin-modal {
+    width: 100%;
+    max-height: min(86vh, 760px);
+    padding: 18px;
+    border-radius: 24px;
+  }
+
+  .app-shell-checkin-head {
+    flex-direction: column;
+  }
+
+  .app-shell-checkin-close,
+  .app-shell-checkin-actions .btn-secondary {
+    width: 100%;
+  }
+
+  .app-shell-checkin-options {
+    grid-template-columns: 1fr;
+  }
+}
 
 /* ── Screen shell ── */
 .screen { min-height: 100%; }
@@ -857,7 +1032,7 @@ button {
 }
 .dashboard-recovery-summary-card {
   display: grid;
-  gap: 12px;
+  gap: 18px;
   text-align: left;
   background:
     radial-gradient(circle at top left, rgba(0, 188, 222, 0.14), transparent 34%),
@@ -867,29 +1042,24 @@ button {
   margin: 0;
   font-size: 1.05rem;
 }
+.dashboard-recovery-summary-card .body-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 0;
+}
+.dashboard-recovery-summary-card .body-card-header p {
+  margin: 6px 0 0;
+}
 .dashboard-recovery-summary-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
+  margin-top: 0;
 }
 .dashboard-recovery-summary-grid div {
-  display: grid;
-  gap: 4px;
-  padding: 10px 12px;
-  background: rgba(255,255,255,0.72);
-  border: 1px solid rgba(168, 212, 240, 0.85);
-  border-radius: 16px;
+  text-align: left;
 }
 .dashboard-recovery-summary-grid strong {
   font-size: 1rem;
-}
-.dashboard-recovery-summary-grid span,
-.dashboard-recovery-summary-note {
-  color: var(--text-muted);
-  font-size: 0.82rem;
-}
-.dashboard-recovery-summary-note {
-  margin: 0;
 }
 .dashboard-recovery-action-row {
   display: flex;
@@ -897,6 +1067,7 @@ button {
   flex-wrap: wrap;
 }
 .dashboard-recovery-action-row .btn-outline.small,
+.dashboard-recovery-action-row .btn-secondary.small,
 .dashboard-recovery-action-row .btn-primary.small {
   min-width: 0;
 }
@@ -1268,6 +1439,11 @@ button {
   align-items: center;
   gap: 12px;
   margin-bottom: 10px;
+}
+.dashboard-section-inline-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 .dashboard-section h2,
 .dashboard-section-title-row h2 {
@@ -2269,6 +2445,89 @@ button {
   background: rgba(214, 73, 122, 0.12);
   color: #b43a64;
 }
+.nutrition-meal-photo-panel {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.nutrition-meal-accordion {
+  border: 1px solid rgba(8, 21, 51, 0.1);
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(244, 250, 255, 0.96));
+  overflow: hidden;
+}
+.nutrition-meal-accordion.open {
+  border-color: rgba(0, 188, 222, 0.34);
+  box-shadow: 0 14px 28px rgba(0, 188, 222, 0.12);
+}
+.nutrition-meal-accordion-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  width: 100%;
+  padding: 14px 16px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.nutrition-meal-accordion-copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.nutrition-meal-accordion-label {
+  color: var(--text-muted);
+  font-size: 0.74rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.nutrition-meal-accordion-copy strong {
+  color: #081533;
+  font-size: 1rem;
+  line-height: 1.2;
+}
+.nutrition-meal-accordion-copy p {
+  margin: 0;
+  color: rgba(11, 29, 73, 0.66);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+.nutrition-meal-accordion-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  min-width: 38px;
+  height: 38px;
+  border-radius: 999px;
+  border: 1px solid rgba(168, 212, 240, 0.82);
+  background: rgba(255, 255, 255, 0.88);
+  color: #0b4d72;
+  font-size: 1.4rem;
+  line-height: 1;
+}
+.nutrition-meal-accordion-body {
+  padding: 0 12px 12px;
+  border-top: 1px solid rgba(88, 120, 160, 0.12);
+}
+.meal-card-item-accordion {
+  background: rgba(255, 255, 255, 0.78);
+}
+.meal-card-item-body {
+  display: grid;
+  gap: 8px;
+}
+.meal-card-item-note {
+  margin: 0;
+  color: rgba(11, 29, 73, 0.66);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
 
 .ai-result-card { background: var(--bg2); border: 2px solid var(--accent2); border-radius: var(--radius); box-shadow: 0 4px 20px rgba(0, 188, 222, 0.15); padding: 14px; margin-bottom: 12px; }
 .ai-result-card h3 { margin: 0 0 8px; }
@@ -3247,8 +3506,12 @@ button {
   inset: 0;
   z-index: 146;
   display: grid;
-  place-items: center;
+  align-items: start;
+  justify-items: center;
   padding: 24px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 .workout-complete-review-backdrop {
   position: absolute;
@@ -3261,7 +3524,8 @@ button {
   position: relative;
   z-index: 1;
   width: min(920px, 100%);
-  min-height: min(720px, calc(100vh - 48px));
+  min-height: min(720px, calc(100dvh - 48px));
+  max-height: calc(100dvh - 48px);
   display: flex;
   flex-direction: column;
   gap: 22px;
@@ -3271,7 +3535,9 @@ button {
     linear-gradient(180deg, rgba(255, 250, 244, 0.98), rgba(255, 244, 232, 0.96)),
     #fff6ec;
   box-shadow: 0 32px 90px rgba(0, 0, 0, 0.28);
-  overflow: auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 .workout-complete-review-topline {
   display: flex;
@@ -3434,6 +3700,59 @@ button {
   gap: 10px;
   flex-wrap: wrap;
   justify-content: flex-end;
+}
+.live-workout-header-actions > .btn-secondary,
+.live-workout-voice-switch-shell > .btn-outline {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  line-height: 1.2;
+}
+.live-workout-header-actions > .btn-secondary {
+  min-width: 175px;
+}
+.live-workout-header-actions .btn-outline {
+  min-width: 135px;
+}
+.live-workout-voice-switch-shell {
+  position: relative;
+  display: flex;
+  flex: 1 1 0;
+}
+.live-workout-voice-switch-shell > .btn-outline {
+  width: 100%;
+  justify-content: center;
+  text-align: center;
+}
+.live-workout-header-actions > .btn-secondary {
+  flex: 1 1 0;
+}
+.live-workout-voice-switch-hint {
+  position: absolute;
+  top: -12px;
+  right: calc(100% - 10px);
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(255, 208, 0, 0.98), rgba(255, 167, 38, 0.98));
+  color: #081533;
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  box-shadow: 0 14px 26px rgba(0, 0, 0, 0.22);
+  pointer-events: none;
+}
+.live-workout-voice-switch-hint::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  right: -6px;
+  width: 10px;
+  height: 10px;
+  background: rgba(255, 167, 38, 0.98);
+  transform: translateY(-50%) rotate(45deg);
 }
 .live-workout-header-actions .btn-outline {
   color: #fff;
@@ -3824,6 +4143,65 @@ button {
   background: linear-gradient(180deg, rgba(12, 31, 61, 0.96), rgba(15, 44, 73, 0.98));
   box-shadow: 0 18px 40px rgba(0, 0, 0, 0.26);
 }
+.live-workout-intro-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 8;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+}
+.live-workout-intro-backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: rgba(4, 12, 28, 0.72);
+}
+.live-workout-intro-panel {
+  position: relative;
+  width: min(680px, calc(100vw - 32px));
+  display: grid;
+  gap: 18px;
+  padding: clamp(22px, 4vw, 30px);
+  border-radius: 28px;
+  background: linear-gradient(180deg, rgba(255, 254, 250, 0.98), rgba(244, 251, 255, 0.98));
+  border: 1px solid rgba(126, 190, 229, 0.34);
+  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.34);
+}
+.live-workout-intro-panel h3,
+.live-workout-intro-step p,
+.live-workout-intro-step strong {
+  margin: 0;
+}
+.live-workout-intro-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.live-workout-intro-steps {
+  display: grid;
+  gap: 12px;
+}
+.live-workout-intro-step {
+  display: grid;
+  gap: 6px;
+  padding: 16px 18px;
+  border-radius: 20px;
+  border: 1px solid rgba(126, 190, 229, 0.24);
+  background: rgba(255, 255, 255, 0.84);
+}
+.live-workout-intro-step strong {
+  color: #081533;
+}
+.live-workout-intro-step p {
+  color: rgba(8, 21, 51, 0.76);
+  line-height: 1.55;
+}
+.live-workout-intro-actions {
+  display: flex;
+  justify-content: flex-end;
+}
 @media (max-width: 1080px) {
   .live-workout-grid {
     grid-template-columns: 1fr;
@@ -3866,6 +4244,20 @@ button {
     right: 12px;
     bottom: 12px;
     max-width: calc(100vw - 24px);
+  }
+  .live-workout-voice-switch-hint {
+    top: auto;
+    bottom: calc(100% + 6px);
+    right: 0;
+  }
+  .live-workout-voice-switch-hint::after {
+    top: auto;
+    right: 18px;
+    bottom: -5px;
+    transform: rotate(45deg);
+  }
+  .live-workout-intro-panel {
+    width: min(100%, calc(100vw - 24px));
   }
 }
 @media (max-width: 560px) {
@@ -4319,6 +4711,18 @@ button {
 }
 .field-label-compact {
   gap: 4px;
+}
+.field-label-food-name span {
+  color: #0b4d72;
+  font-size: 0.88rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.field-label-food-name input,
+.field-label-food-name textarea {
+  font-size: 1.04rem;
+  font-weight: 700;
 }
 .field-label-wide {
   grid-column: span 1;
@@ -5083,8 +5487,15 @@ label.field-label.nutrition-saved-food-field {
   .app-shell-header {
     align-items: flex-start;
   }
+  .app-shell-header-main {
+    width: 100%;
+  }
   .app-shell-brand-copy small {
     white-space: normal;
+  }
+  .app-shell-push-notice {
+    align-items: flex-start;
+    flex-direction: column;
   }
   .app-shell-coach span,
   .app-shell-menu-label {
@@ -5132,7 +5543,8 @@ label.field-label.nutrition-saved-food-field {
     padding: 12px;
   }
   .workout-complete-review-panel {
-    min-height: calc(100vh - 24px);
+    min-height: calc(100dvh - 24px);
+    max-height: calc(100dvh - 24px);
     border-radius: 24px;
   }
   .workout-complete-review-header {
@@ -5157,6 +5569,9 @@ label.field-label.nutrition-saved-food-field {
     min-height: 48px;
     padding: 10px 6px;
     font-size: 0.9rem;
+  }
+  .nutrition-meal-accordion-trigger {
+    align-items: flex-start;
   }
   .nutrition-mode-tabs {
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -6546,6 +6961,62 @@ label.field-label.nutrition-saved-food-field {
   font-size: 1.02rem;
   color: #081533;
 }
+.settings-checkin-card {
+  background:
+    radial-gradient(circle at top right, rgba(0, 188, 222, 0.12), transparent 34%),
+    linear-gradient(160deg, rgba(255,255,255,0.99), rgba(240, 247, 255, 0.98));
+  border-color: rgba(0, 188, 222, 0.22);
+}
+.settings-checkin-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.settings-checkin-head h3 {
+  margin: 10px 0 0;
+}
+.settings-checkin-actions {
+  margin-top: 14px;
+}
+.settings-checkin-button {
+  width: 100%;
+  justify-content: center;
+}
+.settings-checkin-summary {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+.settings-checkin-answer-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+}
+.settings-checkin-answer {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(0, 188, 222, 0.14);
+  background: rgba(255, 255, 255, 0.82);
+}
+.settings-checkin-answer span {
+  color: rgba(15, 31, 85, 0.62);
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.settings-checkin-answer strong {
+  font-size: 1rem;
+  color: #081533;
+}
+.settings-checkin-meta {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
 .settings-ai-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -7023,6 +7494,25 @@ label.field-label.nutrition-saved-food-field {
 .settings-reminders-panel {
   width: 100%;
   grid-column: 1 / -1;
+}
+.settings-push-anchor {
+  width: 1px;
+  height: 1px;
+}
+.settings-push-refusal {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: rgba(255, 244, 231, 0.9);
+  border: 1px solid rgba(214, 138, 84, 0.26);
+}
+.settings-push-refusal p {
+  margin: 0;
+  color: var(--text-muted);
+  line-height: 1.45;
 }
 .settings-subfield {
   display: flex;
@@ -7666,6 +8156,10 @@ label.field-label.nutrition-saved-food-field {
   .body-recovery-card .body-mini-stats {
     gap: 16px;
   }
+  .dashboard-recovery-summary-card .body-card-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
   .dashboard-action-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -7738,6 +8232,10 @@ label.field-label.nutrition-saved-food-field {
     grid-template-columns: 1fr;
   }
   .settings-diagnostics-list-row {
+    flex-direction: column;
+  }
+  .settings-push-refusal {
+    align-items: stretch;
     flex-direction: column;
   }
   .settings-identity-copy h2 {
@@ -7894,6 +8392,9 @@ label.field-label.nutrition-saved-food-field {
   .app-shell-header {
     align-items: center;
   }
+  .app-shell-header-main {
+    width: 100%;
+  }
   .app-shell-desktop-nav {
     display: inline-flex;
   }
@@ -7926,6 +8427,53 @@ input:focus, select:focus, textarea:focus {
   box-shadow: 0 0 0 3px rgba(0, 188, 222, 0.15);
 }
 textarea { resize: vertical; min-height: 112px; }
+.clearable-input {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.clearable-input > input {
+  padding-right: 46px;
+}
+.clearable-input-button {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(88, 120, 160, 0.12);
+  color: var(--text-muted);
+  box-shadow: none;
+  cursor: pointer;
+  transform: translateY(-50%);
+}
+.clearable-input-button:hover,
+.clearable-input-button:focus-visible {
+  background: rgba(0, 188, 222, 0.14);
+  color: var(--text);
+}
+.clearable-input-button span {
+  display: block;
+  font-size: 1rem;
+  line-height: 1;
+}
+.clearable-input > input[type="search"]::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
+}
+.clearable-input > input::-ms-clear {
+  display: none;
+}
 select {
   appearance: none;
   cursor: pointer;
@@ -8224,6 +8772,44 @@ input[type="time"]::-webkit-date-and-time-value {
 .saved-food-actions-stack > .btn-secondary,
 .saved-food-actions-stack > .btn-ghost {
   width: 100%;
+}
+.recent-food-bulk-bar {
+  margin-bottom: 10px;
+}
+.recent-food-row {
+  align-items: flex-start;
+  gap: 12px;
+}
+.recent-food-row-main {
+  display: flex;
+  align-items: flex-start;
+}
+.recent-food-row-copy {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.recent-food-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.recent-food-check input {
+  margin: 0;
+}
+.recent-food-actions-row {
+  justify-content: flex-start;
+  margin-top: 4px;
+}
+.recent-food-actions-row > .btn-secondary,
+.recent-food-actions-row > .btn-ghost {
+  width: auto;
 }
 .empty-state { color: var(--text-muted); text-align: center; padding: 10px; }
 .error { color: var(--danger); font-size: 0.85rem; margin: 0; font-weight: 600; }

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { authApi } from '../../api/modules/auth'
+import ClearableInput from '../../components/ui/ClearableInput'
 import { getAppImageUrl } from '../../lib/appImages'
 import { useAuthStore } from '../../store/authStore'
 
@@ -37,8 +38,8 @@ export default function LoginScreen() {
       <p className="tagline">Your AI fitness coach. Let's go.</p>
 
       <form onSubmit={handleSubmit} className="auth-form">
-        <input type="email"    placeholder="Email"    value={email}    onChange={e => setEmail(e.target.value)}    required />
-        <input type="password" placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} required />
+        <ClearableInput type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} required />
+        <ClearableInput type="password" placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} required />
         {error && <p className="error">{error}</p>}
         <button type="submit" className="btn-primary" disabled={loading}>
           {loading ? 'Signing in…' : 'Sign In'}

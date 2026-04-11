@@ -9,6 +9,7 @@ use Johnny5k\REST\DashboardController;
 use Johnny5k\REST\NutritionRecipeController;
 use Johnny5k\REST\TrainingController;
 use Johnny5k\REST\WorkoutController;
+use Johnny5k\Support\TrainingDayTypes;
 
 class AiToolHandlerService {
 
@@ -486,9 +487,9 @@ class AiToolHandlerService {
 		}
 
 		$request = new \WP_REST_Request( 'POST', '/fit/v1/workout/custom-draft' );
-		$day_type = sanitize_text_field( (string) ( $arguments['day_type'] ?? 'arms_shoulders' ) );
+		$day_type = sanitize_text_field( (string) ( $arguments['day_type'] ?? TrainingDayTypes::custom_workout_fallback() ) );
 		if ( 'rest' === sanitize_key( $day_type ) && ! empty( $exercise_names ) ) {
-			$day_type = 'arms_shoulders';
+			$day_type = TrainingDayTypes::custom_workout_fallback();
 		}
 		$request->set_param( 'name', $name );
 		$request->set_param( 'day_type', $day_type );
@@ -507,7 +508,7 @@ class AiToolHandlerService {
 
 		$draft          = is_array( $data['custom_workout_draft'] ?? null ) ? $data['custom_workout_draft'] : [];
 		$exercise_count = count( is_array( $draft['exercises'] ?? null ) ? $draft['exercises'] : [] );
-		$day_type       = (string) ( $draft['day_type'] ?? 'arms_shoulders' );
+		$day_type       = (string) ( $draft['day_type'] ?? TrainingDayTypes::custom_workout_fallback() );
 
 		return [
 			'ok'                => true,

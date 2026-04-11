@@ -7,7 +7,7 @@ export const aiApi = {
     mode,
     context: options.context ?? {},
   }),
-  analyseMeal: (base64) => api.post('/ai/analyse/meal', { image_base64: base64 }),
+  analyseMeal: (base64, mealNote = '') => api.post('/ai/analyse/meal', { image_base64: base64, meal_note: mealNote }),
   analyseLabel: (base64) => api.post('/ai/analyse/label', { image_base64: base64 }),
   analyseFoodText: (foodText) => api.post('/ai/analyse/food-text', { food_text: foodText }),
   analyseMealText: (mealText) => api.post('/ai/analyse/meal-text', { meal_text: mealText }),

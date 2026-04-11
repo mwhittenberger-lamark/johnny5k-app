@@ -1,8 +1,26 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { aiApi } from '../../api/modules/ai'
+import { onboardingApi } from '../../api/modules/onboarding'
 import { getDefaultLiveWorkoutFrames } from '../../lib/appImages'
-import { formatOpenAiVoiceLabel, readLiveWorkoutVoicePrefs, writeLiveWorkoutVoicePrefs } from '../../lib/liveWorkoutVoice'
+import {
+  cycleLiveWorkoutVoiceMode,
+  formatLiveWorkoutVoiceModeLabel,
+  formatOpenAiVoiceLabel,
+  readLiveWorkoutVoicePrefs,
+  writeLiveWorkoutVoicePrefs,
+} from '../../lib/liveWorkoutVoice'
 import { useAuthStore } from '../../store/authStore'
+
+const DEFAULT_REST_TIMING = {
+  setMinSeconds: 30,
+  setMaxSeconds: 60,
+  exerciseMinSeconds: 60,
+  exerciseMaxSeconds: 120,
+}
+const LIVE_WORKOUT_INTRO_SKIP_KEY = 'johnny5k.liveWorkoutIntroSkipsRemaining'
+const LIVE_WORKOUT_INTRO_REPEAT_AFTER_SKIPS = 2
+const OPENAI_TTS_TIMEOUT_MS = 4000
+const MAX_VOICE_MESSAGE_AGE_MS = 8000
 
 export default function LiveWorkoutMode({
   isOpen,
@@ -35,16 +53,21 @@ export default function LiveWorkoutMode({
   const [sessionMapOpen, setSessionMapOpen] = useState(false)
   const [coachLogOpen, setCoachLogOpen] = useState(false)
   const [restToast, setRestToast] = useState(null)
+  const [showIntroModal, setShowIntroModal] = useState(false)
+  const [restTiming, setRestTiming] = useState(DEFAULT_REST_TIMING)
   const queueRef = useRef([])
   const pumpCoachQueueRef = useRef(null)
   const processingRef = useRef(false)
   const recognitionRef = useRef(null)
   const ttsAudioRef = useRef(null)
   const ttsAbortRef = useRef(null)
+  const speechJobRef = useRef(0)
+  const requestedSpeechKeyRef = useRef('')
   const initializedSessionRef = useRef(0)
   const previousExerciseIdRef = useRef(0)
   const textareaRef = useRef(null)
   const spokenMessageRef = useRef('')
+  const isOpenRef = useRef(isOpen)
   const onCloseRef = useRef(onClose)
   const panelRef = useRef(null)
   const stickyMetaRef = useRef(null)
@@ -55,6 +78,8 @@ export default function LiveWorkoutMode({
   const restToastTimerRef = useRef(null)
   const voiceSupported = typeof window !== 'undefined' && (window.SpeechRecognition || window.webkitSpeechRecognition)
   const playbackSupported = typeof window !== 'undefined' && typeof window.Audio !== 'undefined'
+  const instantVoiceSupported = typeof window !== 'undefined' && typeof window.speechSynthesis !== 'undefined' && typeof window.SpeechSynthesisUtterance !== 'undefined'
+  const voicePlaybackSupported = playbackSupported || instantVoiceSupported
   const workoutSessionId = Number(session?.session?.id || 0)
   const activeExercise = exercises?.[activeExerciseIdx] ?? null
   const totalExerciseCount = Array.isArray(exercises) ? exercises.length : 0
@@ -63,17 +88,26 @@ export default function LiveWorkoutMode({
   const currentSetKey = activeExercise?.id ? `${activeExercise.id}:${currentSetIdx}` : 'idle'
   const currentDraft = drafts[currentSetKey] ?? buildDraftFromSet(currentSet)
   const restElapsedSeconds = Math.max(0, Math.floor((now - Number(lastTransition?.at || now)) / 1000))
-  const restGuidance = useMemo(() => buildRestGuidance(lastTransition?.kind, restElapsedSeconds), [lastTransition?.kind, restElapsedSeconds])
+  const restGuidance = useMemo(() => buildRestGuidance(lastTransition?.kind, restElapsedSeconds, restTiming), [lastTransition?.kind, restElapsedSeconds, restTiming])
+  const liveVoiceMode = String(voicePrefs.liveModeVoiceMode || 'premium').trim().toLowerCase()
   const defaultLiveWorkoutFrames = useMemo(() => getDefaultLiveWorkoutFrames(appImages), [appImages])
   const coachFrames = useMemo(() => {
     const configuredFrames = normalizeLiveWorkoutFrames(liveFrames)
     return configuredFrames.length ? configuredFrames : defaultLiveWorkoutFrames
   }, [defaultLiveWorkoutFrames, liveFrames])
   const currentFrame = coachFrames[frameIndex % coachFrames.length]
+  const dismissIntroModal = useCallback(() => {
+    setShowIntroModal(false)
+    writeLiveWorkoutIntroSkips(LIVE_WORKOUT_INTRO_REPEAT_AFTER_SKIPS)
+  }, [])
 
   useEffect(() => {
     onCloseRef.current = onClose
   }, [onClose])
+
+  useEffect(() => {
+    isOpenRef.current = isOpen
+  }, [isOpen])
 
   useEffect(() => {
     if (!isOpen) return undefined
@@ -87,6 +121,10 @@ export default function LiveWorkoutMode({
 
     function handleKeyDown(event) {
       if (event.key === 'Escape') {
+        if (showIntroModal) {
+          dismissIntroModal()
+          return
+        }
         onCloseRef.current?.()
       }
     }
@@ -101,7 +139,7 @@ export default function LiveWorkoutMode({
       document.body.style.overflow = previousOverflow
       window.removeEventListener('keydown', handleKeyDown)
     }
-  }, [isOpen])
+  }, [dismissIntroModal, isOpen, showIntroModal])
 
   useEffect(() => () => recognitionRef.current?.stop(), [])
 
@@ -117,7 +155,10 @@ export default function LiveWorkoutMode({
       }
       ttsAudioRef.current = null
     }
-  }, [])
+    if (instantVoiceSupported) {
+      window.speechSynthesis.cancel()
+    }
+  }, [instantVoiceSupported])
 
   useEffect(() => () => {
     stopTtsPlayback()
@@ -128,9 +169,13 @@ export default function LiveWorkoutMode({
   }, [voicePrefs])
 
   useEffect(() => {
-    if ((isOpen && voicePrefs.autoSpeak) || !playbackSupported) return
+    requestedSpeechKeyRef.current = ''
+  }, [liveVoiceMode])
+
+  useEffect(() => {
+    if (isOpen && liveVoiceMode !== 'mute') return
     stopTtsPlayback()
-  }, [isOpen, playbackSupported, stopTtsPlayback, voicePrefs.autoSpeak])
+  }, [isOpen, liveVoiceMode, stopTtsPlayback])
 
   useEffect(() => {
     if (!isOpen) return
@@ -219,61 +264,52 @@ export default function LiveWorkoutMode({
   }, [coachFrames.length])
 
   useEffect(() => {
-    if (!isOpen || !voicePrefs.autoSpeak || !playbackSupported) return
+    if (!isOpen || liveVoiceMode === 'mute' || !voicePlaybackSupported) return
 
     const latestAssistantMessage = [...coachMessages].reverse().find(message => message.role === 'assistant')
     const nextText = String(latestAssistantMessage?.text || '').trim()
-    if (!nextText || spokenMessageRef.current === nextText) return
+    const nextCreatedAt = Number(latestAssistantMessage?.createdAt || Date.now())
+    const nextKey = latestAssistantMessage ? `${nextCreatedAt}-${nextText}` : ''
+    if (!nextText || !nextKey || spokenMessageRef.current === nextKey || requestedSpeechKeyRef.current === nextKey) return
 
-    spokenMessageRef.current = nextText
-    const controller = new AbortController()
-    ttsAbortRef.current = controller
+    requestedSpeechKeyRef.current = nextKey
+    const currentJobId = speechJobRef.current + 1
+    speechJobRef.current = currentJobId
 
-    aiApi.speech(nextText, {
-      voice: voicePrefs.openAiVoice,
-      speed: voicePrefs.rate,
-      format: 'mp3',
-    }).then(blob => {
-      if (controller.signal.aborted || !isOpen) return
-      stopTtsPlayback()
-      const objectUrl = window.URL.createObjectURL(blob)
-      const audio = new window.Audio(objectUrl)
-      audio.onended = () => {
-        if (audio.src.startsWith('blob:')) {
-          window.URL.revokeObjectURL(audio.src)
-        }
+    const usePremiumVoice = playbackSupported && (liveVoiceMode === 'premium' || liveVoiceMode === 'auto')
+    const useInstantVoice = instantVoiceSupported && (liveVoiceMode === 'instant' || liveVoiceMode === 'auto')
+
+    void deliverSpeech({
+      text: nextText,
+      messageKey: nextKey,
+      createdAt: nextCreatedAt,
+      jobId: currentJobId,
+      usePremiumVoice,
+      useInstantVoice,
+      openAiVoice: voicePrefs.openAiVoice,
+      rate: voicePrefs.rate,
+      stopPlayback: stopTtsPlayback,
+      audioSupported: playbackSupported,
+      instantSupported: instantVoiceSupported,
+      isJobCurrent: candidateJobId => candidateJobId === speechJobRef.current && isOpenRef.current,
+      markSpoken: () => {
+        spokenMessageRef.current = nextKey
+      },
+      registerAudio: audio => {
+        ttsAudioRef.current = audio
+      },
+      clearAudio: audio => {
         if (ttsAudioRef.current === audio) {
           ttsAudioRef.current = null
         }
-      }
-      audio.onerror = () => {
-        if (audio.src.startsWith('blob:')) {
-          window.URL.revokeObjectURL(audio.src)
-        }
-        if (ttsAudioRef.current === audio) {
-          ttsAudioRef.current = null
-        }
-      }
-      ttsAudioRef.current = audio
-      audio.play().catch(() => {
-        if (audio.src.startsWith('blob:')) {
-          window.URL.revokeObjectURL(audio.src)
-        }
-        if (ttsAudioRef.current === audio) {
-          ttsAudioRef.current = null
-        }
-      })
-    }).catch(() => {})
-
-    return () => {
-      controller.abort()
-    }
-  }, [coachMessages, isOpen, playbackSupported, stopTtsPlayback, voicePrefs.autoSpeak, voicePrefs.openAiVoice, voicePrefs.rate])
+      },
+    })
+  }, [coachMessages, instantVoiceSupported, isOpen, liveVoiceMode, playbackSupported, stopTtsPlayback, voicePlaybackSupported, voicePrefs.openAiVoice, voicePrefs.rate])
 
   useEffect(() => {
     if (!isOpen || !lastTransition?.summary) return
 
-    const guidance = buildRestGuidance(lastTransition.kind, 0)
+    const guidance = buildRestGuidance(lastTransition.kind, 0, restTiming)
     setRestToast({
       title: guidance.title,
       message: guidance.message,
@@ -287,7 +323,41 @@ export default function LiveWorkoutMode({
     restToastTimerRef.current = window.setTimeout(() => {
       setRestToast(current => (current?.key === `${lastTransition.kind}-${lastTransition.at}` ? null : current))
     }, 10000)
-  }, [isOpen, lastTransition])
+  }, [isOpen, lastTransition, restTiming])
+
+  useEffect(() => {
+    if (!isOpen) return undefined
+
+    let active = true
+
+    onboardingApi.getState()
+      .then(data => {
+        if (!active) return
+        setRestTiming(normalizeRestTiming(data?.profile))
+      })
+      .catch(() => {
+        if (active) {
+          setRestTiming(DEFAULT_REST_TIMING)
+        }
+      })
+
+    return () => {
+      active = false
+    }
+  }, [isOpen])
+
+  useEffect(() => {
+    if (!isOpen || !workoutSessionId) return
+
+    const skipsRemaining = readLiveWorkoutIntroSkips()
+    if (skipsRemaining > 0) {
+      writeLiveWorkoutIntroSkips(skipsRemaining - 1)
+      setShowIntroModal(false)
+      return
+    }
+
+    setShowIntroModal(true)
+  }, [isOpen, workoutSessionId])
 
   useEffect(() => {
     pumpCoachQueueRef.current = pumpCoachQueue
@@ -581,6 +651,14 @@ export default function LiveWorkoutMode({
 
   const latestCoachMessage = [...coachMessages].reverse().find(message => message.role === 'assistant')
   const voiceLabel = formatOpenAiVoiceLabel(voicePrefs.openAiVoice)
+  const voiceModeLabel = formatLiveWorkoutVoiceModeLabel(liveVoiceMode)
+  const voiceStatusLabel = liveVoiceMode === 'mute'
+    ? 'Voice mute'
+    : liveVoiceMode === 'instant'
+      ? 'Voice instant'
+      : liveVoiceMode === 'auto'
+        ? `Voice auto • ${voiceLabel}`
+        : `Voice premium • ${voiceLabel}`
   const stickyMeta = (
     <div ref={stickyMetaRef} className="live-workout-sticky-meta">
       <div className="live-workout-sticky-meta-copy">
@@ -617,12 +695,25 @@ export default function LiveWorkoutMode({
             <span className="dashboard-chip ai">Live Workout Mode</span>
             <h2>{todayLabel} • {formatToken(displayDayType || session?.session?.planned_day_type || 'workout')} day</h2>
             <div className="live-workout-header-meta">
-              {playbackSupported ? <span className={`dashboard-chip subtle ${voicePrefs.autoSpeak ? 'success' : ''}`}>Voice {voicePrefs.autoSpeak ? 'on' : 'off'} • {voiceLabel}</span> : null}
+              {voicePlaybackSupported ? <span className={`dashboard-chip subtle ${liveVoiceMode !== 'mute' ? 'success' : ''}`}>{voiceStatusLabel}</span> : null}
             </div>
           </div>
           <div className="live-workout-header-actions">
-            {playbackSupported ? <button type="button" className="btn-outline" onClick={() => setVoicePrefs(current => ({ ...current, autoSpeak: !current.autoSpeak }))}>{voicePrefs.autoSpeak ? 'Mute Johnny' : 'Unmute Johnny'}</button> : null}
             <button type="button" className="btn-secondary" onClick={onClose}>Exit live mode</button>
+            {voicePlaybackSupported ? (
+              <div className="live-workout-voice-switch-shell">
+                <button
+                  type="button"
+                  className="btn-outline"
+                  onClick={() => setVoicePrefs(current => ({ ...current, liveModeVoiceMode: cycleLiveWorkoutVoiceMode(current.liveModeVoiceMode) }))}
+                  aria-label={`Voice mode ${voiceModeLabel}. Tap to cycle Premium, Instant, Auto, and Mute.`}
+                  title="Tap to cycle Premium, Instant, Auto, and Mute."
+                >
+                  {voiceModeLabel}
+                </button>
+                <span className="live-workout-voice-switch-hint" aria-hidden="true">Tap to switch</span>
+              </div>
+            ) : null}
           </div>
         </header>
 
@@ -811,6 +902,37 @@ export default function LiveWorkoutMode({
             <p>{restToast.message}</p>
           </div>
         ) : null}
+
+        {showIntroModal ? (
+          <div className="live-workout-intro-modal" role="dialog" aria-modal="true" aria-label="Live workout instructions">
+            <button type="button" className="live-workout-intro-backdrop" aria-label="Close live workout instructions" onClick={dismissIntroModal} />
+            <section className="live-workout-intro-panel">
+              <div className="live-workout-intro-head">
+                <span className="dashboard-chip coach">Live coach flow</span>
+                <button type="button" className="btn-outline small" onClick={dismissIntroModal}>Close</button>
+              </div>
+              <h3>Run one set at a time</h3>
+              <p className="settings-subtitle">Live coach works best when you finish the set, save it, rest inside your target window, then start the next set.</p>
+              <div className="live-workout-intro-steps">
+                <article className="live-workout-intro-step">
+                  <strong>1. Finish and save the set</strong>
+                  <p>Complete 1 set of {activeExercise.exercise_name}, then save that set before you move on.</p>
+                </article>
+                <article className="live-workout-intro-step">
+                  <strong>2. Rest, then hit next set</strong>
+                  <p>Take {formatDurationRange(restTiming.setMinSeconds, restTiming.setMaxSeconds)} between sets, then tap Next set and begin the exercise again.</p>
+                </article>
+                <article className="live-workout-intro-step">
+                  <strong>3. Keep exercise changes tight</strong>
+                  <p>When you move to a new lift, aim for {formatDurationRange(restTiming.exerciseMinSeconds, restTiming.exerciseMaxSeconds)} before the first working set of that next exercise.</p>
+                </article>
+              </div>
+              <div className="live-workout-intro-actions">
+                <button type="button" className="btn-primary" onClick={dismissIntroModal}>Start live coach</button>
+              </div>
+            </section>
+          </div>
+        ) : null}
       </section>
     </div>
   )
@@ -823,7 +945,7 @@ function buildCoachPrompt(event, activeExercise) {
   const exerciseName = exerciseContext?.exercise_name || activeExercise?.exercise_name || 'the current exercise'
 
   if (event?.manual && userText) {
-    return `You are Johnny coaching a user live during their workout inside Johnny5k. Current exercise: ${exerciseName}. Answer the user's question directly in no more than 3 short sentences. Give one concrete coaching cue when possible. If the question is about form, setup, or how to perform the movement, prefer returning an open_exercise_demo action for the current exercise. User question: ${userText}`
+    return `You are Johnny coaching a user live during their workout inside Johnny5k. Current exercise: ${exerciseName}. Answer the user's question directly in no more than 3 short sentences. Give one concrete coaching cue when possible. You can give form and setup advice, but you cannot see the user, so do not claim visual confirmation with lines like "great form" or "that looked clean" unless the user said that first. If the question is about form, setup, or how to perform the movement, prefer returning an open_exercise_demo action for the current exercise. User question: ${userText}`
   }
 
   if (event?.type === 'exercise_changed') {
@@ -973,11 +1095,12 @@ function getLiveTotalSetCount(exercise) {
   return Math.max(1, planned, logged)
 }
 
-function buildRestGuidance(kind, elapsedSeconds) {
+function buildRestGuidance(kind, elapsedSeconds, restTiming = DEFAULT_REST_TIMING) {
   const isExerciseTransition = kind === 'exercise'
-  const minSeconds = isExerciseTransition ? 120 : 30
-  const maxSeconds = isExerciseTransition ? 180 : 60
-  const windowLabel = isExerciseTransition ? '2-3 min between exercises' : '30-60 sec between sets'
+  const minSeconds = isExerciseTransition ? restTiming.exerciseMinSeconds : restTiming.setMinSeconds
+  const maxSeconds = isExerciseTransition ? restTiming.exerciseMaxSeconds : restTiming.setMaxSeconds
+  const preferredWindow = formatDurationRange(minSeconds, maxSeconds)
+  const windowLabel = `${preferredWindow} between ${isExerciseTransition ? 'exercises' : 'sets'}`
 
   if (elapsedSeconds < minSeconds) {
     return {
@@ -986,8 +1109,8 @@ function buildRestGuidance(kind, elapsedSeconds) {
       label: `${formatElapsedSeconds(elapsedSeconds)} elapsed`,
       windowLabel,
       message: isExerciseTransition
-        ? 'You are still inside the planned exercise transition window. Set up the next station, breathe, and get moving before downtime stretches.'
-        : 'You are still inside the target set-rest window. Catch your breath, then get back under the bar before the set gets stale.',
+        ? `You are still inside the planned exercise transition window. Set up the next station, breathe, and get moving before downtime stretches past ${preferredWindow}.`
+        : `You are still inside the target set-rest window. Catch your breath, then get back under the bar before the set gets stale past ${preferredWindow}.`,
     }
   }
 
@@ -998,8 +1121,8 @@ function buildRestGuidance(kind, elapsedSeconds) {
       label: `${formatElapsedSeconds(elapsedSeconds)} elapsed`,
       windowLabel,
       message: isExerciseTransition
-        ? 'Transition time is still right where Johnny wants it. Move into the next exercise before focus drifts.'
-        : 'Rest is right where Johnny wants it. You are clear to take the next set while tension and focus are still there.',
+        ? `Transition time is still right where Johnny wants it. Move into the next exercise while you are inside the ${preferredWindow} target.`
+        : `Rest is right where Johnny wants it. You are clear to take the next set while you are inside the ${preferredWindow} target.`,
     }
   }
 
@@ -1009,8 +1132,8 @@ function buildRestGuidance(kind, elapsedSeconds) {
     label: `${formatElapsedSeconds(elapsedSeconds)} elapsed`,
     windowLabel,
     message: isExerciseTransition
-      ? 'You are past the preferred 2 to 3 minute transition window. Get the next exercise started so the session stays sharp.'
-      : 'You are past the preferred 30 to 60 second rest window. Start the next set now unless technique or safety says you need a touch longer.',
+      ? `You are past the preferred ${preferredWindow} transition window. Get the next exercise started so the session stays sharp.`
+      : `You are past the preferred ${preferredWindow} rest window. Start the next set now unless technique or safety says you need a touch longer.`,
   }
 }
 
@@ -1045,6 +1168,285 @@ function formatElapsedSeconds(value) {
   const minutes = Math.floor(totalSeconds / 60)
   const seconds = totalSeconds % 60
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+}
+
+function normalizeRestTiming(profile) {
+  const setMinSeconds = normalizeRestSeconds(profile?.rest_between_sets_min_seconds, DEFAULT_REST_TIMING.setMinSeconds)
+  const setMaxSeconds = Math.max(setMinSeconds, normalizeRestSeconds(profile?.rest_between_sets_max_seconds, DEFAULT_REST_TIMING.setMaxSeconds))
+  const exerciseMinSeconds = normalizeRestSeconds(profile?.rest_between_exercises_min_seconds, DEFAULT_REST_TIMING.exerciseMinSeconds)
+  const exerciseMaxSeconds = Math.max(exerciseMinSeconds, normalizeRestSeconds(profile?.rest_between_exercises_max_seconds, DEFAULT_REST_TIMING.exerciseMaxSeconds))
+
+  return {
+    setMinSeconds,
+    setMaxSeconds,
+    exerciseMinSeconds,
+    exerciseMaxSeconds,
+  }
+}
+
+function normalizeRestSeconds(value, fallback) {
+  const parsed = Number.parseInt(value, 10)
+  if (Number.isNaN(parsed)) return fallback
+  return Math.min(900, Math.max(5, parsed))
+}
+
+function formatDurationRange(minSeconds, maxSeconds) {
+  return `${formatDurationLabel(minSeconds)} to ${formatDurationLabel(maxSeconds)}`
+}
+
+function formatDurationLabel(seconds) {
+  const normalized = Math.max(0, Number(seconds || 0))
+
+  if (normalized < 60) {
+    return `${Math.round(normalized)} sec`
+  }
+
+  if (normalized % 60 === 0) {
+    return `${normalized / 60} min`
+  }
+
+  const minutes = normalized / 60
+  return `${Number.isInteger(minutes) ? minutes : minutes.toFixed(1)} min`
+}
+
+function readLiveWorkoutIntroSkips() {
+  if (typeof window === 'undefined') return 0
+
+  const rawValue = window.localStorage.getItem(LIVE_WORKOUT_INTRO_SKIP_KEY)
+  const parsed = Number.parseInt(rawValue || '0', 10)
+  if (Number.isNaN(parsed) || parsed < 0) return 0
+  return parsed
+}
+
+function writeLiveWorkoutIntroSkips(value) {
+  if (typeof window === 'undefined') return
+  window.localStorage.setItem(LIVE_WORKOUT_INTRO_SKIP_KEY, String(Math.max(0, Number(value || 0))))
+}
+
+async function deliverSpeech({
+  text,
+  messageKey,
+  createdAt,
+  jobId,
+  usePremiumVoice,
+  useInstantVoice,
+  openAiVoice,
+  rate,
+  stopPlayback,
+  audioSupported,
+  instantSupported,
+  isJobCurrent,
+  markSpoken,
+  registerAudio,
+  clearAudio,
+}) {
+  if (!isVoiceMessageFresh(createdAt) || !isJobCurrent(jobId)) {
+    return false
+  }
+
+  stopPlayback()
+
+  if (usePremiumVoice && audioSupported) {
+    const premiumStarted = await playPremiumSpeech({
+      text,
+      messageKey,
+      createdAt,
+      jobId,
+      openAiVoice,
+      rate,
+      isJobCurrent,
+      markSpoken,
+      registerAudio,
+      clearAudio,
+    })
+
+    if (premiumStarted) {
+      return true
+    }
+  }
+
+  if (useInstantVoice && instantSupported && isVoiceMessageFresh(createdAt) && isJobCurrent(jobId)) {
+    return playInstantSpeech({
+      text,
+      messageKey,
+      createdAt,
+      jobId,
+      rate,
+      isJobCurrent,
+      markSpoken,
+    })
+  }
+
+  return false
+}
+
+async function playPremiumSpeech({
+  text,
+  messageKey,
+  createdAt,
+  jobId,
+  openAiVoice,
+  rate,
+  isJobCurrent,
+  markSpoken,
+  registerAudio,
+  clearAudio,
+}) {
+  try {
+    const blob = await promiseWithTimeout(
+      aiApi.speech(text, {
+        voice: openAiVoice,
+        speed: rate,
+        format: 'mp3',
+      }),
+      OPENAI_TTS_TIMEOUT_MS,
+    )
+
+    if (!blob || !isJobCurrent(jobId) || !isVoiceMessageFresh(createdAt)) {
+      return false
+    }
+
+    return await startAudioPlayback({
+      blob,
+      messageKey,
+      createdAt,
+      jobId,
+      isJobCurrent,
+      markSpoken,
+      registerAudio,
+      clearAudio,
+    })
+  } catch {
+    return false
+  }
+}
+
+function playInstantSpeech({
+  text,
+  messageKey,
+  createdAt,
+  jobId,
+  rate,
+  isJobCurrent,
+  markSpoken,
+}) {
+  if (typeof window === 'undefined' || typeof window.speechSynthesis === 'undefined' || typeof window.SpeechSynthesisUtterance === 'undefined') {
+    return Promise.resolve(false)
+  }
+
+  return new Promise(resolve => {
+    if (!isJobCurrent(jobId) || !isVoiceMessageFresh(createdAt)) {
+      resolve(false)
+      return
+    }
+
+    let settled = false
+    const utterance = new window.SpeechSynthesisUtterance(text)
+    utterance.rate = rate
+    utterance.onstart = () => {
+      if (!isJobCurrent(jobId) || !isVoiceMessageFresh(createdAt)) {
+        window.speechSynthesis.cancel()
+        if (!settled) {
+          settled = true
+          resolve(false)
+        }
+        return
+      }
+      markSpoken(messageKey)
+      if (!settled) {
+        settled = true
+        resolve(true)
+      }
+    }
+    utterance.onerror = () => {
+      if (!settled) {
+        settled = true
+        resolve(false)
+      }
+    }
+    utterance.onend = () => {
+      if (!settled) {
+        settled = true
+        resolve(true)
+      }
+    }
+
+    window.speechSynthesis.cancel()
+    window.speechSynthesis.speak(utterance)
+  })
+}
+
+function startAudioPlayback({
+  blob,
+  messageKey,
+  createdAt,
+  jobId,
+  isJobCurrent,
+  markSpoken,
+  registerAudio,
+  clearAudio,
+}) {
+  if (typeof window === 'undefined' || typeof window.Audio === 'undefined') {
+    return Promise.resolve(false)
+  }
+
+  return new Promise(resolve => {
+    const objectUrl = window.URL.createObjectURL(blob)
+    const audio = new window.Audio(objectUrl)
+    let settled = false
+    registerAudio?.(audio)
+
+    const cleanup = () => {
+      if (audio.src && audio.src.startsWith('blob:')) {
+        window.URL.revokeObjectURL(audio.src)
+      }
+      clearAudio?.(audio)
+    }
+
+    const finalize = (didStart) => {
+      if (settled) return
+      settled = true
+      if (didStart) {
+        markSpoken(messageKey)
+      }
+      resolve(didStart)
+    }
+
+    audio.onplaying = () => {
+      if (!isJobCurrent(jobId) || !isVoiceMessageFresh(createdAt)) {
+        audio.pause()
+        cleanup()
+        finalize(false)
+        return
+      }
+
+      finalize(true)
+    }
+    audio.onended = cleanup
+    audio.onerror = () => {
+      cleanup()
+      finalize(false)
+    }
+
+    audio.play()
+      .catch(() => {
+        cleanup()
+        finalize(false)
+      })
+  })
+}
+
+function promiseWithTimeout(promise, timeoutMs) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      window.setTimeout(() => reject(new Error('timeout')), timeoutMs)
+    }),
+  ])
+}
+
+function isVoiceMessageFresh(createdAt, nowValue = Date.now()) {
+  return Math.max(0, nowValue - Number(createdAt || nowValue)) <= MAX_VOICE_MESSAGE_AGE_MS
 }
 
 function clampNumber(value, min, max) {

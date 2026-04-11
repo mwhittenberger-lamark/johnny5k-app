@@ -4,6 +4,7 @@ namespace Johnny5k\Services;
 defined( 'ABSPATH' ) || exit;
 
 use Johnny5k\REST\DashboardController;
+use Johnny5k\Support\TrainingDayTypes;
 
 /**
  * AI Service — Johnny5k
@@ -261,10 +262,19 @@ class AiService {
 	 * @param  int    $user_id
 	 * @param  string $image_base64_url  data:image/jpeg;base64,...
 	 * @param  string $context           'meal_photo'|'food_label'
+	 * @param  string $user_note         Optional user guidance about ambiguous foods in the image.
 	 * @return array|WP_Error  Structured nutrition estimate.
 	 */
-	public static function analyse_food_image( int $user_id, string $image_base64_url, string $context = 'meal_photo' ) {
+	public static function analyse_food_image( int $user_id, string $image_base64_url, string $context = 'meal_photo', string $user_note = '' ) {
 		$context_data = self::get_user_context( $user_id );
+		$user_note = trim( $user_note );
+		$meal_photo_prompt = 'Identify the foods in this meal photo and estimate portion size for each item. Return only valid JSON in this exact shape: {meal_name, items:[{name, serving_amount, serving_unit, estimated_grams, portion_description, calories, protein_g, carbs_g, fat_g, confidence_food, confidence_portion}], total_calories, total_protein_g, total_carbs_g, total_fat_g, confidence}. estimated_grams should be your best weight estimate for that specific food portion. serving_unit should be concise labels like piece, bowl, cup, scoop, serving, slice, or oz. portion_description should be brief. Include rough calories and macros as a fallback estimate even when uncertain.';
+		if ( 'meal_photo' === $context && '' !== $user_note ) {
+			$meal_photo_prompt .= sprintf(
+				' The user added this context about the image: "%s". Use it to disambiguate similar-looking foods or ingredients, but do not invent foods that clearly are not in the image.',
+				$user_note
+			);
+		}
 		$prompt = $context === 'food_label'
 			? sprintf(
 				'Extract the product name, brand, serving size, calories, protein, carbs, fat, fiber, sugar, sodium, and any visible vitamin or mineral amounts from this nutrition label. Use the values shown on the label and do not estimate missing numbers. If any field is unreadable or missing on the label image, return null for that field. The user goal is %1$s, calorie target is %2$s, protein target is %3$s. Return only valid JSON with this exact shape: {food_name, brand, serving_size, calories, protein_g, carbs_g, fat_g, fiber_g, sugar_g, sodium_mg, micros:[{key,label,amount,unit}], fit_summary, flags:[string], swap_suggestions:[{title, body}]}. Use an empty array for micros if the label does not show vitamins or minerals. Keep fit_summary to one sentence. Flags should be short lowercase phrases. swap_suggestions should give 1-3 concrete healthier variations or replacement ideas that match the user goal.',
@@ -272,7 +282,7 @@ class AiService {
 				$context_data['target_calories'] ?: 'unknown',
 				$context_data['target_protein_g'] ?: 'unknown'
 			)
-			: 'Identify the foods in this meal photo and estimate portion size for each item. Return only valid JSON in this exact shape: {meal_name, items:[{name, serving_amount, serving_unit, estimated_grams, portion_description, calories, protein_g, carbs_g, fat_g, confidence_food, confidence_portion}], total_calories, total_protein_g, total_carbs_g, total_fat_g, confidence}. estimated_grams should be your best weight estimate for that specific food portion. serving_unit should be concise labels like piece, bowl, cup, scoop, serving, slice, or oz. portion_description should be brief. Include rough calories and macros as a fallback estimate even when uncertain.';
+			: $meal_photo_prompt;
 
 		$messages = [
 			[
@@ -878,9 +888,10 @@ class AiService {
 			[
 				'role'    => 'user',
 				'content' => sprintf(
-					'Fill missing library fields for this exercise draft. Exercise name: "%1$s". Existing data: %2$s. Return only valid JSON in this exact shape: {exercise:{description,movement_pattern,primary_muscle,secondary_muscles:[string],equipment,difficulty,age_friendliness_score,joint_stress_score,spinal_load_score,default_rep_min,default_rep_max,default_sets,default_progression_type,coaching_cues:[string],day_types:[string],slot_types:[string]}, notes}. Rules: keep description to 1-2 sentences. If the current description is empty, you must provide a non-empty description. Use only difficulty from beginner, intermediate, advanced. Use only default_progression_type from double_progression, load_progression, top_set_backoff. Use only day_types from push, pull, legs, arms_shoulders, cardio, rest. Use only slot_types from main, secondary, shoulders, accessory, abs, challenge. Scores are integers 1 to 10. Rep ranges and sets should be realistic defaults, not extreme.',
+					'Fill missing library fields for this exercise draft. Exercise name: "%1$s". Existing data: %2$s. Return only valid JSON in this exact shape: {exercise:{description,movement_pattern,primary_muscle,secondary_muscles:[string],equipment,difficulty,age_friendliness_score,joint_stress_score,spinal_load_score,default_rep_min,default_rep_max,default_sets,default_progression_type,coaching_cues:[string],day_types:[string],slot_types:[string]}, notes}. Rules: keep description to 1-2 sentences. If the current description is empty, you must provide a non-empty description. Use only difficulty from beginner, intermediate, advanced. Use only default_progression_type from double_progression, load_progression, top_set_backoff. Use only day_types from %3$s. Use only slot_types from main, secondary, shoulders, accessory, abs, challenge. Scores are integers 1 to 10. Rep ranges and sets should be realistic defaults, not extreme.',
 					$name,
-					wp_json_encode( $current_fields )
+					wp_json_encode( $current_fields ),
+					TrainingDayTypes::ai_list()
 				),
 			],
 		];
@@ -938,10 +949,11 @@ class AiService {
 			[
 				'role'    => 'user',
 				'content' => sprintf(
-					'Find %1$d useful exercise candidates for an exercise library based on this search: "%2$s". Exclude any exercise already in this library: %3$s. Return only valid JSON in this exact shape: {exercises:[{name,description,movement_pattern,primary_muscle,secondary_muscles:[string],equipment,difficulty,age_friendliness_score,joint_stress_score,spinal_load_score,default_rep_min,default_rep_max,default_sets,default_progression_type,coaching_cues:[string],day_types:[string],slot_types:[string]}], notes}. Rules: each result must be a distinct exercise name not present in the exclude list. Keep description to 1-2 sentences. Use only difficulty from beginner, intermediate, advanced. Use only default_progression_type from double_progression, load_progression, top_set_backoff. Use only day_types from push, pull, legs, arms_shoulders, cardio, rest. Use only slot_types from main, secondary, shoulders, accessory, abs, challenge. Scores are integers 1 to 10.',
+					'Find %1$d useful exercise candidates for an exercise library based on this search: "%2$s". Exclude any exercise already in this library: %3$s. Return only valid JSON in this exact shape: {exercises:[{name,description,movement_pattern,primary_muscle,secondary_muscles:[string],equipment,difficulty,age_friendliness_score,joint_stress_score,spinal_load_score,default_rep_min,default_rep_max,default_sets,default_progression_type,coaching_cues:[string],day_types:[string],slot_types:[string]}], notes}. Rules: each result must be a distinct exercise name not present in the exclude list. Keep description to 1-2 sentences. Use only difficulty from beginner, intermediate, advanced. Use only default_progression_type from double_progression, load_progression, top_set_backoff. Use only day_types from %4$s. Use only slot_types from main, secondary, shoulders, accessory, abs, challenge. Scores are integers 1 to 10.',
 					$count,
 					$query,
-					$exclude_names ? implode( ', ', $exclude_names ) : 'none'
+					$exclude_names ? implode( ', ', $exclude_names ) : 'none',
+					TrainingDayTypes::ai_list()
 				),
 			],
 		];
@@ -1167,7 +1179,7 @@ PROMPT;
 
 		$messages = [
 			[ 'role' => 'system', 'content' => self::build_system_prompt( $user_id ) ],
-			[ 'role' => 'user', 'content' => self::build_dashboard_review_prompt( $snapshot ) ],
+			[ 'role' => 'user', 'content' => self::build_dashboard_review_prompt( $user_id, $snapshot ) ],
 		];
 
 		$result = self::call_openai( $messages, self::DEFAULT_MODEL );
@@ -2076,6 +2088,7 @@ PROMPT;
 
 	private static function dashboard_review_cache_payload( array $snapshot ): array {
 		$training_status = is_array( $snapshot['training_status'] ?? null ) ? $snapshot['training_status'] : [];
+		$time_context = self::dashboard_review_time_context( get_current_user_id() ?: 0, $snapshot );
 
 		return [
 			'date'              => (string) ( $snapshot['date'] ?? '' ),
@@ -2096,6 +2109,10 @@ PROMPT;
 			'training_recorded' => ! empty( $training_status['recorded'] ),
 			'training_recorded_type' => (string) ( $training_status['recorded_type'] ?? '' ),
 			'has_cardio_log_today' => ! empty( $training_status['cardio_log'] ),
+			'daypart'           => (string) ( $time_context['daypart'] ?? '' ),
+			'current_anchor'    => (string) ( $time_context['current_anchor'] ?? '' ),
+			'next_anchor'       => (string) ( $time_context['next_anchor'] ?? '' ),
+			'logged_meal_types' => (array) ( $time_context['logged_meal_types'] ?? [] ),
 			'score_7d'          => (int) ( $snapshot['score_7d'] ?? 0 ),
 			'streaks'           => (array) ( $snapshot['streaks'] ?? [] ),
 			'recovery_mode'     => (string) ( $snapshot['recovery_summary']['mode'] ?? '' ),
@@ -2105,7 +2122,7 @@ PROMPT;
 		];
 	}
 
-	private static function build_dashboard_review_prompt( array $snapshot ): string {
+	private static function build_dashboard_review_prompt( int $user_id, array $snapshot ): string {
 		$goal = $snapshot['goal'] ?? (object) [];
 		$nutrition = $snapshot['nutrition_totals'] ?? [];
 		$steps = $snapshot['steps'] ?? [];
@@ -2123,9 +2140,12 @@ PROMPT;
 		$training_recorded_type = (string) ( $training_status['recorded_type'] ?? '' );
 		$cardio_log = is_array( $training_status['cardio_log'] ?? null ) ? $training_status['cardio_log'] : [];
 		$matching_session = is_array( $training_status['matching_workout_session'] ?? null ) ? $training_status['matching_workout_session'] : [];
+		$time_context = self::dashboard_review_time_context( $user_id, $snapshot );
 
 		$lines = [
 			sprintf( 'Date: %s', (string) ( $snapshot['date'] ?? current_time( 'Y-m-d' ) ) ),
+			sprintf( 'Local time: %s (%s). Daypart: %s.', (string) ( $time_context['local_time_display'] ?? '' ), (string) ( $time_context['timezone'] ?? '' ), (string) ( $time_context['daypart'] ?? '' ) ),
+			sprintf( 'Meal timing today: logged meal types %s. Current meal window: %s. Next realistic anchor meal: %s.', ! empty( $time_context['logged_meal_types'] ) ? implode( ', ', (array) $time_context['logged_meal_types'] ) : 'none', (string) ( $time_context['current_anchor_label'] ?? 'Current meal' ), (string) ( $time_context['next_anchor_label'] ?? 'Next meal' ) ),
 			sprintf( 'Goal: %s', (string) ( $goal->goal_type ?? 'maintain' ) ),
 			sprintf( 'Nutrition today: %d calories, %.0f g protein, %.0f g carbs, %.0f g fat across %d meals.', (int) ( $nutrition['calories'] ?? 0 ), (float) ( $nutrition['protein_g'] ?? 0 ), (float) ( $nutrition['carbs_g'] ?? 0 ), (float) ( $nutrition['fat_g'] ?? 0 ), count( (array) ( $snapshot['meals_today'] ?? [] ) ) ),
 			sprintf( 'Targets: %d calories, %.0f g protein, %d steps, %.1f hours sleep.', (int) ( $goal->target_calories ?? 0 ), (float) ( $goal->target_protein_g ?? 0 ), (int) ( $steps['target'] ?? 0 ), (float) ( $goal->target_sleep_hours ?? 0 ) ),
@@ -2154,6 +2174,7 @@ PROMPT;
 
 		$lines[] = 'Return only valid JSON with this exact shape: {title, message, next_step, next_step_label, next_step_hint, backup_step, encouragement, starter_prompt}.';
 		$lines[] = 'Rules: title 4-10 words. message 2-3 sentences max reviewing current progress. next_step 1 sentence telling the user what to do next. next_step_label 2-5 words, optional but useful when you can frame the move more specifically than "Next step". next_step_hint 1 short supporting sentence, optional. backup_step 1 short fallback action the user can do if the main next step is not practical right now, optional. encouragement 1 supportive sentence. starter_prompt 1 sentence the app can send back to Johnny for a deeper follow-up about today. Be specific to the data. Do not invent metrics. Keep the tone warm, direct, and encouraging.';
+		$lines[] = 'Meal timing rule: every food recommendation must fit the user\'s current local time and what is already logged today. Do not tell them to handle dinner in the morning, breakfast after breakfast is already logged, or any meal slot that is no longer the next realistic anchor.';
 
 		return implode( "\n", $lines );
 	}
@@ -2292,6 +2313,8 @@ PROMPT;
 		$protein = (float) ( $snapshot['nutrition_totals']['protein_g'] ?? 0 );
 		$protein_target = (float) ( $snapshot['goal']->target_protein_g ?? 0 );
 		$score_7d = (int) ( $snapshot['score_7d'] ?? 0 );
+		$time_context = self::dashboard_review_time_context( get_current_user_id() ?: 0, $snapshot );
+		$next_anchor_label = strtolower( (string) ( $time_context['next_anchor_label'] ?? 'next meal' ) );
 
 		if ( 'cardio' === $planned_day_type && empty( $training_status['recorded'] ) ) {
 			return [
@@ -2328,7 +2351,7 @@ PROMPT;
 		if ( $protein_target > 0 && $protein < ( $protein_target * 0.55 ) ) {
 			return [
 				'label' => 'Meal anchor',
-				'hint'  => 'One decisive protein-first meal can steady the rest of the day.',
+				'hint'  => sprintf( 'Make %s the protein-first anchor so the rest of the day stays easier to steer.', $next_anchor_label ),
 				'icon'  => 'star',
 			];
 		}
@@ -2357,6 +2380,9 @@ PROMPT;
 		$steps_target = max( 1, (int) ( $snapshot['steps']['target'] ?? 8000 ) );
 		$protein = (float) ( $snapshot['nutrition_totals']['protein_g'] ?? 0 );
 		$protein_target = (float) ( $snapshot['goal']->target_protein_g ?? 0 );
+		$time_context = self::dashboard_review_time_context( get_current_user_id() ?: 0, $snapshot );
+		$next_anchor_label = strtolower( (string) ( $time_context['next_anchor_label'] ?? 'next meal' ) );
+		$daypart = (string) ( $time_context['daypart'] ?? '' );
 
 		if ( 'cardio' === $planned_day_type && empty( $training_status['recorded'] ) ) {
 			return 'If you cannot do the full cardio block yet, take a brisk 10-minute walk now so the day starts moving in the right direction.';
@@ -2371,14 +2397,79 @@ PROMPT;
 		}
 
 		if ( $steps_today < (int) round( $steps_target * 0.55 ) ) {
-			return 'If you cannot fit a longer walk, stack two short movement blocks before dinner.';
+			return 'evening' === $daypart
+				? 'If you cannot fit a longer walk, stack two short movement blocks before bed.'
+				: sprintf( 'If you cannot fit a longer walk, stack two short movement blocks before %s.', $next_anchor_label );
 		}
 
 		if ( $protein_target > 0 && $protein < ( $protein_target * 0.55 ) ) {
-			return 'If a full meal is not realistic yet, start with a high-protein snack that keeps the board moving.';
+			return sprintf( 'If a full %s is not realistic yet, start with a high-protein snack that keeps the board moving.', $next_anchor_label );
 		}
 
 		return 'If the main move is blocked, choose the smallest clean action you can finish in the next 10 minutes.';
+	}
+
+	private static function dashboard_review_time_context( int $user_id, array $snapshot ): array {
+		$resolved_user_id = max( 0, $user_id );
+		$now = $resolved_user_id > 0 ? UserTime::now( $resolved_user_id ) : new \DateTimeImmutable( 'now', wp_timezone() );
+		$hour = (int) $now->format( 'G' );
+		$daypart = $hour < 11 ? 'morning' : ( $hour < 16 ? 'midday' : 'evening' );
+		$current_anchor = $hour < 11 ? 'breakfast' : ( $hour < 16 ? 'lunch' : 'dinner' );
+		$logged_meal_types = self::dashboard_review_logged_meal_types( $snapshot );
+		$next_anchor = self::dashboard_review_next_anchor_meal( $logged_meal_types, $hour );
+
+		return [
+			'timezone'            => $now->getTimezone()->getName(),
+			'local_time_display'  => $now->format( 'g:i A' ),
+			'daypart'             => $daypart,
+			'current_anchor'      => $current_anchor,
+			'current_anchor_label'=> self::dashboard_review_meal_label( $current_anchor ),
+			'next_anchor'         => $next_anchor,
+			'next_anchor_label'   => self::dashboard_review_meal_label( $next_anchor ?: $current_anchor ),
+			'logged_meal_types'   => $logged_meal_types,
+		];
+	}
+
+	private static function dashboard_review_logged_meal_types( array $snapshot ): array {
+		$types = [];
+
+		foreach ( (array) ( $snapshot['meals_today'] ?? [] ) as $meal ) {
+			$meal_type = sanitize_key( (string) ( is_object( $meal ) ? ( $meal->meal_type ?? '' ) : ( $meal['meal_type'] ?? '' ) ) );
+			if ( '' !== $meal_type ) {
+				$types[ $meal_type ] = true;
+			}
+		}
+
+		return array_keys( $types );
+	}
+
+	private static function dashboard_review_next_anchor_meal( array $logged_meal_types, int $hour ): string {
+		$preferred_order = $hour < 11
+			? [ 'breakfast', 'lunch', 'dinner' ]
+			: ( $hour < 16 ? [ 'lunch', 'dinner', 'breakfast' ] : [ 'dinner', 'breakfast', 'lunch' ] );
+
+		foreach ( $preferred_order as $meal_type ) {
+			if ( ! in_array( $meal_type, $logged_meal_types, true ) ) {
+				return $meal_type;
+			}
+		}
+
+		return '';
+	}
+
+	private static function dashboard_review_meal_label( string $meal_type ): string {
+		switch ( sanitize_key( $meal_type ) ) {
+			case 'breakfast':
+				return 'Breakfast';
+			case 'lunch':
+				return 'Lunch';
+			case 'dinner':
+				return 'Dinner';
+			case 'snack':
+				return 'Snack';
+			default:
+				return 'Next meal';
+		}
 	}
 
 	private static function tool_registry(): array {
@@ -2586,16 +2677,18 @@ PROMPT;
 
 	private static function infer_personal_exercise_day_types( string $primary_muscle, string $movement_pattern ): array {
 		return match ( $primary_muscle ) {
-			'biceps', 'triceps', 'shoulders' => [ 'arms_shoulders' ],
-			'chest'                          => [ 'push' ],
-			'back'                           => [ 'pull' ],
+			'biceps'                         => [ 'arms', 'arms_shoulders', 'pull' ],
+			'triceps'                        => [ 'arms', 'arms_shoulders', 'push' ],
+			'shoulders', 'rear_delt'        => [ 'shoulders', 'arms_shoulders', 'push' ],
+			'chest'                          => [ 'chest', 'push' ],
+			'back'                           => [ 'back', 'pull' ],
 			'quads', 'hamstrings', 'glutes', 'calves' => [ 'legs' ],
-			'abs'                            => [ 'arms_shoulders', 'legs', 'push', 'pull' ],
+			'abs'                            => [ 'arms', 'arms_shoulders', 'shoulders', 'legs', 'chest', 'back', 'push', 'pull' ],
 			default                          => 'push' === $movement_pattern
-				? [ 'push' ]
+				? [ 'push', 'chest' ]
 				: ( 'pull' === $movement_pattern
-					? [ 'pull' ]
-					: [ 'arms_shoulders' ] ),
+					? [ 'pull', 'back' ]
+					: [ 'arms_shoulders', 'arms' ] ),
 		};
 	}
 
@@ -2631,7 +2724,7 @@ PROMPT;
 		$exercise_names = array_values( array_filter( array_map( 'sanitize_text_field', (array) ( $arguments['exercise_names'] ?? [] ) ) ) );
 		if ( empty( $exercise_names ) ) {
 			$targets = self::infer_custom_workout_targets_from_message( $message, $day_type );
-			$exercise_names = self::select_custom_workout_exercise_names( $user_id, $day_type ?: 'arms_shoulders', $targets );
+			$exercise_names = self::select_custom_workout_exercise_names( $user_id, $day_type ?: TrainingDayTypes::custom_workout_fallback(), $targets );
 			if ( ! empty( $exercise_names ) ) {
 				$arguments['exercise_names'] = $exercise_names;
 			}
@@ -2646,18 +2739,29 @@ PROMPT;
 	}
 
 	private static function normalise_custom_workout_day_type( string $value ): string {
-		$value = sanitize_key( $value );
-		return in_array( $value, [ 'push', 'pull', 'legs', 'arms_shoulders', 'cardio', 'rest' ], true ) ? $value : '';
+		return TrainingDayTypes::normalize( $value ) ?? '';
 	}
 
 	private static function infer_custom_workout_day_type_from_message( string $message ): string {
-		if ( self::message_contains_any( $message, [ 'arms', 'arm day', 'biceps', 'bicep', 'triceps', 'tricep', 'shoulders', 'shoulder', 'delts', 'delt' ] ) ) {
+		if ( self::message_contains_any( $message, [ 'arms and shoulders', 'arm and shoulder', 'delts and bis', 'delts and tris' ] ) ) {
 			return 'arms_shoulders';
 		}
-		if ( self::message_contains_any( $message, [ 'pull', 'back day', 'lats', 'rows' ] ) ) {
+		if ( self::message_contains_any( $message, [ 'shoulders', 'shoulder day', 'delts', 'delt' ] ) ) {
+			return 'shoulders';
+		}
+		if ( self::message_contains_any( $message, [ 'arms', 'arm day', 'biceps', 'bicep', 'triceps', 'tricep' ] ) ) {
+			return 'arms';
+		}
+		if ( self::message_contains_any( $message, [ 'back', 'back day', 'lats', 'rows' ] ) ) {
+			return 'back';
+		}
+		if ( self::message_contains_any( $message, [ 'chest', 'chest day', 'pecs', 'bench' ] ) ) {
+			return 'chest';
+		}
+		if ( self::message_contains_any( $message, [ 'pull' ] ) ) {
 			return 'pull';
 		}
-		if ( self::message_contains_any( $message, [ 'push', 'chest day', 'pecs', 'bench' ] ) ) {
+		if ( self::message_contains_any( $message, [ 'push' ] ) ) {
 			return 'push';
 		}
 		if ( self::message_contains_any( $message, [ 'legs', 'leg day', 'quads', 'hamstrings', 'glutes', 'calves' ] ) ) {
@@ -2670,7 +2774,7 @@ PROMPT;
 			return 'rest';
 		}
 
-		return 'arms_shoulders';
+		return TrainingDayTypes::custom_workout_fallback();
 	}
 
 	private static function infer_custom_workout_name_from_message( string $user_message, string $day_type ): string {
@@ -2682,6 +2786,10 @@ PROMPT;
 			'push'            => 'Push Builder',
 			'pull'            => 'Pull Builder',
 			'legs'            => 'Leg Builder',
+			'chest'           => 'Chest Builder',
+			'back'            => 'Back Builder',
+			'shoulders'       => 'Shoulder Builder',
+			'arms'            => 'Arm Builder',
 			'cardio'          => 'Cardio Builder',
 			'rest'            => 'Recovery Day',
 			default           => 'Custom Arms Workout',
@@ -2735,6 +2843,24 @@ PROMPT;
 				[ 'muscle' => 'hamstrings', 'count' => 2 ],
 				[ 'muscle' => 'glutes', 'count' => 1 ],
 				[ 'muscle' => 'calves', 'count' => 1 ],
+			],
+			'chest' => [
+				[ 'muscle' => 'chest', 'count' => 4 ],
+				[ 'muscle' => 'triceps', 'count' => 1 ],
+				[ 'muscle' => 'shoulders', 'count' => 1 ],
+			],
+			'back' => [
+				[ 'muscle' => 'back', 'count' => 5 ],
+				[ 'muscle' => 'biceps', 'count' => 1 ],
+			],
+			'shoulders' => [
+				[ 'muscle' => 'shoulders', 'count' => 4 ],
+				[ 'muscle' => 'triceps', 'count' => 1 ],
+				[ 'muscle' => 'back', 'count' => 1 ],
+			],
+			'arms' => [
+				[ 'muscle' => 'biceps', 'count' => 3 ],
+				[ 'muscle' => 'triceps', 'count' => 3 ],
 			],
 			default => [
 				[ 'muscle' => 'biceps', 'count' => 3 ],
@@ -4423,7 +4549,7 @@ PROMPT;
 	private static function normalise_exercise_library_item( array $exercise, string $fallback_name = '' ): array {
 		$allowed_difficulty = [ 'beginner', 'intermediate', 'advanced' ];
 		$allowed_progression = [ 'double_progression', 'load_progression', 'top_set_backoff' ];
-		$allowed_day_types = [ 'push', 'pull', 'legs', 'arms_shoulders', 'cardio', 'rest' ];
+		$allowed_day_types = TrainingDayTypes::all();
 		$allowed_slot_types = [ 'main', 'secondary', 'shoulders', 'accessory', 'abs', 'challenge' ];
 
 		$difficulty = sanitize_key( (string) ( $exercise['difficulty'] ?? 'beginner' ) );

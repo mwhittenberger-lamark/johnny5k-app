@@ -3,6 +3,8 @@ namespace Johnny5k\Services;
 
 defined( 'ABSPATH' ) || exit;
 
+use Johnny5k\Support\TrainingDayTypes;
+
 class CoachDeliveryService {
 	private const MAX_PROACTIVE_PER_DAY = 1;
 	private const MAX_PROACTIVE_PER_WEEK = 3;
@@ -158,12 +160,12 @@ class CoachDeliveryService {
 			return [];
 		}
 
-		$candidates = array_filter( [
+		$candidates = array_filter( array_merge( [
 			self::build_absence_trigger( $user_id ),
 			self::build_reset_trigger( $user_id ),
 			self::build_balance_trigger( $user_id ),
 			self::build_milestone_trigger( $user_id ),
-		] );
+		], self::build_meal_logging_triggers( $user_id ) ) );
 
 		$created = [];
 		foreach ( $candidates as $candidate ) {
@@ -261,6 +263,7 @@ class CoachDeliveryService {
 
 	public static function default_delivery_preferences(): array {
 		return [
+			'meal_reminder_enabled' => true,
 			'push_enabled' => true,
 			'push_absence_nudges' => true,
 			'push_milestones' => true,
@@ -430,6 +433,10 @@ class CoachDeliveryService {
 		if ( in_array( $trigger_type, [ 'reset_offer', 'balance_prompt' ], true ) ) {
 			$sms_score += 6;
 		}
+		if ( str_starts_with( $trigger_type, 'meal_' ) ) {
+			$push_score += 18;
+			$sms_score += 10;
+		}
 
 		if ( ! self::is_push_trigger_enabled( $preferences, $trigger_type ) ) {
 			$push_score = -999;
@@ -468,6 +475,7 @@ class CoachDeliveryService {
 		$defaults = self::default_delivery_preferences();
 
 		return [
+			'meal_reminder_enabled' => array_key_exists( 'meal_reminder_enabled', $raw ) ? (bool) $raw['meal_reminder_enabled'] : $defaults['meal_reminder_enabled'],
 			'push_enabled' => array_key_exists( 'push_enabled', $raw ) ? (bool) $raw['push_enabled'] : $defaults['push_enabled'],
 			'push_absence_nudges' => array_key_exists( 'push_absence_nudges', $raw ) ? (bool) $raw['push_absence_nudges'] : $defaults['push_absence_nudges'],
 			'push_milestones' => array_key_exists( 'push_milestones', $raw ) ? (bool) $raw['push_milestones'] : $defaults['push_milestones'],
@@ -582,6 +590,34 @@ class CoachDeliveryService {
 		];
 	}
 
+	private static function build_meal_logging_triggers( int $user_id ): array {
+		$preferences = self::get_user_delivery_preferences( $user_id );
+		if ( empty( $preferences['meal_reminder_enabled'] ) ) {
+			return [];
+		}
+
+		$local_now = UserTime::now( $user_id );
+		$local_date = $local_now->format( 'Y-m-d' );
+		$current_hour = (int) $local_now->format( 'G' );
+		$triggers = [];
+
+		foreach ( self::meal_follow_up_schedule() as $slot ) {
+			if ( $current_hour < (int) $slot['hour'] ) {
+				continue;
+			}
+			if ( self::has_logged_meal_type_today( $user_id, (string) $slot['meal_type'], $local_date ) ) {
+				continue;
+			}
+
+			$trigger = self::build_meal_logging_trigger( $user_id, $local_date, $slot, $local_now );
+			if ( $trigger ) {
+				$triggers[] = $trigger;
+			}
+		}
+
+		return $triggers;
+	}
+
 	private static function build_reset_trigger( int $user_id ): ?array {
 		$week = self::get_weekly_schedule_status( $user_id );
 		if ( (int) ( $week['missed_expected_sessions'] ?? 0 ) < 2 ) {
@@ -600,6 +636,35 @@ class CoachDeliveryService {
 			'priority' => 80,
 			'url' => '/workout?coach_prompt=reset',
 			'due_at' => UserTime::mysql( $user_id ),
+		];
+	}
+
+	private static function build_meal_logging_trigger( int $user_id, string $local_date, array $slot, \DateTimeImmutable $local_now ): ?array {
+		$meal_type = sanitize_key( (string) ( $slot['meal_type'] ?? '' ) );
+		if ( '' === $meal_type ) {
+			return null;
+		}
+
+		$meal_label = sanitize_text_field( (string) ( $slot['label'] ?? ucfirst( $meal_type ) ) );
+		$reason = sanitize_text_field( (string) ( $slot['reason'] ?? ( $meal_label . ' still missing' ) ) );
+		$prompt = sanitize_textarea_field( (string) ( $slot['prompt'] ?? '' ) );
+		$next_step = sanitize_text_field( (string) ( $slot['next_step'] ?? '' ) );
+		$starter_prompt = sanitize_textarea_field( (string) ( $slot['starter_prompt'] ?? '' ) );
+		$hour = max( 0, min( 23, (int) ( $slot['hour'] ?? (int) $local_now->format( 'G' ) ) ) );
+		$due_at = sprintf( '%s %02d:00:00', $local_date, $hour );
+
+		return [
+			'prompt' => $prompt,
+			'reason' => $reason,
+			'next_step' => $next_step,
+			'starter_prompt' => $starter_prompt,
+			'commitment_key' => 'meal_' . $meal_type . '_' . $local_date,
+			'queue_scope' => 'chat_drawer_latest',
+			'source' => 'system_trigger',
+			'trigger_type' => 'meal_' . $meal_type . '_nudge',
+			'priority' => max( 0, (int) ( $slot['priority'] ?? 75 ) ),
+			'url' => '/nutrition',
+			'due_at' => $due_at,
 		];
 	}
 
@@ -647,6 +712,41 @@ class CoachDeliveryService {
 		];
 	}
 
+	private static function meal_follow_up_schedule(): array {
+		return [
+			[
+				'meal_type' => 'breakfast',
+				'label' => 'Breakfast',
+				'hour' => 10,
+				'priority' => 88,
+				'reason' => 'Breakfast still missing',
+				'prompt' => 'You have not logged breakfast yet. Want to get it in now before the day starts running away from you?',
+				'next_step' => 'Open Nutrition and log breakfast in under a minute.',
+				'starter_prompt' => 'Help me log breakfast fast and close the morning nutrition gap.',
+			],
+			[
+				'meal_type' => 'lunch',
+				'label' => 'Lunch',
+				'hour' => 14,
+				'priority' => 86,
+				'reason' => 'Lunch still missing',
+				'prompt' => 'No lunch is logged yet. Want to get lunch tracked before the afternoon slips by?',
+				'next_step' => 'Open Nutrition and log lunch so the rest of today is easier to steer.',
+				'starter_prompt' => 'Help me log lunch and tell me what gap is left for today.',
+			],
+			[
+				'meal_type' => 'dinner',
+				'label' => 'Dinner',
+				'hour' => 19,
+				'priority' => 84,
+				'reason' => 'Dinner still missing',
+				'prompt' => 'Dinner is not logged yet. Want to get it tracked now so tonight does not turn into guesswork?',
+				'next_step' => 'Open Nutrition and lock dinner in while the details are still fresh.',
+				'starter_prompt' => 'Help me log dinner and tighten up the rest of tonight.',
+			],
+		];
+	}
+
 	private static function get_typical_training_days( int $user_id ): array {
 		global $wpdb;
 
@@ -667,6 +767,19 @@ class CoachDeliveryService {
 		}
 
 		return array_values( array_filter( $days ) );
+	}
+
+	private static function has_logged_meal_type_today( int $user_id, string $meal_type, string $local_date ): bool {
+		global $wpdb;
+
+		return (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT COUNT(*)
+			 FROM {$wpdb->prefix}fit_meals
+			 WHERE user_id = %d AND confirmed = 1 AND meal_type = %s AND DATE(meal_datetime) = %s",
+			$user_id,
+			$meal_type,
+			$local_date
+		) ) > 0;
 	}
 
 	private static function get_weekly_schedule_status( int $user_id ): array {
@@ -734,7 +847,8 @@ class CoachDeliveryService {
 		arsort( $counts );
 		$over = array_key_first( $counts );
 		$under = null;
-		foreach ( [ 'push', 'pull', 'legs', 'arms_shoulders', 'cardio' ] as $candidate ) {
+		$candidate_day_types = self::get_training_balance_candidates( $user_id, array_keys( $counts ) );
+		foreach ( $candidate_day_types as $candidate ) {
 			if ( ! isset( $counts[ $candidate ] ) ) {
 				$under = $candidate;
 				break;
@@ -759,6 +873,35 @@ class CoachDeliveryService {
 			'under_indexed' => $under,
 			'counts' => $counts,
 		];
+	}
+
+	private static function get_training_balance_candidates( int $user_id, array $observed_day_types ): array {
+		global $wpdb;
+
+		$rows = $wpdb->get_col( $wpdb->prepare(
+			"SELECT DISTINCT utd.day_type
+			 FROM {$wpdb->prefix}fit_user_training_days utd
+			 JOIN {$wpdb->prefix}fit_user_training_plans utp ON utp.id = utd.training_plan_id
+			 WHERE utp.user_id = %d
+			   AND utp.active = 1
+			   AND utd.day_type != 'rest'
+			 ORDER BY utd.day_order ASC, utd.id ASC",
+			$user_id
+		) );
+
+		$candidates = array_values( array_filter( array_map(
+			static fn( $value ) => TrainingDayTypes::normalize( $value ),
+			is_array( $rows ) ? $rows : []
+		) ) );
+
+		if ( empty( $candidates ) ) {
+			$candidates = array_values( array_filter( array_map(
+				static fn( string $value ): ?string => TrainingDayTypes::normalize( $value ),
+				$observed_day_types
+			) ) );
+		}
+
+		return ! empty( $candidates ) ? array_values( array_unique( $candidates ) ) : TrainingDayTypes::active();
 	}
 
 	private static function completed_workout_on_date( int $user_id, string $date ): bool {

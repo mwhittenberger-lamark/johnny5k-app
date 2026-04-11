@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { trainingApi } from '../../api/modules/training'
+import ClearableInput from '../../components/ui/ClearableInput'
 
 const EMPTY_DRAFT = {
   name: '',
@@ -367,7 +368,7 @@ export default function ExerciseLibraryScreen() {
         <div className="workout-library-toolbar-grid">
           <label className="exercise-note-label workout-library-toolbar-field" htmlFor="exercise-library-search">
             <span>Search your personal exercise library</span>
-            <input
+            <ClearableInput
               id="exercise-library-search"
               type="text"
               value={query}
@@ -551,11 +552,11 @@ export default function ExerciseLibraryScreen() {
                       <p className="workout-swap-row-meta">{buildExerciseMeta(exercise)}</p>
                       {isEditing ? (
                         <div className="personal-exercise-editor">
-                          <input type="text" value={draft.name} onChange={event => updateDraft('name', event.target.value)} placeholder="Exercise name" />
+                          <ClearableInput type="text" value={draft.name} onChange={event => updateDraft('name', event.target.value)} placeholder="Exercise name" />
                           <div className="personal-exercise-editor-grid">
-                            <input type="text" value={draft.primary_muscle} onChange={event => updateDraft('primary_muscle', event.target.value)} placeholder="Primary muscle" />
-                            <input type="text" value={draft.movement_pattern} onChange={event => updateDraft('movement_pattern', event.target.value)} placeholder="Movement pattern" />
-                            <input type="text" value={draft.equipment} onChange={event => updateDraft('equipment', event.target.value)} placeholder="Equipment" />
+                            <ClearableInput type="text" value={draft.primary_muscle} onChange={event => updateDraft('primary_muscle', event.target.value)} placeholder="Primary muscle" />
+                            <ClearableInput type="text" value={draft.movement_pattern} onChange={event => updateDraft('movement_pattern', event.target.value)} placeholder="Movement pattern" />
+                            <ClearableInput type="text" value={draft.equipment} onChange={event => updateDraft('equipment', event.target.value)} placeholder="Equipment" />
                             <select value={draft.difficulty} onChange={event => updateDraft('difficulty', event.target.value)}>
                               <option value="beginner">Beginner</option>
                               <option value="intermediate">Intermediate</option>

@@ -207,7 +207,7 @@ class SmsService {
 
 	/**
 	 * Called by the `jf_daily_sms_reminders` cron hook.
-	 * Runs hourly and sends reminders in user-local morning, midday, evening, and Monday summary windows.
+	 * Runs hourly and sends reminders in user-local morning, evening, and Monday summary windows.
 	 */
 	public static function run_daily_reminders(): void {
 		global $wpdb;
@@ -230,8 +230,6 @@ class SmsService {
 			$preferences = self::reminder_preferences( $u->exercise_preferences_json ?? '' );
 			$workout_enabled = self::reminder_enabled( $preferences, 'workout_reminder_enabled', true );
 			$workout_hour = self::reminder_hour( $preferences, 'workout_reminder_hour', 8 );
-			$meal_enabled = self::reminder_enabled( $preferences, 'meal_reminder_enabled', true );
-			$meal_hour = self::reminder_hour( $preferences, 'meal_reminder_hour', 12 );
 			$sleep_enabled = self::reminder_enabled( $preferences, 'sleep_reminder_enabled', true );
 			$sleep_hour = self::reminder_hour( $preferences, 'sleep_reminder_hour', 20 );
 			$weekly_summary_enabled = self::reminder_enabled( $preferences, 'weekly_summary_enabled', true );
@@ -245,16 +243,6 @@ class SmsService {
 			) );
 			if ( $workout_enabled && $workout_hour === $local_hour && $session_today && ! $session_today->started_at && ! self::was_sent_on_local_date( $uid, 'workout_reminder', $today ) ) {
 				self::send_workout_reminder( $uid );
-			}
-
-			// Meal reminder: no meals logged by midday
-			$meals_today = (int) $wpdb->get_var( $wpdb->prepare(
-				"SELECT COUNT(*) FROM {$wpdb->prefix}fit_meals
-				 WHERE user_id = %d AND DATE(meal_datetime) = %s AND confirmed = 1",
-				$uid, $today
-			) );
-			if ( $meal_enabled && $meal_hour === $local_hour && 0 === $meals_today && ! self::was_sent_on_local_date( $uid, 'meal_reminder', $today ) ) {
-				self::send_meal_reminder( $uid );
 			}
 
 			$sleep_today = (int) $wpdb->get_var( $wpdb->prepare(

@@ -50,6 +50,32 @@ class NutritionController {
 			'permission_callback' => $auth,
 		] );
 
+		register_rest_route( $ns, '/nutrition/recent-foods', [
+			[
+				'methods'             => 'GET',
+				'callback'            => [ AiController::class, 'get_recent_foods' ],
+				'permission_callback' => $auth,
+			],
+			[
+				'methods'             => 'DELETE',
+				'callback'            => [ AiController::class, 'delete_recent_foods' ],
+				'permission_callback' => $auth,
+			],
+		] );
+
+		register_rest_route( $ns, '/nutrition/recent-foods/(?P<id>\d+)', [
+			[
+				'methods'             => 'PUT',
+				'callback'            => [ AiController::class, 'update_recent_food' ],
+				'permission_callback' => $auth,
+			],
+			[
+				'methods'             => 'DELETE',
+				'callback'            => [ AiController::class, 'delete_recent_food' ],
+				'permission_callback' => $auth,
+			],
+		] );
+
 		register_rest_route( $ns, '/nutrition/saved-foods/(?P<id>\d+)', [
 			[
 				'methods'             => 'PUT',

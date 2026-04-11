@@ -3,6 +3,8 @@ namespace Johnny5k\Database;
 
 defined( 'ABSPATH' ) || exit;
 
+use Johnny5k\Support\TrainingDayTypes;
+
 /**
  * Creates and maintains all wp_fit_* custom tables via dbDelta().
  * Safe to run multiple times — dbDelta only applies missing columns/keys.
@@ -19,6 +21,10 @@ class Schema {
 		foreach ( self::table_sql( $p, $c ) as $sql ) {
 			dbDelta( $sql );
 		}
+
+		self::ensure_api_cost_log_service_values();
+		self::ensure_training_day_type_values();
+		Seeder::sync_training_day_type_catalog();
 	}
 
 	public static function seed_defaults(): void {
@@ -28,6 +34,8 @@ class Schema {
 	// ── Table definitions ──────────────────────────────────────────────────────
 
 	private static function table_sql( string $p, string $c ): array {
+		$day_type_enum = TrainingDayTypes::enum_sql();
+
 		return [
 
 			/* ── Invite Codes ──────────────────────────────────────────────────── */
@@ -58,6 +66,10 @@ class Schema {
   training_experience enum('beginner','intermediate','advanced') NOT NULL DEFAULT 'beginner',
   activity_level enum('sedentary','light','moderate','high','athlete') NOT NULL DEFAULT 'moderate',
   available_time_default enum('short','medium','full') NOT NULL DEFAULT 'medium',
+  rest_between_sets_min_seconds int(11) NOT NULL DEFAULT 30,
+  rest_between_sets_max_seconds int(11) NOT NULL DEFAULT 60,
+  rest_between_exercises_min_seconds int(11) NOT NULL DEFAULT 60,
+  rest_between_exercises_max_seconds int(11) NOT NULL DEFAULT 120,
   phone varchar(20) DEFAULT NULL,
   timezone varchar(100) NOT NULL DEFAULT 'America/New_York',
   units enum('imperial','metric') NOT NULL DEFAULT 'imperial',
@@ -248,7 +260,7 @@ class Schema {
 			"CREATE TABLE {$p}program_template_days (
   id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
   program_template_id bigint(20) unsigned NOT NULL,
-  day_type enum('push','pull','legs','arms_shoulders','cardio','rest') NOT NULL,
+  day_type {$day_type_enum} NOT NULL,
   default_order int(11) NOT NULL DEFAULT 1,
   time_tier enum('short','medium','full') NOT NULL DEFAULT 'medium',
   notes text DEFAULT NULL,
@@ -295,7 +307,7 @@ class Schema {
 			"CREATE TABLE {$p}user_training_days (
   id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
   training_plan_id bigint(20) unsigned NOT NULL,
-  day_type enum('push','pull','legs','arms_shoulders','cardio','rest') NOT NULL,
+  day_type {$day_type_enum} NOT NULL,
   day_order int(11) NOT NULL DEFAULT 1,
   time_tier enum('short','medium','full') NOT NULL DEFAULT 'medium',
   created_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -328,8 +340,8 @@ class Schema {
   id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
   user_id bigint(20) unsigned NOT NULL,
   session_date date NOT NULL,
-  planned_day_type enum('push','pull','legs','arms_shoulders','cardio','rest') NOT NULL,
-  actual_day_type enum('push','pull','legs','arms_shoulders','cardio','rest') DEFAULT NULL,
+  planned_day_type {$day_type_enum} NOT NULL,
+  actual_day_type {$day_type_enum} DEFAULT NULL,
   time_tier enum('short','medium','full') NOT NULL DEFAULT 'medium',
   readiness_score tinyint(3) unsigned DEFAULT NULL,
   started_at datetime DEFAULT NULL,
@@ -652,7 +664,7 @@ class Schema {
 			"CREATE TABLE {$p}api_cost_logs (
   id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
   user_id bigint(20) unsigned DEFAULT NULL,
-  service enum('openai','clicksend') NOT NULL DEFAULT 'openai',
+  service enum('openai','clicksend','gemini') NOT NULL DEFAULT 'openai',
   endpoint varchar(150) DEFAULT NULL,
   tokens_in int(11) DEFAULT NULL,
   tokens_out int(11) DEFAULT NULL,
@@ -730,5 +742,32 @@ class Schema {
 ) $c;",
 
 		]; // end return
+	}
+
+	private static function ensure_api_cost_log_service_values(): void {
+		global $wpdb;
+
+		$table = $wpdb->prefix . 'fit_api_cost_logs';
+		$wpdb->query(
+			"ALTER TABLE `{$table}` MODIFY `service` enum('openai','clicksend','gemini') NOT NULL DEFAULT 'openai'"
+		);
+	}
+
+	private static function ensure_training_day_type_values(): void {
+		global $wpdb;
+
+		$enum = TrainingDayTypes::enum_sql();
+		$tables = [
+			[ $wpdb->prefix . 'fit_program_template_days', 'day_type', 'NOT NULL' ],
+			[ $wpdb->prefix . 'fit_user_training_days', 'day_type', 'NOT NULL' ],
+			[ $wpdb->prefix . 'fit_workout_sessions', 'planned_day_type', 'NOT NULL' ],
+			[ $wpdb->prefix . 'fit_workout_sessions', 'actual_day_type', 'DEFAULT NULL' ],
+		];
+
+		foreach ( $tables as [ $table, $column, $suffix ] ) {
+			$wpdb->query(
+				"ALTER TABLE `{$table}` MODIFY `{$column}` {$enum} {$suffix}"
+			);
+		}
 	}
 }
