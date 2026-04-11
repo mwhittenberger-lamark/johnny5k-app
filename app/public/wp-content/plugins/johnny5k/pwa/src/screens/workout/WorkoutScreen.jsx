@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useLocation, useNavigate } from 'react-router-dom'
 import OfflineState from '../../components/ui/OfflineState'
@@ -52,6 +52,7 @@ export default function WorkoutScreen() {
     deleteSet,
     saveExerciseNote,
     swapExercise,
+    quickAdd,
     removeExercise,
     undoLastReversibleAction,
     completeSession,
@@ -121,6 +122,7 @@ export default function WorkoutScreen() {
     deleteSet,
     saveExerciseNote,
     swapExercise,
+    quickAdd,
     removeExercise,
     undoLastReversibleAction,
     startSession,
@@ -153,6 +155,10 @@ export default function WorkoutScreen() {
 
   const liveWorkoutFrames = useLiveWorkoutFrames()
   const isMaintenanceMode = (sessionMode || session?.session_mode) === 'maintenance' || Number(session?.session?.readiness_score ?? readinessScore) <= 3
+
+  useEffect(() => {
+    bootstrapSession()
+  }, [bootstrapSession])
 
   function handleOpenWorkoutSupport() {
     openSupportGuide(openDrawer, {

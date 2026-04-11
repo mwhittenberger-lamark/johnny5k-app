@@ -33,6 +33,14 @@ export function formatWorkoutElapsedTime(startedAt, nowValue = Date.now()) {
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
 }
 
+export function getPausedTimerNowValue(nowValue = Date.now(), pausedAt = null, pausedDurationMs = 0) {
+  const normalizedNow = Number(nowValue || 0) || 0
+  const normalizedPausedDurationMs = Math.max(0, Number(pausedDurationMs || 0) || 0)
+  const normalizedPausedAt = pausedAt == null ? null : (Number(pausedAt || 0) || 0)
+  const effectiveNow = (normalizedPausedAt ?? normalizedNow) - normalizedPausedDurationMs
+  return Math.max(0, effectiveNow)
+}
+
 export function buildWorkoutCompletionReview({ result, dayType, sessionLabel }) {
   const normalizedDayType = String(dayType || '').trim().toLowerCase()
   if (!normalizedDayType || normalizedDayType === 'rest' || normalizedDayType === 'cardio') {
@@ -202,12 +210,18 @@ export function normalizeWorkoutTimeTier(value) {
 
 export function normalizeExerciseCandidate(value) {
   const payload = value && typeof value === 'object' ? value : {}
+  const parsedSlotTypes = Array.isArray(payload.slot_types)
+    ? payload.slot_types
+    : parseJsonStringList(payload.slot_types_json)
+
   return {
     id: Number(payload.id || 0),
     name: String(payload.name || '').trim(),
     default_rep_min: Number(payload.default_rep_min || 8),
     default_rep_max: Number(payload.default_rep_max || 12),
     default_sets: Number(payload.default_sets || 3),
+    slot_types: parsedSlotTypes,
+    slot_type: String(payload.slot_type || parsedSlotTypes[0] || '').trim().toLowerCase(),
   }
 }
 
@@ -359,4 +373,23 @@ function formatLastPerformance(exercise) {
 function formatCalendarDate(value) {
   if (!value) return 'recently'
   return formatUsShortDate(value, value)
+}
+
+function parseJsonStringList(value) {
+  if (Array.isArray(value)) {
+    return value.map(item => String(item || '').trim().toLowerCase()).filter(Boolean)
+  }
+
+  if (typeof value !== 'string' || !value.trim()) {
+    return []
+  }
+
+  try {
+    const parsed = JSON.parse(value)
+    return Array.isArray(parsed)
+      ? parsed.map(item => String(item || '').trim().toLowerCase()).filter(Boolean)
+      : []
+  } catch {
+    return []
+  }
 }

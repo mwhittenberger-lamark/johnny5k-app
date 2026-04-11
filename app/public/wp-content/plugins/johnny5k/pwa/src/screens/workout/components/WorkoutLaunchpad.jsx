@@ -32,6 +32,8 @@ export default function WorkoutLaunchpad({
 }) {
   const isMaintenanceMode = readinessScore <= 3
   const readinessRepDelta = getReadinessRepDelta(readinessScore)
+  const absQuickPick = planning.absAddOnSuggestions[0] ?? null
+  const challengeQuickPick = planning.challengeAddOnSuggestions[0] ?? null
 
   return (
     <div className="screen workout-start workout-launchpad">
@@ -228,6 +230,67 @@ export default function WorkoutLaunchpad({
               <p className="settings-subtitle workout-plan-helper">
                 Johnny added {planning.previewBonusFillCount} {planning.previewBonusFillCount === 1 ? 'bonus movement' : 'bonus movements'} to make this full session feel meaningfully fuller.
               </p>
+            ) : null}
+            {!planning.isCardioSelection && !planning.isRestSelection ? (
+              <div className="workout-launchpad-section">
+                <div className="dashboard-card-head">
+                  <span className="dashboard-chip coach">Optional add-ons</span>
+                  <span className="dashboard-chip subtle">Easy add</span>
+                </div>
+                <p className="settings-subtitle workout-plan-helper">
+                  Add an abs slot or a challenge slot before you start. Search is still available below if you want something more specific.
+                </p>
+                <div className="workout-quickadd-grid">
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => absQuickPick && planning.handleAddExerciseCandidate(absQuickPick)}
+                    disabled={!absQuickPick || planning.absAddOnLoading}
+                  >
+                    {planning.absAddOnLoading
+                      ? 'Loading abs...'
+                      : absQuickPick
+                        ? `Add abs: ${absQuickPick.name}`
+                        : 'No abs add-on found'}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => challengeQuickPick && planning.handleAddExerciseCandidate(challengeQuickPick)}
+                    disabled={!challengeQuickPick || planning.challengeAddOnLoading}
+                  >
+                    {planning.challengeAddOnLoading
+                      ? 'Loading challenge...'
+                      : challengeQuickPick
+                        ? `Add challenge: ${challengeQuickPick.name}`
+                        : 'No challenge add-on found'}
+                  </button>
+                </div>
+                {planning.absAddOnSuggestions.length > 1 || planning.challengeAddOnSuggestions.length > 1 ? (
+                  <div className="workout-quickadd-grid compact">
+                    {planning.absAddOnSuggestions.slice(1, 3).map(option => (
+                      <button
+                        key={`abs-${option.id}`}
+                        type="button"
+                        className="btn-outline small"
+                        onClick={() => planning.handleAddExerciseCandidate(option)}
+                      >
+                        {option.name}
+                      </button>
+                    ))}
+                    {planning.challengeAddOnSuggestions.slice(1, 3).map(option => (
+                      <button
+                        key={`challenge-${option.id}`}
+                        type="button"
+                        className="btn-outline small"
+                        onClick={() => planning.handleAddExerciseCandidate(option)}
+                      >
+                        {option.name}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
             ) : null}
             {!planning.isCardioSelection && !planning.isRestSelection ? (
               <div className="workout-launchpad-section">

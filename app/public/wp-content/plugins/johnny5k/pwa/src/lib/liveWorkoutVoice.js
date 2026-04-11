@@ -3,6 +3,7 @@ const LIVE_WORKOUT_VOICE_STORAGE_KEY = 'johnny5k:live-workout:voice'
 export const LIVE_WORKOUT_VOICE_RATE_OPTIONS = [0.85, 1, 1.1, 1.2, 1.3]
 export const OPENAI_TTS_VOICE_OPTIONS = ['alloy', 'ash', 'ballad', 'coral', 'echo', 'fable', 'nova', 'onyx', 'sage', 'shimmer']
 export const LIVE_WORKOUT_VOICE_MODE_OPTIONS = ['premium', 'instant', 'auto', 'mute']
+export const LIVE_WORKOUT_DEFAULT_INSTANT_VOICE = 'default'
 
 const DEFAULT_LIVE_WORKOUT_VOICE_PREFS = {
   autoSpeak: true,
@@ -85,4 +86,46 @@ export function cycleLiveWorkoutVoiceMode(mode) {
   const currentIndex = LIVE_WORKOUT_VOICE_MODE_OPTIONS.indexOf(String(mode || '').trim().toLowerCase())
   const safeIndex = currentIndex >= 0 ? currentIndex : 0
   return LIVE_WORKOUT_VOICE_MODE_OPTIONS[(safeIndex + 1) % LIVE_WORKOUT_VOICE_MODE_OPTIONS.length]
+}
+
+export function normalizeInstantVoiceOptions(voices) {
+  return (Array.isArray(voices) ? voices : [])
+    .map((voice, index) => {
+      const voiceURI = String(voice?.voiceURI || '').trim()
+      if (!voiceURI) return null
+
+      return {
+        id: `${voiceURI}:${index}`,
+        voiceURI,
+        name: String(voice?.name || '').trim() || `Voice ${index + 1}`,
+        lang: String(voice?.lang || '').trim(),
+        localService: Boolean(voice?.localService),
+        default: Boolean(voice?.default),
+      }
+    })
+    .filter(Boolean)
+}
+
+export function getDefaultInstantVoice(voices) {
+  const normalizedVoices = Array.isArray(voices) ? voices : []
+  if (!normalizedVoices.length) return null
+  return normalizedVoices.find(voice => Boolean(voice?.default)) || normalizedVoices[0]
+}
+
+export function getInstantVoiceByUri(voices, voiceURI = '') {
+  const normalizedVoiceUri = String(voiceURI || '').trim()
+  if (!normalizedVoiceUri) return null
+  return (Array.isArray(voices) ? voices : []).find(voice => String(voice?.voiceURI || '').trim() === normalizedVoiceUri) || null
+}
+
+export function getPreferredInstantVoice(voices, voiceURI = '') {
+  return getInstantVoiceByUri(voices, voiceURI) || getDefaultInstantVoice(voices)
+}
+
+export function formatInstantVoiceLabel(voice) {
+  if (!voice) return 'Default device voice'
+  const name = String(voice.name || '').trim() || 'Unnamed voice'
+  const lang = String(voice.lang || '').trim()
+  const defaultLabel = voice.default ? 'default' : ''
+  return [name, lang, defaultLabel].filter(Boolean).join(' • ')
 }

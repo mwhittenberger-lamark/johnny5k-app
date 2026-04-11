@@ -153,25 +153,97 @@ export function NutritionAiReviewPanels({ screen, deps }) {
         <div className="dash-card label-review-card">
           <div className="dashboard-card-head">
             <span className="dashboard-chip nutrition">Label review</span>
-            <span className="dashboard-chip subtle">Per serving</span>
+            <span className="dashboard-chip subtle">Editable per serving</span>
           </div>
           <h3>{screen.labelReview.headline}</h3>
+          <div className="label-review-summary-band">
+            <span>{screen.labelReview.servingSize}</span>
+            <span>{screen.labelReviewTotals.calories} calories at {screen.labelReviewTotals.quantity} serving{screen.labelReviewTotals.quantity === 1 ? '' : 's'}</span>
+            <span>{screen.labelReview.mealType}</span>
+          </div>
+          <div className="label-review-form-grid">
+            <label className="field-label">
+              <span>Food</span>
+              <input value={screen.labelReview.foodName} onChange={event => screen.handleUpdateLabelReviewField('foodName', event.target.value)} />
+            </label>
+            <label className="field-label">
+              <span>Brand</span>
+              <input value={screen.labelReview.brand} onChange={event => screen.handleUpdateLabelReviewField('brand', event.target.value)} />
+            </label>
+            <label className="field-label">
+              <span>Serving size</span>
+              <input value={screen.labelReview.servingSize} onChange={event => screen.handleUpdateLabelReviewField('servingSize', event.target.value)} />
+            </label>
+            <label className="field-label">
+              <span>Meal type</span>
+              <select value={screen.labelReview.mealType} onChange={event => screen.handleUpdateLabelReviewField('mealType', event.target.value)}>
+                <option value="breakfast">Breakfast</option>
+                <option value="lunch">Lunch</option>
+                <option value="dinner">Dinner</option>
+                <option value="snack">Snack</option>
+              </select>
+            </label>
+          </div>
+          <div className="macro-inputs label-review-form-grid label-review-macro-grid">
+            <label className="field-label">
+              <span>Calories</span>
+              <input type="number" min="0" step="1" value={screen.labelReview.calories} onChange={event => screen.handleUpdateLabelReviewField('calories', Number(event.target.value || 0))} />
+            </label>
+            <label className="field-label">
+              <span>Protein (g)</span>
+              <input type="number" min="0" step="0.1" value={screen.labelReview.protein} onChange={event => screen.handleUpdateLabelReviewField('protein', Number(event.target.value || 0))} />
+            </label>
+            <label className="field-label">
+              <span>Carbs (g)</span>
+              <input type="number" min="0" step="0.1" value={screen.labelReview.carbs} onChange={event => screen.handleUpdateLabelReviewField('carbs', Number(event.target.value || 0))} />
+            </label>
+            <label className="field-label">
+              <span>Fat (g)</span>
+              <input type="number" min="0" step="0.1" value={screen.labelReview.fat} onChange={event => screen.handleUpdateLabelReviewField('fat', Number(event.target.value || 0))} />
+            </label>
+            <label className="field-label">
+              <span>Fiber (g)</span>
+              <input type="number" min="0" step="0.1" value={screen.labelReview.fiber} onChange={event => screen.handleUpdateLabelReviewField('fiber', Number(event.target.value || 0))} />
+            </label>
+            <label className="field-label">
+              <span>Sugar (g)</span>
+              <input type="number" min="0" step="0.1" value={screen.labelReview.sugar} onChange={event => screen.handleUpdateLabelReviewField('sugar', Number(event.target.value || 0))} />
+            </label>
+            <label className="field-label">
+              <span>Sodium (mg)</span>
+              <input type="number" min="0" step="1" value={screen.labelReview.sodium} onChange={event => screen.handleUpdateLabelReviewField('sodium', Number(event.target.value || 0))} />
+            </label>
+            <label className="field-label">
+              <span>Quantity</span>
+              <input type="number" min="0.1" step="0.1" value={screen.labelReview.quantity} onChange={event => screen.handleUpdateLabelReviewField('quantity', event.target.value)} />
+            </label>
+          </div>
           <div className="label-review-grid">
-            <div><strong>Food</strong><span>{screen.labelReview.foodName}</span></div>
-            <div><strong>Brand</strong><span>{screen.labelReview.brand || '—'}</span></div>
-            <div><strong>Serving</strong><span>{screen.labelReview.servingSize}</span></div>
-            <div><strong>Calories</strong><span>{screen.labelReview.calories}</span></div>
-            <div><strong>Protein</strong><span>{screen.labelReview.protein}g</span></div>
-            <div><strong>Carbs</strong><span>{screen.labelReview.carbs}g</span></div>
-            <div><strong>Fat</strong><span>{screen.labelReview.fat}g</span></div>
-            <div><strong>Sodium</strong><span>{screen.labelReview.sodium}mg</span></div>
+            <div><strong>Total calories</strong><span>{screen.labelReviewTotals.calories} for {screen.labelReviewTotals.quantity} serving{screen.labelReviewTotals.quantity === 1 ? '' : 's'}</span></div>
+            <div><strong>Total protein</strong><span>{screen.labelReviewTotals.protein}g</span></div>
+            <div><strong>Total carbs</strong><span>{screen.labelReviewTotals.carbs}g</span></div>
+            <div><strong>Total fat</strong><span>{screen.labelReviewTotals.fat}g</span></div>
+            <div><strong>Total fiber</strong><span>{screen.labelReviewTotals.fiber}g</span></div>
+            <div><strong>Total sugar</strong><span>{screen.labelReviewTotals.sugar}g</span></div>
+            <div><strong>Total sodium</strong><span>{screen.labelReviewTotals.sodium}mg</span></div>
+            <div><strong>Scan source</strong><span>{screen.labelReview.usedWebSearch ? 'Images + web fallback' : 'Images only'}</span></div>
           </div>
           <div className="nutrition-gap-list">{screen.labelReview.flags.map(flag => <span key={flag} className="onboarding-chip active">{flag}</span>)}</div>
           <div className="nutrition-stack-list">{screen.labelReview.suggestions.map(suggestion => <div key={suggestion.title} className="nutrition-recipe-card label-suggestion-card"><strong>{suggestion.title}</strong><p>{suggestion.body}</p></div>)}</div>
+          {screen.labelReview.sources?.length ? (
+            <div className="label-review-sources">
+              <strong>Reference links</strong>
+              <div className="nutrition-gap-list">
+                {screen.labelReview.sources.map(source => (
+                  <a key={source.url} className="onboarding-chip" href={source.url} target="_blank" rel="noreferrer">{source.label || source.url}</a>
+                ))}
+              </div>
+            </div>
+          ) : null}
           <div className="ai-result-actions">
             <button className="btn-primary" onClick={screen.handleSaveLabelFood} disabled={Boolean(screen.labelReviewAction)}>{screen.labelReviewAction === 'save' ? 'Saving…' : 'Save to foods'}</button>
             <button className="btn-secondary" onClick={screen.handleQuickLogLabelFood} disabled={Boolean(screen.labelReviewAction)}>{screen.labelReviewAction === 'log' ? 'Saving…' : 'Save and log'}</button>
-            <button className="btn-secondary" onClick={() => screen.setLabelReview(null)} disabled={Boolean(screen.labelReviewAction)}>Close review</button>
+            <button className="btn-secondary" onClick={screen.handleCancelLabelReview} disabled={Boolean(screen.labelReviewAction)}>Cancel</button>
           </div>
           {screen.labelReviewAction ? <p className="empty-state">Working on your label review…</p> : null}
         </div>

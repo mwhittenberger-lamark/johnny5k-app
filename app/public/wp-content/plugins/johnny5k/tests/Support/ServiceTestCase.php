@@ -22,6 +22,10 @@ abstract class ServiceTestCase extends TestCase {
 			'post' => [],
 			'request' => [],
 		];
+		$GLOBALS['johnny5k_test_http_log'] = [
+			'post' => [],
+			'request' => [],
+		];
 		$GLOBALS['johnny5k_test_scheduled_events'] = [];
 		$GLOBALS['johnny5k_test_actions'] = [];
 		$GLOBALS['johnny5k_test_users'] = [];

@@ -6,10 +6,21 @@ import { normalizeAppIconName } from '../../components/ui/AppIcon.utils'
 import { reportClientDiagnostic } from '../../lib/clientDiagnostics'
 import { APP_IMAGE_FIELDS } from '../../lib/appImages'
 import { getColorSchemeOptions, setAvailableColorSchemes } from '../../lib/theme'
+import { runLabelScanTestSuite } from '../nutrition/labelScanTestSuite'
+import { useAuthStore } from '../../store/authStore'
 
-const TABS = ['invites', 'costs', 'persona', 'users', 'exercises', 'awards', 'recipes', 'support', 'diagnostics', 'settings']
+const TABS = ['invites', 'costs', 'persona', 'users', 'exercises', 'awards', 'recipes', 'support', 'diagnostics', 'settings', 'label-tests']
 const AWARD_ICON_OPTIONS = ['award', 'trophy', 'star', 'flame', 'bolt']
 const COLOR_FIELDS = ['bg', 'bg2', 'bg3', 'border', 'text', 'textMuted', 'accent', 'accent2', 'accent3', 'danger', 'success', 'yellow']
+const QA_ONLY_TABS = ['label-tests']
+
+function tabLabel(id) {
+  if (id === 'label-tests') {
+    return 'Label QA'
+  }
+
+  return id.charAt(0).toUpperCase() + id.slice(1)
+}
 
 function getErrorMessage(error, fallback) {
   const detail = String(error?.message || '').trim()
@@ -72,13 +83,31 @@ function reorderItems(items, fromIndex, toIndex) {
 }
 
 export default function AdminScreen() {
-  const [tab, setTab] = useState('invites')
-  const tabLabel = (id) => id.charAt(0).toUpperCase() + id.slice(1)
+  const { canAccessPwaAdmin, isAdmin } = useAuthStore()
+  const availableTabs = isAdmin ? TABS : QA_ONLY_TABS
+  const [tab, setTab] = useState(() => (isAdmin ? 'invites' : 'label-tests'))
+
+  useEffect(() => {
+    if (!availableTabs.includes(tab)) {
+      setTab(availableTabs[0] || 'label-tests')
+    }
+  }, [availableTabs, tab])
+
+  if (!canAccessPwaAdmin) {
+    return null
+  }
 
   return (
     <div>
+      {!isAdmin ? (
+        <div className="admin-tab admin-qa-notice">
+          <p className="dashboard-eyebrow">Limited access</p>
+          <h2>Label scan QA</h2>
+          <p>This admin view is intentionally limited to the in-app label scanning test unit for mike@panempire.com. WordPress-backed admin tools remain restricted to site admins.</p>
+        </div>
+      ) : null}
       <div className="row admin-tab-bar">
-        {TABS.map((id) => (
+        {availableTabs.map((id) => (
           <button key={id} type="button" className={tab === id ? 'segment active' : 'segment'} onClick={() => setTab(id)}>
             {tabLabel(id)}
           </button>
@@ -94,6 +123,58 @@ export default function AdminScreen() {
       {tab === 'support' ? <SupportTab /> : null}
       {tab === 'diagnostics' ? <DiagnosticsTab /> : null}
       {tab === 'settings' ? <SettingsTab /> : null}
+      {tab === 'label-tests' ? <LabelScanQaTab /> : null}
+    </div>
+  )
+}
+
+function LabelScanQaTab() {
+  const [results, setResults] = useState(() => runLabelScanTestSuite())
+  const [lastRunLabel, setLastRunLabel] = useState(() => new Date().toLocaleTimeString())
+
+  function rerunSuite() {
+    startTransition(() => {
+      setResults(runLabelScanTestSuite())
+      setLastRunLabel(new Date().toLocaleTimeString())
+    })
+  }
+
+  const passedCount = results.filter(result => result.status === 'passed').length
+
+  return (
+    <div className="admin-tab admin-label-qa-tab">
+      <div className="admin-label-qa-head">
+        <div>
+          <p className="dashboard-eyebrow">Nutrition QA</p>
+          <h2>Label scan test unit</h2>
+          <p>Runs deterministic checks against the shared label-scan draft, quantity, and save/log payload helpers used by the PWA flow.</p>
+        </div>
+        <button className="btn-primary" type="button" onClick={rerunSuite}>Run suite again</button>
+      </div>
+
+      <div className="label-review-grid admin-label-qa-summary-grid">
+        <div>
+          <strong>Coverage</strong>
+          <span>{results.length} checks in-app</span>
+        </div>
+        <div>
+          <strong>Passing</strong>
+          <span>{passedCount} of {results.length}</span>
+        </div>
+        <div>
+          <strong>Last run</strong>
+          <span>{lastRunLabel}</span>
+        </div>
+      </div>
+
+      <div className="nutrition-stack-list">
+        {results.map(result => (
+          <div key={result.id} className={`nutrition-recipe-card label-suggestion-card admin-label-qa-result ${result.status}`}>
+            <strong>{result.title}</strong>
+            <p>{result.detail}</p>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

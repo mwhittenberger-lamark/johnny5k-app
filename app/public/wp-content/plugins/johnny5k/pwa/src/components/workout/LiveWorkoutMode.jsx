@@ -2,14 +2,19 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { aiApi } from '../../api/modules/ai'
 import { onboardingApi } from '../../api/modules/onboarding'
 import { getDefaultLiveWorkoutFrames } from '../../lib/appImages'
+import { reportClientDiagnostic, showGlobalToast } from '../../lib/clientDiagnostics'
 import {
   cycleLiveWorkoutVoiceMode,
+  formatInstantVoiceLabel,
   formatLiveWorkoutVoiceModeLabel,
   formatOpenAiVoiceLabel,
+  getPreferredInstantVoice,
+  normalizeInstantVoiceOptions,
   readLiveWorkoutVoicePrefs,
   writeLiveWorkoutVoicePrefs,
 } from '../../lib/liveWorkoutVoice'
 import { useAuthStore } from '../../store/authStore'
+import { getPausedTimerNowValue } from '../../screens/workout/workoutScreenUtils'
 
 const DEFAULT_REST_TIMING = {
   setMinSeconds: 30,
@@ -21,6 +26,8 @@ const LIVE_WORKOUT_INTRO_SKIP_KEY = 'johnny5k.liveWorkoutIntroSkipsRemaining'
 const LIVE_WORKOUT_INTRO_REPEAT_AFTER_SKIPS = 2
 const OPENAI_TTS_TIMEOUT_MS = 4000
 const MAX_VOICE_MESSAGE_AGE_MS = 8000
+const PREMIUM_VOICE_TEST_TEXT = 'Premium voice check. Keep the pace tight and make the next set clean.'
+const INSTANT_VOICE_TEST_TEXT = 'Instant voice check. This should come from the default voice on this device.'
 
 export default function LiveWorkoutMode({
   isOpen,
@@ -32,6 +39,9 @@ export default function LiveWorkoutMode({
   onCreateSet,
   onUpdateSet,
   onClose,
+  pauseSessionTimer,
+  resumeSessionTimer,
+  sessionTimerPaused = false,
   timerLabel,
   todayLabel,
   displayDayType,
@@ -52,9 +62,16 @@ export default function LiveWorkoutMode({
   const [lastTransition, setLastTransition] = useState(() => ({ kind: 'exercise', at: Date.now(), summary: 'Workout live mode opened.' }))
   const [sessionMapOpen, setSessionMapOpen] = useState(false)
   const [coachLogOpen, setCoachLogOpen] = useState(false)
+  const [voiceTestingOpen, setVoiceTestingOpen] = useState(false)
   const [restToast, setRestToast] = useState(null)
   const [showIntroModal, setShowIntroModal] = useState(false)
   const [restTiming, setRestTiming] = useState(DEFAULT_REST_TIMING)
+  const [restTimerPausedAt, setRestTimerPausedAt] = useState(null)
+  const [restTimerPausedMs, setRestTimerPausedMs] = useState(0)
+  const [premiumVoiceTest, setPremiumVoiceTest] = useState(() => buildVoiceTestState())
+  const [instantVoiceTest, setInstantVoiceTest] = useState(() => buildVoiceTestState())
+  const [instantVoiceOptions, setInstantVoiceOptions] = useState([])
+  const [latestVoiceIssue, setLatestVoiceIssue] = useState(null)
   const queueRef = useRef([])
   const pumpCoachQueueRef = useRef(null)
   const processingRef = useRef(false)
@@ -87,10 +104,13 @@ export default function LiveWorkoutMode({
   const currentSet = activeExercise?.sets?.[currentSetIdx] ?? null
   const currentSetKey = activeExercise?.id ? `${activeExercise.id}:${currentSetIdx}` : 'idle'
   const currentDraft = drafts[currentSetKey] ?? buildDraftFromSet(currentSet)
-  const restElapsedSeconds = Math.max(0, Math.floor((now - Number(lastTransition?.at || now)) / 1000))
+  const effectiveRestNow = getPausedTimerNowValue(now, restTimerPausedAt, restTimerPausedMs)
+  const restElapsedSeconds = Math.max(0, Math.floor((effectiveRestNow - Number(lastTransition?.at || effectiveRestNow)) / 1000))
   const restGuidance = useMemo(() => buildRestGuidance(lastTransition?.kind, restElapsedSeconds, restTiming), [lastTransition?.kind, restElapsedSeconds, restTiming])
   const liveVoiceMode = String(voicePrefs.liveModeVoiceMode || 'premium').trim().toLowerCase()
+  const voiceLabel = formatOpenAiVoiceLabel(voicePrefs.openAiVoice)
   const defaultLiveWorkoutFrames = useMemo(() => getDefaultLiveWorkoutFrames(appImages), [appImages])
+  const voiceTestBusy = premiumVoiceTest.status === 'running' || instantVoiceTest.status === 'running'
   const coachFrames = useMemo(() => {
     const configuredFrames = normalizeLiveWorkoutFrames(liveFrames)
     return configuredFrames.length ? configuredFrames : defaultLiveWorkoutFrames
@@ -112,9 +132,12 @@ export default function LiveWorkoutMode({
   useEffect(() => {
     if (!isOpen) return undefined
 
-    const intervalId = window.setInterval(() => {
-      setNow(Date.now())
-    }, 1000)
+    setNow(Date.now())
+    const intervalId = restTimerPausedAt == null
+      ? window.setInterval(() => {
+        setNow(Date.now())
+      }, 1000)
+      : null
 
     const previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
@@ -135,11 +158,13 @@ export default function LiveWorkoutMode({
     window.scrollTo({ top: 0, behavior: 'auto' })
 
     return () => {
-      window.clearInterval(intervalId)
+      if (intervalId != null) {
+        window.clearInterval(intervalId)
+      }
       document.body.style.overflow = previousOverflow
       window.removeEventListener('keydown', handleKeyDown)
     }
-  }, [dismissIntroModal, isOpen, showIntroModal])
+  }, [dismissIntroModal, isOpen, restTimerPausedAt, showIntroModal])
 
   useEffect(() => () => recognitionRef.current?.stop(), [])
 
@@ -176,6 +201,58 @@ export default function LiveWorkoutMode({
     if (isOpen && liveVoiceMode !== 'mute') return
     stopTtsPlayback()
   }, [isOpen, liveVoiceMode, stopTtsPlayback])
+
+  useEffect(() => {
+    if (!isOpen || !instantVoiceSupported) {
+      setInstantVoiceOptions([])
+      return undefined
+    }
+
+    const updateVoiceOptions = () => {
+      setInstantVoiceOptions(normalizeInstantVoiceOptions(window.speechSynthesis.getVoices()))
+    }
+
+    updateVoiceOptions()
+    window.speechSynthesis.addEventListener?.('voiceschanged', updateVoiceOptions)
+    return () => {
+      window.speechSynthesis.removeEventListener?.('voiceschanged', updateVoiceOptions)
+    }
+  }, [instantVoiceSupported, isOpen])
+
+  const pauseWorkoutTimers = useCallback(() => {
+    if (restTimerPausedAt != null) return
+    const pausedAt = Date.now()
+    setNow(pausedAt)
+    setRestTimerPausedAt(pausedAt)
+    pauseSessionTimer?.()
+  }, [pauseSessionTimer, restTimerPausedAt])
+
+  const resumeWorkoutTimers = useCallback(() => {
+    if (restTimerPausedAt == null) return
+    const resumedAt = Date.now()
+    setRestTimerPausedMs(current => current + Math.max(0, resumedAt - restTimerPausedAt))
+    setRestTimerPausedAt(null)
+    setNow(resumedAt)
+    resumeSessionTimer?.()
+  }, [restTimerPausedAt, resumeSessionTimer])
+
+  useEffect(() => {
+    if (!isOpen) {
+      if (voiceTestingOpen) {
+        setVoiceTestingOpen(false)
+      }
+      resumeWorkoutTimers()
+      return
+    }
+
+    if (voiceTestingOpen) {
+      stopTtsPlayback()
+      pauseWorkoutTimers()
+      return
+    }
+
+    resumeWorkoutTimers()
+  }, [isOpen, pauseWorkoutTimers, resumeWorkoutTimers, stopTtsPlayback, voiceTestingOpen])
 
   useEffect(() => {
     if (!isOpen) return
@@ -230,6 +307,12 @@ export default function LiveWorkoutMode({
     setFrameIndex(0)
     setSessionMapOpen(false)
     setCoachLogOpen(false)
+    setVoiceTestingOpen(false)
+    setRestTimerPausedAt(null)
+    setRestTimerPausedMs(0)
+    setPremiumVoiceTest(buildVoiceTestState())
+    setInstantVoiceTest(buildVoiceTestState())
+    setLatestVoiceIssue(null)
     setLastTransition({ kind: 'exercise', at: Date.now(), summary: 'Workout live mode opened.' })
     enqueueCoachEvent({
       type: 'session_opened',
@@ -264,7 +347,7 @@ export default function LiveWorkoutMode({
   }, [coachFrames.length])
 
   useEffect(() => {
-    if (!isOpen || liveVoiceMode === 'mute' || !voicePlaybackSupported) return
+    if (!isOpen || voiceTestingOpen || liveVoiceMode === 'mute' || !voicePlaybackSupported) return
 
     const latestAssistantMessage = [...coachMessages].reverse().find(message => message.role === 'assistant')
     const nextText = String(latestAssistantMessage?.text || '').trim()
@@ -303,8 +386,16 @@ export default function LiveWorkoutMode({
           ttsAudioRef.current = null
         }
       },
+      onAttemptEvent: event => {
+        handleSpeechAttemptEvent(event, {
+          liveVoiceMode,
+          messageText: nextText,
+          voiceLabel,
+          sessionId: workoutSessionId,
+        })
+      },
     })
-  }, [coachMessages, instantVoiceSupported, isOpen, liveVoiceMode, playbackSupported, stopTtsPlayback, voicePlaybackSupported, voicePrefs.openAiVoice, voicePrefs.rate])
+  }, [coachMessages, instantVoiceSupported, isOpen, liveVoiceMode, playbackSupported, stopTtsPlayback, voicePlaybackSupported, voicePrefs.openAiVoice, voicePrefs.rate, voiceTestingOpen, voiceLabel, workoutSessionId])
 
   useEffect(() => {
     if (!isOpen || !lastTransition?.summary) return
@@ -633,6 +724,197 @@ export default function LiveWorkoutMode({
     }
   }
 
+  function handleVoiceTestingToggle(event) {
+    setVoiceTestingOpen(event.currentTarget.open)
+  }
+
+  function updateVoiceTestProgress(setter, event, fallbackLabel) {
+    if (event.type === 'premium_request_started' || event.type === 'instant_request_started') {
+      setter({
+        status: 'running',
+        title: fallbackLabel,
+        message: event.message || 'Waiting for voice playback to start.',
+        elapsedMs: null,
+        voiceLabel: event.voiceLabel || '',
+        requestedAt: event.requestStartedAt || Date.now(),
+      })
+      return
+    }
+
+    if (event.type === 'premium_started' || event.type === 'instant_started') {
+      setter({
+        status: 'success',
+        title: fallbackLabel,
+        message: event.message || 'Voice playback started.',
+        elapsedMs: event.elapsedMs ?? null,
+        voiceLabel: event.voiceLabel || '',
+        requestedAt: event.requestStartedAt || Date.now(),
+      })
+      return
+    }
+
+    if (event.type === 'premium_failed' || event.type === 'instant_failed') {
+      setter({
+        status: 'error',
+        title: fallbackLabel,
+        message: event.message || 'Voice playback failed.',
+        elapsedMs: event.elapsedMs ?? null,
+        voiceLabel: event.voiceLabel || '',
+        requestedAt: event.requestStartedAt || Date.now(),
+      })
+    }
+  }
+
+  async function runPremiumVoiceTest() {
+    if (!playbackSupported || voiceTestBusy) return
+
+    const requestStartedAt = Date.now()
+    const testJobId = speechJobRef.current + 1
+    speechJobRef.current = testJobId
+
+    setPremiumVoiceTest({
+      status: 'running',
+      title: 'Premium voice',
+      message: `Requesting ${voiceLabel}.`,
+      elapsedMs: null,
+      voiceLabel,
+      requestedAt: requestStartedAt,
+    })
+
+    await deliverSpeech({
+      text: PREMIUM_VOICE_TEST_TEXT,
+      messageKey: `premium-test-${requestStartedAt}`,
+      createdAt: requestStartedAt,
+      requestStartedAt,
+      jobId: testJobId,
+      usePremiumVoice: true,
+      useInstantVoice: false,
+      openAiVoice: voicePrefs.openAiVoice,
+      rate: voicePrefs.rate,
+      stopPlayback: stopTtsPlayback,
+      audioSupported: playbackSupported,
+      instantSupported: instantVoiceSupported,
+      isJobCurrent: candidateJobId => candidateJobId === speechJobRef.current && isOpenRef.current,
+      markSpoken: () => {},
+      registerAudio: audio => {
+        ttsAudioRef.current = audio
+      },
+      clearAudio: audio => {
+        if (ttsAudioRef.current === audio) {
+          ttsAudioRef.current = null
+        }
+      },
+      onAttemptEvent: event => {
+        updateVoiceTestProgress(setPremiumVoiceTest, event, 'Premium voice')
+      },
+    })
+  }
+
+  async function runInstantVoiceTest(voiceURI = '') {
+    if (!instantVoiceSupported || voiceTestBusy) return
+
+    const requestStartedAt = Date.now()
+    const testJobId = speechJobRef.current + 1
+    speechJobRef.current = testJobId
+    const availableVoices = typeof window !== 'undefined' ? window.speechSynthesis.getVoices() : []
+    const selectedVoice = getPreferredInstantVoice(availableVoices, voiceURI)
+    const selectedVoiceLabel = formatInstantVoiceLabel(selectedVoice)
+
+    setInstantVoiceTest({
+      status: 'running',
+      title: 'Instant voice',
+      message: voiceURI
+        ? `Testing ${selectedVoiceLabel}.`
+        : 'Testing the default device voice.',
+      elapsedMs: null,
+      voiceLabel: selectedVoiceLabel,
+      requestedAt: requestStartedAt,
+    })
+
+    await deliverSpeech({
+      text: INSTANT_VOICE_TEST_TEXT,
+      messageKey: `instant-test-${voiceURI || 'default'}-${requestStartedAt}`,
+      createdAt: requestStartedAt,
+      requestStartedAt,
+      jobId: testJobId,
+      usePremiumVoice: false,
+      useInstantVoice: true,
+      openAiVoice: voicePrefs.openAiVoice,
+      rate: voicePrefs.rate,
+      stopPlayback: stopTtsPlayback,
+      audioSupported: playbackSupported,
+      instantSupported: instantVoiceSupported,
+      instantVoiceURI: voiceURI,
+      isJobCurrent: candidateJobId => candidateJobId === speechJobRef.current && isOpenRef.current,
+      markSpoken: () => {},
+      registerAudio: audio => {
+        ttsAudioRef.current = audio
+      },
+      clearAudio: audio => {
+        if (ttsAudioRef.current === audio) {
+          ttsAudioRef.current = null
+        }
+      },
+      onAttemptEvent: event => {
+        updateVoiceTestProgress(setInstantVoiceTest, event, 'Instant voice')
+      },
+    })
+  }
+
+  function handleSpeechAttemptEvent(event, { liveVoiceMode: currentVoiceMode, messageText, voiceLabel: currentVoiceLabel, sessionId }) {
+    if (!event) return
+
+    const failureNotice = buildLiveVoiceFailureNotice(event, {
+      liveVoiceMode: currentVoiceMode,
+      messageText,
+      voiceLabel: currentVoiceLabel,
+    })
+
+    if (failureNotice) {
+      const details = Array.isArray(failureNotice.details) ? failureNotice.details.filter(Boolean) : []
+      setLatestVoiceIssue({
+        title: failureNotice.title,
+        message: failureNotice.message,
+        details,
+      })
+
+      reportClientDiagnostic({
+        source: 'live_workout_voice',
+        message: failureNotice.diagnosticMessage,
+        context: {
+          live_mode_voice_mode: currentVoiceMode,
+          workout_session_id: sessionId,
+          openai_voice: currentVoiceLabel,
+          elapsed_ms: event.elapsedMs ?? null,
+          failure_reason: normalizeVoiceFailureReason(event.reason),
+          fallback_from_premium: Boolean(event.fallbackFromPremium),
+          message_preview: String(messageText || '').slice(0, 180),
+          voice_type: event.type,
+          voice_label: event.voiceLabel || '',
+        },
+        toast: {
+          title: failureNotice.title,
+          message: failureNotice.message,
+          details,
+          tone: 'error',
+          kind: failureNotice.kind,
+        },
+      })
+      return
+    }
+
+    if (event.type === 'instant_started' && event.fallbackFromPremium && currentVoiceMode === 'auto') {
+      showGlobalToast({
+        title: 'Switched to instant voice',
+        message: event.voiceLabel
+          ? `Johnny switched to ${event.voiceLabel}.`
+          : 'Johnny switched to the default device voice.',
+        tone: 'info',
+        kind: 'live-workout-auto-instant-voice',
+      })
+    }
+  }
+
   function scrollPanelToSection(targetRef) {
     const panelNode = panelRef.current
     const targetNode = targetRef?.current
@@ -650,7 +932,6 @@ export default function LiveWorkoutMode({
   }
 
   const latestCoachMessage = [...coachMessages].reverse().find(message => message.role === 'assistant')
-  const voiceLabel = formatOpenAiVoiceLabel(voicePrefs.openAiVoice)
   const voiceModeLabel = formatLiveWorkoutVoiceModeLabel(liveVoiceMode)
   const voiceStatusLabel = liveVoiceMode === 'mute'
     ? 'Voice mute'
@@ -697,6 +978,7 @@ export default function LiveWorkoutMode({
             <div className="live-workout-header-meta">
               {voicePlaybackSupported ? <span className={`dashboard-chip subtle ${liveVoiceMode !== 'mute' ? 'success' : ''}`}>{voiceStatusLabel}</span> : null}
             </div>
+            {latestVoiceIssue ? <p className="settings-subtitle live-workout-voice-diagnostic">{latestVoiceIssue.message}</p> : null}
           </div>
           <div className="live-workout-header-actions">
             <button type="button" className="btn-secondary" onClick={onClose}>Exit live mode</button>
@@ -895,6 +1177,66 @@ export default function LiveWorkoutMode({
             </section>
           </aside>
         </div>
+
+        <section className="dash-card live-workout-voice-test-card">
+          <details open={voiceTestingOpen} onToggle={handleVoiceTestingToggle}>
+            <summary className="live-workout-voice-test-summary">
+              <div>
+                <span className="dashboard-chip subtle">Hidden tools</span>
+                <strong>Live Voice Testing</strong>
+                <span>{voiceTestingOpen ? 'Workout timers are paused while this panel is open.' : 'Open to test premium and instant voice on this device.'}</span>
+              </div>
+            </summary>
+
+            <div className="live-workout-voice-test-grid">
+              <article className="live-workout-voice-test-block">
+                <div className="live-workout-voice-test-copy">
+                  <strong>Premium voice</strong>
+                  <p className="settings-subtitle">Uses OpenAI voice {voiceLabel} at {voicePrefs.rate}x speed.</p>
+                  <button type="button" className="btn-outline small" onClick={runPremiumVoiceTest} disabled={!playbackSupported || voiceTestBusy}>
+                    {premiumVoiceTest.status === 'running' ? 'Testing premium...' : 'Test premium voice'}
+                  </button>
+                </div>
+                <VoiceTestResultCard result={premiumVoiceTest} idleMessage="No premium voice test has run yet." />
+              </article>
+
+              <article className="live-workout-voice-test-block">
+                <div className="live-workout-voice-test-copy">
+                  <strong>Computer / instant voice</strong>
+                  <p className="settings-subtitle">Live mode always uses the default voice from this device when instant voice is active.</p>
+                  <button type="button" className="btn-outline small" onClick={() => runInstantVoiceTest()} disabled={!instantVoiceSupported || voiceTestBusy}>
+                    {instantVoiceTest.status === 'running' ? 'Testing instant...' : 'Test default instant voice'}
+                  </button>
+                  {!instantVoiceSupported ? <p className="error live-workout-inline-error">This browser does not expose the computer voice APIs.</p> : null}
+                </div>
+                <VoiceTestResultCard result={instantVoiceTest} idleMessage="No instant voice test has run yet." />
+                {instantVoiceOptions.length > 1 ? (
+                  <div className="live-workout-voice-option-list">
+                    {instantVoiceOptions.map(voice => (
+                      <button
+                        key={voice.id}
+                        type="button"
+                        className={`btn-ghost small ${voice.default ? 'active' : ''}`}
+                        onClick={() => runInstantVoiceTest(voice.voiceURI)}
+                        disabled={voiceTestBusy}
+                      >
+                        {formatInstantVoiceLabel(voice)}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+                {latestVoiceIssue ? (
+                  <div className="live-workout-voice-test-diagnostic">
+                    <strong>Most recent voice issue</strong>
+                    <p>{latestVoiceIssue.message}</p>
+                    {latestVoiceIssue.details?.map((detail, index) => <p key={`voice-issue-${index}`}>{detail}</p>)}
+                  </div>
+                ) : null}
+                {voiceTestingOpen && sessionTimerPaused ? <p className="settings-subtitle">Workout timers are currently paused for testing.</p> : null}
+              </article>
+            </div>
+          </details>
+        </section>
 
         {restToast ? (
           <div className="live-workout-toast" role="status" aria-live="polite">
@@ -1223,10 +1565,173 @@ function writeLiveWorkoutIntroSkips(value) {
   window.localStorage.setItem(LIVE_WORKOUT_INTRO_SKIP_KEY, String(Math.max(0, Number(value || 0))))
 }
 
+function buildVoiceTestState() {
+  return {
+    status: 'idle',
+    title: '',
+    message: '',
+    elapsedMs: null,
+    voiceLabel: '',
+    requestedAt: 0,
+  }
+}
+
+function VoiceTestResultCard({ result, idleMessage }) {
+  const status = String(result?.status || 'idle').trim().toLowerCase()
+  const tone = status === 'error' ? 'error' : status === 'success' ? 'success' : ''
+  const elapsedLabel = result?.elapsedMs != null ? `${result.elapsedMs} ms to playback` : 'Waiting for playback timing'
+
+  return (
+    <div className={`live-workout-voice-test-result ${tone}`.trim()}>
+      <strong>{result?.title || 'Latest result'}</strong>
+      <p>{result?.message || idleMessage}</p>
+      <p>{elapsedLabel}</p>
+      {result?.voiceLabel ? <p>{result.voiceLabel}</p> : null}
+    </div>
+  )
+}
+
+function normalizeVoiceFailureReason(reason = '') {
+  const key = String(reason || '').trim().toLowerCase()
+  if (!key) return 'request_failed'
+  if (key === 'timeout' || key.includes('timeout')) return 'timeout'
+  if (key === 'play_rejected') return 'play_rejected'
+  if (key === 'audio_error') return 'audio_error'
+  if (key === 'speech_error') return 'speech_error'
+  if (key === 'no_instant_support') return 'no_instant_support'
+  if (key === 'no_instant_voice_loaded') return 'no_instant_voice_loaded'
+  if (key === 'stale') return 'stale'
+  return 'request_failed'
+}
+
+function buildLiveVoiceFailureNotice(event, { liveVoiceMode, voiceLabel }) {
+  const reason = normalizeVoiceFailureReason(event?.reason)
+  const isAuto = liveVoiceMode === 'auto'
+  const isPremiumFailure = event?.type === 'premium_failed'
+  const isInstantFailure = event?.type === 'instant_failed'
+  const isInstantUnavailable = event?.type === 'instant_unavailable'
+  const isSkipped = event?.type === 'voice_skipped'
+
+  if (isSkipped) {
+    return {
+      title: 'Voice reply skipped',
+      message: 'Johnny generated a reply, but it arrived too late to play out loud.',
+      details: ['The reply aged past the live voice window before playback started.'],
+      diagnosticMessage: 'Live workout voice reply was skipped because it became stale before playback.',
+      kind: 'live-workout-voice-skipped',
+    }
+  }
+
+  if (isInstantUnavailable) {
+    return {
+      title: 'Instant voice unavailable',
+      message: isAuto
+        ? 'Premium voice failed, and this browser does not provide a device voice fallback.'
+        : 'This browser does not provide a device voice fallback.',
+      details: ['Try premium voice on a stable connection or switch to a browser/device that exposes a computer voice.'],
+      diagnosticMessage: 'Live workout instant voice fallback was unavailable because the browser has no speech synthesis support.',
+      kind: 'live-workout-instant-unavailable',
+    }
+  }
+
+  if (isPremiumFailure) {
+    if (reason === 'timeout') {
+      return {
+        title: 'Premium voice timed out',
+        message: isAuto
+          ? 'Premium voice took too long to return over the network. Switching to instant voice now.'
+          : 'Premium voice took too long to return over the network.',
+        details: ['A weak or unstable connection can cause this timeout.', voiceLabel ? `Selected premium voice: ${voiceLabel}.` : ''],
+        diagnosticMessage: 'Premium live workout voice timed out before playback could start.',
+        kind: 'live-workout-premium-timeout',
+      }
+    }
+
+    if (reason === 'play_rejected') {
+      return {
+        title: 'Premium voice was blocked',
+        message: 'Premium voice audio was returned, but the browser blocked playback.',
+        details: ['Playback may require a direct tap, audio focus, or a different output route.'],
+        diagnosticMessage: 'Premium live workout voice playback was rejected by the browser or audio system.',
+        kind: 'live-workout-premium-blocked',
+      }
+    }
+
+    if (reason === 'audio_error') {
+      return {
+        title: 'Premium voice could not play',
+        message: isAuto
+          ? 'Premium voice audio could not start. Switching to instant voice now.'
+          : 'Premium voice audio could not start.',
+        details: ['The premium voice response was returned, but the audio element failed to play it.'],
+        diagnosticMessage: 'Premium live workout voice returned audio, but playback failed.',
+        kind: 'live-workout-premium-audio-error',
+      }
+    }
+
+    return {
+      title: 'Premium voice failed',
+      message: isAuto
+        ? 'Johnny could not start premium voice. Switching to instant voice if the device voice is available.'
+        : 'Johnny could not start premium voice.',
+      details: ['The premium voice request failed before playback began.'],
+      diagnosticMessage: 'Premium live workout voice failed before playback.',
+      kind: 'live-workout-premium-failed',
+    }
+  }
+
+  if (isInstantFailure) {
+    if (reason === 'no_instant_voice_loaded') {
+      return {
+        title: 'Device voice not ready',
+        message: 'Device voice is available, but no voices are ready yet.',
+        details: ['Try again in a moment. Some mobile browsers load voices lazily after the page is active.'],
+        diagnosticMessage: 'Instant live workout voice could not start because no native voices were loaded yet.',
+        kind: 'live-workout-instant-not-ready',
+      }
+    }
+
+    if (reason === 'play_rejected') {
+      return {
+        title: 'Instant voice was blocked',
+        message: 'The device voice was selected, but playback was blocked by the browser or audio route.',
+        details: ['Another audio source, route, or playback policy may be preventing the voice from speaking.'],
+        diagnosticMessage: 'Instant live workout voice playback was rejected by the browser or audio system.',
+        kind: 'live-workout-instant-blocked',
+      }
+    }
+
+    if (reason === 'speech_error') {
+      return {
+        title: 'Instant voice failed',
+        message: event?.fallbackFromPremium
+          ? 'Premium voice failed, and the device voice failed to start too.'
+          : 'The device voice failed to start.',
+        details: [event?.voiceLabel ? `Device voice: ${event.voiceLabel}.` : 'The selected device voice could not initialize.'],
+        diagnosticMessage: 'Instant live workout voice failed to initialize.',
+        kind: 'live-workout-instant-failed',
+      }
+    }
+
+    return {
+      title: 'Instant voice failed',
+      message: event?.fallbackFromPremium
+        ? 'Premium voice failed, and the device voice fallback could not play either.'
+        : 'The device voice could not play.',
+      details: [event?.voiceLabel ? `Device voice: ${event.voiceLabel}.` : ''],
+      diagnosticMessage: 'Instant live workout voice failed before playback.',
+      kind: 'live-workout-instant-general-failed',
+    }
+  }
+
+  return null
+}
+
 async function deliverSpeech({
   text,
   messageKey,
   createdAt,
+  requestStartedAt = Date.now(),
   jobId,
   usePremiumVoice,
   useInstantVoice,
@@ -1239,18 +1744,39 @@ async function deliverSpeech({
   markSpoken,
   registerAudio,
   clearAudio,
+  instantVoiceURI = '',
+  onAttemptEvent,
 }) {
-  if (!isVoiceMessageFresh(createdAt) || !isJobCurrent(jobId)) {
+  if (!isJobCurrent(jobId)) {
+    return false
+  }
+
+  if (!isVoiceMessageFresh(createdAt)) {
+    onAttemptEvent?.({
+      type: 'voice_skipped',
+      requestStartedAt,
+      elapsedMs: Date.now() - requestStartedAt,
+      reason: 'stale',
+      message: 'Voice reply was delayed too long and was skipped.',
+    })
     return false
   }
 
   stopPlayback()
+  let premiumFailed = false
 
   if (usePremiumVoice && audioSupported) {
+    onAttemptEvent?.({
+      type: 'premium_request_started',
+      requestStartedAt,
+      voiceLabel: formatOpenAiVoiceLabel(openAiVoice),
+      message: `Requesting ${formatOpenAiVoiceLabel(openAiVoice)}.`,
+    })
     const premiumStarted = await playPremiumSpeech({
       text,
       messageKey,
       createdAt,
+      requestStartedAt,
       jobId,
       openAiVoice,
       rate,
@@ -1258,22 +1784,46 @@ async function deliverSpeech({
       markSpoken,
       registerAudio,
       clearAudio,
+      onAttemptEvent,
     })
 
-    if (premiumStarted) {
+    if (premiumStarted?.started) {
       return true
     }
+
+    premiumFailed = true
+  }
+
+  if (useInstantVoice && !instantSupported) {
+    onAttemptEvent?.({
+      type: 'instant_unavailable',
+      requestStartedAt,
+      elapsedMs: Date.now() - requestStartedAt,
+      reason: 'no_instant_support',
+      message: 'This browser does not provide a device voice fallback.',
+      fallbackFromPremium: premiumFailed,
+    })
+    return false
   }
 
   if (useInstantVoice && instantSupported && isVoiceMessageFresh(createdAt) && isJobCurrent(jobId)) {
+    onAttemptEvent?.({
+      type: 'instant_request_started',
+      requestStartedAt,
+      message: instantVoiceURI ? 'Requesting the selected instant voice.' : 'Requesting the default device voice.',
+    })
     return playInstantSpeech({
       text,
       messageKey,
       createdAt,
+      requestStartedAt,
       jobId,
       rate,
+      instantVoiceURI,
       isJobCurrent,
       markSpoken,
+      onAttemptEvent,
+      fallbackFromPremium: premiumFailed,
     })
   }
 
@@ -1284,6 +1834,7 @@ async function playPremiumSpeech({
   text,
   messageKey,
   createdAt,
+  requestStartedAt,
   jobId,
   openAiVoice,
   rate,
@@ -1291,6 +1842,7 @@ async function playPremiumSpeech({
   markSpoken,
   registerAudio,
   clearAudio,
+  onAttemptEvent,
 }) {
   try {
     const blob = await promiseWithTimeout(
@@ -1303,21 +1855,44 @@ async function playPremiumSpeech({
     )
 
     if (!blob || !isJobCurrent(jobId) || !isVoiceMessageFresh(createdAt)) {
-      return false
+      onAttemptEvent?.({
+        type: 'premium_failed',
+        requestStartedAt,
+        elapsedMs: Date.now() - requestStartedAt,
+        reason: 'stale',
+        message: 'Premium voice response arrived too late for playback.',
+        voiceLabel: formatOpenAiVoiceLabel(openAiVoice),
+      })
+      return { started: false, reason: 'stale' }
     }
 
     return await startAudioPlayback({
       blob,
       messageKey,
       createdAt,
+      requestStartedAt,
       jobId,
       isJobCurrent,
       markSpoken,
       registerAudio,
       clearAudio,
+      onAttemptEvent,
+      eventType: 'premium',
+      voiceLabel: formatOpenAiVoiceLabel(openAiVoice),
     })
-  } catch {
-    return false
+  } catch (error) {
+    const reason = normalizeVoiceFailureReason(error?.message || 'request_failed')
+    onAttemptEvent?.({
+      type: 'premium_failed',
+      requestStartedAt,
+      elapsedMs: Date.now() - requestStartedAt,
+      reason,
+      message: reason === 'timeout'
+        ? 'Premium voice request timed out before audio was returned.'
+        : 'Premium voice did not return playable audio.',
+      voiceLabel: formatOpenAiVoiceLabel(openAiVoice),
+    })
+    return { started: false, reason }
   }
 }
 
@@ -1325,10 +1900,14 @@ function playInstantSpeech({
   text,
   messageKey,
   createdAt,
+  requestStartedAt,
   jobId,
   rate,
+  instantVoiceURI,
   isJobCurrent,
   markSpoken,
+  onAttemptEvent,
+  fallbackFromPremium = false,
 }) {
   if (typeof window === 'undefined' || typeof window.speechSynthesis === 'undefined' || typeof window.SpeechSynthesisUtterance === 'undefined') {
     return Promise.resolve(false)
@@ -1336,16 +1915,47 @@ function playInstantSpeech({
 
   return new Promise(resolve => {
     if (!isJobCurrent(jobId) || !isVoiceMessageFresh(createdAt)) {
+      onAttemptEvent?.({
+        type: 'voice_skipped',
+        requestStartedAt,
+        elapsedMs: Date.now() - requestStartedAt,
+        reason: 'stale',
+        message: 'Voice reply was delayed too long and was skipped.',
+      })
       resolve(false)
       return
     }
 
     let settled = false
     const utterance = new window.SpeechSynthesisUtterance(text)
+    const availableVoices = window.speechSynthesis.getVoices()
+    const selectedVoice = getPreferredInstantVoice(availableVoices, instantVoiceURI)
+    if (!availableVoices.length || !selectedVoice) {
+      onAttemptEvent?.({
+        type: 'instant_failed',
+        requestStartedAt,
+        elapsedMs: Date.now() - requestStartedAt,
+        reason: 'no_instant_voice_loaded',
+        voiceLabel: '',
+        fallbackFromPremium,
+        message: 'Device voice is available but no voices are ready yet.',
+      })
+      resolve(false)
+      return
+    }
     utterance.rate = rate
+    utterance.voice = selectedVoice || null
+    utterance.lang = selectedVoice?.lang || (typeof navigator !== 'undefined' ? navigator.language : 'en-US')
     utterance.onstart = () => {
       if (!isJobCurrent(jobId) || !isVoiceMessageFresh(createdAt)) {
         window.speechSynthesis.cancel()
+        onAttemptEvent?.({
+          type: 'voice_skipped',
+          requestStartedAt,
+          elapsedMs: Date.now() - requestStartedAt,
+          reason: 'stale',
+          message: 'Voice reply was delayed too long and was skipped.',
+        })
         if (!settled) {
           settled = true
           resolve(false)
@@ -1353,12 +1963,31 @@ function playInstantSpeech({
         return
       }
       markSpoken(messageKey)
+      onAttemptEvent?.({
+        type: 'instant_started',
+        requestStartedAt,
+        elapsedMs: Date.now() - requestStartedAt,
+        voiceLabel: formatInstantVoiceLabel(selectedVoice),
+        voiceURI: selectedVoice?.voiceURI || '',
+        fallbackFromPremium,
+        message: selectedVoice
+          ? `Instant voice started with ${formatInstantVoiceLabel(selectedVoice)}.`
+          : 'Instant voice started with the default device voice.',
+      })
       if (!settled) {
         settled = true
         resolve(true)
       }
     }
     utterance.onerror = () => {
+      onAttemptEvent?.({
+        type: 'instant_failed',
+        requestStartedAt,
+        elapsedMs: Date.now() - requestStartedAt,
+        reason: 'speech_error',
+        voiceLabel: formatInstantVoiceLabel(selectedVoice),
+        message: 'Instant voice could not start.',
+      })
       if (!settled) {
         settled = true
         resolve(false)
@@ -1380,11 +2009,15 @@ function startAudioPlayback({
   blob,
   messageKey,
   createdAt,
+  requestStartedAt,
   jobId,
   isJobCurrent,
   markSpoken,
   registerAudio,
   clearAudio,
+  onAttemptEvent,
+  eventType,
+  voiceLabel,
 }) {
   if (typeof window === 'undefined' || typeof window.Audio === 'undefined') {
     return Promise.resolve(false)
@@ -1403,35 +2036,66 @@ function startAudioPlayback({
       clearAudio?.(audio)
     }
 
-    const finalize = (didStart) => {
+    const finalize = (result) => {
       if (settled) return
       settled = true
-      if (didStart) {
+      if (result?.started) {
         markSpoken(messageKey)
       }
-      resolve(didStart)
+      resolve(result)
     }
 
     audio.onplaying = () => {
       if (!isJobCurrent(jobId) || !isVoiceMessageFresh(createdAt)) {
         audio.pause()
         cleanup()
-        finalize(false)
+        onAttemptEvent?.({
+          type: 'voice_skipped',
+          requestStartedAt,
+          elapsedMs: Date.now() - requestStartedAt,
+          reason: 'stale',
+          voiceLabel,
+          message: 'Voice reply was delayed too long and was skipped.',
+        })
+        finalize({ started: false, reason: 'stale' })
         return
       }
 
-      finalize(true)
+      onAttemptEvent?.({
+        type: `${eventType}_started`,
+        requestStartedAt,
+        elapsedMs: Date.now() - requestStartedAt,
+        voiceLabel,
+        message: `${voiceLabel} started playing.`,
+      })
+      finalize({ started: true })
     }
     audio.onended = cleanup
     audio.onerror = () => {
       cleanup()
-      finalize(false)
+      onAttemptEvent?.({
+        type: `${eventType}_failed`,
+        requestStartedAt,
+        elapsedMs: Date.now() - requestStartedAt,
+        reason: 'audio_error',
+        voiceLabel,
+        message: `${voiceLabel} audio could not play.`,
+      })
+      finalize({ started: false, reason: 'audio_error' })
     }
 
     audio.play()
       .catch(() => {
         cleanup()
-        finalize(false)
+        onAttemptEvent?.({
+          type: `${eventType}_failed`,
+          requestStartedAt,
+          elapsedMs: Date.now() - requestStartedAt,
+          reason: 'play_rejected',
+          voiceLabel,
+          message: `${voiceLabel} playback was blocked.`,
+        })
+        finalize({ started: false, reason: 'play_rejected' })
       })
   })
 }

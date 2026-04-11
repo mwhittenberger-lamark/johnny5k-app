@@ -8,7 +8,11 @@ export const aiApi = {
     context: options.context ?? {},
   }),
   analyseMeal: (base64, mealNote = '') => api.post('/ai/analyse/meal', { image_base64: base64, meal_note: mealNote }),
-  analyseLabel: (base64) => api.post('/ai/analyse/label', { image_base64: base64 }),
+  analyseLabel: ({ frontImageBase64, backImageBase64, labelNote = '' } = {}) => api.post('/ai/analyse/label', {
+    front_image_base64: frontImageBase64,
+    back_image_base64: backImageBase64,
+    label_note: labelNote,
+  }),
   analyseFoodText: (foodText) => api.post('/ai/analyse/food-text', { food_text: foodText }),
   analyseMealText: (mealText) => api.post('/ai/analyse/meal-text', { meal_text: mealText }),
   analysePantryText: (pantryText) => api.post('/ai/analyse/pantry-text', { pantry_text: pantryText }),

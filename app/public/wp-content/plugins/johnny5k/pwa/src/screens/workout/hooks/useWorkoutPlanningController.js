@@ -229,12 +229,54 @@ export function useWorkoutPlanningController({
   )
   const previewExercisesRef = useLatest(previewExercises)
   const previewAddedExercisesRef = useLatest(previewAddedExercises)
+  const existingPlanningExerciseIds = useMemo(
+    () => new Set([
+      ...previewExercises.map(exercise => Number(exercise?.exercise_id || 0)),
+      ...previewAddedExercises.map(exercise => Number(exercise?.exercise_id || 0)),
+    ].filter(Boolean)),
+    [previewAddedExercises, previewExercises],
+  )
   const johnnyReview = useMemo(() => buildJohnnyReview({
     todayLabel,
     scheduledDayType,
     selectedDayType: previewDayType,
     lastCompletedSession: plannedDayReference?.last_completed_session,
   }), [plannedDayReference?.last_completed_session, previewDayType, scheduledDayType, todayLabel])
+  const addonSuggestionsEnabled = !session && !isCardioSelection && !isRestSelection && Boolean(previewDayType)
+
+  const absAddOnQuery = useQuery({
+    queryKey: ['workout-addon-suggestions', previewDayType || '', 'abs'],
+    enabled: addonSuggestionsEnabled,
+    staleTime: 60_000,
+    queryFn: () => trainingApi.getExercises({
+      limit: 8,
+      day_type: previewDayType || '',
+      slot_type: 'abs',
+    }),
+  })
+  const challengeAddOnQuery = useQuery({
+    queryKey: ['workout-addon-suggestions', previewDayType || '', 'challenge'],
+    enabled: addonSuggestionsEnabled,
+    staleTime: 60_000,
+    queryFn: () => trainingApi.getExercises({
+      limit: 8,
+      day_type: previewDayType || '',
+      slot_type: 'challenge',
+    }),
+  })
+
+  const absAddOnSuggestions = useMemo(
+    () => (Array.isArray(absAddOnQuery.data) ? absAddOnQuery.data : [])
+      .map(item => normalizeExerciseCandidate({ ...item, slot_type: 'abs' }))
+      .filter(item => item.id > 0 && !existingPlanningExerciseIds.has(item.id)),
+    [absAddOnQuery.data, existingPlanningExerciseIds],
+  )
+  const challengeAddOnSuggestions = useMemo(
+    () => (Array.isArray(challengeAddOnQuery.data) ? challengeAddOnQuery.data : [])
+      .map(item => normalizeExerciseCandidate({ ...item, slot_type: 'challenge' }))
+      .filter(item => item.id > 0 && !existingPlanningExerciseIds.has(item.id)),
+    [challengeAddOnQuery.data, existingPlanningExerciseIds],
+  )
 
   useEffect(() => {
     if (session || selectedDayType || hasCustomWorkoutDraft) return
@@ -411,7 +453,7 @@ export function useWorkoutPlanningController({
         plan_exercise_id: nextTempPlanExerciseId,
         exercise_id: Number(candidate.id),
         exercise_name: candidate.name || 'Added exercise',
-        slot_type: 'accessory',
+        slot_type: String(candidate.slot_type || 'accessory'),
         rep_min: Number(candidate.default_rep_min || 8),
         rep_max: Number(candidate.default_rep_max || 12),
         sets: Number(candidate.default_sets || 3),
@@ -481,9 +523,13 @@ export function useWorkoutPlanningController({
 
   return {
     addExerciseError,
+    absAddOnLoading: absAddOnQuery.isFetching,
+    absAddOnSuggestions,
     addExerciseLoading,
     addExerciseQuery,
     addExerciseResults,
+    challengeAddOnLoading: challengeAddOnQuery.isFetching,
+    challengeAddOnSuggestions,
     adjustedPreviewExercises,
     displayDayType,
     displaySessionTitle,

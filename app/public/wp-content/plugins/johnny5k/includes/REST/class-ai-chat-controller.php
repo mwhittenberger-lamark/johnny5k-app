@@ -141,13 +141,17 @@ class AiChatController {
 
 	public static function analyse_label( \WP_REST_Request $req ): \WP_REST_Response {
 		$user_id = get_current_user_id();
-		$image   = $req->get_param( 'image_base64' );
+		$front_image = $req->get_param( 'front_image_base64' );
+		$back_image  = $req->get_param( 'back_image_base64' );
+		$image       = $req->get_param( 'image_base64' );
+		$label_note  = sanitize_textarea_field( (string) ( $req->get_param( 'label_note' ) ?: '' ) );
+		$images      = array_values( array_filter( [ $front_image, $back_image, $image ] ) );
 
-		if ( ! $image ) {
+		if ( empty( $images ) ) {
 			return new \WP_REST_Response( [ 'message' => 'No image provided.' ], 400 );
 		}
 
-		$result = AiService::analyse_food_image( $user_id, $image, 'food_label' );
+		$result = AiService::analyse_food_image( $user_id, $images, 'food_label', $label_note );
 		if ( is_wp_error( $result ) ) {
 			return new \WP_REST_Response( [ 'message' => $result->get_error_message() ], 500 );
 		}

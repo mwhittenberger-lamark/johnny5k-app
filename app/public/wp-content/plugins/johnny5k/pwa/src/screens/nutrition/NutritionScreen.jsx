@@ -30,6 +30,13 @@ import {
   normaliseServingUnitLabel,
   parseQuantifiedServingUnit,
 } from './servingUtils'
+import {
+  buildLabelLogPayload,
+  buildLabelSavePayload,
+  clampLabelQuantity,
+  createLabelReviewDraft,
+  getLabelReviewQuantityTotals,
+} from './labelScanUtils'
 
 const MEAL_TYPES = ['breakfast', 'lunch', 'dinner', 'snack']
 const RECIPE_CARD_VISIBLE_LIMIT = 5
@@ -110,6 +117,15 @@ function scrollNodeIntoView(node) {
   })
 }
 
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result)
+    reader.onerror = () => reject(reader.error || new Error('Could not read the selected image.'))
+    reader.readAsDataURL(file)
+  })
+}
+
 export default function NutritionScreen() {
   const isOnline = useOnlineStatus()
   const location = useLocation()
@@ -166,6 +182,7 @@ export default function NutritionScreen() {
   const [groceryGap, setGroceryGap] = useState(null)
   const [showAddForm, setShowAddForm] = useState(false)
   const [showMealPhotoPrompt, setShowMealPhotoPrompt] = useState(false)
+  const [showLabelScanPrompt, setShowLabelScanPrompt] = useState(false)
   const [showSavedMealForm, setShowSavedMealForm] = useState(false)
   const [showSavedFoodForm, setShowSavedFoodForm] = useState(false)
   const [showPantryForm, setShowPantryForm] = useState(false)
@@ -175,6 +192,8 @@ export default function NutritionScreen() {
   const [analyzing, setAnalyzing] = useState(false)
   const [aiMealDraft, setAiMealDraft] = useState(null)
   const [mealPhotoNote, setMealPhotoNote] = useState('')
+  const [labelScanNote, setLabelScanNote] = useState('')
+  const [labelScanImages, setLabelScanImages] = useState({ front: '', back: '' })
   const [labelReview, setLabelReview] = useState(null)
   const [labelReviewAction, setLabelReviewAction] = useState('')
   const [loadingExtras, setLoadingExtras] = useState(false)
@@ -184,12 +203,14 @@ export default function NutritionScreen() {
   const [selectedRecipeKeys, setSelectedRecipeKeys] = useState([])
   const [weeklyCaloriesReview, setWeeklyCaloriesReview] = useState(() => buildEmptyWeeklyCaloriesReview())
   const mealInputRef = useRef()
-  const labelInputRef = useRef()
+  const labelFrontInputRef = useRef()
+  const labelBackInputRef = useRef()
   const mealsSectionRef = useRef(null)
   const recentFoodsSectionRef = useRef(null)
   const savedFoodsSectionRef = useRef(null)
   const planningSectionRef = useRef(null)
   const addMealFormRef = useAutoScrollWhenActive(showAddForm)
+  const labelScanPromptRef = useAutoScrollWhenActive(showLabelScanPrompt)
   const savedFoodFormRef = useAutoScrollWhenActive(showSavedFoodForm)
   const savedMealFormRef = useAutoScrollWhenActive(showSavedMealForm)
   const pantryFormRef = useAutoScrollWhenActive(showPantryForm)
@@ -309,6 +330,7 @@ export default function NutritionScreen() {
   )
   const proteinMacroCard = macroCards.find(card => card.priority === 'primary') || null
   const secondaryMacroCards = macroCards.filter(card => card.priority !== 'primary')
+  const labelReviewTotals = useMemo(() => getLabelReviewQuantityTotals(labelReview), [labelReview])
   const coachPrompts = useMemo(
     () => buildNutritionCoachPrompts(summary),
     [summary],
@@ -588,30 +610,98 @@ export default function NutritionScreen() {
     reader.readAsDataURL(file)
   }
 
-  async function handleLabelAnalyse(event) {
+  function resetLabelScanFlow() {
+    setLabelScanImages({ front: '', back: '' })
+    setLabelScanNote('')
+    if (labelFrontInputRef.current) {
+      labelFrontInputRef.current.value = ''
+    }
+    if (labelBackInputRef.current) {
+      labelBackInputRef.current.value = ''
+    }
+  }
+
+  function openLabelScanPrompt() {
+    setActiveView('today')
+    setAiMealDraft(null)
+    setShowMealPhotoPrompt(false)
+    setLabelReview(null)
+    resetLabelScanFlow()
+    setShowLabelScanPrompt(true)
+  }
+
+  async function handleLabelImageSelected(side, event) {
     const file = event.target.files?.[0]
     if (!file) return
+
+    try {
+      const imageBase64 = await readFileAsDataUrl(file)
+      setLabelScanImages(current => ({
+        ...current,
+        [side]: imageBase64,
+      }))
+    } catch (err) {
+      showErrorToast(err, 'Could not load that label image.')
+    } finally {
+      event.target.value = ''
+    }
+  }
+
+  async function handleSubmitLabelScan() {
+    if (!labelScanImages.front || !labelScanImages.back) {
+      showErrorToast('Add both the front and back package photos before scanning.')
+      return
+    }
+
     setActiveView('today')
     setAnalyzing(true)
     setAiMealDraft(null)
     setLabelReview(null)
-    const reader = new FileReader()
-    reader.onload = async () => {
-      try {
-        const result = await aiApi.analyseLabel(reader.result)
-        setLabelReview(buildLabelReview(result, summary?.targets))
-        showToast(buildAiFoodValidationToast(result?.food_name || 'Nutrition label', {
-          ...result,
-          confidence: result?.used_web_search ? 0.82 : 0.96,
-        }, 'food-label'))
-      } catch (err) {
-        setError(err.message)
-        showErrorToast(err, 'Label analysis failed.')
-      } finally {
-        setAnalyzing(false)
-      }
+
+    try {
+      const result = await aiApi.analyseLabel({
+        frontImageBase64: labelScanImages.front,
+        backImageBase64: labelScanImages.back,
+        labelNote: labelScanNote.trim(),
+      })
+      setLabelReview(createLabelReviewDraft(result, summary?.targets))
+      setShowLabelScanPrompt(false)
+      resetLabelScanFlow()
+      showToast(buildAiFoodValidationToast(result?.food_name || 'Nutrition label', {
+        ...result,
+        confidence: result?.used_web_search ? 0.82 : 0.96,
+      }, 'food-label'))
+    } catch (err) {
+      setError(err.message)
+      showErrorToast(err, 'Label analysis failed.')
+    } finally {
+      setAnalyzing(false)
     }
-    reader.readAsDataURL(file)
+  }
+
+  function handleCancelLabelReview() {
+    setLabelReview(null)
+    setLabelReviewAction('')
+  }
+
+  function handleUpdateLabelReviewField(field, value) {
+    setLabelReview(current => {
+      if (!current) {
+        return current
+      }
+
+      if (field === 'quantity') {
+        return {
+          ...current,
+          quantity: clampLabelQuantity(value),
+        }
+      }
+
+      return {
+        ...current,
+        [field]: value,
+      }
+    })
   }
 
   async function handleConfirmAiMeal() {
@@ -662,24 +752,7 @@ export default function NutritionScreen() {
     if (labelReviewAction) return
     setLabelReviewAction('save')
     await runAction(
-      () => nutritionApi.createSavedFood({
-        canonical_name: labelReview.foodName,
-        brand: labelReview.brand,
-        serving_size: labelReview.servingSize,
-        calories: labelReview.calories,
-        protein_g: labelReview.protein,
-        carbs_g: labelReview.carbs,
-        fat_g: labelReview.fat,
-        fiber_g: labelReview.fiber,
-        sugar_g: labelReview.sugar,
-        sodium_mg: labelReview.sodium,
-        micros: labelReview.micros,
-        source: 'label',
-        label: {
-          flags: labelReview.flags,
-          suggestions: labelReview.suggestions,
-        },
-      }),
+      () => nutritionApi.createSavedFood(buildLabelSavePayload(labelReview)),
       'Label food saved.',
       {
         onSuccess: async () => {
@@ -697,26 +770,13 @@ export default function NutritionScreen() {
     setLabelReviewAction('log')
     await runAction(
       async () => {
-        const created = await nutritionApi.createSavedFood({
-          canonical_name: labelReview.foodName,
-          brand: labelReview.brand,
-          serving_size: labelReview.servingSize,
-          calories: labelReview.calories,
-          protein_g: labelReview.protein,
-          carbs_g: labelReview.carbs,
-          fat_g: labelReview.fat,
-          fiber_g: labelReview.fiber,
-          sugar_g: labelReview.sugar,
-          sodium_mg: labelReview.sodium,
-          micros: labelReview.micros,
-          source: 'label',
-        })
-        await nutritionApi.logSavedFood(created.id, { meal_type: 'snack' })
+        const created = await nutritionApi.createSavedFood(buildLabelSavePayload(labelReview))
+        await nutritionApi.logSavedFood(created.id, buildLabelLogPayload(labelReview))
       },
       'Saved food logged.',
       {
         onSuccess: async () => {
-          setLabelReview(null)
+          handleCancelLabelReview()
           invalidate()
           await loadData()
           scrollNodeIntoView(mealsSectionRef.current)
@@ -1148,6 +1208,7 @@ export default function NutritionScreen() {
     handleDeleteCheckedRecentFoods,
     handleDeleteRecentFood,
     handleCheckAllRecentFoods,
+    handleCancelLabelReview,
     handleClearCheckedRecentFoods,
     handleLogSavedFood,
     handleLogSavedMeal,
@@ -1155,12 +1216,17 @@ export default function NutritionScreen() {
     handleQuickLogLabelFood,
     handleSaveAiItemAsFood,
     handleSaveLabelFood,
+    handleSubmitLabelScan,
     handleSelectAllGapItems,
     handleUpdatePantryItem,
+    handleUpdateLabelReviewField,
     highlightedMicros,
     invalidate,
     labelReview,
     labelReviewAction,
+    labelReviewTotals,
+    labelScanImages,
+    labelScanNote,
     latestMealLabel,
     libraryItemCount,
     loadData,
@@ -1208,7 +1274,7 @@ export default function NutritionScreen() {
     selectedRecipeKeys,
     setAiMealDraft,
     setCollapsedPantryCategories,
-    setLabelReview,
+    setLabelScanNote,
     setPantryCategoryFilter,
     setPantrySearchQuery,
     setPantrySortMode,
@@ -1219,6 +1285,7 @@ export default function NutritionScreen() {
     setShowAddForm,
     setShowGroceryGapForm,
     setShowGroceryGapVoice,
+    setShowLabelScanPrompt,
     setShowMicros,
     setShowPantryForm,
     setShowPantryVoice,
@@ -1228,6 +1295,7 @@ export default function NutritionScreen() {
     showErrorToast,
     showGroceryGapForm,
     showGroceryGapVoice,
+    showLabelScanPrompt,
     showMicros,
     showPantryForm,
     showPantryVoice,
@@ -1286,14 +1354,14 @@ export default function NutritionScreen() {
           </button>
           <button className="btn-secondary header-action-button" title="Snap meal photo" onClick={() => {
             setActiveView('today')
+            setShowLabelScanPrompt(false)
             setShowMealPhotoPrompt(current => !current)
           }} type="button">
             <AppIcon name="camera" />
             <span>{showMealPhotoPrompt ? 'Close meal pic' : 'Snap a meal pic'}</span>
           </button>
           <button className="btn-secondary header-action-button" title="Scan nutrition label" onClick={() => {
-            setActiveView('today')
-            labelInputRef.current?.click()
+            openLabelScanPrompt()
           }} type="button">
             <AppIcon name="label" />
             <span>Scan label</span>
@@ -1302,7 +1370,8 @@ export default function NutritionScreen() {
       </header>
 
       <input ref={mealInputRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={handlePhotoAnalyse} />
-      <input ref={labelInputRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={handleLabelAnalyse} />
+      <input ref={labelFrontInputRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={(event) => { void handleLabelImageSelected('front', event) }} />
+      <input ref={labelBackInputRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={(event) => { void handleLabelImageSelected('back', event) }} />
 
       {showMealPhotoPrompt ? (
         <MealPhotoPromptPanel
@@ -1311,6 +1380,23 @@ export default function NutritionScreen() {
           onPickImage={() => mealInputRef.current?.click()}
           onCancel={() => setShowMealPhotoPrompt(false)}
           busy={analyzing}
+        />
+      ) : null}
+
+      {showLabelScanPrompt ? (
+        <LabelScanPromptPanel
+          anchorRef={labelScanPromptRef}
+          busy={analyzing}
+          images={labelScanImages}
+          note={labelScanNote}
+          onChangeNote={setLabelScanNote}
+          onPickFront={() => labelFrontInputRef.current?.click()}
+          onPickBack={() => labelBackInputRef.current?.click()}
+          onSubmit={() => { void handleSubmitLabelScan() }}
+          onCancel={() => {
+            resetLabelScanFlow()
+            setShowLabelScanPrompt(false)
+          }}
         />
       ) : null}
 
@@ -1364,6 +1450,117 @@ function MealPhotoPromptPanel({ note, onChangeNote, onPickImage, onCancel, busy 
         <button type="button" className="btn-primary" onClick={onPickImage} disabled={busy}>{busy ? 'Analyzing…' : 'Take or choose photo'}</button>
         <button type="button" className="btn-secondary" onClick={onCancel} disabled={busy}>Cancel</button>
       </div>
+    </div>
+  )
+}
+
+function LabelScanPromptPanel({ anchorRef, busy, images, note, onChangeNote, onPickFront, onPickBack, onSubmit, onCancel }) {
+  const recognitionRef = useRef(null)
+  const [listening, setListening] = useState(false)
+  const supportsSpeechRecognition = typeof window !== 'undefined' && (window.SpeechRecognition || window.webkitSpeechRecognition)
+
+  useEffect(() => () => {
+    recognitionRef.current?.stop?.()
+    recognitionRef.current = null
+  }, [])
+
+  function toggleVoiceCapture() {
+    if (listening) {
+      recognitionRef.current?.stop?.()
+      return
+    }
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
+    if (!SpeechRecognition) {
+      return
+    }
+
+    const recognition = new SpeechRecognition()
+    recognition.lang = 'en-US'
+    recognition.interimResults = false
+    recognition.maxAlternatives = 1
+    recognition.onresult = (event) => {
+      const transcript = Array.from(event.results || [])
+        .map(result => result?.[0]?.transcript || '')
+        .join(' ')
+        .trim()
+
+      if (transcript) {
+        onChangeNote(note ? `${note.trim()} ${transcript}`.trim() : transcript)
+      }
+    }
+    recognition.onerror = () => {
+      setListening(false)
+      recognitionRef.current = null
+    }
+    recognition.onend = () => {
+      setListening(false)
+      recognitionRef.current = null
+    }
+
+    recognitionRef.current = recognition
+    setListening(true)
+    recognition.start()
+  }
+
+  return (
+    <div ref={anchorRef} className="dash-card nutrition-planning-card nutrition-meal-photo-panel label-scan-panel">
+      <div className="dashboard-card-head">
+        <span className="dashboard-chip nutrition">Label scan</span>
+        <span className="dashboard-chip subtle">Front + back + note</span>
+      </div>
+      <h3>Capture the package before Johnny estimates anything</h3>
+      <p className="settings-subtitle">Take the front photo for brand and product context, then the back photo for nutrition facts and ingredients. Add a typed or recorded note if the package needs explanation.</p>
+
+      <div className="label-scan-status-strip" aria-label="Label scan progress">
+        <div className={`label-scan-status-chip${images.front ? ' complete' : ''}`}>
+          <strong>1</strong>
+          <span>{images.front ? 'Front captured' : 'Front photo needed'}</span>
+        </div>
+        <div className={`label-scan-status-chip${images.back ? ' complete' : ''}`}>
+          <strong>2</strong>
+          <span>{images.back ? 'Back captured' : 'Nutrition panel needed'}</span>
+        </div>
+        <div className={`label-scan-status-chip${note.trim() ? ' complete' : ''}`}>
+          <strong>3</strong>
+          <span>{note.trim() ? 'Note included' : 'Optional note'}</span>
+        </div>
+      </div>
+
+      <div className="label-scan-capture-grid">
+        <button type="button" className={`label-scan-capture${images.front ? ' ready' : ''}`} onClick={onPickFront} disabled={busy}>
+          <strong>Front of package</strong>
+          <span>{images.front ? 'Front photo added. Tap to retake.' : 'Take or choose the front photo.'}</span>
+        </button>
+        <button type="button" className={`label-scan-capture${images.back ? ' ready' : ''}`} onClick={onPickBack} disabled={busy}>
+          <strong>Nutrition facts side</strong>
+          <span>{images.back ? 'Back photo added. Tap to retake.' : 'Take or choose the nutrition label photo.'}</span>
+        </button>
+      </div>
+
+      <div className="label-scan-preview-grid">
+        {images.front ? <img src={images.front} alt="Front package preview" className="label-scan-preview" /> : <div className="label-scan-preview empty">Front photo not added yet.</div>}
+        {images.back ? <img src={images.back} alt="Back package preview" className="label-scan-preview" /> : <div className="label-scan-preview empty">Back photo not added yet.</div>}
+      </div>
+
+      <FieldLabel label="Optional note" className="field-label-food-note">
+        <textarea
+          placeholder="Example: this is the family-size bag, or the back photo is the ingredients panel."
+          value={note}
+          onChange={event => onChangeNote(event.target.value)}
+        />
+      </FieldLabel>
+
+      <div className="nutrition-row-actions nutrition-row-actions-full-width">
+        <button type="button" className="btn-secondary" onClick={toggleVoiceCapture} disabled={busy || !supportsSpeechRecognition}>
+          {listening ? 'Stop recording' : 'Record note'}
+        </button>
+        <button type="button" className="btn-primary" onClick={onSubmit} disabled={busy || !images.front || !images.back}>
+          {busy ? 'Analyzing…' : 'Scan label'}
+        </button>
+        <button type="button" className="btn-secondary" onClick={onCancel} disabled={busy}>Cancel</button>
+      </div>
+      {!supportsSpeechRecognition ? <p className="empty-state">Voice note capture is not supported in this browser, but typed notes still work.</p> : null}
     </div>
   )
 }
@@ -3165,54 +3362,6 @@ function normaliseMealItems(items) {
 
 function numericField(field) {
   return ['serving_amount', 'estimated_grams', 'calories', 'protein_g', 'carbs_g', 'fat_g', 'fiber_g', 'sugar_g', 'sodium_mg'].includes(field)
-}
-
-function buildLabelReview(result, targets) {
-  const calories = Number(result?.calories ?? 0)
-  const protein = Number(result?.protein_g ?? 0)
-  const carbs = Number(result?.carbs_g ?? 0)
-  const fat = Number(result?.fat_g ?? 0)
-  const fiber = Number(result?.fiber_g ?? 0)
-  const sugar = Number(result?.sugar_g ?? 0)
-  const sodium = Number(result?.sodium_mg ?? 0)
-  const servingSize = result?.serving_size || '1 serving'
-  const proteinTarget = Number(targets?.target_protein_g ?? 0)
-  const calorieTarget = Number(targets?.target_calories ?? 0)
-  const proteinDensity = calories > 0 ? protein / (calories / 100) : 0
-  const proteinPct = proteinTarget > 0 ? Math.round((protein / proteinTarget) * 100) : 0
-  const caloriePct = calorieTarget > 0 ? Math.round((calories / calorieTarget) * 100) : 0
-  const flags = Array.isArray(result?.flags) ? result.flags.filter(Boolean) : []
-  const suggestions = Array.isArray(result?.swap_suggestions)
-    ? result.swap_suggestions.filter(item => item?.title && item?.body).map(item => ({ title: item.title, body: item.body }))
-    : []
-
-  if (!flags.includes('low protein density') && proteinDensity < 5) flags.push('low protein density')
-  if (!flags.includes('high sodium') && sodium >= 700) flags.push('high sodium')
-  if (!flags.includes('low fiber') && fiber < 3 && carbs >= 20) flags.push('low fiber')
-
-  if (!suggestions.length) {
-    suggestions.push({
-      title: 'Reasonable fit',
-      body: 'This label looks workable as-is. Keep portion control tight and use it where it fits your remaining calories and protein.',
-    })
-  }
-
-  return {
-    headline: result?.fit_summary || `${proteinPct || 0}% of your protein target for about ${caloriePct || 0}% of daily calories`,
-    foodName: result?.food_name || result?.canonical_name || result?.brand || 'Label food',
-    brand: result?.brand || '',
-    servingSize,
-    calories,
-    protein,
-    carbs,
-    fat,
-    fiber,
-    sugar,
-    sodium,
-    micros: Array.isArray(result?.micros) ? result.micros : [],
-    flags,
-    suggestions: suggestions.slice(0, 3),
-  }
 }
 
 function buildNutritionMacroCards(summary) {

@@ -411,6 +411,10 @@ if ( ! function_exists( 'esc_url_raw' ) ) {
 
 if ( ! function_exists( 'wp_remote_post' ) ) {
 	function wp_remote_post( string $url, array $args = [] ): mixed {
+		$GLOBALS['johnny5k_test_http_log']['post'][] = [
+			'url' => $url,
+			'args' => $args,
+		];
 		$queue = &$GLOBALS['johnny5k_test_http']['post'];
 		if ( empty( $queue ) ) {
 			return new WP_Error( 'missing_http_stub', 'No stubbed wp_remote_post response available.' );
@@ -422,6 +426,10 @@ if ( ! function_exists( 'wp_remote_post' ) ) {
 
 if ( ! function_exists( 'wp_remote_request' ) ) {
 	function wp_remote_request( string $url, array $args = [] ): mixed {
+		$GLOBALS['johnny5k_test_http_log']['request'][] = [
+			'url' => $url,
+			'args' => $args,
+		];
 		$queue = &$GLOBALS['johnny5k_test_http']['request'];
 		if ( empty( $queue ) ) {
 			return new WP_Error( 'missing_http_stub', 'No stubbed wp_remote_request response available.' );
@@ -544,6 +552,7 @@ require_once dirname( __DIR__ ) . '/includes/Services/class-exercise-calorie-ser
 require_once dirname( __DIR__ ) . '/includes/Services/class-ai-memory-service.php';
 require_once dirname( __DIR__ ) . '/includes/Services/class-support-guide-service.php';
 require_once dirname( __DIR__ ) . '/includes/Services/class-ai-prompt-service.php';
+require_once dirname( __DIR__ ) . '/includes/Services/class-cost-tracker.php';
 require_once dirname( __DIR__ ) . '/includes/Services/class-ai-service.php';
 require_once dirname( __DIR__ ) . '/includes/Services/class-coach-delivery-service.php';
 require_once dirname( __DIR__ ) . '/includes/Services/class-behavior-analytics-service.php';

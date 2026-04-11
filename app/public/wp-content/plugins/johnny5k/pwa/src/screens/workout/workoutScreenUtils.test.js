@@ -4,6 +4,7 @@ import {
   applyRepAdjustmentsToPreviewExercises,
   buildEffectiveRepAdjustments,
   buildWorkoutCompletionReview,
+  getPausedTimerNowValue,
   normalizeCustomWorkoutDayType,
   syncPreviewExerciseOrder,
 } from './workoutScreenUtils'
@@ -35,5 +36,10 @@ describe('workoutScreenUtils', () => {
   it('falls back to a safe custom workout day type', () => {
     expect(normalizeCustomWorkoutDayType('', 'rest')).toBe(DEFAULT_CUSTOM_WORKOUT_DAY_TYPE)
     expect(normalizeCustomWorkoutDayType('push', 'pull')).toBe('push')
+  })
+
+  it('freezes timer math while the timer is paused', () => {
+    expect(getPausedTimerNowValue(20_000, 18_500, 2_000)).toBe(16_500)
+    expect(getPausedTimerNowValue(20_000, null, 2_000)).toBe(18_000)
   })
 })

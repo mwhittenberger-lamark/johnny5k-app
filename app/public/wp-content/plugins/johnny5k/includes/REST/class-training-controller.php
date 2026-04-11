@@ -338,13 +338,17 @@ class TrainingController {
 			$where[] = 'JSON_CONTAINS(day_types_json, %s)';
 			$vals[]  = '"' . esc_sql( $day_type ) . '"';
 		}
+		if ( $slot_type = sanitize_key( (string) ( $req->get_param( 'slot_type' ) ?: '' ) ) ) {
+			$where[] = 'JSON_CONTAINS(slot_types_json, %s)';
+			$vals[]  = '"' . esc_sql( $slot_type ) . '"';
+		}
 
 		$order_parts[] = 'CHAR_LENGTH(name)';
 		$order_parts[] = 'name';
 
 		$where_sql = implode( ' AND ', $where );
 		$order_sql = implode( ', ', $order_parts );
-		$sql       = "SELECT id, user_id, CASE WHEN user_id = %d THEN 1 ELSE 0 END AS owned_by_user, slug, name, description, movement_pattern, primary_muscle, equipment, difficulty, default_rep_min, default_rep_max, default_sets
+		$sql       = "SELECT id, user_id, CASE WHEN user_id = %d THEN 1 ELSE 0 END AS owned_by_user, slug, name, description, movement_pattern, primary_muscle, equipment, difficulty, default_rep_min, default_rep_max, default_sets, slot_types_json
 		              FROM {$wpdb->prefix}fit_exercises WHERE active = 1 AND $where_sql ORDER BY {$order_sql} LIMIT %d";
 		$vals      = array_merge( [ $user_id ], $vals, [ $limit ] );
 

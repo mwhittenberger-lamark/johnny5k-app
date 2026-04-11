@@ -1183,6 +1183,11 @@
 
 /* ── Admin ── */
 .admin-tab { padding-top: 8px; }
+.admin-tab h2,
+.admin-tab h3,
+.admin-tab p {
+  max-width: 70ch;
+}
 .code-list { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
 .code-row { display: flex; align-items: center; gap: 10px; background: var(--bg2); border: 1.5px solid var(--border); border-radius: 14px; box-shadow: var(--shadow-sm); padding: 10px 12px; }
 .code-row code { flex: 1; font-family: 'Courier New', monospace; letter-spacing: .1em; color: var(--accent2); font-weight: 700; }

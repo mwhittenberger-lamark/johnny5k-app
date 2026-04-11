@@ -23,6 +23,7 @@ export default function WorkoutActiveSession({
   navigate,
 }) {
   const activeEx = exercises[activeExerciseIdx]
+  const quickAddDisabled = Boolean(sessionController.addingSlot)
 
   return (
     <div className="screen workout-active workout-upgraded">
@@ -77,6 +78,34 @@ export default function WorkoutActiveSession({
         />
       ) : null}
 
+      <section className="dash-card workout-quickadd-card">
+        <div className="dashboard-card-head">
+          <span className="dashboard-chip coach">Add-ons</span>
+          <span className="dashboard-chip subtle">Optional</span>
+        </div>
+        <p className="workout-session-note">
+          Add an abs or challenge slot without leaving the session. The base session stays intact, and these are there when you want the extra work.
+        </p>
+        <div className="workout-quickadd-grid">
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={() => sessionController.handleQuickAdd('abs')}
+            disabled={quickAddDisabled}
+          >
+            {sessionController.addingSlot === 'abs' ? 'Adding abs...' : 'Quick abs add-on'}
+          </button>
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={() => sessionController.handleQuickAdd('challenge')}
+            disabled={quickAddDisabled}
+          >
+            {sessionController.addingSlot === 'challenge' ? 'Adding challenge...' : 'Quick challenge'}
+          </button>
+        </div>
+      </section>
+
       <section className="dash-card workout-page-actions">
         <div className="dashboard-card-head">
           <span className="dashboard-chip workout">Session actions</span>
@@ -125,6 +154,9 @@ export default function WorkoutActiveSession({
         onCreateSet={sessionController.handleCreateSet}
         onUpdateSet={sessionController.handleUpdateSet}
         onClose={sessionController.closeLiveMode}
+        pauseSessionTimer={sessionController.pauseSessionTimer}
+        resumeSessionTimer={sessionController.resumeSessionTimer}
+        sessionTimerPaused={sessionController.sessionTimerPaused}
         timerLabel={sessionController.activeSessionTimerLabel}
         todayLabel={todayLabel}
         displayDayType={displayDayType}

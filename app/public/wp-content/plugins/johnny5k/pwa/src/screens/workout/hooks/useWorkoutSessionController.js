@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useLatest } from './useLatest'
-import { buildWorkoutCompletionReview, formatDayType, formatWorkoutElapsedTime } from '../workoutScreenUtils'
+import { buildWorkoutCompletionReview, formatDayType, formatWorkoutElapsedTime, getPausedTimerNowValue } from '../workoutScreenUtils'
 
 export function useWorkoutSessionController({
   session,
@@ -15,6 +15,7 @@ export function useWorkoutSessionController({
   deleteSet,
   saveExerciseNote,
   swapExercise,
+  quickAdd,
   removeExercise,
   undoLastReversibleAction,
   startSession,
@@ -50,7 +51,10 @@ export function useWorkoutSessionController({
   const [exiting, setExiting] = useState(false)
   const [takingRestDay, setTakingRestDay] = useState(false)
   const [liveModeOpen, setLiveModeOpen] = useState(false)
+  const [addingSlot, setAddingSlot] = useState('')
   const [timerNow, setTimerNow] = useState(() => Date.now())
+  const [sessionTimerPausedAt, setSessionTimerPausedAt] = useState(null)
+  const [sessionTimerPausedMs, setSessionTimerPausedMs] = useState(0)
   const [completionReview, setCompletionReview] = useState(null)
   const queryClient = useQueryClient()
   const locationStateRef = useLatest(location.state && typeof location.state === 'object' ? location.state : null)
@@ -84,6 +88,10 @@ export function useWorkoutSessionController({
     mutationFn: ({ sessionExerciseId, notes }) => saveExerciseNote(sessionExerciseId, notes),
     onSettled: invalidateWorkoutQueries,
   })
+  const quickAddMutation = useMutation({
+    mutationFn: ({ slotType, exerciseId }) => quickAdd(slotType, exerciseId),
+    onSettled: invalidateWorkoutQueries,
+  })
   const startSessionMutation = useMutation({
     mutationFn: (payload) => startSession(payload),
     onSettled: invalidateWorkoutQueries,
@@ -110,7 +118,11 @@ export function useWorkoutSessionController({
   })
 
   const activeSessionStartedAt = session?.session?.started_at || null
-  const activeSessionTimerLabel = formatWorkoutElapsedTime(activeSessionStartedAt, timerNow)
+  const sessionTimerPaused = sessionTimerPausedAt != null
+  const activeSessionTimerLabel = formatWorkoutElapsedTime(
+    activeSessionStartedAt,
+    getPausedTimerNowValue(timerNow, sessionTimerPausedAt, sessionTimerPausedMs),
+  )
 
   useEffect(() => {
     if (!exercises.length && activeExerciseIdx !== 0) {
@@ -154,16 +166,22 @@ export function useWorkoutSessionController({
 
   useEffect(() => {
     if (!activeSessionStartedAt) {
+      setSessionTimerPausedAt(null)
+      setSessionTimerPausedMs(0)
       return undefined
     }
 
     setTimerNow(Date.now())
+    if (sessionTimerPaused) {
+      return undefined
+    }
+
     const intervalId = window.setInterval(() => {
       setTimerNow(Date.now())
     }, 1000)
 
     return () => window.clearInterval(intervalId)
-  }, [activeSessionStartedAt])
+  }, [activeSessionStartedAt, sessionTimerPaused])
 
   useEffect(() => {
     if (session) return
@@ -216,6 +234,15 @@ export function useWorkoutSessionController({
 
   async function handleSaveExerciseNote(sessionExerciseId, notes) {
     return saveExerciseNoteMutation.mutateAsync({ sessionExerciseId, notes })
+  }
+
+  async function handleQuickAdd(slotType, exerciseId = null) {
+    setAddingSlot(slotType)
+    try {
+      await quickAddMutation.mutateAsync({ slotType, exerciseId })
+    } finally {
+      setAddingSlot('')
+    }
   }
 
   async function handleComplete() {
@@ -351,7 +378,22 @@ export function useWorkoutSessionController({
     }
   }
 
+  function pauseSessionTimer() {
+    if (sessionTimerPausedAt != null || !activeSessionStartedAt) return
+    setTimerNow(Date.now())
+    setSessionTimerPausedAt(Date.now())
+  }
+
+  function resumeSessionTimer() {
+    if (sessionTimerPausedAt == null) return
+    const resumedAt = Date.now()
+    setSessionTimerPausedMs(current => current + Math.max(0, resumedAt - sessionTimerPausedAt))
+    setSessionTimerPausedAt(null)
+    setTimerNow(resumedAt)
+  }
+
   return {
+    addingSlot,
     activeSessionTimerLabel,
     completing,
     completionReview,
@@ -363,6 +405,7 @@ export function useWorkoutSessionController({
     handleExitSession,
     handleLogCardio,
     handleOpenExerciseDemo,
+    handleQuickAdd,
     handleRemoveExercise,
     handleRestartSession,
     handleSaveExerciseNote,
@@ -374,7 +417,10 @@ export function useWorkoutSessionController({
     liveModeOpen,
     openLiveMode: () => setLiveModeOpen(true),
     closeLiveMode: () => setLiveModeOpen(false),
+    pauseSessionTimer,
     restarting,
+    resumeSessionTimer,
+    sessionTimerPaused,
     takingRestDay,
     undoing,
   }

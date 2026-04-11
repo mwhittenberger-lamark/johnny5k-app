@@ -257,17 +257,25 @@ class AiService {
 	// ── One-shot context-aware analysis ──────────────────────────────────────
 
 	/**
-	 * Analyse a meal/food photo sent as a base64 URL.
+	 * Analyse meal or label photos sent as base64 data URLs.
 	 *
-	 * @param  int    $user_id
-	 * @param  string $image_base64_url  data:image/jpeg;base64,...
-	 * @param  string $context           'meal_photo'|'food_label'
-	 * @param  string $user_note         Optional user guidance about ambiguous foods in the image.
+	 * @param  int          $user_id
+	 * @param  string|array $image_base64_input  Single data URL or an array of data URLs.
+	 * @param  string       $context             'meal_photo'|'food_label'
+	 * @param  string       $user_note           Optional user guidance about ambiguous foods in the image.
 	 * @return array|WP_Error  Structured nutrition estimate.
 	 */
-	public static function analyse_food_image( int $user_id, string $image_base64_url, string $context = 'meal_photo', string $user_note = '' ) {
+	public static function analyse_food_image( int $user_id, string|array $image_base64_input, string $context = 'meal_photo', string $user_note = '' ) {
 		$context_data = self::get_user_context( $user_id );
 		$user_note = trim( $user_note );
+		$image_inputs = array_values( array_filter( array_map( static function( $image ): string {
+			return is_string( $image ) ? trim( $image ) : '';
+		}, is_array( $image_base64_input ) ? $image_base64_input : [ $image_base64_input ] ) ) );
+
+		if ( empty( $image_inputs ) ) {
+			return new \WP_Error( 'missing_image', 'No image provided.' );
+		}
+
 		$meal_photo_prompt = 'Identify the foods in this meal photo and estimate portion size for each item. Return only valid JSON in this exact shape: {meal_name, items:[{name, serving_amount, serving_unit, estimated_grams, portion_description, calories, protein_g, carbs_g, fat_g, confidence_food, confidence_portion}], total_calories, total_protein_g, total_carbs_g, total_fat_g, confidence}. estimated_grams should be your best weight estimate for that specific food portion. serving_unit should be concise labels like piece, bowl, cup, scoop, serving, slice, or oz. portion_description should be brief. Include rough calories and macros as a fallback estimate even when uncertain.';
 		if ( 'meal_photo' === $context && '' !== $user_note ) {
 			$meal_photo_prompt .= sprintf(
@@ -277,12 +285,30 @@ class AiService {
 		}
 		$prompt = $context === 'food_label'
 			? sprintf(
-				'Extract the product name, brand, serving size, calories, protein, carbs, fat, fiber, sugar, sodium, and any visible vitamin or mineral amounts from this nutrition label. Use the values shown on the label and do not estimate missing numbers. If any field is unreadable or missing on the label image, return null for that field. The user goal is %1$s, calorie target is %2$s, protein target is %3$s. Return only valid JSON with this exact shape: {food_name, brand, serving_size, calories, protein_g, carbs_g, fat_g, fiber_g, sugar_g, sodium_mg, micros:[{key,label,amount,unit}], fit_summary, flags:[string], swap_suggestions:[{title, body}]}. Use an empty array for micros if the label does not show vitamins or minerals. Keep fit_summary to one sentence. Flags should be short lowercase phrases. swap_suggestions should give 1-3 concrete healthier variations or replacement ideas that match the user goal.',
+				'You are reviewing food packaging images. Use the front-of-pack image to identify the product and brand, and use the nutrition-facts image to extract serving size, calories, protein, carbs, fat, fiber, sugar, sodium, and any visible vitamin or mineral amounts for one serving. Use only values shown on the package and do not estimate missing numbers. If any field is unreadable or missing across the images, return null for that field. The user goal is %1$s, calorie target is %2$s, protein target is %3$s. Return only valid JSON with this exact shape: {food_name, brand, serving_size, calories, protein_g, carbs_g, fat_g, fiber_g, sugar_g, sodium_mg, micros:[{key,label,amount,unit}], fit_summary, flags:[string], swap_suggestions:[{title, body}]}. Use an empty array for micros if the label does not show vitamins or minerals. Keep fit_summary to one sentence. Flags should be short lowercase phrases. swap_suggestions should give 1-3 concrete healthier variations or replacement ideas that match the user goal.',
 				$context_data['goal_type'] ?: 'maintain',
 				$context_data['target_calories'] ?: 'unknown',
 				$context_data['target_protein_g'] ?: 'unknown'
 			)
 			: $meal_photo_prompt;
+
+		if ( 'food_label' === $context && '' !== $user_note ) {
+			$prompt .= sprintf(
+				' The user added this note about the package: "%s". Use it only to clarify what product the images belong to or which panel is shown.',
+				$user_note
+			);
+		}
+
+		$user_content = [
+			[ 'type' => 'input_text', 'text' => $prompt ],
+		];
+
+		foreach ( $image_inputs as $image_url ) {
+			$user_content[] = [
+				'type' => 'input_image',
+				'image_url' => $image_url,
+			];
+		}
 
 		$messages = [
 			[
@@ -291,10 +317,7 @@ class AiService {
 			],
 			[
 				'role'    => 'user',
-				'content' => [
-					[ 'type' => 'input_text',  'text'      => $prompt ],
-					[ 'type' => 'input_image', 'image_url' => $image_base64_url ],
-				],
+				'content' => $user_content,
 			],
 		];
 

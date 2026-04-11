@@ -310,6 +310,14 @@
   min-height: 0;
   overflow: hidden;
 }
+.workout-quickadd-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--space-2);
+}
+.workout-quickadd-grid.compact {
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+}
 .workout-plan-list.compact {
   max-height: 280px;
   overflow-y: auto;
@@ -1220,6 +1228,104 @@
   border-color: rgba(182, 33, 33, 0.24);
   color: #9c1d1d;
 }
+.live-workout-voice-test-card {
+  margin-top: var(--space-4-5);
+  border-color: rgba(126, 190, 229, 0.22);
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 18px 40px rgba(6, 16, 32, 0.18);
+}
+.live-workout-voice-test-summary {
+  list-style: none;
+  cursor: pointer;
+}
+.live-workout-voice-test-summary::-webkit-details-marker {
+  display: none;
+}
+.live-workout-voice-test-summary > div {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1-5);
+}
+.live-workout-voice-test-summary strong {
+  color: #081533;
+  font-size: 1rem;
+}
+.live-workout-voice-test-summary span:last-child {
+  color: rgba(8, 21, 51, 0.72);
+  font-size: 0.94rem;
+}
+.live-workout-voice-test-card details[open] .live-workout-voice-test-summary {
+  margin-bottom: var(--space-3-5);
+}
+.live-workout-voice-test-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+.live-workout-voice-test-block {
+  display: grid;
+  gap: var(--space-2-5);
+  padding: var(--space-3-5);
+  border-radius: 20px;
+  border: 1px solid rgba(0, 188, 222, 0.14);
+  background: linear-gradient(180deg, rgba(245, 250, 255, 0.96), rgba(255, 255, 255, 0.98));
+}
+.live-workout-voice-test-copy {
+  display: grid;
+  gap: var(--space-2);
+}
+.live-workout-voice-test-copy strong {
+  color: #081533;
+}
+.live-workout-voice-diagnostic {
+  margin: var(--space-2) 0 0;
+}
+.live-workout-voice-test-copy .btn-outline.small,
+.live-workout-voice-option-list .btn-ghost.small {
+  min-height: 40px;
+}
+.live-workout-voice-test-result {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border-radius: 18px;
+  border: 1px solid rgba(8, 21, 51, 0.08);
+  background: rgba(8, 21, 51, 0.04);
+}
+.live-workout-voice-test-result.success {
+  border-color: rgba(28, 138, 86, 0.22);
+  background: rgba(28, 138, 86, 0.08);
+}
+.live-workout-voice-test-result.error {
+  border-color: rgba(182, 33, 33, 0.22);
+  background: rgba(182, 33, 33, 0.08);
+}
+.live-workout-voice-test-result strong,
+.live-workout-voice-test-result p {
+  margin: 0;
+  color: #081533;
+}
+.live-workout-voice-option-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.live-workout-voice-option-list .btn-ghost.small.active {
+  background: rgba(8, 21, 51, 0.08);
+}
+.live-workout-voice-test-diagnostic {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border-radius: 18px;
+  border: 1px solid rgba(8, 21, 51, 0.08);
+  background: rgba(8, 21, 51, 0.04);
+}
+.live-workout-voice-test-diagnostic strong,
+.live-workout-voice-test-diagnostic p {
+  margin: 0;
+  color: #081533;
+}
 .live-workout-toast {
   position: fixed;
   right: 18px;
@@ -1760,6 +1866,10 @@
 
   .live-workout-johnny-card {
     position: static;
+  }
+
+  .live-workout-voice-test-grid {
+    grid-template-columns: 1fr;
   }
 }
 

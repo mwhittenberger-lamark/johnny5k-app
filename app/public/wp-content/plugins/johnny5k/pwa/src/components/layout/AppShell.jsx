@@ -32,7 +32,7 @@ const tabs = [
 export default function AppShell({ children }) {
   const location = useLocation()
   const navigate = useNavigate()
-  const { appImages, clearAuth, dailyCheckInEntry, isAdmin, notificationPrefs, preferenceMeta, setDailyCheckInEntry, setPreferenceMeta } = useAuthStore()
+  const { appImages, canAccessPwaAdmin, clearAuth, dailyCheckInEntry, notificationPrefs, preferenceMeta, setDailyCheckInEntry, setPreferenceMeta } = useAuthStore()
   const openDrawer = useJohnnyAssistantStore(state => state.openDrawer)
   const isDrawerOpen = useJohnnyAssistantStore(state => state.isOpen)
   const [loggingOut, setLoggingOut] = useState(false)
@@ -556,7 +556,7 @@ export default function AppShell({ children }) {
                 <span>{tab.label}</span>
               </NavLink>
             ))}
-            {isAdmin ? (
+            {canAccessPwaAdmin ? (
               <NavLink to="/admin" className={({ isActive }) => `app-shell-desktop-link ${isActive ? 'active' : ''}`}>
                 <AppIcon name="admin" />
                 <span>Admin</span>
@@ -614,7 +614,7 @@ export default function AppShell({ children }) {
               </NavLink>
             ))}
 
-            {isAdmin ? (
+            {canAccessPwaAdmin ? (
               <NavLink to="/admin" className={({ isActive }) => `app-shell-mobile-link ${isActive ? 'active' : ''}`}>
                 <span className="app-shell-mobile-link-icon">
                   <AppIcon name="admin" />

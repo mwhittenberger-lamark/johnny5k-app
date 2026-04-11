@@ -7,6 +7,15 @@ import { normalizeDailyCheckInEntry } from '../lib/dailyCheckIn'
 import { applyColorScheme, clearStoredColorScheme, DEFAULT_COLOR_SCHEME } from '../lib/theme'
 
 const NONCE_KEY = 'jf_rest_nonce'
+const PWA_QA_EMAIL = 'mike@panempire.com'
+
+function canAccessPwaAdmin(email, isAdmin) {
+  if (Boolean(isAdmin)) {
+    return true
+  }
+
+  return String(email || '').trim().toLowerCase() === PWA_QA_EMAIL
+}
 
 function inferRevalidateFailureReason(error) {
   if (!error) {
@@ -33,6 +42,7 @@ export const useAuthStore = create(
       isAuthenticated: false,
       onboardingComplete: false,
       isAdmin: false,
+      canAccessPwaAdmin: false,
       appImages: DEFAULT_APP_IMAGES,
       preferenceMeta: {},
       dailyCheckInEntry: normalizeDailyCheckInEntry(),
@@ -46,6 +56,8 @@ export const useAuthStore = create(
       setAuth: ({ nonce, user_id, email, onboarding_complete, is_admin, app_images }) => {
         const current = get()
         const nextNonce = nonce ?? current.nonce ?? null
+        const nextEmail = email ?? current.email
+        const nextIsAdmin = is_admin ?? current.isAdmin
 
         if (nextNonce) {
           localStorage.setItem(NONCE_KEY, nextNonce)
@@ -56,10 +68,11 @@ export const useAuthStore = create(
         set({
           nonce: nextNonce,
           userId: user_id ?? current.userId,
-          email: email ?? current.email,
+          email: nextEmail,
           isAuthenticated: (user_id ?? current.userId) ? true : current.isAuthenticated,
           onboardingComplete: onboarding_complete ?? current.onboardingComplete,
-          isAdmin: is_admin ?? current.isAdmin,
+          isAdmin: nextIsAdmin,
+          canAccessPwaAdmin: canAccessPwaAdmin(nextEmail, nextIsAdmin),
           appImages: app_images ? normalizeAppImages(app_images) : current.appImages,
         })
       },
@@ -111,6 +124,7 @@ export const useAuthStore = create(
           isAuthenticated: false,
           onboardingComplete: false,
           isAdmin: false,
+          canAccessPwaAdmin: false,
           preferenceMeta: {},
           dailyCheckInEntry: normalizeDailyCheckInEntry(),
           notificationPrefs: {
@@ -177,6 +191,7 @@ export const useAuthStore = create(
         isAuthenticated: state.isAuthenticated,
         onboardingComplete: state.onboardingComplete,
         isAdmin: state.isAdmin,
+        canAccessPwaAdmin: state.canAccessPwaAdmin,
         appImages: state.appImages,
         preferenceMeta: state.preferenceMeta,
         dailyCheckInEntry: state.dailyCheckInEntry,

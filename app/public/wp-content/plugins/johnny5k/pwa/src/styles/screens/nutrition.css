@@ -1361,10 +1361,132 @@ label.field-label.nutrition-saved-food-field {
   flex-direction: column;
   gap: var(--space-3-5);
 }
+.label-review-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--space-2-5);
+}
+.label-review-summary-band {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.label-review-summary-band span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 var(--space-2-5);
+  border-radius: 999px;
+  background: rgba(8, 21, 51, 0.05);
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+.label-review-macro-grid {
+  align-items: end;
+}
 .label-review-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
   gap: var(--space-2-5);
+}
+.label-review-sources {
+  display: grid;
+  gap: var(--space-2);
+}
+.label-scan-panel {
+  gap: var(--space-3);
+}
+.label-scan-status-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+.label-scan-status-chip {
+  display: grid;
+  gap: 4px;
+  padding: var(--space-2-5);
+  border: 1.5px solid rgba(88, 120, 160, 0.14);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.82);
+}
+.label-scan-status-chip strong {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: rgba(8, 21, 51, 0.08);
+  color: #081533;
+}
+.label-scan-status-chip span {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+.label-scan-status-chip.complete {
+  border-color: rgba(12, 187, 129, 0.28);
+  background: linear-gradient(180deg, rgba(244, 255, 250, 0.98), rgba(255, 255, 255, 0.98));
+}
+.label-scan-status-chip.complete strong {
+  background: rgba(12, 187, 129, 0.14);
+  color: #0f7b59;
+}
+.label-scan-capture-grid,
+.label-scan-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2-5);
+}
+.label-scan-capture {
+  display: grid;
+  gap: var(--space-1);
+  text-align: left;
+  border: 1.5px solid rgba(88, 120, 160, 0.2);
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(245, 250, 252, 0.98));
+  padding: var(--space-3);
+}
+.label-scan-capture.ready {
+  border-color: rgba(12, 187, 129, 0.34);
+  box-shadow: 0 12px 28px rgba(12, 187, 129, 0.12);
+}
+.label-scan-capture span {
+  color: var(--text-muted);
+}
+.label-scan-preview {
+  width: 100%;
+  min-height: 180px;
+  max-height: 220px;
+  object-fit: cover;
+  border-radius: 18px;
+  border: 1.5px solid rgba(88, 120, 160, 0.16);
+  background: var(--bg2);
+}
+.label-scan-preview.empty {
+  display: grid;
+  place-items: center;
+  padding: var(--space-3);
+  color: var(--text-muted);
+}
+.admin-label-qa-summary-grid {
+  margin: var(--space-2) 0;
+}
+.admin-label-qa-result.passed {
+  border-color: rgba(12, 187, 129, 0.24);
+}
+.admin-label-qa-result.failed {
+  border-color: rgba(216, 80, 65, 0.28);
+}
+.admin-label-qa-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.admin-qa-notice {
+  margin-bottom: var(--space-3);
 }
 .pantry-voice-row .nutrition-item-editor-primary,
 .pantry-voice-row .nutrition-item-editor-secondary {
@@ -1394,6 +1516,13 @@ label.field-label.nutrition-saved-food-field {
   margin-bottom: var(--space-3);
 }
 @media (max-width: 720px) {
+  .label-scan-capture-grid,
+  .label-scan-preview-grid,
+  .admin-label-qa-head,
+  .label-scan-status-strip {
+    grid-template-columns: 1fr;
+    display: grid;
+  }
   .app-shell-header {
     align-items: flex-start;
   }

@@ -41,9 +41,9 @@ export function RequireOnboardedLayout() {
 }
 
 export function RequireAdminLayout() {
-  const { isAuthenticated, isAdmin } = useAuthStore()
+  const { isAuthenticated, canAccessPwaAdmin } = useAuthStore()
   if (!isAuthenticated) return <Navigate to="/login" replace />
-  if (!isAdmin) return <Navigate to="/dashboard" replace />
+  if (!canAccessPwaAdmin) return <Navigate to="/dashboard" replace />
   return <Outlet />
 }
 
@@ -62,22 +62,17 @@ export function AppBootstrapLayout() {
   const { nonce, isAuthenticated, revalidate, setAppImages, setDailyCheckInEntry, setNotificationPrefs, setPreferenceMeta } = useAuthStore()
   const setIssue = useStartupStatusStore((state) => state.setIssue)
   const clearIssue = useStartupStatusStore((state) => state.clearIssue)
-  const blockingIssues = useStartupStatusStore((state) => state.issues.filter((issue) => issue.blocking))
+  const issues = useStartupStatusStore((state) => state.issues)
   const requiresBootstrap = Boolean(nonce || isAuthenticated)
-  const [authBootstrapComplete, setAuthBootstrapComplete] = useState(() => !requiresBootstrap)
+  const [authBootstrapComplete, setAuthBootstrapComplete] = useState(false)
   const [publicConfigComplete, setPublicConfigComplete] = useState(false)
   const ready = publicConfigComplete && (!requiresBootstrap || authBootstrapComplete)
+  const blockingIssues = useMemo(() => issues.filter((issue) => issue.blocking), [issues])
   const primaryBlockingIssue = useMemo(() => blockingIssues[0] ?? null, [blockingIssues])
 
   useEffect(() => {
     applyColorScheme(getStoredColorScheme())
   }, [])
-
-  useEffect(() => {
-    if (!requiresBootstrap) {
-      setAuthBootstrapComplete(true)
-    }
-  }, [requiresBootstrap])
 
   useEffect(() => {
     let active = true
