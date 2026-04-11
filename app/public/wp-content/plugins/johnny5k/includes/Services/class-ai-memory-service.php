@@ -171,8 +171,9 @@ class AiMemoryService {
 		$stored            = get_user_meta( $user_id, self::FOLLOW_UP_META_KEY, true );
 		$items             = is_array( $stored ) ? $stored : [];
 		$missed_threshold  = self::get_missed_follow_up_threshold( $user_id );
+		$local_today       = UserTime::today( $user_id );
 
-		$clean = array_values( array_filter( array_map( static function( $item ) use ( $missed_threshold ): array {
+		$clean = array_values( array_filter( array_map( static function( $item ) use ( $missed_threshold, $local_today ): array {
 			if ( ! is_array( $item ) ) {
 				return [];
 			}
@@ -183,6 +184,16 @@ class AiMemoryService {
 			}
 
 			$due_at            = sanitize_text_field( (string) ( $item['due_at'] ?? '' ) );
+			$trigger_type      = sanitize_key( (string) ( $item['trigger_type'] ?? '' ) );
+
+			if (
+				str_starts_with( $trigger_type, 'meal_' )
+				&& '' !== $due_at
+				&& substr( $due_at, 0, 10 ) < $local_today
+			) {
+				return [];
+			}
+
 			$normalized_status = in_array( $status, [ 'pending', 'snoozed' ], true ) ? $status : 'pending';
 			if ( '' !== $due_at && $due_at < $missed_threshold ) {
 				$normalized_status = 'missed';
@@ -197,7 +208,7 @@ class AiMemoryService {
 				'commitment_key' => sanitize_key( (string) ( $item['commitment_key'] ?? '' ) ),
 				'queue_scope'    => sanitize_key( (string) ( $item['queue_scope'] ?? '' ) ),
 				'source'         => sanitize_key( (string) ( $item['source'] ?? 'ai_queue' ) ),
-				'trigger_type'   => sanitize_key( (string) ( $item['trigger_type'] ?? '' ) ),
+				'trigger_type'   => $trigger_type,
 				'priority'       => max( 0, (int) ( $item['priority'] ?? 0 ) ),
 				'url'            => sanitize_text_field( (string) ( $item['url'] ?? '' ) ),
 				'last_delivery_channel' => sanitize_key( (string) ( $item['last_delivery_channel'] ?? '' ) ),
@@ -492,7 +503,7 @@ class AiMemoryService {
 		$hours = max( 1, self::MISSED_FOLLOW_UP_HOURS );
 
 		try {
-			$now = new \DateTimeImmutable( UserTime::mysql( $user_id ), UserTime::timezone( $user_id ) );
+			$now = UserTime::now( $user_id );
 			return $now->modify( '-' . $hours . ' hours' )->format( 'Y-m-d H:i:s' );
 		} catch ( \Exception $e ) {
 			return UserTime::days_ago( $user_id, 1 );

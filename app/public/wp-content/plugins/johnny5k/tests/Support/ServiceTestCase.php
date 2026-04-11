@@ -28,6 +28,7 @@ abstract class ServiceTestCase extends TestCase {
 		$GLOBALS['johnny5k_test_current_user_id'] = 0;
 		$GLOBALS['johnny5k_test_next_user_id'] = 100;
 		unset( $GLOBALS['johnny5k_test_auth_cookie'] );
+		unset( $GLOBALS['johnny5k_test_now'] );
 	}
 
 	protected function wpdb(): FakeWpdb {

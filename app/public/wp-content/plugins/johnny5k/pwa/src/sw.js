@@ -43,8 +43,10 @@ registerRoute(
     && url.origin === self.location.origin
     && url.pathname.startsWith('/wp-json/fit/v1/')
     && !url.pathname.startsWith('/wp-json/fit/v1/auth/'),
-  new StaleWhileRevalidate({
-    cacheName: 'jf-api-safe-reads-v1',
+  // Authenticated app data needs fresh reads immediately after writes.
+  new NetworkFirst({
+    cacheName: 'jf-api-safe-reads-v2',
+    networkTimeoutSeconds: 4,
     plugins: [
       new CacheableResponsePlugin({ statuses: [200] }),
       new ExpirationPlugin({ maxEntries: 120, maxAgeSeconds: 60 * 60 }),

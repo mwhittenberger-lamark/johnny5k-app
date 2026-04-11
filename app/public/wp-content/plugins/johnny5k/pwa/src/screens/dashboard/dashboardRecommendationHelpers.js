@@ -1152,7 +1152,7 @@ export function buildMomentumCard(snapshot, awards) {
     rows: [
       { label: 'Meals this week', value: mealDays },
       { label: 'Training days', value: trainingDays },
-      { label: 'Sleep days', value: sleepDays },
+      { label: 'Sleep goal days', value: sleepDays },
       { label: 'Awards', value: awards.length, suffix: '' },
     ],
   }

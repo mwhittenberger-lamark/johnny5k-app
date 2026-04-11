@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Johnny5k\Tests;
 
+use Johnny5k\Services\AiMemoryService;
 use Johnny5k\Services\CoachDeliveryService;
 use Johnny5k\Services\UserTime;
 use Johnny5k\Tests\Support\ServiceTestCase;
@@ -45,5 +46,29 @@ class CoachDeliveryServiceTest extends ServiceTestCase {
 		$this->assertSame( $expected, $result['expected_sessions_to_date'] );
 		$this->assertSame( 0, $result['sessions_this_week'] );
 		$this->assertSame( $expected, $result['missed_expected_sessions'] );
+	}
+
+	public function test_pending_follow_ups_exclude_stale_meal_nudges_from_previous_day(): void {
+		$GLOBALS['johnny5k_test_now'] = '2026-04-11 10:00:00';
+
+		$db = $this->wpdb();
+		$db->expectGetVar( 'SELECT timezone FROM wp_fit_user_profiles', 'UTC' );
+		$db->expectGetVar( 'SELECT timezone FROM wp_fit_user_profiles', 'UTC' );
+
+		\update_user_meta( 7, 'jf_johnny_follow_ups', [
+			[
+				'id' => 'meal-dinner-yesterday',
+				'prompt' => 'Dinner is not logged yet.',
+				'reason' => 'Dinner still missing',
+				'trigger_type' => 'meal_dinner_nudge',
+				'due_at' => '2026-04-10 19:00:00',
+				'status' => 'pending',
+				'created_at' => '2026-04-10 19:00:00',
+			],
+		] );
+
+		$pending = AiMemoryService::get_pending_follow_ups( 7 );
+
+		$this->assertSame( [], $pending );
 	}
 }

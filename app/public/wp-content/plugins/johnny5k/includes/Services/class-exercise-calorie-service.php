@@ -41,8 +41,8 @@ class ExerciseCalorieService {
 		global $wpdb;
 		$p = $wpdb->prefix;
 
-		$workout_calories = (int) $wpdb->get_var( $wpdb->prepare(
-			"SELECT COALESCE(SUM(estimated_calories), 0)
+		$workout_rows = $wpdb->get_results( $wpdb->prepare(
+			"SELECT actual_day_type, planned_day_type, time_tier, duration_minutes, estimated_calories
 			 FROM {$p}fit_workout_sessions
 			 WHERE user_id = %d
 			   AND session_date = %s
@@ -51,6 +51,22 @@ class ExerciseCalorieService {
 			$user_id,
 			$date
 		) );
+
+		$workout_calories = array_reduce( is_array( $workout_rows ) ? $workout_rows : [], function( int $sum, object $row ) use ( $user_id ): int {
+			$stored_calories = isset( $row->estimated_calories ) ? (int) $row->estimated_calories : 0;
+			if ( $stored_calories > 0 ) {
+				return $sum + $stored_calories;
+			}
+
+			$duration_minutes = isset( $row->duration_minutes ) ? (int) $row->duration_minutes : 0;
+			if ( $duration_minutes <= 0 ) {
+				return $sum;
+			}
+
+			$day_type = (string) ( $row->actual_day_type ?? $row->planned_day_type ?? 'push' );
+			$time_tier = (string) ( $row->time_tier ?? 'medium' );
+			return $sum + self::estimate_workout_session_calories( $user_id, $duration_minutes, $day_type, $time_tier );
+		}, 0 );
 
 		$cardio_calories = (int) $wpdb->get_var( $wpdb->prepare(
 			"SELECT COALESCE(SUM(estimated_calories), 0)
