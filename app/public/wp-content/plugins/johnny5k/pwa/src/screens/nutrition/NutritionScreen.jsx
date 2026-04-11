@@ -24,6 +24,7 @@ import {
 import {
   approximatelyEqualServingCount,
   dedupeIngredientList,
+  normalisePantryMatchText,
   normaliseRawServingUnitLabel,
   normaliseServingUnitLabel,
   parseQuantifiedServingUnit,

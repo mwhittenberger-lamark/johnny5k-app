@@ -84,7 +84,7 @@ export function normaliseRawServingUnitLabel(unit) {
   return quantifiedUnit ? quantifiedUnit.normalized : rawUnit || 'serving'
 }
 
-function normalisePantryMatchText(value) {
+export function normalisePantryMatchText(value) {
   return String(value || '')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, ' ')
