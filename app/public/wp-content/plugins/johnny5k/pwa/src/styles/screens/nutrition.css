@@ -583,8 +583,7 @@
 .nutrition-recipe-note,
 .meal-card-meta,
 .meal-item-serving,
-.nutrition-shortcut-card span,
-.empty-state {
+.nutrition-shortcut-card span {
   color: rgba(11, 29, 73, 0.7);
 }
 .nutrition-planning-card .nutrition-coach-card p,
@@ -724,6 +723,17 @@
   border-radius: 14px;
   border: 1px solid rgba(0, 188, 222, 0.18);
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(240, 249, 252, 0.98));
+}
+.nutrition-inline-state {
+  margin: 0;
+  padding: 14px 16px;
+  box-shadow: none;
+}
+.nutrition-inline-state .state-card-title {
+  font-size: 0.95rem;
+}
+.nutrition-inline-state .state-card-message {
+  font-size: 0.9rem;
 }
 .saved-food-ai-label {
   display: flex;

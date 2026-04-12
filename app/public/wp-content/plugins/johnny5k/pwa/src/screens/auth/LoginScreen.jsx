@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { authApi } from '../../api/modules/auth'
 import ClearableInput from '../../components/ui/ClearableInput'
+import ErrorState from '../../components/ui/ErrorState'
 import { getAppImageUrl } from '../../lib/appImages'
 import { useAuthStore } from '../../store/authStore'
 
@@ -40,7 +41,7 @@ export default function LoginScreen() {
       <form onSubmit={handleSubmit} className="auth-form">
         <ClearableInput type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} required />
         <ClearableInput type="password" placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} required />
-        {error && <p className="error">{error}</p>}
+        {error ? <ErrorState className="auth-inline-error" message={error} title="Could not sign in" /> : null}
         <button type="submit" className="btn-primary" disabled={loading}>
           {loading ? 'Signing in…' : 'Sign In'}
         </button>

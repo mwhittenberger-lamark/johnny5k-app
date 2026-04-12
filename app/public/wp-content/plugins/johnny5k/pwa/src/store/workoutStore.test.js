@@ -44,6 +44,7 @@ function createSessionStorage() {
 async function loadWorkoutStore() {
   vi.resetModules()
   globalThis.sessionStorage = createSessionStorage()
+  globalThis.localStorage = createSessionStorage()
   const module = await import('./workoutStore')
   return module.useWorkoutStore
 }
@@ -111,5 +112,82 @@ describe('useWorkoutStore', () => {
     expect(state.sessionId).toBeNull()
     expect(state.customWorkoutDraft).toEqual({ id: 'draft-1' })
     expect(state.wasResumed).toBe(false)
+  })
+
+  it('falls back to a cached session snapshot during a network failure', async () => {
+    const store = await loadWorkoutStore()
+    const { cacheWorkoutSessionSnapshot } = await import('../lib/workoutOffline')
+
+    cacheWorkoutSessionSnapshot({
+      session: { id: 44, session_date: '2026-04-11', time_tier: 'medium', readiness_score: 6 },
+      exercises: [{ id: 501, exercise_name: 'Bench Press', sets: [] }],
+    })
+
+    workoutApiMock.current.mockRejectedValue(new TypeError('Failed to fetch'))
+
+    await store.getState().bootstrapSession()
+
+    const state = store.getState()
+    expect(state.sessionId).toBe(44)
+    expect(state.offlineSessionSnapshot).toBe(true)
+    expect(state.session?.exercises?.[0]?.exercise_name).toBe('Bench Press')
+  })
+
+  it('marks offline queued sets locally when logSet is queued', async () => {
+    const store = await loadWorkoutStore()
+    store.setState({
+      sessionId: 88,
+      session: {
+        session: { id: 88, session_date: '2026-04-11' },
+        exercises: [{ id: 901, exercise_name: 'Row', sets: [] }],
+      },
+    })
+    workoutApiMock.logSet.mockResolvedValue({
+      queued: true,
+      offline: true,
+      queue_id: 'queue_1',
+      local_id: 'local_1',
+    })
+
+    await store.getState().logSet(901, { weight: 95, reps: 10, completed: 1 })
+
+    const setRow = store.getState().session.exercises[0].sets[0]
+    expect(setRow.id).toBeLessThan(0)
+    expect(setRow.sync_status).toBe('queued')
+    expect(setRow.offline_queue_id).toBe('queue_1')
+    expect(setRow.offline_local_id).toBe('local_1')
+  })
+
+  it('updates a queued local set without calling the server again', async () => {
+    const store = await loadWorkoutStore()
+    store.setState({
+      sessionId: 88,
+      session: {
+        session: { id: 88, session_date: '2026-04-11' },
+        exercises: [{
+          id: 901,
+          exercise_name: 'Row',
+          sets: [{
+            id: -77,
+            session_exercise_id: 901,
+            set_number: 1,
+            weight: 95,
+            reps: 10,
+            completed: 1,
+            sync_status: 'queued',
+            offline_queue_id: 'queue_1',
+            offline_local_id: 'local_1',
+          }],
+        }],
+      },
+    })
+
+    await store.getState().updateSet(-77, { weight: 100, reps: 9, completed: 1 })
+
+    const setRow = store.getState().session.exercises[0].sets[0]
+    expect(workoutApiMock.updateSet).not.toHaveBeenCalled()
+    expect(setRow.weight).toBe(100)
+    expect(setRow.reps).toBe(9)
+    expect(setRow.sync_status).toBe('queued')
   })
 })

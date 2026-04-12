@@ -10,8 +10,26 @@ export const workoutApi = {
   get: (id) => api.get(`/workout/${id}`),
   updateHistory: (id, data) => api.put(`/workout/history/${id}`, data),
   deleteHistory: (id) => api.del(`/workout/history/${id}`),
-  logSet: (id, data) => api.post(`/workout/${id}/set`, data),
-  updateSet: (id, sid, data) => api.put(`/workout/${id}/set/${sid}`, data),
+  logSet: (id, data) => api.post(`/workout/${id}/set`, data, {
+    queueOnNetworkFailure: true,
+    queueLabel: 'Workout set',
+    queueMeta: {
+      feature: 'workout',
+      action: 'set-create',
+      session_id: Number(id || 0),
+      session_exercise_id: Number(data?.session_exercise_id || 0),
+    },
+  }),
+  updateSet: (id, sid, data) => api.put(`/workout/${id}/set/${sid}`, data, {
+    queueOnNetworkFailure: true,
+    queueLabel: 'Workout set update',
+    queueMeta: {
+      feature: 'workout',
+      action: 'set-update',
+      session_id: Number(id || 0),
+      set_id: Number(sid || 0),
+    },
+  }),
   deleteSet: (id, sid) => api.del(`/workout/${id}/set/${sid}`),
   restoreSet: (id, data) => api.post(`/workout/${id}/set/restore`, data),
   updateExerciseNote: (id, sessionExerciseId, data) => api.put(`/workout/${id}/exercise/${sessionExerciseId}/note`, data),

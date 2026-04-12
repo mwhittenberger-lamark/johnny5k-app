@@ -1,15 +1,18 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useLocation, useNavigate } from 'react-router-dom'
+import { flushOfflineWriteQueue, getOfflineWriteQueueSnapshot, subscribeOfflineWriteQueue } from '../../api/client'
 import OfflineState from '../../components/ui/OfflineState'
 import { trainingApi } from '../../api/modules/training'
 import { openSupportGuide } from '../../lib/supportHelp'
 import { useOnlineStatus } from '../../lib/useOnlineStatus'
+import { cacheWorkoutPlanSnapshot, countQueuedWorkoutSetEntries, readCachedWorkoutPlanSnapshot } from '../../lib/workoutOffline'
 import { useJohnnyAssistantStore } from '../../store/johnnyAssistantStore'
 import { useWorkoutStore } from '../../store/workoutStore'
 import WorkoutActiveSession from './components/WorkoutActiveSession'
 import WorkoutCompletionReviewModal from './components/WorkoutCompletionReviewModal'
 import WorkoutLaunchpad from './components/WorkoutLaunchpad'
+import WorkoutOfflineStatusCard from './components/WorkoutOfflineStatusCard'
 import { useLiveWorkoutFrames } from './hooks/useLiveWorkoutFrames'
 import { useWorkoutPlanningController } from './hooks/useWorkoutPlanningController'
 import { useWorkoutSessionController } from './hooks/useWorkoutSessionController'
@@ -26,6 +29,7 @@ export default function WorkoutScreen() {
     timeTier,
     readinessScore,
     sessionMode,
+    offlineSessionSnapshot,
     previewDayType: selectedDayType,
     previewDrafts,
     wasResumed,
@@ -63,18 +67,32 @@ export default function WorkoutScreen() {
   } = useWorkoutStore()
   const [statusNotice, setStatusNotice] = useState('')
   const [statusError, setStatusError] = useState('')
+  const [cachedPlanSnapshot, setCachedPlanSnapshot] = useState(() => readCachedWorkoutPlanSnapshot())
+  const [workoutQueueState, setWorkoutQueueState] = useState(() => {
+    const snapshot = getOfflineWriteQueueSnapshot()
+    return {
+      count: countQueuedWorkoutSetEntries(snapshot.entries),
+      syncing: Boolean(snapshot.syncing),
+    }
+  })
+  const [offlineRecoveryStatus, setOfflineRecoveryStatus] = useState({ kind: '', message: '' })
+  const [retryingQueuedSets, setRetryingQueuedSets] = useState(false)
+  const [recoveringWorkout, setRecoveringWorkout] = useState(false)
   const location = useLocation()
   const navigate = useNavigate()
   const isOnline = useOnlineStatus()
+  const previousQueueCountRef = useRef(workoutQueueState.count)
+  const previousOnlineRef = useRef(isOnline)
   const planQuery = useQuery({
     queryKey: ['training-plan'],
     queryFn: trainingApi.getPlan,
     staleTime: 60_000,
   })
 
-  const plan = planQuery.data ?? null
-  const planLoading = planQuery.isLoading
-  const planError = planQuery.error?.message || ''
+  const plan = planQuery.data ?? cachedPlanSnapshot?.plan ?? null
+  const usingCachedPlan = !planQuery.data && Boolean(cachedPlanSnapshot?.plan)
+  const planLoading = planQuery.isLoading && !plan
+  const planError = usingCachedPlan ? '' : planQuery.error?.message || ''
   const exercises = session?.exercises ?? []
   const todayContext = plan?.today_context ?? null
   const todaysOrder = Number(todayContext?.weekday_order) || weekdayOrderForDate()
@@ -156,9 +174,128 @@ export default function WorkoutScreen() {
   const liveWorkoutFrames = useLiveWorkoutFrames()
   const isMaintenanceMode = (sessionMode || session?.session_mode) === 'maintenance' || Number(session?.session?.readiness_score ?? readinessScore) <= 3
 
+  const recoverWorkoutState = useCallback(async (message = 'Connection restored. Your workout data was refreshed from the server.') => {
+    setRecoveringWorkout(true)
+    setStatusError('')
+    try {
+      await Promise.all([planQuery.refetch(), bootstrapSession()])
+      setOfflineRecoveryStatus({ kind: 'recovered', message })
+    } catch (error) {
+      setOfflineRecoveryStatus({ kind: 'error', message: error?.message || 'Could not reload the latest workout state yet.' })
+    } finally {
+      setRecoveringWorkout(false)
+    }
+  }, [bootstrapSession, planQuery, setStatusError])
+
+  const handleRetryQueuedSets = useCallback(async () => {
+    setRetryingQueuedSets(true)
+    setOfflineRecoveryStatus({
+      kind: 'syncing',
+      message: `Syncing ${workoutQueueState.count} queued set${workoutQueueState.count === 1 ? '' : 's'} now.`,
+    })
+
+    try {
+      await flushOfflineWriteQueue()
+    } finally {
+      setRetryingQueuedSets(false)
+    }
+  }, [workoutQueueState.count])
+
+  const handleRecoverServerCopy = useCallback(() => {
+    void recoverWorkoutState('The latest server copy was reloaded. Review your workout below.')
+  }, [recoverWorkoutState])
+
   useEffect(() => {
     bootstrapSession()
   }, [bootstrapSession])
+
+  useEffect(() => subscribeOfflineWriteQueue((snapshot) => {
+    setWorkoutQueueState({
+      count: countQueuedWorkoutSetEntries(snapshot.entries),
+      syncing: Boolean(snapshot.syncing),
+    })
+  }), [])
+
+  useEffect(() => {
+    if (!planQuery.data) {
+      return
+    }
+
+    setCachedPlanSnapshot(cacheWorkoutPlanSnapshot(planQuery.data))
+  }, [planQuery.data])
+
+  useEffect(() => {
+    const previousOnline = previousOnlineRef.current
+    const previousQueuedSets = previousQueueCountRef.current
+
+    previousOnlineRef.current = isOnline
+    previousQueueCountRef.current = workoutQueueState.count
+
+    if (!isOnline) {
+      if (workoutQueueState.count > 0) {
+        setOfflineRecoveryStatus({
+          kind: 'offline',
+          message: `${workoutQueueState.count} set log${workoutQueueState.count === 1 ? '' : 's'} queued locally. Keep training and Johnny5k will sync them when the connection returns.`,
+        })
+        return
+      }
+
+      if (usingCachedPlan || offlineSessionSnapshot || Boolean(session?.session?.id)) {
+        setOfflineRecoveryStatus({
+          kind: 'offline',
+          message: 'You are offline. Cached workout data stays available so you can keep your place safely.',
+        })
+      }
+      return
+    }
+
+    if (workoutQueueState.syncing && workoutQueueState.count > 0) {
+      setOfflineRecoveryStatus({
+        kind: 'syncing',
+        message: `Syncing ${workoutQueueState.count} queued set${workoutQueueState.count === 1 ? '' : 's'} now.`,
+      })
+      return
+    }
+
+    if (previousQueuedSets > 0 && workoutQueueState.count === 0) {
+      void recoverWorkoutState(`Connection restored. ${previousQueuedSets} queued set${previousQueuedSets === 1 ? '' : 's'} synced and your workout was refreshed from the server.`)
+      return
+    }
+
+    if (workoutQueueState.count > 0) {
+      setOfflineRecoveryStatus({
+        kind: 'retry',
+        message: `${workoutQueueState.count} queued set${workoutQueueState.count === 1 ? '' : 's'} still need to sync. Retry now or keep this screen open and Johnny5k will keep trying when the network settles.`,
+      })
+      return
+    }
+
+    if (!previousOnline && (usingCachedPlan || offlineSessionSnapshot)) {
+      setOfflineRecoveryStatus({
+        kind: 'online',
+        message: 'Connection restored. Reload the server copy when you want to replace the cached snapshot with the latest workout state.',
+      })
+    }
+  }, [
+    isOnline,
+    offlineSessionSnapshot,
+    recoverWorkoutState,
+    session?.session?.id,
+    usingCachedPlan,
+    workoutQueueState.count,
+    workoutQueueState.syncing,
+  ])
+
+  const workoutOfflineStatus = {
+    status: offlineRecoveryStatus,
+    queuedSetCount: workoutQueueState.count,
+    usingCachedPlan,
+    usingCachedSession: offlineSessionSnapshot,
+    retrying: retryingQueuedSets || workoutQueueState.syncing,
+    recovering: recoveringWorkout,
+    onRetrySync: isOnline && workoutQueueState.count > 0 ? handleRetryQueuedSets : null,
+    onRecover: isOnline && (usingCachedPlan || offlineSessionSnapshot || ['online', 'recovered', 'error'].includes(offlineRecoveryStatus.kind)) ? handleRecoverServerCopy : null,
+  }
 
   function handleOpenWorkoutSupport() {
     openSupportGuide(openDrawer, {
@@ -215,6 +352,7 @@ export default function WorkoutScreen() {
         scheduledDayType={scheduledDayType}
         statusNotice={statusNotice}
         statusError={statusError}
+        offlineStatus={<WorkoutOfflineStatusCard {...workoutOfflineStatus} />}
         onOpenWorkoutSupport={handleOpenWorkoutSupport}
         planning={planning}
         sessionController={sessionController}
@@ -236,6 +374,7 @@ export default function WorkoutScreen() {
       displayDayType={planning.displayDayType}
       displaySessionTitle={planning.displaySessionTitle}
       isMaintenanceMode={isMaintenanceMode}
+      offlineStatus={<WorkoutOfflineStatusCard {...workoutOfflineStatus} />}
       onOpenWorkoutSupport={handleOpenWorkoutSupport}
       liveWorkoutFrames={liveWorkoutFrames}
       sessionController={{ ...sessionController, dismissUndoToast }}

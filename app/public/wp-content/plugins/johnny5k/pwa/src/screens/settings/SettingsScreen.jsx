@@ -5,7 +5,10 @@ import { analyticsApi } from '../../api/modules/analytics'
 import { bodyApi } from '../../api/modules/body'
 import { onboardingApi } from '../../api/modules/onboarding'
 import { pushApi } from '../../api/modules/push'
+import AppDialog from '../../components/ui/AppDialog'
 import ClearableInput from '../../components/ui/ClearableInput'
+import ErrorState from '../../components/ui/ErrorState'
+import Field from '../../components/ui/Field'
 import SupportIconButton from '../../components/ui/SupportIconButton'
 import { reportClientDiagnostic } from '../../lib/clientDiagnostics'
 import { decodeVapidPublicKey, ensurePushRegistration, getCurrentPushSubscription, getNotificationPermission, getPushSupportState, requestNotificationPermission, serializeSubscription } from '../../lib/pushNotifications'
@@ -19,6 +22,7 @@ import { DAY_TYPE_OPTIONS } from '../../lib/trainingDayTypes'
 import { formatUsShortDate } from '../../lib/dateFormat'
 import { openSupportGuide } from '../../lib/supportHelp'
 import { applyColorScheme, getColorSchemeOptions, normalizeColorScheme, setAvailableColorSchemes } from '../../lib/theme'
+import { confirmGlobalAction } from '../../lib/uiFeedback'
 
 const TIMEZONE_REGIONS = getTimezoneRegions()
 const REMINDER_HOUR_OPTIONS = reminderHourOptions()
@@ -576,7 +580,12 @@ export default function SettingsScreen() {
 
   async function handleDeleteGeneratedImage(imageId) {
     if (!imageId || generatedImageActionBusyId) return
-    const confirmed = window.confirm('Delete this generated image?')
+    const confirmed = await confirmGlobalAction({
+      title: 'Delete generated image?',
+      message: 'This removes the generated image from your profile library.',
+      confirmLabel: 'Delete image',
+      tone: 'danger',
+    })
     if (!confirmed) return
 
     setGeneratedImageActionBusyId(imageId)
@@ -601,7 +610,11 @@ export default function SettingsScreen() {
 
   async function restartOnboarding() {
     if (saving) return
-    const confirmed = window.confirm('Restart onboarding? Your saved profile data will stay in place, but you will be sent back through the setup flow.')
+    const confirmed = await confirmGlobalAction({
+      title: 'Restart onboarding?',
+      message: 'Your saved profile data will stay in place, but you will be sent back through the setup flow.',
+      confirmLabel: 'Restart onboarding',
+    })
     if (!confirmed) return
 
     setSaving(true)
@@ -643,7 +656,12 @@ export default function SettingsScreen() {
   async function cancelSmsReminder(reminderId) {
     if (!reminderId || cancelingReminderId) return
 
-    const confirmed = window.confirm('Cancel this scheduled SMS reminder?')
+    const confirmed = await confirmGlobalAction({
+      title: 'Cancel scheduled SMS reminder?',
+      message: 'This removes the reminder from your upcoming SMS schedule.',
+      confirmLabel: 'Cancel reminder',
+      tone: 'danger',
+    })
     if (!confirmed) return
 
     setCancelingReminderId(reminderId)
@@ -1101,26 +1119,21 @@ export default function SettingsScreen() {
           <section className="settings-section dash-card">
             <h3>About You</h3>
             <div className="settings-grid">
-              <label className="settings-field"><span className="settings-field-label">First Name</span><ClearableInput value={form.first_name} onChange={e => update('first_name', e.target.value)} /></label>
-              <label className="settings-field"><span className="settings-field-label">Last Name</span><ClearableInput value={form.last_name} onChange={e => update('last_name', e.target.value)} /></label>
-              <label className="settings-field"><span className="settings-field-label">Date of Birth</span><input type="date" value={form.date_of_birth} onChange={e => update('date_of_birth', e.target.value)} /></label>
-              <label className="settings-field"><span className="settings-field-label">Sex</span>
+              <Field className="settings-field" label="First Name"><ClearableInput value={form.first_name} onChange={e => update('first_name', e.target.value)} /></Field>
+              <Field className="settings-field" label="Last Name"><ClearableInput value={form.last_name} onChange={e => update('last_name', e.target.value)} /></Field>
+              <Field className="settings-field" label="Date of Birth"><input type="date" value={form.date_of_birth} onChange={e => update('date_of_birth', e.target.value)} /></Field>
+              <Field className="settings-field" label="Sex">
                 <select value={form.sex} onChange={e => update('sex', e.target.value)}>
                   <option value="male">Male</option>
                   <option value="female">Female</option>
                   <option value="other">Other</option>
                 </select>
-              </label>
-              <label className="settings-field"><span className="settings-field-label">Height (ft)</span><input type="number" min="4" max="7" value={form.height_ft} onChange={e => update('height_ft', e.target.value)} /></label>
-              <label className="settings-field"><span className="settings-field-label">Height (in)</span><input type="number" min="0" max="11" value={form.height_in_part} onChange={e => update('height_in_part', e.target.value)} /></label>
-              <div className="settings-field settings-field-span-2">
-                <div className="settings-field-head">
-                  <span className="settings-field-label">Timezone</span>
-                  <span className="settings-field-hint">Pick a region first, then your saved timezone.</span>
-                </div>
+              </Field>
+              <Field className="settings-field" label="Height (ft)"><input type="number" min="4" max="7" value={form.height_ft} onChange={e => update('height_ft', e.target.value)} /></Field>
+              <Field className="settings-field" label="Height (in)"><input type="number" min="0" max="11" value={form.height_in_part} onChange={e => update('height_in_part', e.target.value)} /></Field>
+              <Field className="settings-field settings-field-span-2" hint="Pick a region first, then your saved timezone." label="Timezone">
                 <div className="timezone-picker">
-                  <label className="settings-subfield">
-                    <span>Region</span>
+                  <Field className="settings-subfield" compact label="Region">
                     <select value={timezoneRegion} onChange={e => {
                       const nextRegion = e.target.value
                       const nextZones = getTimezonesForRegion(nextRegion)
@@ -1129,38 +1142,37 @@ export default function SettingsScreen() {
                     }}>
                       {TIMEZONE_REGIONS.map(region => <option key={region} value={region}>{region}</option>)}
                     </select>
-                  </label>
-                  <label className="settings-subfield">
-                    <span>Timezone</span>
+                  </Field>
+                  <Field className="settings-subfield" compact label="Timezone">
                     <select value={form.timezone} onChange={e => update('timezone', e.target.value)}>
                       {regionTimezones.map(zone => <option key={zone} value={zone}>{zone}</option>)}
                     </select>
-                  </label>
+                  </Field>
                 </div>
-              </div>
+              </Field>
             </div>
           </section>
 
           <section className="settings-section dash-card">
             <h3>Body & Goal</h3>
             <div className="settings-grid">
-              <label className="settings-field"><span className="settings-field-label">Current Weight</span><div className="settings-input-suffix"><input type="number" min="80" max="600" step="0.1" value={form.starting_weight_lb} onChange={e => update('starting_weight_lb', e.target.value)} /><span>lbs</span></div></label>
-              <label className="settings-field"><span className="settings-field-label">Goal</span>
+              <Field className="settings-field" label="Current Weight"><div className="settings-input-suffix"><input type="number" min="80" max="600" step="0.1" value={form.starting_weight_lb} onChange={e => update('starting_weight_lb', e.target.value)} /><span>lbs</span></div></Field>
+              <Field className="settings-field" label="Goal">
                 <select value={form.current_goal} onChange={e => update('current_goal', e.target.value)}>
                   <option value="cut">Cut</option>
                   <option value="gain">Gain</option>
                   <option value="recomp">Recomp</option>
                   <option value="maintain">Maintain</option>
                 </select>
-              </label>
-              <label className="settings-field"><span className="settings-field-label">Goal Pace</span>
+              </Field>
+              <Field className="settings-field" label="Goal Pace">
                 <select value={form.goal_rate} onChange={e => update('goal_rate', e.target.value)}>
                   <option value="slow">Slow</option>
                   <option value="moderate">Moderate</option>
                   <option value="aggressive">Aggressive</option>
                 </select>
-              </label>
-              <label className="settings-field"><span className="settings-field-label">Activity Level</span>
+              </Field>
+              <Field className="settings-field" label="Activity Level">
                 <select value={form.activity_level} onChange={e => update('activity_level', e.target.value)}>
                   <option value="sedentary">Sedentary</option>
                   <option value="light">Light</option>
@@ -1168,7 +1180,7 @@ export default function SettingsScreen() {
                   <option value="high">Active</option>
                   <option value="athlete">Athlete</option>
                 </select>
-              </label>
+              </Field>
             </div>
           </section>
         </SettingsAccordionSection>
@@ -1185,8 +1197,8 @@ export default function SettingsScreen() {
           <section className="settings-section dash-card">
             <h3>Daily Targets</h3>
             <div className="settings-grid">
-              <label className="settings-field"><span className="settings-field-label">Steps</span><input type="number" min="1000" max="30000" step="1" value={form.target_steps} onChange={e => update('target_steps', Number(e.target.value))} /></label>
-              <label className="settings-field"><span className="settings-field-label">Sleep (hours)</span><input type="number" min="4" max="12" step="0.5" value={form.target_sleep_hours} onChange={e => update('target_sleep_hours', Number(e.target.value))} /></label>
+              <Field className="settings-field" label="Steps"><input type="number" min="1000" max="30000" step="1" value={form.target_steps} onChange={e => update('target_steps', Number(e.target.value))} /></Field>
+              <Field className="settings-field" label="Sleep (hours)"><input type="number" min="4" max="12" step="0.5" value={form.target_sleep_hours} onChange={e => update('target_sleep_hours', Number(e.target.value))} /></Field>
               <div className="settings-inline-panel settings-field-span-2">
                 <label className="switch-field">
                   <span className="switch-copy">
@@ -1243,11 +1255,9 @@ export default function SettingsScreen() {
                 <span className="switch-track" aria-hidden="true" />
               </span>
             </label>
-            <label className="settings-field notification-phone-field">
-              <span className="settings-field-label">Phone</span>
+            <Field className="settings-field notification-phone-field" hint="Only used for reminder texts." label="Phone">
               <ClearableInput type="tel" inputMode="tel" value={form.phone} onChange={e => updatePhone(e.target.value)} placeholder="(555) 123-4567" disabled={!form.notifications_enabled} />
-              <span className="settings-field-hint">Only used for reminder texts.</span>
-            </label>
+            </Field>
           </section>
 
           <section className="settings-section dash-card settings-reminders-panel">
@@ -1301,7 +1311,7 @@ export default function SettingsScreen() {
                 </button>
               </div>
             ) : null}
-            {pushError ? <p className="error">{pushError}</p> : null}
+            {pushError ? <ErrorState className="settings-inline-error" message={pushError} title="Could not update push settings" /> : null}
             {pushMessage ? <p className="success-message">{pushMessage}</p> : null}
           </section>
 
@@ -1390,7 +1400,7 @@ export default function SettingsScreen() {
                 </div>
 
                 {smsReminderLoading ? <p className="settings-subtitle">Loading scheduled reminders…</p> : null}
-                {smsReminderError ? <p className="error">{smsReminderError}</p> : null}
+                {smsReminderError ? <ErrorState className="settings-inline-error" message={smsReminderError} title="Could not load scheduled reminders" /> : null}
                 {smsReminderMessage ? <p className="success-message">{smsReminderMessage}</p> : null}
 
                 {!smsReminderLoading && !smsReminderError ? (
@@ -1564,23 +1574,20 @@ export default function SettingsScreen() {
                         </span>
                       </label>
                     </div>
-                    <label className="settings-field settings-field-span-2">
-                      <span className="settings-field-label">Voice</span>
+                    <Field className="settings-field settings-field-span-2" hint="Voice is generated by OpenAI instead of browser-native speech synthesis." label="Voice">
                       <select value={liveVoicePrefs.openAiVoice} onChange={event => updateLiveVoicePref('openAiVoice', event.target.value)}>
                         {OPENAI_TTS_VOICE_OPTIONS.map(voice => (
                           <option key={voice} value={voice}>{formatOpenAiVoiceLabel(voice)}</option>
                         ))}
                       </select>
-                      <span className="settings-field-hint">Voice is generated by OpenAI instead of browser-native speech synthesis.</span>
-                    </label>
-                    <label className="settings-field">
-                      <span className="settings-field-label">Playback speed</span>
+                    </Field>
+                    <Field className="settings-field" label="Playback speed">
                       <select value={String(liveVoicePrefs.rate)} onChange={event => updateLiveVoicePref('rate', Number(event.target.value))}>
                         {LIVE_WORKOUT_VOICE_RATE_OPTIONS.map(rate => (
                           <option key={rate} value={rate}>{rate.toFixed(rate % 1 === 0 ? 0 : 2)}x</option>
                         ))}
                       </select>
-                    </label>
+                    </Field>
                     <div className="settings-inline-panel settings-live-voice-preview-card">
                       <strong>Preview</strong>
                       <p className="settings-subtitle">Play a short sample with the current OpenAI voice and speed, or reset this device back to Johnny’s defaults.</p>
@@ -1588,7 +1595,7 @@ export default function SettingsScreen() {
                         <button type="button" className="btn-outline small" onClick={previewLiveVoice} disabled={voicePreviewBusy}>{voicePreviewBusy ? 'Playing…' : 'Play sample'}</button>
                         <button type="button" className="btn-secondary small" onClick={() => setLiveVoicePrefs(getDefaultLiveWorkoutVoicePrefs())}>Reset defaults</button>
                       </div>
-                      {voicePreviewError ? <p className="error">{voicePreviewError}</p> : null}
+                      {voicePreviewError ? <ErrorState className="settings-inline-error" message={voicePreviewError} title="Could not preview this voice" /> : null}
                     </div>
                   </div>
                 </>
@@ -1640,7 +1647,7 @@ export default function SettingsScreen() {
                 <button type="button" className="btn-secondary small" onClick={() => setJohnnyMemoryDraft(current => [...current, ''])}>Add memory</button>
                 <button type="button" className="btn-primary small" onClick={saveJohnnyMemory} disabled={savingJohnnyMemory}>{savingJohnnyMemory ? 'Saving…' : 'Save memory'}</button>
               </div>
-              {johnnyError ? <p className="error">{johnnyError}</p> : null}
+              {johnnyError ? <ErrorState className="settings-inline-error" message={johnnyError} title="Could not save Johnny memory" /> : null}
               {johnnyMessage ? <p className="success-message">{johnnyMessage}</p> : null}
               {!johnnyError && johnnyMemory.length > 0 ? <p className="settings-ai-note">Saved {johnnyMemory.length} long-term coaching notes.</p> : null}
             </div>
@@ -1854,26 +1861,24 @@ export default function SettingsScreen() {
               </div>
 
               <div className="settings-headshot-controls">
-                <label className="settings-field settings-field-span-2">
-                  <span className="settings-field-label">Extra image direction</span>
+                <Field className="settings-field settings-field-span-2" label="Extra image direction">
                   <textarea
                     rows="4"
                     value={generationPrompt}
                     onChange={event => setGenerationPrompt(event.target.value)}
                     placeholder="Optional: add scene direction like rainy marathon training, heavy barbell work, or bright early-morning track energy."
                   />
-                </label>
+                </Field>
                 <div className="settings-inline-panel settings-field-span-2">
                   <strong>Generate Johnny scenes</strong>
                   <p className="settings-subtitle">Pick 1 or 2 images per run. Hearts add images into Live Workout coach rotation.</p>
                   <div className="settings-grid settings-grid-compact">
-                    <label className="settings-field">
-                      <span className="settings-field-label">How many to generate</span>
+                    <Field className="settings-field" label="How many to generate">
                       <select value={generationCount} onChange={event => setGenerationCount(Number(event.target.value))} disabled={generatingImages}>
                         <option value={1}>1 image</option>
                         <option value={2}>2 images</option>
                       </select>
-                    </label>
+                    </Field>
                   </div>
                   <div className="settings-ai-actions">
                     <button type="button" className="btn-primary small" onClick={handleGenerateImages} disabled={!headshot?.configured || generatingImages || headshotUploading}>
@@ -1881,9 +1886,9 @@ export default function SettingsScreen() {
                     </button>
                   </div>
                 </div>
-                {headshotError ? <p className="error">{headshotError}</p> : null}
+                {headshotError ? <ErrorState className="settings-inline-error" message={headshotError} title="Could not update your headshot" /> : null}
                 {headshotMessage ? <p className="success-message">{headshotMessage}</p> : null}
-                {generationError ? <p className="error">{generationError}</p> : null}
+                {generationError ? <ErrorState className="settings-inline-error" message={generationError} title="Could not generate images" /> : null}
                 {generationMessage ? <p className="success-message">{generationMessage}</p> : null}
               </div>
             </div>
@@ -2010,9 +2015,14 @@ export default function SettingsScreen() {
       </section>
 
       {zoomedImage && generatedImageSrcs[zoomedImage.id] ? (
-        <div className="settings-image-zoom-modal" role="dialog" aria-modal="true" aria-label="Generated image preview">
-          <button type="button" className="settings-image-zoom-backdrop" onClick={() => setZoomedImageId('')} aria-label="Close preview" />
-          <div className="settings-image-zoom-panel">
+        <AppDialog
+          ariaLabel="Generated image preview"
+          className="settings-image-zoom-panel"
+          onClose={() => setZoomedImageId('')}
+          open
+          overlayClassName="settings-image-zoom-modal"
+          size="lg"
+        >
             <div className="settings-image-zoom-head">
               <strong>{zoomedImage.scenario || 'Generated scene'}</strong>
               <button type="button" className="btn-secondary small" onClick={() => setZoomedImageId('')}>Close</button>
@@ -2024,12 +2034,10 @@ export default function SettingsScreen() {
                 style={{ transform: `scale(${zoomScale})` }}
               />
             </div>
-            <label className="settings-field">
-              <span className="settings-field-label">Zoom</span>
+            <Field className="settings-field" label="Zoom">
               <input type="range" min="1" max="2.5" step="0.1" value={zoomScale} onChange={event => setZoomScale(Number(event.target.value))} />
-            </label>
-          </div>
-        </div>
+            </Field>
+        </AppDialog>
       ) : null}
 
       <div className="settings-actions settings-actions-stack">

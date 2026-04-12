@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { bodyApi } from '../../api/modules/body'
 import { workoutApi } from '../../api/modules/workout'
+import ErrorState from '../../components/ui/ErrorState'
 import { formatUsFriendlyDate, formatUsShortDate } from '../../lib/dateFormat'
 
 const ACTIVITY_LOG_LIMIT = 24
@@ -137,7 +138,7 @@ export default function ActivityLogScreen() {
 
       {!loading && error ? (
         <section className="dash-card">
-          <p className="error">{error}</p>
+          <ErrorState className="activity-inline-error" message={error} title="Could not load activity log" />
         </section>
       ) : null}
 

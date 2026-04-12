@@ -696,22 +696,14 @@
 .settings-generated-card-actions .btn-danger {
   width: 100%;
 }
-.settings-image-zoom-modal {
-  position: fixed;
-  inset: 0;
+.ui-overlay.settings-image-zoom-modal {
   z-index: 2400;
-  display: grid;
-  place-items: center;
   padding: var(--space-5);
 }
-.settings-image-zoom-backdrop {
-  position: absolute;
-  inset: 0;
-  border: 0;
+.ui-overlay.settings-image-zoom-modal .ui-overlay-backdrop {
   background: rgba(6, 16, 44, 0.66);
 }
-.settings-image-zoom-panel {
-  position: relative;
+.ui-dialog.settings-image-zoom-panel {
   width: min(760px, calc(100vw - 28px));
   max-height: calc(100vh - 28px);
   overflow: auto;
@@ -1150,11 +1142,11 @@
     grid-template-columns: 1fr;
   }
 
-  .settings-image-zoom-modal {
+  .ui-overlay.settings-image-zoom-modal {
     padding: var(--space-2-5);
   }
 
-  .settings-image-zoom-panel {
+  .ui-dialog.settings-image-zoom-panel {
     width: min(760px, calc(100vw - 20px));
     max-height: calc(100vh - 20px);
   }

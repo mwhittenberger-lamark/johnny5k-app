@@ -3,6 +3,7 @@ import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-
 import { dashboardApi } from '../../api/modules/dashboard'
 import { onboardingApi } from '../../api/modules/onboarding'
 import ClearableInput from '../../components/ui/ClearableInput'
+import ErrorState from '../../components/ui/ErrorState'
 import { useAuthStore } from '../../store/authStore'
 import {
   bodyFormFromState,
@@ -271,7 +272,7 @@ function ProfileStep() {
               </label>
             </div>
           </label>
-          {(error || loadError) && <p className="error">{error || loadError}</p>}
+          {(error || loadError) && <ErrorState className="onboarding-inline-error" message={error || loadError} title="Could not save this step" />}
           <StepUnlock text="Next, Johnny will set your goal direction and starting calorie math." />
           <button className="btn-primary" type="submit">Next</button>
         </div>
@@ -345,7 +346,7 @@ function BodyStep() {
             <option value="athlete">Athlete</option>
           </select>
         </label>
-        {error && <p className="error">{error}</p>}
+        {error && <ErrorState className="onboarding-inline-error" message={error} title="Could not save this step" />}
         <StepUnlock text="Next, Johnny will build a realistic training week around your schedule and experience." />
         <button className="btn-primary" type="submit">Next</button>
       </form>
@@ -456,7 +457,7 @@ function TrainingStep() {
             })}
           </div>
         </div>
-        {error && <p className="error">{error}</p>}
+        {error && <ErrorState className="onboarding-inline-error" message={error} title="Could not save this step" />}
         <StepUnlock text="Next, Johnny will use your limits to work around problem movements before equipment gets layered in." />
         <button className="btn-primary" type="submit">Next</button>
       </form>
@@ -633,7 +634,7 @@ function InjuriesStep() {
             <label>Notes<ClearableInput value={flag.notes} onChange={e => updateFlag(flag.body_area, 'notes', e.target.value)} placeholder="What tends to flare it up?" /></label>
           </div>
         ))}
-        {error && <p className="error">{error}</p>}
+        {error && <ErrorState className="onboarding-inline-error" message={error} title="Could not save this step" />}
         <StepUnlock text="Next, Johnny will narrow the exercise pool to what you can actually do with your available equipment." />
         <button className="btn-primary" type="submit">Next</button>
       </form>
@@ -703,7 +704,7 @@ function EquipmentStep() {
             <button key={item} type="button" className={`onboarding-chip ${form.equipment_available.includes(item) ? 'active' : ''}`} onClick={() => toggleEquipment(item)}>{item}</button>
           ))}
         </div>
-        {error && <p className="error">{error}</p>}
+        {error && <ErrorState className="onboarding-inline-error" message={error} title="Could not save this step" />}
         <StepUnlock text="Next, Johnny will shape meal suggestions around foods you actually like and already eat." />
         <button className="btn-primary" type="submit">Next</button>
       </form>
@@ -773,7 +774,7 @@ function FoodStep() {
             <option value="5+">5 or more</option>
           </select>
         </label>
-        {error && <p className="error">{error}</p>}
+        {error && <ErrorState className="onboarding-inline-error" message={error} title="Could not save this step" />}
         <StepUnlock text="Next, Johnny will lock in your recovery defaults and notification preferences." />
         <button className="btn-primary" type="submit">Next</button>
       </form>
@@ -911,7 +912,7 @@ function HabitsStep() {
           </div>
         ) : null}
         {form.notifications_enabled ? <p className="settings-subtitle">Times are sent in your local timezone. Current summary time: {formatReminderHour(form.weekly_summary_hour)} on Mondays.</p> : null}
-        {error && <p className="error">{error}</p>}
+        {error && <ErrorState className="onboarding-inline-error" message={error} title="Could not save this step" />}
         <StepUnlock text="Next, you can add optional photos so Johnny has a cleaner visual baseline for future check-ins." />
         <button className="btn-primary" type="submit">Next</button>
       </form>
@@ -964,7 +965,7 @@ function PhotosStep() {
         <label>Front photo<input type="file" accept="image/*" capture="environment" onChange={e => setFrontFile(e.target.files?.[0] || null)} /></label>
         <label>Side photo<input type="file" accept="image/*" capture="environment" onChange={e => setSideFile(e.target.files?.[0] || null)} /></label>
         {(state?.progress_photos?.length ?? 0) > 0 ? <p className="success-message">{state.progress_photos.length} progress photo(s) already on file.</p> : null}
-        {error && <p className="error">{error}</p>}
+        {error && <ErrorState className="onboarding-inline-error" message={error} title="Could not save this step" />}
         <StepUnlock text="Next, Johnny will show you the exact plan, split, and preferences he is about to use." />
         <div className="settings-actions">
           <button className="btn-secondary" type="button" onClick={() => navigate('/onboarding/complete')}>Skip for now</button>
@@ -1110,7 +1111,7 @@ function CompleteStep() {
           </div>
         </div>
       </div>
-      {error && <p className="error">{error}</p>}
+      {error && <ErrorState className="onboarding-inline-error" message={error} title="Could not finish onboarding" />}
       <StepUnlock text="If this looks like your real week, Johnny will now turn it into your first calorie target, split, and meal suggestions." />
       <button className="btn-primary" onClick={finish} disabled={submitting}>{submitting ? 'Building your plan…' : 'Start My Plan'}</button>
     </StepLayout>

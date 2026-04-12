@@ -1,6 +1,9 @@
 import { memo, useEffect, useState } from 'react'
 import { aiApi } from '../../api/modules/ai'
+import AppDrawer from '../ui/AppDrawer'
 import ClearableInput from '../ui/ClearableInput'
+import ErrorState from '../ui/ErrorState'
+import Field from '../ui/Field'
 import { formatUsShortDate } from '../../lib/dateFormat'
 import {
   buildExerciseMeta,
@@ -83,19 +86,6 @@ function ExerciseCard({
     setSavingSuggestionName('')
     setSaveMessage('')
   }, [exercise, exercise?.id, exercise?.notes, activeSetSignature])
-
-  useEffect(() => {
-    if (!showCuesDrawer) return undefined
-
-    function handleEscape(event) {
-      if (event.key === 'Escape') {
-        setShowCuesDrawer(false)
-      }
-    }
-
-    window.addEventListener('keydown', handleEscape)
-    return () => window.removeEventListener('keydown', handleEscape)
-  }, [showCuesDrawer])
 
   function handleSetDraftChange(rowKey, key, value) {
     setSetDrafts(current => ({
@@ -456,13 +446,13 @@ function ExerciseCard({
             <div className="dashboard-card-head">
               <span className="dashboard-chip subtle">Swap options</span>
             </div>
-            {swapError ? <p className="error">{swapError}</p> : null}
+            {swapError ? <ErrorState className="workout-inline-state" message={swapError} title="Could not load swap options" /> : null}
             <div className="workout-swap-subsection-head">
               <strong>My exercises</strong>
               <span className="workout-swap-badge personal">Personal library</span>
             </div>
             {loadingMyExercises ? <p className="settings-subtitle">Loading your saved exercises...</p> : null}
-            {myExercisesError ? <p className="error">{myExercisesError}</p> : null}
+            {myExercisesError ? <ErrorState className="workout-inline-state" message={myExercisesError} title="Could not load your saved exercises" /> : null}
             {myExercises.length ? (
               <div className="workout-swap-list">
                 {myExercises.map(option => {
@@ -591,19 +581,20 @@ function ExerciseCard({
             )}
 
             <form className="exercise-ai-swap-form" onSubmit={handleAskAiForSwap}>
-              <label className="exercise-note-label" htmlFor={`exercise-ai-swap-${exercise.id}`}>Ask Johnny for another swap</label>
-              <textarea
-                id={`exercise-ai-swap-${exercise.id}`}
-                value={aiSwapPrompt}
-                onChange={event => setAiSwapPrompt(event.target.value)}
-                placeholder="Example: My shoulder is irritated, give me machine-based swaps."
-              />
+              <Field className="exercise-note-label" label="Ask Johnny for another swap">
+                <textarea
+                  id={`exercise-ai-swap-${exercise.id}`}
+                  value={aiSwapPrompt}
+                  onChange={event => setAiSwapPrompt(event.target.value)}
+                  placeholder="Example: My shoulder is irritated, give me machine-based swaps."
+                />
+              </Field>
               <div className="exercise-panel-actions">
                 <button type="submit" className="btn-secondary small" disabled={aiSwapLoading || !aiSwapPrompt.trim()}>
                   {aiSwapLoading ? 'Asking Johnny...' : 'Ask AI for swaps'}
                 </button>
               </div>
-              {aiSwapError ? <p className="error">{aiSwapError}</p> : null}
+              {aiSwapError ? <ErrorState className="workout-inline-state" message={aiSwapError} title="Johnny could not suggest swaps" /> : null}
               {saveMessage ? <p className="success-msg">{saveMessage}</p> : null}
               {aiSwapSuggestions.length ? (
                 <div className="exercise-ai-swap-list">
@@ -662,12 +653,16 @@ function ExerciseCard({
           const draft = setDrafts[rowKey] ?? {}
           const isCompleted = Boolean(set.completed)
           const isDirty = isSetDirty(set, draft)
+          const syncStatusLabel = getSetSyncStatusLabel(set)
 
           return (
             <div key={set.id} className={`set-editor-row exercise-set-row ${isCompleted ? 'completed' : ''}`}>
               <div className="set-editor-head">
                 <strong>Set {index + 1}</strong>
-                <span>{isCompleted ? 'Completed' : 'In progress'}</span>
+                <span className="exercise-set-head-status">
+                  {syncStatusLabel ? <span className={`exercise-set-sync-badge ${set.sync_status}`}>{syncStatusLabel}</span> : null}
+                  <span>{isCompleted ? 'Completed' : 'In progress'}</span>
+                </span>
               </div>
               <div className="exercise-set-grid">
                 <span className="exercise-set-number" aria-hidden="true">{index + 1}</span>
@@ -784,9 +779,12 @@ function ExerciseCard({
       <p className="rir-help">RIR means reps in reserve: how many reps you had left before failure.</p>
 
       {showCuesDrawer && coachingCues.length ? (
-        <div className="exercise-drawer-shell" role="dialog" aria-modal="true" aria-labelledby={`exercise-cues-title-${exercise.id}`}>
-          <button type="button" className="exercise-drawer-backdrop" aria-label="Close coaching cues" onClick={() => setShowCuesDrawer(false)} />
-          <aside className="exercise-drawer">
+        <AppDrawer
+          open
+          onClose={() => setShowCuesDrawer(false)}
+          overlayClassName="exercise-drawer-shell"
+          className="exercise-drawer"
+        >
             <div className="exercise-drawer-head">
               <div>
                 <p className="exercise-drawer-eyebrow">Coaching</p>
@@ -804,8 +802,7 @@ function ExerciseCard({
                 <li key={`${exercise.id}-cue-${index}`}>{cue}</li>
               ))}
             </ul>
-          </aside>
-        </div>
+        </AppDrawer>
       ) : null}
     </div>
   )
@@ -844,6 +841,13 @@ function isSetDirty(set, draft) {
   return String(set.weight ?? '') !== String(draft.weight ?? '')
     || String(set.reps ?? '') !== String(draft.reps ?? '')
     || String(set.rir ?? '') !== String(draft.rir ?? '')
+}
+
+function getSetSyncStatusLabel(set) {
+  const syncStatus = String(set?.sync_status || '').trim().toLowerCase()
+  if (syncStatus === 'queued') return 'Queued locally'
+  if (syncStatus === 'syncing') return 'Saving...'
+  return ''
 }
 
 function parseCoachingCues(value) {

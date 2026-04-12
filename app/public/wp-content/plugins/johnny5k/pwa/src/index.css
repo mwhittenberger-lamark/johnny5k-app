@@ -4,6 +4,7 @@
 @import './styles/base.css' layer(base);
 @import './styles/components/cards.css' layer(components);
 @import './styles/components/forms.css' layer(components);
+@import './styles/components/primitives.css' layer(components);
 @import './styles/components/buttons.css' layer(components);
 @import './styles/components/actions.css' layer(components);
 @import './styles/components/feedback.css' layer(components);
@@ -11,6 +12,10 @@
 @import './styles/components/shell.css' layer(components);
 @import './styles/components/theme-picker.css' layer(components);
 @import './styles/screens/dashboard.css' layer(screens);
+@import './styles/screens/auth.css' layer(screens);
+@import './styles/screens/onboarding.css' layer(screens);
+@import './styles/screens/admin.css' layer(screens);
+@import './styles/screens/activity-log.css' layer(screens);
 @import './styles/screens/workout.css' layer(screens);
 @import './styles/screens/nutrition.css' layer(screens);
 @import './styles/screens/settings.css' layer(screens);

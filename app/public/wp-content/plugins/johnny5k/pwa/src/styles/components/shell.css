@@ -423,7 +423,7 @@
   text-align: center;
 }
 .app-content { flex: 1; overflow-y: auto; padding: var(--screen-gutter-y) var(--screen-gutter-x) var(--space-5); }
-.app-shell-checkin-shell {
+.ui-overlay.app-shell-checkin-shell {
   position: fixed;
   inset: 0;
   z-index: 75;
@@ -432,16 +432,11 @@
   justify-content: center;
   padding: 20px 16px;
 }
-.app-shell-checkin-backdrop {
-  position: absolute;
-  inset: 0;
-  border: 0;
+.ui-overlay.app-shell-checkin-shell .ui-overlay-backdrop {
   background: rgba(8, 21, 51, 0.56);
   backdrop-filter: blur(10px);
 }
-.app-shell-checkin-modal {
-  position: relative;
-  z-index: 1;
+.ui-dialog.app-shell-checkin-modal {
   width: min(100%, 640px);
   max-height: min(82vh, 760px);
   display: flex;
@@ -457,6 +452,12 @@
 }
 .app-shell-install-modal {
   width: min(100%, 560px);
+}
+.app-shell-checkin-modal .ui-dialog-body {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-height: 0;
 }
 .app-shell-checkin-head {
   display: flex;
@@ -533,12 +534,12 @@
 }
 
 @media (max-width: 720px) {
-  .app-shell-checkin-shell {
+  .ui-overlay.app-shell-checkin-shell {
     align-items: flex-end;
     padding: 16px 12px max(12px, env(safe-area-inset-bottom));
   }
 
-  .app-shell-checkin-modal {
+  .ui-dialog.app-shell-checkin-modal {
     width: 100%;
     max-height: min(86vh, 760px);
     padding: 18px;

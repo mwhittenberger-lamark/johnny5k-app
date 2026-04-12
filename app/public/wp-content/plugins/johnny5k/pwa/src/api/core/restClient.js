@@ -107,6 +107,7 @@ function queueOfflineWrite(method, url, body, redirectPath, options = {}) {
     body,
     redirect_path: redirectPath,
     label: options.queueLabel || '',
+    meta: options.queueMeta && typeof options.queueMeta === 'object' ? options.queueMeta : null,
   }
 
   const entries = readOfflineWriteQueue()
@@ -222,6 +223,48 @@ export function subscribeOfflineWriteQueue(listener) {
   return () => {
     queueListeners.delete(listener)
   }
+}
+
+export function getOfflineWriteQueueSnapshot() {
+  return createOfflineWriteQueueSnapshot()
+}
+
+export function mutateOfflineWriteQueueEntry(entryId, updater) {
+  if (!entryId || typeof updater !== 'function') {
+    return null
+  }
+
+  const entries = readOfflineWriteQueue()
+  let updatedEntry = null
+  let changed = false
+
+  const nextEntries = entries.flatMap((entry) => {
+    if (entry.id !== entryId) {
+      return [entry]
+    }
+
+    changed = true
+    const nextEntry = updater({ ...entry })
+    if (!nextEntry) {
+      return []
+    }
+
+    updatedEntry = nextEntry
+    return [nextEntry]
+  })
+
+  if (!changed) {
+    return null
+  }
+
+  writeOfflineWriteQueue(nextEntries)
+  emitOfflineWriteQueueSnapshot()
+
+  return updatedEntry
+}
+
+export function removeOfflineWriteQueueEntry(entryId) {
+  return mutateOfflineWriteQueueEntry(entryId, () => null)
 }
 
 export function initOfflineWriteQueue() {

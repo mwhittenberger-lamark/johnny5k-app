@@ -1,10 +1,16 @@
+import AppDialog from '../../../components/ui/AppDialog'
+
 export default function WorkoutCompletionReviewModal({ completionReview, onClose }) {
   if (!completionReview) return null
 
   return (
-    <div className="workout-complete-review-shell" role="dialog" aria-modal="true" aria-labelledby="workout-complete-review-title">
-      <div className="workout-complete-review-backdrop" aria-hidden="true" />
-      <section className="workout-complete-review-panel">
+    <AppDialog
+      open
+      dismissible={false}
+      overlayClassName="workout-complete-review-shell"
+      className="workout-complete-review-panel"
+      size="lg"
+    >
         <div className="workout-complete-review-topline">
           <span className="dashboard-eyebrow">Workout complete</span>
           <span className="dashboard-chip workout">Johnny&apos;s review</span>
@@ -51,7 +57,6 @@ export default function WorkoutCompletionReviewModal({ completionReview, onClose
             Back to dashboard
           </button>
         </div>
-      </section>
-    </div>
+    </AppDialog>
   )
 }

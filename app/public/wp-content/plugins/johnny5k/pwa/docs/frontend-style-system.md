@@ -27,6 +27,7 @@ Current structure:
 - `src/styles/components/cards.css`
 - `src/styles/components/feedback.css`
 - `src/styles/components/forms.css`
+- `src/styles/components/primitives.css`
 - `src/styles/components/shell.css`
 - `src/styles/components/theme-picker.css`
 - `src/styles/screens/dashboard.css`
@@ -56,6 +57,7 @@ Shared primitives should have a clear home:
 - `components/forms.css`: labels, field rows, form grids, subtitles, success messaging, timezone picker, and onboarding schedule utilities
 - `components/actions.css`: shared action rows and `header-action-button`
 - `components/feedback.css`: transient feedback like `app-toast`
+- `components/primitives.css`: dialogs, drawers, shared state cards, and reusable field wrappers
 - `components/shell.css`: application shell, top-level layout, and shared structural wrappers
 - `components/theme-picker.css`: theme picker presentation and controls
 
@@ -108,6 +110,7 @@ Component styling belongs in `src/styles/components`.
 
 - Shared buttons belong in component CSS, not per-screen files
 - Shared cards belong in component CSS, not per-screen files
+- Shared dialogs, drawers, empty and error states, and field wrappers belong in component CSS
 - Shared form grids, labels, subtitles, toasts, badges, pills, chips, drawers, and form controls should be promoted into component CSS once reused in two or more domains
 
 Before adding a new variant, check whether an existing primitive can be extended.

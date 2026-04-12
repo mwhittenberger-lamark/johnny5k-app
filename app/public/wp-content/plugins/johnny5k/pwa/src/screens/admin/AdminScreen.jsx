@@ -1,7 +1,11 @@
 import { startTransition, useCallback, useEffect, useState } from 'react'
 import { adminApi } from '../../api/modules/admin'
 import { mediaApi } from '../../api/modules/media'
+import AppDrawer from '../../components/ui/AppDrawer'
 import AppIcon from '../../components/ui/AppIcon'
+import EmptyState from '../../components/ui/EmptyState'
+import ErrorState from '../../components/ui/ErrorState'
+import Field from '../../components/ui/Field'
 import { normalizeAppIconName } from '../../components/ui/AppIcon.utils'
 import { reportClientDiagnostic } from '../../lib/clientDiagnostics'
 import { APP_IMAGE_FIELDS } from '../../lib/appImages'
@@ -260,14 +264,14 @@ function CostTab() {
   if (!data) {
     return (
       <div className="admin-tab">
-        {msg ? <p className="error">{msg}</p> : <p>Loading…</p>}
+        {msg ? <ErrorState className="admin-inline-error" message={msg} title="Could not load cost analytics" /> : <p>Loading…</p>}
       </div>
     )
   }
 
   return (
     <div className="admin-tab">
-      {msg ? <p className="error">{msg}</p> : null}
+      {msg ? <ErrorState className="admin-inline-error" message={msg} title="Cost analytics warning" /> : null}
       <p><strong>This Month Total:</strong> ${parseFloat(data.monthly_total?.total_cost_usd ?? 0).toFixed(4)}</p>
       <h3>By User</h3>
       {(data.monthly_by_user ?? []).map((r, i) => (
@@ -594,7 +598,7 @@ function UsersTab() {
 
   return (
     <div className="admin-tab">
-      {msg ? <p className="error">{msg}</p> : null}
+      {msg ? <ErrorState className="admin-inline-error" message={msg} title="Could not load users" /> : null}
       {users.map(u => (
         <div key={u.user_id} className="user-row">
           <span>{u.user_email}</span>
@@ -664,7 +668,7 @@ function ExercisesTab() {
     <div className="admin-tab admin-grid-two">
       <div>
         <h3>Exercise library</h3>
-        {msg ? <p className="error">{msg}</p> : null}
+        {msg ? <ErrorState className="admin-inline-error" message={msg} title="Could not load exercise admin data" /> : null}
         <form className="admin-stack-form" onSubmit={saveExercise}>
           <input placeholder="Exercise name" value={form.name} onChange={e => setForm(current => ({ ...current, name: e.target.value }))} required />
           <input placeholder="Slug" value={form.slug} onChange={e => setForm(current => ({ ...current, slug: e.target.value }))} />
@@ -743,7 +747,7 @@ function AwardsTab() {
     <div className="admin-tab admin-grid-two">
       <form className="admin-stack-form" onSubmit={save}>
         <h3>Create award</h3>
-        {msg ? <p className="error">{msg}</p> : null}
+        {msg ? <ErrorState className="admin-inline-error" message={msg} title="Could not load awards" /> : null}
         <input placeholder="Code" value={form.code} onChange={e => setForm(current => ({ ...current, code: e.target.value }))} required />
         <input placeholder="Name" value={form.name} onChange={e => setForm(current => ({ ...current, name: e.target.value }))} required />
         <textarea placeholder="Description" value={form.description} onChange={e => setForm(current => ({ ...current, description: e.target.value }))} rows={3} />
@@ -1085,7 +1089,7 @@ function DiagnosticsTab() {
           {loading ? 'Refreshing…' : 'Refresh'}
         </button>
       </div>
-      {msg ? <p className="error">{msg}</p> : null}
+      {msg ? <ErrorState className="admin-inline-error" message={msg} title="Could not load diagnostics" /> : null}
       {loading ? <p>Loading…</p> : null}
       {!loading && !entries.length ? <p className="settings-subtitle">No client diagnostics logged yet.</p> : null}
       {!loading ? (
@@ -1590,31 +1594,28 @@ function MediaLibraryPicker({ isOpen, onClose, onSelect, selectionKey }) {
   if (!isOpen) return null
 
   return (
-    <div className="exercise-drawer-shell" role="dialog" aria-modal="true" aria-labelledby="media-library-picker-title">
-      <button type="button" className="exercise-drawer-backdrop" aria-label="Close media library" onClick={onClose} />
-      <aside className="exercise-drawer admin-media-picker-drawer">
-        <div className="exercise-drawer-head">
-          <div>
-            <p className="exercise-drawer-eyebrow">Media library</p>
-            <h3 id="media-library-picker-title">Choose a live workout image</h3>
-          </div>
-          <button type="button" className="exercise-drawer-close" onClick={onClose}>Close</button>
-        </div>
-        <p className="exercise-drawer-subtitle">Select an existing WordPress image or upload a new one without leaving the admin app.</p>
+    <AppDrawer
+      ariaLabel="Choose a live workout image"
+      className="exercise-drawer admin-media-picker-drawer"
+      description="Select an existing WordPress image or upload a new one without leaving the admin app."
+      onClose={onClose}
+      open
+      overlayClassName="exercise-drawer-shell"
+      title="Choose a live workout image"
+    >
         <div className="admin-media-picker-controls">
-          <label className="field-label field-label-wide admin-media-picker-search">
-            <span>Search media</span>
+          <Field className="field-label field-label-wide admin-media-picker-search" label="Search media">
             <input value={search} onChange={event => { setSearch(event.target.value); setPage(1) }} placeholder="Search by title or filename" />
-          </label>
+          </Field>
           <label className="btn-secondary small admin-media-picker-upload">
             <input type="file" accept="image/*" onChange={handleUpload} disabled={uploading} />
             {uploading ? 'Uploading…' : 'Upload image'}
           </label>
         </div>
-        {error ? <p className="error-msg">{error}</p> : null}
+        {error ? <ErrorState className="admin-media-picker-state" message={error} title="Could not load media library" /> : null}
         <div className="admin-media-picker-grid">
           {loading ? <p className="settings-subtitle">Loading media…</p> : null}
-          {!loading && !items.length ? <p className="settings-subtitle">No images found for this search.</p> : null}
+          {!loading && !error && !items.length ? <EmptyState className="admin-media-picker-state" message="No images found for this search." title="No media matches" /> : null}
           {items.map(item => {
             const preview = item?.media_details?.sizes?.medium?.source_url || item?.media_details?.sizes?.thumbnail?.source_url || item?.source_url
             const title = item?.title?.rendered || item?.slug || 'Untitled image'
@@ -1633,7 +1634,6 @@ function MediaLibraryPicker({ isOpen, onClose, onSelect, selectionKey }) {
           <span>Page {page}</span>
           <button type="button" className="btn-outline small" onClick={() => setPage(current => current + 1)} disabled={loading || items.length < 24}>Next</button>
         </div>
-      </aside>
-    </div>
+    </AppDrawer>
   )
 }

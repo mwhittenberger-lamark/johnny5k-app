@@ -1,4 +1,5 @@
 import ClearableInput from '../../../components/ui/ClearableInput'
+import ErrorState from '../../../components/ui/ErrorState'
 import SupportIconButton from '../../../components/ui/SupportIconButton'
 import PlanOverviewSwapDrawer from '../../../components/workout/PlanOverviewSwapDrawer'
 import { formatDayType, formatPreviewSetRepLabel, formatRemoveButtonLabel, getReadinessRepDelta } from '../workoutScreenUtils'
@@ -26,6 +27,7 @@ export default function WorkoutLaunchpad({
   scheduledDayType,
   statusNotice,
   statusError,
+  offlineStatus,
   onOpenWorkoutSupport,
   planning,
   sessionController,
@@ -42,8 +44,9 @@ export default function WorkoutLaunchpad({
         <p className="dashboard-eyebrow">Training</p>
         <h1>Start today with a readiness check</h1>
         <p className="settings-subtitle">Pick your available time, mark how ready you feel, and review the next session before you start.</p>
+        {offlineStatus}
         {statusNotice ? <p className="settings-subtitle">{statusNotice}</p> : null}
-        {statusError ? <p className="error">{statusError}</p> : null}
+        {statusError ? <ErrorState className="workout-inline-error" eyebrow="Workout status" message={statusError} title="Could not load today’s workout status" /> : null}
 
         {!planning.isRestSelection ? (
           <div className="workout-launchpad-section">
@@ -156,7 +159,7 @@ export default function WorkoutLaunchpad({
           )}
         </div>
 
-        {error ? <p className="error">{error}</p> : null}
+        {error ? <ErrorState className="workout-inline-error" eyebrow="Workout session" message={error} title="Could not start this workout" /> : null}
         <div className="settings-actions">
           {planning.isCardioSelection ? (
             <>
@@ -204,7 +207,7 @@ export default function WorkoutLaunchpad({
           {plan?.plan?.name ? <span className="dashboard-chip subtle">{plan.plan.name}</span> : null}
         </div>
         {planLoading ? <p>Loading plan...</p> : null}
-        {!planLoading && planError ? <p className="error">{planError}</p> : null}
+        {!planLoading && planError ? <ErrorState className="workout-inline-error" eyebrow="Training plan" message={planError} title="Could not load your plan overview" /> : null}
         {!planLoading && !planError && planning.previewSession ? (
           <>
             <h3>{planning.displaySessionTitle || `${todayLabel} • ${formatDayType(planning.previewSession.day_type)} day`}</h3>
@@ -306,7 +309,7 @@ export default function WorkoutLaunchpad({
                   onChange={event => planning.setAddExerciseQuery(event.target.value)}
                 />
                 {planning.addExerciseLoading ? <p className="settings-subtitle">Searching exercises...</p> : null}
-                {planning.addExerciseError ? <p className="error">{planning.addExerciseError}</p> : null}
+                {planning.addExerciseError ? <ErrorState className="workout-inline-error" eyebrow="Exercise search" message={planning.addExerciseError} title="Could not add an exercise" /> : null}
                 {planning.addExerciseQuery.trim().length >= 2 && !planning.addExerciseLoading && !planning.addExerciseError ? (
                   planning.addExerciseResults.length ? (
                     <div className="workout-plan-list">
@@ -326,7 +329,7 @@ export default function WorkoutLaunchpad({
               </div>
             ) : null}
             {!planning.isCardioSelection && !planning.isRestSelection && planning.previewLoading ? <p className="settings-subtitle">Refreshing preview...</p> : null}
-            {!planning.isCardioSelection && !planning.isRestSelection && planning.previewError ? <p className="error">{planning.previewError}</p> : null}
+            {!planning.isCardioSelection && !planning.isRestSelection && planning.previewError ? <ErrorState className="workout-inline-error" eyebrow="Workout preview" message={planning.previewError} title="Could not refresh the preview" /> : null}
             {!planning.isCardioSelection && !planning.isRestSelection ? (
               planning.adjustedPreviewExercises.length ? (
                 <div className="workout-plan-list workout-preview-list">

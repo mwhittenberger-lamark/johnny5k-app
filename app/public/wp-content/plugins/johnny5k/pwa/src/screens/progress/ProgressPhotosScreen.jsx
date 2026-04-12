@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { dashboardApi } from '../../api/modules/dashboard'
+import EmptyState from '../../components/ui/EmptyState'
+import ErrorState from '../../components/ui/ErrorState'
+import Field from '../../components/ui/Field'
 import { formatUsShortDate } from '../../lib/dateFormat'
+import { confirmGlobalAction, showGlobalToast } from '../../lib/uiFeedback'
 
 const ANGLES = ['front', 'side', 'back']
 
@@ -23,7 +27,6 @@ export default function ProgressPhotosScreen() {
   const [baselineSavingAngle, setBaselineSavingAngle] = useState('')
   const [deletingId, setDeletingId] = useState(0)
   const [error, setError] = useState('')
-  const [notice, setNotice] = useState(null)
   const [comparison, setComparison] = useState(null)
   const [selectedPair, setSelectedPair] = useState(null)
   const [openTimelineDates, setOpenTimelineDates] = useState({})
@@ -145,16 +148,6 @@ export default function ProgressPhotosScreen() {
   const uploadButtonLabel = uploading ? 'Uploading…' : `Upload ${titleCase(angle)} Photo`
 
   useEffect(() => {
-    if (!notice?.id) return undefined
-
-    const timer = window.setTimeout(() => {
-      setNotice(null)
-    }, 4500)
-
-    return () => window.clearTimeout(timer)
-  }, [notice])
-
-  useEffect(() => {
     if (!timelineDateGroups.length) {
       setOpenTimelineDates({})
       return
@@ -196,8 +189,8 @@ export default function ProgressPhotosScreen() {
       await dashboardApi.photoUpload(form)
       await loadPhotos()
       uploadRef.current.value = ''
-      setNotice({
-        id: `upload-${Date.now()}`,
+      showGlobalToast({
+        kind: 'progress-photos-upload',
         tone: 'success',
         title: 'Photo added',
         message: `${titleCase(angle)} photo saved for ${formatPhotoDate(date)}.`,
@@ -219,8 +212,8 @@ export default function ProgressPhotosScreen() {
     try {
       const data = await dashboardApi.comparePhotos(firstPhoto.id, secondPhoto.id)
       setComparison(data)
-      setNotice({
-        id: `compare-${Date.now()}`,
+      showGlobalToast({
+        kind: 'progress-photos-compare',
         tone: 'info',
         title: 'Comparison ready',
         message: `Showing ${label.toLowerCase()}.`,
@@ -246,8 +239,8 @@ export default function ProgressPhotosScreen() {
         setComparison(null)
         setSelectedPair(null)
       }
-      setNotice({
-        id: `baseline-${Date.now()}`,
+      showGlobalToast({
+        kind: `progress-baseline-${photo.angle}`,
         tone: 'success',
         title: 'Baseline updated',
         message: `${titleCase(photo.angle)} baseline set to ${formatPhotoDate(photo.photo_date)}.`,
@@ -260,7 +253,12 @@ export default function ProgressPhotosScreen() {
   }
 
   async function handleDelete(photo) {
-    const confirmed = window.confirm(`Delete the ${photo.angle} photo from ${formatPhotoDate(photo.photo_date)}? This also removes the uploaded image file.`)
+    const confirmed = await confirmGlobalAction({
+      title: 'Delete progress photo?',
+      message: `Delete the ${photo.angle} photo from ${formatPhotoDate(photo.photo_date)}? This also removes the uploaded image file.`,
+      confirmLabel: 'Delete photo',
+      tone: 'danger',
+    })
     if (!confirmed) return
 
     setDeletingId(photo.id)
@@ -272,8 +270,8 @@ export default function ProgressPhotosScreen() {
         setSelectedPair(null)
       }
       await loadPhotos()
-      setNotice({
-        id: `remove-${Date.now()}`,
+      showGlobalToast({
+        kind: 'progress-photos-delete',
         tone: 'info',
         title: 'Photo removed',
         message: `${titleCase(photo.angle)} photo from ${formatPhotoDate(photo.photo_date)} was deleted.`,
@@ -301,17 +299,7 @@ export default function ProgressPhotosScreen() {
         </div>
       </header>
 
-      {notice ? (
-        <div className={`app-toast ${notice.tone || 'info'}`} role="status" aria-live="polite">
-          <div className="app-toast-copy">
-            {notice.title ? <p className="app-toast-title">{notice.title}</p> : null}
-            {notice.message ? <p className="app-toast-message">{notice.message}</p> : null}
-          </div>
-          <button type="button" className="app-toast-dismiss" onClick={() => setNotice(null)} aria-label="Dismiss toast">×</button>
-        </div>
-      ) : null}
-
-      {error ? <p className="error">{error}</p> : null}
+      {error ? <ErrorState title="Progress photos hit an error" message={error} /> : null}
 
       <section className="dash-card progress-howto-card">
         <div className="dashboard-card-head">
@@ -327,14 +315,14 @@ export default function ProgressPhotosScreen() {
 
       <section className="dash-card progress-upload-card">
         <div className="progress-toolbar">
-          <label>Angle
+          <Field label="Angle" compact>
             <select value={angle} onChange={event => setAngle(event.target.value)}>
               {ANGLES.map(option => <option key={option} value={option}>{titleCase(option)}</option>)}
             </select>
-          </label>
-          <label>Date
+          </Field>
+          <Field label="Date" compact>
             <input type="date" value={date} onChange={event => setDate(event.target.value)} />
-          </label>
+          </Field>
           <label className="btn-primary progress-upload-button">
             {uploadButtonLabel}
             <input ref={uploadRef} type="file" accept="image/*" capture="environment" onChange={handleUpload} hidden disabled={uploading} />
@@ -379,7 +367,13 @@ export default function ProgressPhotosScreen() {
               {group.baseline && group.latest && group.latest.id === group.baseline.id ? <p className="progress-angle-tip">Add a newer {group.angle} photo to compare against your baseline.</p> : null}
             </article>
           ))}
-          {!compareGroups.length ? <p className="empty-state">No progress photos yet. Upload a front or side photo to start your timeline.</p> : null}
+          {!compareGroups.length ? (
+            <EmptyState
+              className="progress-empty-state"
+              title="No progress photos yet"
+              message="Upload a front or side photo to start your timeline."
+            />
+          ) : null}
         </div>
 
         {showComparisonCard ? (
@@ -481,7 +475,13 @@ export default function ProgressPhotosScreen() {
               </section>
             )
           })}
-          {!timelineDateGroups.length ? <p className="empty-state">No progress photos yet. Upload one to start your timeline.</p> : null}
+          {!timelineDateGroups.length ? (
+            <EmptyState
+              className="progress-empty-state"
+              title="No timeline entries yet"
+              message="Upload one photo to start your shared timeline."
+            />
+          ) : null}
         </div>
       </section>
     </div>

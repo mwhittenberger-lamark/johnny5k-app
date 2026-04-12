@@ -1,0 +1,224 @@
+.ui-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 280;
+  display: grid;
+  place-items: center;
+  padding: var(--space-4);
+}
+
+.ui-overlay-drawer {
+  place-items: stretch;
+}
+
+.ui-overlay-drawer-right {
+  justify-items: end;
+}
+
+.ui-overlay-drawer-bottom {
+  align-items: end;
+}
+
+.ui-overlay-backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: rgba(15, 31, 85, 0.42);
+  cursor: pointer;
+}
+
+.ui-dialog,
+.ui-drawer {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(244, 251, 255, 0.98));
+  border: 1.5px solid rgba(168, 212, 240, 0.9);
+  box-shadow: 0 24px 64px rgba(15, 31, 85, 0.24);
+  color: var(--text);
+}
+
+.ui-dialog {
+  width: min(100%, 520px);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+}
+
+.ui-dialog-md {
+  width: min(100%, 520px);
+}
+
+.ui-dialog-lg {
+  width: min(100%, 720px);
+}
+
+.ui-dialog-danger {
+  border-color: rgba(255, 46, 80, 0.38);
+  background: linear-gradient(180deg, rgba(255, 251, 252, 0.99), rgba(255, 244, 247, 0.98));
+}
+
+.ui-dialog-header,
+.ui-drawer-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.ui-dialog-title,
+.ui-drawer-title {
+  margin: 0;
+  font-family: 'Exo 2', system-ui, sans-serif;
+  font-size: 1.25rem;
+  line-height: 1.15;
+}
+
+.ui-dialog-description,
+.ui-drawer-description,
+.ui-dialog-message {
+  margin: 0;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.ui-dialog-body,
+.ui-drawer-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.ui-dialog-footer,
+.ui-drawer-footer,
+.state-card-actions {
+  display: flex;
+  gap: var(--space-3);
+}
+
+.ui-dialog-footer > *,
+.ui-drawer-footer > *,
+.state-card-actions > * {
+  flex: 1 1 0;
+}
+
+.ui-drawer {
+  width: min(100%, 420px);
+  height: 100%;
+  padding: var(--space-5);
+}
+
+.ui-drawer-right {
+  border-radius: var(--radius-lg) 0 0 var(--radius-lg);
+}
+
+.ui-drawer-bottom {
+  width: 100%;
+  max-height: min(80vh, 720px);
+  height: auto;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+}
+
+.state-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-bottom: 0;
+  padding: var(--card-pad-md);
+  text-align: left;
+}
+
+.state-card-neutral {
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.96), rgba(240, 252, 255, 0.98));
+}
+
+.state-card-error {
+  border-color: rgba(255, 46, 80, 0.32);
+  background: linear-gradient(160deg, rgba(255, 250, 252, 0.98), rgba(255, 241, 245, 0.98));
+}
+
+.state-card-eyebrow {
+  margin: 0;
+  color: var(--accent2);
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.state-card-title {
+  margin: 0;
+  color: var(--text);
+  font-size: 1rem;
+  font-family: 'Exo 2', system-ui, sans-serif;
+}
+
+.state-card-message {
+  margin: 0;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1-5);
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.field-compact {
+  gap: var(--space-1);
+}
+
+.field-label-text {
+  line-height: 1.2;
+}
+
+.field-required {
+  color: var(--accent);
+}
+
+.field-hint {
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.field-error {
+  color: var(--danger);
+  font-size: 0.76rem;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.field-has-error input,
+.field-has-error select,
+.field-has-error textarea {
+  border-color: rgba(255, 46, 80, 0.55);
+  box-shadow: 0 0 0 3px rgba(255, 46, 80, 0.12);
+}
+
+@media (max-width: 720px) {
+  .ui-overlay {
+    padding: var(--space-3);
+  }
+
+  .ui-dialog {
+    padding: var(--space-4);
+  }
+
+  .ui-dialog-footer,
+  .ui-drawer-footer,
+  .state-card-actions {
+    flex-direction: column-reverse;
+  }
+
+  .ui-drawer {
+    width: min(100%, 100vw);
+    padding: var(--space-4);
+  }
+}

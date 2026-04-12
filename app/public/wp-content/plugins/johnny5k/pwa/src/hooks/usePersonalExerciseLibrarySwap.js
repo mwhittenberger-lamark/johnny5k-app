@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { trainingApi } from '../api/modules/training'
 import { buildPersonalExerciseDraft, normalizeLibraryRows } from '../components/workout/swapShared'
+import { confirmGlobalAction } from '../lib/uiFeedback'
 
 export function usePersonalExerciseLibrarySwap({
   enabled,
@@ -132,7 +133,13 @@ export function usePersonalExerciseLibrarySwap({
 
   async function handleDeletePersonalExercise(optionId) {
     if (!optionId || deletingPersonalExerciseId) return false
-    if (!window.confirm('Remove this personal exercise from your library? Any personal swap links that depend on it will be removed too.')) return false
+    const confirmed = await confirmGlobalAction({
+      title: 'Remove personal exercise?',
+      message: 'Remove this personal exercise from your library? Any personal swap links that depend on it will be removed too.',
+      confirmLabel: 'Remove exercise',
+      tone: 'danger',
+    })
+    if (!confirmed) return false
 
     setDeletingPersonalExerciseId(optionId)
     setMyExercisesError('')

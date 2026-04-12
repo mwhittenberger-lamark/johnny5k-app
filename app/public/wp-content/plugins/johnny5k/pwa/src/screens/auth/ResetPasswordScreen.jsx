@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { authApi } from '../../api/modules/auth'
 import ClearableInput from '../../components/ui/ClearableInput'
+import ErrorState from '../../components/ui/ErrorState'
 
 export default function ResetPasswordScreen() {
   const navigate = useNavigate()
@@ -56,14 +57,14 @@ export default function ResetPasswordScreen() {
       <form onSubmit={handleSubmit} className="auth-form">
         <ClearableInput type="password" placeholder="New password" value={password} onChange={event => setPassword(event.target.value)} required minLength={8} />
         <ClearableInput type="password" placeholder="Confirm password" value={confirmPassword} onChange={event => setConfirmPassword(event.target.value)} required minLength={8} />
-        {error ? <p className="error">{error}</p> : null}
+        {error ? <ErrorState className="auth-inline-error" message={error} title="Could not update password" /> : null}
         {message ? <p className="success-message">{message}</p> : null}
         <button type="submit" className="btn-primary" disabled={loading || !hasToken}>
           {loading ? 'Updating…' : 'Update password'}
         </button>
       </form>
 
-      {!hasToken ? <p className="error">Open the reset link from your email, then try again.</p> : null}
+      {!hasToken ? <ErrorState className="auth-inline-error" message="Open the reset link from your email, then try again." title="Reset link missing" /> : null}
       <p className="auth-link"><Link to="/login">Back to sign in</Link></p>
     </div>
   )

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { aiApi } from '../../api/modules/ai'
 import { onboardingApi } from '../../api/modules/onboarding'
+import AppDialog from '../ui/AppDialog'
 import { getDefaultLiveWorkoutFrames } from '../../lib/appImages'
 import { reportClientDiagnostic, showGlobalToast } from '../../lib/clientDiagnostics'
 import {
@@ -1246,9 +1247,12 @@ export default function LiveWorkoutMode({
         ) : null}
 
         {showIntroModal ? (
-          <div className="live-workout-intro-modal" role="dialog" aria-modal="true" aria-label="Live workout instructions">
-            <button type="button" className="live-workout-intro-backdrop" aria-label="Close live workout instructions" onClick={dismissIntroModal} />
-            <section className="live-workout-intro-panel">
+          <AppDialog
+            open
+            onClose={dismissIntroModal}
+            overlayClassName="live-workout-intro-modal"
+            className="live-workout-intro-panel"
+          >
               <div className="live-workout-intro-head">
                 <span className="dashboard-chip coach">Live coach flow</span>
                 <button type="button" className="btn-outline small" onClick={dismissIntroModal}>Close</button>
@@ -1272,8 +1276,7 @@ export default function LiveWorkoutMode({
               <div className="live-workout-intro-actions">
                 <button type="button" className="btn-primary" onClick={dismissIntroModal}>Start live coach</button>
               </div>
-            </section>
-          </div>
+          </AppDialog>
         ) : null}
       </section>
     </div>

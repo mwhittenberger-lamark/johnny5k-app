@@ -110,12 +110,6 @@ input[type="time"]::-webkit-date-and-time-value {
   text-align: left;
 }
 
-.empty-state {
-  color: var(--text-muted);
-  text-align: center;
-  padding: 10px;
-}
-
 .settings-subtitle {
   color: var(--text-muted);
   margin-top: 6px;
@@ -132,7 +126,7 @@ input[type="time"]::-webkit-date-and-time-value {
   font-weight: 700;
 }
 
-.field-label span {
+.field-label > .field-label-text {
   line-height: 1.2;
 }
 
@@ -146,7 +140,7 @@ input[type="time"]::-webkit-date-and-time-value {
   gap: 4px;
 }
 
-.field-label-food-name span {
+.field-label-food-name > .field-label-text {
   color: #0b4d72;
   font-size: 0.88rem;
   font-weight: 800;
@@ -180,14 +174,16 @@ input[type="time"]::-webkit-date-and-time-value {
   font-weight: 700;
 }
 
-.settings-field-label {
+.settings-field-label,
+.settings-field .field-label-text {
   color: var(--text);
   font-size: 0.82rem;
   letter-spacing: 0.03em;
   text-transform: uppercase;
 }
 
-.settings-field-hint {
+.settings-field-hint,
+.settings-field .field-hint {
   color: var(--text-muted);
   font-size: 0.8rem;
   font-weight: 600;
@@ -247,13 +243,6 @@ input[type="time"]::-webkit-date-and-time-value {
   color: var(--success);
   font-weight: 700;
   margin: 0 0 12px;
-}
-
-.error {
-  color: var(--danger);
-  font-size: 0.85rem;
-  margin: 0;
-  font-weight: 600;
 }
 
 .success-msg {

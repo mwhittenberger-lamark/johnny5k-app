@@ -3,7 +3,11 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { aiApi } from '../../api/modules/ai'
 import { nutritionApi } from '../../api/modules/nutrition'
 import AppIcon from '../../components/ui/AppIcon'
+import AppToast from '../../components/ui/AppToast'
 import ClearableInput from '../../components/ui/ClearableInput'
+import EmptyState from '../../components/ui/EmptyState'
+import ErrorState from '../../components/ui/ErrorState'
+import Field from '../../components/ui/Field'
 import OfflineState from '../../components/ui/OfflineState'
 import SupportIconButton from '../../components/ui/SupportIconButton'
 import { openSupportGuide } from '../../lib/supportHelp'
@@ -1400,7 +1404,7 @@ export default function NutritionScreen() {
         />
       ) : null}
 
-      {error ? <p className="error">{error}</p> : null}
+      {error ? <ErrorState className="nutrition-inline-state" message={error} title="Could not load nutrition data" /> : null}
 
       <NutritionModeTabs screen={screen} />
       <NutritionAiReviewPanels screen={screen} deps={featureViewDeps} />
@@ -1412,24 +1416,6 @@ export default function NutritionScreen() {
     </div>
   )
 }
-
-function AppToast({ toast, onDismiss }) {
-  return (
-    <div className={`app-toast ${toast.tone || 'success'}`} role="status" aria-live="polite">
-      <div className="app-toast-copy">
-        {toast.title ? <p className="app-toast-title">{toast.title}</p> : null}
-        {toast.message ? <p className="app-toast-message">{toast.message}</p> : null}
-        {toast.details?.length ? (
-          <div className="app-toast-details">
-            {toast.details.map((detail, index) => <p key={`${toast.id}-${index}`}>{detail}</p>)}
-          </div>
-        ) : null}
-      </div>
-      <button type="button" className="app-toast-dismiss" onClick={onDismiss} aria-label="Dismiss toast">×</button>
-    </div>
-  )
-}
-
 function MealPhotoPromptPanel({ note, onChangeNote, onPickImage, onCancel, busy }) {
   return (
     <div className="dash-card nutrition-planning-card nutrition-meal-photo-panel">
@@ -1560,17 +1546,16 @@ function LabelScanPromptPanel({ anchorRef, busy, images, note, onChangeNote, onP
         </button>
         <button type="button" className="btn-secondary" onClick={onCancel} disabled={busy}>Cancel</button>
       </div>
-      {!supportsSpeechRecognition ? <p className="empty-state">Voice note capture is not supported in this browser, but typed notes still work.</p> : null}
+      {!supportsSpeechRecognition ? <EmptyState className="nutrition-inline-state" message="Voice note capture is not supported in this browser, but typed notes still work." title="Voice capture unavailable" /> : null}
     </div>
   )
 }
 
 function FieldLabel({ label, children, className = '' }) {
   return (
-    <label className={`field-label${className ? ` ${className}` : ''}`}>
-      <span>{label}</span>
+    <Field label={label} className={`field-label${className ? ` ${className}` : ''}`}>
       {children}
-    </label>
+    </Field>
   )
 }
 
@@ -1836,14 +1821,14 @@ function AiMealReviewCard({ draft, caloriesRemaining, onChange, onConfirm, onCan
               <FieldLabel label="Fat"><input type="number" min="0" step="0.01" inputMode="decimal" value={item.fat_g} onChange={event => updateItem(index, 'fat_g', event.target.value)} placeholder="0" /></FieldLabel>
             </div>
             <div className="nutrition-item-meta">
-              {item.portion_description ? <p className="empty-state">{item.portion_description}</p> : null}
+              {item.portion_description ? <p className="settings-subtitle">{item.portion_description}</p> : null}
               {item.source?.provider === 'usda' ? (
-                <p className="empty-state">
+                <p className="settings-subtitle">
                   USDA match: {item.source.matched_name || item.food_name}
                   {item.source.data_type ? ` · ${item.source.data_type}` : ''}
                 </p>
               ) : (
-                <p className="empty-state">Using AI estimate only. Adjust grams if the portion looks off.</p>
+                <p className="settings-subtitle">Using AI estimate only. Adjust grams if the portion looks off.</p>
               )}
             </div>
             <div className="nutrition-row-actions">
@@ -1852,7 +1837,7 @@ function AiMealReviewCard({ draft, caloriesRemaining, onChange, onConfirm, onCan
           </div>
         ))}
       </div>
-      {pendingAction ? <p className="empty-state">Working on your request…</p> : null}
+      {pendingAction ? <p className="settings-subtitle">Working on your request…</p> : null}
       <div className="ai-result-actions">
         <button className="btn-primary" onClick={handleConfirm} disabled={Boolean(pendingAction)}>{pendingAction === 'confirm' ? 'Logging…' : 'Confirm and log'}</button>
         <button className="btn-secondary" onClick={onCancel} disabled={Boolean(pendingAction)}>Cancel</button>
@@ -1984,9 +1969,9 @@ function SavedFoodForm({ initialValues = null, savedFoods = [], submitLabel = 'S
             Describe a food and let AI draft it
             <textarea placeholder="Example: 1 cup nonfat Greek yogurt with honey and blueberries" value={description} onChange={event => setDescription(event.target.value)} />
           </label>
-          {aiError ? <p className="error">{aiError}</p> : null}
-          {aiNote ? <p className="empty-state">{aiNote}</p> : null}
-          {form.source?.provider === 'usda' ? <p className="empty-state">USDA match: {form.source.matched_name || form.canonical_name}</p> : null}
+          {aiError ? <ErrorState className="nutrition-inline-state" message={aiError} title="Could not analyze this food" /> : null}
+          {aiNote ? <p className="settings-subtitle">{aiNote}</p> : null}
+          {form.source?.provider === 'usda' ? <p className="settings-subtitle">USDA match: {form.source.matched_name || form.canonical_name}</p> : null}
           <button type="button" className="btn-secondary" onClick={handleAnalyseDescription} disabled={aiBusy || submitting}>{aiBusy ? 'Analyzing…' : 'Analyze with AI'}</button>
         </div>
       ) : null}
@@ -2032,8 +2017,8 @@ function SavedFoodForm({ initialValues = null, savedFoods = [], submitLabel = 'S
         <FieldLabel label="Sugar"><input type="number" min="0" step="0.01" inputMode="decimal" placeholder="0" value={form.sugar_g} onChange={event => update('sugar_g', event.target.value)} /></FieldLabel>
         <FieldLabel label="Sodium mg"><input type="number" min="0" step="0.01" inputMode="decimal" placeholder="0" value={form.sodium_mg} onChange={event => update('sodium_mg', event.target.value)} /></FieldLabel>
       </div>
-      {form.micros?.length ? <p className="empty-state">{formatMicroList(form.micros, 4)}</p> : null}
-      {submitting ? <p className="empty-state">Saving food…</p> : null}
+      {form.micros?.length ? <p className="settings-subtitle">{formatMicroList(form.micros, 4)}</p> : null}
+      {submitting ? <p className="settings-subtitle">Saving food…</p> : null}
       <div className="form-actions">
         <button type="submit" className="btn-primary" disabled={submitting || aiBusy}>{submitting ? 'Saving…' : submitLabel}</button>
         <button type="button" className="btn-secondary" onClick={onCancel} disabled={submitting}>Cancel</button>
@@ -2092,8 +2077,8 @@ function RecentFoodForm({ initialValues, submitLabel = 'Update recent food', onS
         <FieldLabel label="Sugar per item"><input type="number" min="0" step="0.01" inputMode="decimal" placeholder="0" value={form.sugar_g} onChange={event => update('sugar_g', event.target.value)} /></FieldLabel>
         <FieldLabel label="Sodium mg per item"><input type="number" min="0" step="0.01" inputMode="decimal" placeholder="0" value={form.sodium_mg} onChange={event => update('sodium_mg', event.target.value)} /></FieldLabel>
       </div>
-      {form.micros?.length ? <p className="empty-state">{formatMicroList(form.micros, 4)}</p> : null}
-      {submitting ? <p className="empty-state">Saving recent food…</p> : null}
+      {form.micros?.length ? <p className="settings-subtitle">{formatMicroList(form.micros, 4)}</p> : null}
+      {submitting ? <p className="settings-subtitle">Saving recent food…</p> : null}
       <div className="form-actions">
         <button type="submit" className="btn-primary" disabled={submitting}>{submitting ? 'Saving…' : submitLabel}</button>
         <button type="button" className="btn-secondary" onClick={onCancel} disabled={submitting}>Cancel</button>
@@ -2309,7 +2294,7 @@ function ItemEntryForm({
       {includeExpiry ? (
         <FieldLabel label="Expires on"><input type="date" value={expiresOn} onChange={event => setExpiresOn(event.target.value)} /></FieldLabel>
       ) : null}
-      {submitting ? <p className="empty-state">Saving…</p> : null}
+      {submitting ? <p className="settings-subtitle">Saving…</p> : null}
       <div className="form-actions">
         <button type="submit" className="btn-primary" disabled={submitting}>{submitting ? 'Saving…' : submitLabel}</button>
         <button type="button" className="btn-secondary" onClick={onCancel} disabled={submitting}>Cancel</button>
@@ -2459,7 +2444,7 @@ function ParsedItemVoiceCapture({
         <button type="button" className="btn-secondary" onClick={handleAnalyse} disabled={parsing || submitting}>{parsing ? 'Analyzing…' : 'Analyze list'}</button>
         <button type="button" className="btn-ghost" onClick={onCancel} disabled={submitting}>Close</button>
       </div>
-      {notes ? <p className="empty-state">{notes}</p> : null}
+      {notes ? <p className="settings-subtitle">{notes}</p> : null}
       {parsedItems.length ? (
         <>
           <div className="nutrition-stack-list">
@@ -2639,7 +2624,7 @@ function MealVoiceCapture({ onApplyItems, onCancel, onError, onToast }) {
         <button type="button" className="btn-secondary" onClick={handleAnalyse} disabled={parsing || submitting}>{parsing ? 'Analyzing…' : 'Analyze meal'}</button>
         <button type="button" className="btn-ghost" onClick={onCancel} disabled={submitting}>Close</button>
       </div>
-      {notes ? <p className="empty-state">{notes}</p> : null}
+      {notes ? <p className="settings-subtitle">{notes}</p> : null}
       {parsedItems.length ? (
         <>
           <div className="nutrition-stack-list">
@@ -3040,7 +3025,7 @@ function MealComposerForm({ title, savedFoods, requireName = false, submitLabel,
     <form ref={formRef} className="add-meal-form nutrition-composer-form" onSubmit={handleSubmit}>
       <h3>{title}</h3>
       <p className="settings-subtitle">Type a food, pick a saved or recent match, or let AI fill the nutrition for you.</p>
-      {error ? <p className="error">{error}</p> : null}
+      {error ? <ErrorState className="nutrition-inline-state" message={error} title="Could not save this meal" /> : null}
       {requireName ? (
         <FieldLabel label="Meal name">
           <ClearableInput placeholder="High-protein lunch" value={name} onChange={event => setName(event.target.value)} required />
@@ -3154,7 +3139,7 @@ function MealComposerForm({ title, savedFoods, requireName = false, submitLabel,
           ))}
         </div>
       ) : (
-        <p className="empty-state">All foods removed. Save changes to delete this logged meal, or add a food to keep editing it.</p>
+        <EmptyState className="nutrition-inline-state" message="Save changes to delete this logged meal, or add a food to keep editing it." title="All foods removed" />
       )}
 
       <div className="nutrition-item-row nutrition-composer-totals">
@@ -3164,7 +3149,7 @@ function MealComposerForm({ title, savedFoods, requireName = false, submitLabel,
         </div>
       </div>
 
-      {submitAction ? <p className="empty-state">Saving changes…</p> : null}
+      {submitAction ? <p className="settings-subtitle">Saving changes…</p> : null}
 
       <div className="form-actions">
         <button type="button" className="btn-secondary" onClick={() => addItem()} disabled={Boolean(submitAction)}>Add food</button>
@@ -3269,7 +3254,7 @@ function MealComposerItemRow({ item, busy, onChange, onSelectSuggestion, onAutof
             <button type="button" className="btn-ghost small" onClick={onRemove}>Remove</button>
           </div>
         </div>
-        {loadingSuggestions ? <p className="empty-state">Finding saved and recent matches…</p> : null}
+        {loadingSuggestions ? <p className="settings-subtitle">Finding saved and recent matches…</p> : null}
         {suggestions.length ? (
           <div id={`${rowIdRef.current}-suggestions`} className="nutrition-stack-list nutrition-item-suggestions" role="listbox">
             {suggestions.slice(0, 4).map((suggestion, index) => (
@@ -3331,8 +3316,8 @@ function MealComposerItemRow({ item, busy, onChange, onSelectSuggestion, onAutof
           <FieldLabel label="Sugar"><input type="number" min="0" step="0.01" inputMode="decimal" placeholder="0" value={item.sugar_g} onChange={event => onChange({ sugar_g: event.target.value })} /></FieldLabel>
           <FieldLabel label="Sodium mg"><input type="number" min="0" step="0.01" inputMode="decimal" placeholder="0" value={item.sodium_mg} onChange={event => onChange({ sodium_mg: event.target.value })} /></FieldLabel>
         </div>
-        {item.micros?.length ? <p className="empty-state">{formatMicroList(item.micros, 4)}</p> : null}
-        {item.notes ? <p className="empty-state">{item.notes}</p> : null}
+        {item.micros?.length ? <p className="settings-subtitle">{formatMicroList(item.micros, 4)}</p> : null}
+        {item.notes ? <p className="settings-subtitle">{item.notes}</p> : null}
       </div>
     </div>
   )

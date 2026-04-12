@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { formatUsFriendlyDate } from '../../lib/dateFormat'
 import AppIcon from '../../components/ui/AppIcon'
 import { normalizeAppIconName } from '../../components/ui/AppIcon.utils'
+import EmptyState from '../../components/ui/EmptyState'
 import { useDashboardStore } from '../../store/dashboardStore'
 
 export default function RewardsScreen() {
@@ -81,7 +82,7 @@ export default function RewardsScreen() {
             ))}
           </div>
         ) : (
-          <p className="empty-state">No rewards earned yet. The board starts moving once meals, workouts, sleep, and progress logs begin stacking through the week.</p>
+          <EmptyState message="The board starts moving once meals, workouts, sleep, and progress logs begin stacking through the week." title="No rewards earned yet" />
         )}
       </section>
 

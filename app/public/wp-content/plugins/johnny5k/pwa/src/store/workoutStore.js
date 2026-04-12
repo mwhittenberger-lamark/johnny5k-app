@@ -1,12 +1,15 @@
 import { create } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
+import { mutateOfflineWriteQueueEntry, removeOfflineWriteQueueEntry } from '../api/client'
 import { workoutApi } from '../api/modules/workout'
+import { cacheWorkoutSessionSnapshot, clearCachedWorkoutSessionSnapshot, readCachedWorkoutSessionSnapshot } from '../lib/workoutOffline'
 
 /** Active session state — persisted in sessionStorage so a page refresh doesn't lose the workout. */
 export const useWorkoutStore = create(persist((set, get) => ({
   session: null,        // { session, exercises: [{ ...ex, sets: [] }] }
   sessionId: null,
   customWorkoutDraft: null,
+  offlineSessionSnapshot: false,
   loading: false,
   bootstrapped: false,
   error: null,
@@ -156,7 +159,10 @@ export const useWorkoutStore = create(persist((set, get) => ({
     return { discardedSessions: nextDiscarded }
   }),
 
-  clearSessionState: () => set({ session: null, sessionId: null, customWorkoutDraft: null, activeExerciseIdx: 0, wasResumed: false, sessionMode: 'normal', undoToast: null, error: null }),
+  clearSessionState: () => {
+    clearCachedWorkoutSessionSnapshot()
+    set({ session: null, sessionId: null, customWorkoutDraft: null, offlineSessionSnapshot: false, activeExerciseIdx: 0, wasResumed: false, sessionMode: 'normal', undoToast: null, error: null })
+  },
 
   bootstrapSession: async () => {
     const { sessionId } = get()
@@ -171,18 +177,19 @@ export const useWorkoutStore = create(persist((set, get) => ({
             if (isDiscardedSession(get().discardedSessions, full?.session)) {
               get().clearSessionState()
             } else {
-            set({
-              session: full,
-              sessionId: full.session.id,
-              customWorkoutDraft: null,
-              loading: false,
-              bootstrapped: true,
-              wasResumed: true,
-              sessionMode: full.session_mode || (Number(full?.session?.readiness_score ?? 0) <= 3 ? 'maintenance' : 'normal'),
-              timeTier: full?.session?.time_tier || get().timeTier,
-              readinessScore: full?.session?.readiness_score ?? get().readinessScore,
-            })
-            return
+              set({
+                session: persistCachedSession(full),
+                sessionId: full.session.id,
+                customWorkoutDraft: null,
+                offlineSessionSnapshot: false,
+                loading: false,
+                bootstrapped: true,
+                wasResumed: true,
+                sessionMode: full.session_mode || (Number(full?.session?.readiness_score ?? 0) <= 3 ? 'maintenance' : 'normal'),
+                timeTier: full?.session?.time_tier || get().timeTier,
+                readinessScore: full?.session?.readiness_score ?? get().readinessScore,
+              })
+              return
             }
           }
 
@@ -199,14 +206,15 @@ export const useWorkoutStore = create(persist((set, get) => ({
       const current = await workoutApi.current()
       if (current?.session?.id) {
         if (isDiscardedSession(get().discardedSessions, current?.session)) {
-          set({ session: null, sessionId: null, customWorkoutDraft: current?.custom_workout_draft ?? null, loading: false, bootstrapped: true, wasResumed: false, activeExerciseIdx: 0, undoToast: null })
+          set({ session: null, sessionId: null, customWorkoutDraft: current?.custom_workout_draft ?? null, offlineSessionSnapshot: false, loading: false, bootstrapped: true, wasResumed: false, activeExerciseIdx: 0, undoToast: null })
           return
         }
 
         set({
-          session: current,
+          session: persistCachedSession(current),
           sessionId: current.session.id,
           customWorkoutDraft: null,
+          offlineSessionSnapshot: false,
           loading: false,
           bootstrapped: true,
           wasResumed: true,
@@ -217,8 +225,30 @@ export const useWorkoutStore = create(persist((set, get) => ({
         return
       }
 
-      set({ session: null, sessionId: null, customWorkoutDraft: current?.custom_workout_draft ?? null, loading: false, bootstrapped: true, wasResumed: false, activeExerciseIdx: 0, undoToast: null })
+      set({ session: null, sessionId: null, customWorkoutDraft: current?.custom_workout_draft ?? null, offlineSessionSnapshot: false, loading: false, bootstrapped: true, wasResumed: false, activeExerciseIdx: 0, undoToast: null })
     } catch (err) {
+      if (isOfflineLikeError(err)) {
+        const cachedSessionSnapshot = readCachedWorkoutSessionSnapshot()
+        const cachedSession = cachedSessionSnapshot?.session ?? null
+
+        if (cachedSession?.session?.id && !cachedSession?.session?.completed) {
+          set({
+            session: cachedSession,
+            sessionId: cachedSession.session.id,
+            customWorkoutDraft: null,
+            offlineSessionSnapshot: true,
+            loading: false,
+            bootstrapped: true,
+            wasResumed: true,
+            sessionMode: cachedSession.session_mode || (Number(cachedSession?.session?.readiness_score ?? 0) <= 3 ? 'maintenance' : 'normal'),
+            timeTier: cachedSession?.session?.time_tier || get().timeTier,
+            readinessScore: cachedSession?.session?.readiness_score ?? get().readinessScore,
+            error: null,
+          })
+          return
+        }
+      }
+
       set({ loading: false, error: err.message, bootstrapped: true })
     }
   },
@@ -284,8 +314,9 @@ export const useWorkoutStore = create(persist((set, get) => ({
     const full = await workoutApi.get(sessionId)
     const maxIndex = Math.max(0, (full?.exercises?.length ?? 1) - 1)
     set({
-      session: full,
+      session: persistCachedSession(full),
       customWorkoutDraft: null,
+      offlineSessionSnapshot: false,
       activeExerciseIdx: Math.min(get().activeExerciseIdx, maxIndex),
       sessionMode: full.session_mode || (Number(full?.session?.readiness_score ?? 0) <= 3 ? 'maintenance' : 'normal'),
       timeTier: full?.session?.time_tier || get().timeTier,
@@ -296,26 +327,43 @@ export const useWorkoutStore = create(persist((set, get) => ({
   logSet: async (sessionExerciseId, setData) => {
     const { sessionId } = get()
     const tempSetId = -Date.now()
-    const optimisticSet = buildOptimisticSet(sessionExerciseId, setData, tempSetId)
+    const optimisticSet = buildOptimisticSet(sessionExerciseId, setData, tempSetId, { syncStatus: 'syncing' })
     const rollbackSession = get().session
 
     set((state) => {
       const nextSession = appendSetToExercise(state.session, sessionExerciseId, optimisticSet)
-      return nextSession ? { session: nextSession } : {}
+      return nextSession ? { session: persistCachedSession(nextSession), offlineSessionSnapshot: false } : {}
     })
 
     try {
-      const result = await workoutApi.logSet(sessionId, { session_exercise_id: sessionExerciseId, ...setData })
+      const result = await workoutApi.logSet(sessionId, normalizeSetRequestPayload(sessionExerciseId, setData, optimisticSet.set_number))
+      if (isQueuedOfflineWrite(result)) {
+        set((state) => {
+          const nextSession = patchSetById(state.session, tempSetId, {
+            sync_status: 'queued',
+            offline_queue_id: result.queue_id,
+            offline_local_id: result.local_id,
+          })
+          return nextSession ? { session: persistCachedSession(nextSession), offlineSessionSnapshot: false } : {}
+        })
+        return result
+      }
+
       const persistedSetId = Number(result?.set_id || 0)
       if (persistedSetId > 0) {
         set((state) => {
-          const nextSession = replaceSetId(state.session, sessionExerciseId, tempSetId, persistedSetId)
-          return nextSession ? { session: nextSession } : {}
+          const nextSession = replaceSetId(state.session, sessionExerciseId, tempSetId, persistedSetId, {
+            sync_status: 'synced',
+            offline_queue_id: '',
+            offline_local_id: '',
+          })
+          return nextSession ? { session: persistCachedSession(nextSession), offlineSessionSnapshot: false } : {}
         })
       }
       return result
     } catch (error) {
-      set({ session: rollbackSession })
+      set({ session: rollbackSession, offlineSessionSnapshot: false })
+      persistCachedSession(rollbackSession)
       try {
         await get().reloadSession()
       } catch (reloadError) {
@@ -327,17 +375,59 @@ export const useWorkoutStore = create(persist((set, get) => ({
 
   updateSet: async (setId, setData) => {
     const { sessionId } = get()
+    const currentSet = findSetById(get().session, setId)
+    if (currentSet?.offline_queue_id && Number(currentSet?.id) < 0) {
+      const queuePayload = normalizeSetRequestPayload(currentSet.session_exercise_id, {
+        ...currentSet,
+        ...setData,
+      }, currentSet.set_number)
+
+      mutateOfflineWriteQueueEntry(currentSet.offline_queue_id, entry => (
+        entry ? { ...entry, body: { ...entry.body, ...queuePayload } } : entry
+      ))
+
+      set((state) => {
+        const nextSession = patchSetById(state.session, setId, {
+          ...setData,
+          sync_status: 'queued',
+        })
+        return nextSession ? { session: persistCachedSession(nextSession), offlineSessionSnapshot: false } : {}
+      })
+      return { queued: true, offline: true, queue_id: currentSet.offline_queue_id, local_id: currentSet.offline_local_id }
+    }
+
     const rollbackSession = get().session
     set((state) => {
-      const nextSession = patchSetById(state.session, setId, setData)
-      return nextSession ? { session: nextSession } : {}
+      const nextSession = patchSetById(state.session, setId, { ...setData, sync_status: 'syncing' })
+      return nextSession ? { session: persistCachedSession(nextSession), offlineSessionSnapshot: false } : {}
     })
 
     try {
       const result = await workoutApi.updateSet(sessionId, setId, setData)
+      if (isQueuedOfflineWrite(result)) {
+        set((state) => {
+          const nextSession = patchSetById(state.session, setId, {
+            sync_status: 'queued',
+            offline_queue_id: result.queue_id,
+            offline_local_id: result.local_id,
+          })
+          return nextSession ? { session: persistCachedSession(nextSession), offlineSessionSnapshot: false } : {}
+        })
+        return result
+      }
+
+      set((state) => {
+        const nextSession = patchSetById(state.session, setId, {
+          sync_status: 'synced',
+          offline_queue_id: '',
+          offline_local_id: '',
+        })
+        return nextSession ? { session: persistCachedSession(nextSession), offlineSessionSnapshot: false } : {}
+      })
       return result
     } catch (error) {
-      set({ session: rollbackSession })
+      set({ session: rollbackSession, offlineSessionSnapshot: false })
+      persistCachedSession(rollbackSession)
       try {
         await get().reloadSession()
       } catch (reloadError) {
@@ -356,12 +446,21 @@ export const useWorkoutStore = create(persist((set, get) => ({
   deleteSet: async (setId) => {
     const { sessionId, session } = get()
     const deletedSet = session?.exercises?.flatMap(exercise => exercise.sets ?? []).find(set => set.id === setId)
+    if (deletedSet?.offline_queue_id && Number(deletedSet?.id) < 0) {
+      removeOfflineWriteQueueEntry(deletedSet.offline_queue_id)
+      set((state) => {
+        const nextSession = removeSetFromExercise(state.session, Number(deletedSet.session_exercise_id), setId)
+        return nextSession ? { session: persistCachedSession(nextSession), offlineSessionSnapshot: false, undoToast: null } : { undoToast: null }
+      })
+      return { removed_offline: true }
+    }
+
     const rollbackSession = session
     try {
       if (deletedSet?.session_exercise_id) {
         set((state) => {
           const nextSession = removeSetFromExercise(state.session, Number(deletedSet.session_exercise_id), setId)
-          return nextSession ? { session: nextSession } : {}
+          return nextSession ? { session: persistCachedSession(nextSession), offlineSessionSnapshot: false } : {}
         })
       }
 
@@ -394,7 +493,8 @@ export const useWorkoutStore = create(persist((set, get) => ({
       })
       return result
     } catch (error) {
-      set({ session: rollbackSession })
+      set({ session: rollbackSession, offlineSessionSnapshot: false })
+      persistCachedSession(rollbackSession)
       try {
         await get().reloadSession()
       } catch (reloadError) {
@@ -513,7 +613,7 @@ export const useWorkoutStore = create(persist((set, get) => ({
       )
       set((state) => {
         const nextSession = insertSetIntoExercise(state.session, Number(undoToast.payload.sessionExerciseId), restoredSet)
-        return nextSession ? { session: nextSession } : {}
+        return nextSession ? { session: persistCachedSession(nextSession), offlineSessionSnapshot: false } : {}
       })
       shouldReload = false
     }
@@ -631,6 +731,7 @@ export const useWorkoutStore = create(persist((set, get) => ({
     timeTier: state.timeTier,
     readinessScore: state.readinessScore,
     sessionMode: state.sessionMode,
+    offlineSessionSnapshot: state.offlineSessionSnapshot,
     activeExerciseIdx: state.activeExerciseIdx,
     previewDayType: state.previewDayType,
     previewDrafts: state.previewDrafts,
@@ -639,10 +740,12 @@ export const useWorkoutStore = create(persist((set, get) => ({
 }))
 
 function setResolvedSessionState(set, get, sessionData, selectedTimeTier, selectedReadiness) {
+  persistCachedSession(sessionData)
   set({
     session: sessionData,
     sessionId: sessionData.session.id,
     customWorkoutDraft: null,
+    offlineSessionSnapshot: false,
     loading: false,
     bootstrapped: true,
     wasResumed: false,
@@ -726,7 +829,7 @@ function syncDraftExerciseOrder(currentOrder, nextIds) {
   return combined.length === filteredNextIds.length ? combined : filteredNextIds
 }
 
-function buildOptimisticSet(sessionExerciseId, setData, setId) {
+function buildOptimisticSet(sessionExerciseId, setData, setId, options = {}) {
   const setNumber = Number(setData?.set_number || 0) > 0 ? Number(setData.set_number) : 1
   return {
     id: Number(setId),
@@ -739,6 +842,9 @@ function buildOptimisticSet(sessionExerciseId, setData, setId) {
     completed: Number(setData?.completed ?? 1) ? 1 : 0,
     pain_flag: Number(setData?.pain_flag ?? setData?.painFlag ?? 0) ? 1 : 0,
     notes: setData?.notes ?? null,
+    sync_status: String(options.syncStatus || setData?.sync_status || 'synced'),
+    offline_queue_id: String(options.offlineQueueId || setData?.offline_queue_id || ''),
+    offline_local_id: String(options.offlineLocalId || setData?.offline_local_id || ''),
   }
 }
 
@@ -790,15 +896,6 @@ function removeSetFromExercise(sessionData, sessionExerciseId, setId) {
   return updateExerciseSets(sessionData, sessionExerciseId, (sets) => normalizeSetNumbers(sets.filter((item) => Number(item?.id) !== numericSetId)))
 }
 
-function replaceSetId(sessionData, sessionExerciseId, fromSetId, toSetId) {
-  const oldId = Number(fromSetId)
-  const newId = Number(toSetId)
-  if (!oldId || !newId) return null
-  return updateExerciseSets(sessionData, sessionExerciseId, (sets) => sets.map((item) => (
-    Number(item?.id) === oldId ? { ...item, id: newId } : item
-  )))
-}
-
 function updateExerciseSets(sessionData, sessionExerciseId, updater) {
   if (!sessionData || !Array.isArray(sessionData.exercises)) return null
   const numericSessionExerciseId = Number(sessionExerciseId)
@@ -839,5 +936,69 @@ function mapSetPatch(setPatch) {
   if (setPatch?.completed !== undefined) patch.completed = Number(setPatch.completed) ? 1 : 0
   if (setPatch?.pain_flag !== undefined || setPatch?.painFlag !== undefined) patch.pain_flag = Number(setPatch.pain_flag ?? setPatch.painFlag) ? 1 : 0
   if (setPatch?.notes !== undefined) patch.notes = setPatch.notes
+  if (setPatch?.sync_status !== undefined) patch.sync_status = String(setPatch.sync_status || 'synced')
+  if (setPatch?.offline_queue_id !== undefined) patch.offline_queue_id = String(setPatch.offline_queue_id || '')
+  if (setPatch?.offline_local_id !== undefined) patch.offline_local_id = String(setPatch.offline_local_id || '')
   return patch
+}
+
+function replaceSetId(sessionData, sessionExerciseId, fromSetId, toSetId, patch = {}) {
+  const oldId = Number(fromSetId)
+  const newId = Number(toSetId)
+  if (!oldId || !newId) return null
+  return updateExerciseSets(sessionData, sessionExerciseId, (sets) => sets.map((item) => (
+    Number(item?.id) === oldId ? { ...item, id: newId, ...mapSetPatch(patch) } : item
+  )))
+}
+
+function normalizeSetRequestPayload(sessionExerciseId, setData, fallbackSetNumber = 1) {
+  return {
+    session_exercise_id: Number(sessionExerciseId),
+    set_number: Number(setData?.set_number || fallbackSetNumber || 1),
+    weight: Number(setData?.weight || 0),
+    reps: Number(setData?.reps || 0),
+    ...(setData?.rir !== undefined ? { rir: setData.rir === '' ? null : setData.rir } : {}),
+    ...(setData?.rpe !== undefined ? { rpe: setData.rpe === '' ? null : setData.rpe } : {}),
+    ...(setData?.completed !== undefined ? { completed: Number(setData.completed) ? 1 : 0 } : {}),
+    ...(setData?.pain_flag !== undefined || setData?.painFlag !== undefined ? { pain_flag: Number(setData?.pain_flag ?? setData?.painFlag) ? 1 : 0 } : {}),
+    ...(setData?.notes !== undefined ? { notes: setData.notes ?? null } : {}),
+  }
+}
+
+function persistCachedSession(sessionData) {
+  if (sessionData?.session?.id && !sessionData?.session?.completed) {
+    cacheWorkoutSessionSnapshot(sessionData)
+    return sessionData
+  }
+
+  clearCachedWorkoutSessionSnapshot()
+  return sessionData
+}
+
+function isQueuedOfflineWrite(result) {
+  return Boolean(result?.queued && result?.offline && result?.queue_id)
+}
+
+function isOfflineLikeError(error) {
+  if (!error) return false
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return true
+  if (error.name === 'TypeError') return true
+  return /failed to fetch|networkerror|load failed|network request failed/i.test(String(error.message || ''))
+}
+
+function findSetById(sessionData, setId) {
+  const numericSetId = Number(setId)
+  if (!numericSetId || !Array.isArray(sessionData?.exercises)) {
+    return null
+  }
+
+  for (const exercise of sessionData.exercises) {
+    for (const setRow of exercise?.sets ?? []) {
+      if (Number(setRow?.id) === numericSetId) {
+        return setRow
+      }
+    }
+  }
+
+  return null
 }

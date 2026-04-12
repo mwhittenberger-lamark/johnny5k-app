@@ -1,0 +1,69 @@
+/* ── Auth screens ── */
+.auth-screen {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: linear-gradient(160deg, #ddf0ff 0%, #c8e8ff 45%, #d8f8ee 100%);
+}
+
+.auth-screen h1 {
+  font-size: 2.4rem;
+  margin: 0 0 8px;
+  font-family: 'Exo 2', system-ui, sans-serif;
+  font-weight: 800;
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent3) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.auth-welcome-image {
+  display: block;
+  width: min(320px, 72vw);
+  max-width: 100%;
+  height: auto;
+  margin: 4px 0 14px;
+  border-radius: 28px;
+  box-shadow: 0 16px 40px rgba(15, 31, 85, 0.16);
+}
+
+.auth-screen .subtitle {
+  color: var(--text-muted);
+  margin: 0 0 32px;
+  font-weight: 600;
+  font-size: 1.05rem;
+}
+
+.auth-form {
+  width: 100%;
+  max-width: 360px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.auth-form input {
+  width: 100%;
+}
+
+.auth-inline-error {
+  width: 100%;
+  max-width: 360px;
+  margin: 0;
+  box-shadow: none;
+}
+
+.auth-footer {
+  margin-top: 16px;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.auth-footer a {
+  color: var(--accent);
+  text-decoration: none;
+}

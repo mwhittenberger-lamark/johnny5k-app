@@ -1,6 +1,8 @@
+import ErrorState from '../../../components/ui/ErrorState'
 import SupportIconButton from '../../../components/ui/SupportIconButton'
 import ExerciseCard from '../../../components/workout/ExerciseCard'
 import LiveWorkoutMode from '../../../components/workout/LiveWorkoutMode'
+import WorkoutSessionConfirmModal from './WorkoutSessionConfirmModal'
 import { formatDayType } from '../workoutScreenUtils'
 
 export default function WorkoutActiveSession({
@@ -16,6 +18,7 @@ export default function WorkoutActiveSession({
   displayDayType,
   displaySessionTitle,
   isMaintenanceMode,
+  offlineStatus,
   onOpenWorkoutSupport,
   liveWorkoutFrames,
   sessionController,
@@ -24,6 +27,7 @@ export default function WorkoutActiveSession({
 }) {
   const activeEx = exercises[activeExerciseIdx]
   const quickAddDisabled = Boolean(sessionController.addingSlot)
+  const confirmBusy = sessionController.exiting || sessionController.restarting
 
   return (
     <div className="screen workout-active workout-upgraded">
@@ -40,9 +44,10 @@ export default function WorkoutActiveSession({
             <span className="dashboard-chip subtle">{session?.session?.time_tier} session</span>
             {isMaintenanceMode ? <span className="dashboard-chip subtle">Maintenance mode</span> : null}
           </div>
+          {offlineStatus}
           {wasResumed ? <p className="settings-subtitle workout-session-note">Resumed your in-progress workout automatically.</p> : null}
           {scheduledDayType && displayDayType && scheduledDayType !== displayDayType ? <p className="settings-subtitle workout-session-note">Scheduled for today: {formatDayType(scheduledDayType)}. You chose to run {formatDayType(displayDayType)} instead.</p> : null}
-          {statusError ? <p className="error">{statusError}</p> : null}
+          {statusError ? <ErrorState className="workout-inline-error" eyebrow="Workout status" message={statusError} title="There’s a problem with this session" /> : null}
         </div>
         <div className="workout-session-header-actions">
           <button type="button" className="btn-primary" onClick={sessionController.openLiveMode}>
@@ -115,10 +120,10 @@ export default function WorkoutActiveSession({
           <button className="btn-outline" onClick={() => navigate('/workout/library')} disabled={sessionController.exiting || sessionController.restarting || sessionController.completing}>
             My exercise library
           </button>
-          <button className="btn-secondary" onClick={sessionController.handleExitSession} disabled={sessionController.exiting || sessionController.restarting || sessionController.completing}>
+          <button className="btn-secondary" onClick={sessionController.requestExitSession} disabled={sessionController.exiting || sessionController.restarting || sessionController.completing}>
             {sessionController.exiting ? 'Exiting...' : 'Exit and discard'}
           </button>
-          <button className="btn-outline" onClick={sessionController.handleRestartSession} disabled={sessionController.restarting}>
+          <button className="btn-outline" onClick={sessionController.requestRestartSession} disabled={sessionController.restarting}>
             {sessionController.restarting ? 'Restarting...' : 'Start over / change split'}
           </button>
           <button className="btn-primary" onClick={sessionController.handleComplete} disabled={sessionController.completing}>
@@ -160,6 +165,15 @@ export default function WorkoutActiveSession({
         timerLabel={sessionController.activeSessionTimerLabel}
         todayLabel={todayLabel}
         displayDayType={displayDayType}
+      />
+
+      <WorkoutSessionConfirmModal
+        action={sessionController.pendingSessionAction}
+        busy={confirmBusy}
+        onCancel={sessionController.closePendingSessionAction}
+        onConfirm={() => {
+          void sessionController.confirmPendingSessionAction()
+        }}
       />
     </div>
   )

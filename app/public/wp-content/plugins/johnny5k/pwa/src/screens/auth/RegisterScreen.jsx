@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { authApi } from '../../api/modules/auth'
 import ClearableInput from '../../components/ui/ClearableInput'
+import ErrorState from '../../components/ui/ErrorState'
 import { useAuthStore } from '../../store/authStore'
 
 export default function RegisterScreen() {
@@ -50,7 +51,7 @@ export default function RegisterScreen() {
         <ClearableInput type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} required />
         <ClearableInput type="password" placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} required minLength={8} />
         <ClearableInput type="password" placeholder="Confirm password" value={confirm} onChange={e => setConfirm(e.target.value)} required />
-        {error && <p className="error">{error}</p>}
+        {error ? <ErrorState className="auth-inline-error" message={error} title="Could not create account" /> : null}
         <button type="submit" className="btn-primary" disabled={loading}>
           {loading ? 'Creating account…' : 'Create Account'}
         </button>

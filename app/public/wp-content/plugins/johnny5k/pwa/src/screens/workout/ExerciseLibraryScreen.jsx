@@ -2,6 +2,10 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { trainingApi } from '../../api/modules/training'
 import ClearableInput from '../../components/ui/ClearableInput'
+import EmptyState from '../../components/ui/EmptyState'
+import ErrorState from '../../components/ui/ErrorState'
+import Field from '../../components/ui/Field'
+import { confirmGlobalAction } from '../../lib/uiFeedback'
 
 const EMPTY_DRAFT = {
   name: '',
@@ -231,7 +235,13 @@ export default function ExerciseLibraryScreen() {
 
   async function deleteExercise(exerciseId) {
     if (!exerciseId || deletingExerciseId || bulkDeleting) return
-    if (!window.confirm('Remove this personal exercise from your library? Any personal swap links that depend on it will be removed too.')) return
+    const confirmed = await confirmGlobalAction({
+      title: 'Remove personal exercise?',
+      message: 'Remove this personal exercise from your library? Any personal swap links that depend on it will be removed too.',
+      confirmLabel: 'Remove exercise',
+      tone: 'danger',
+    })
+    if (!confirmed) return
 
     setDeletingExerciseId(exerciseId)
     setError('')
@@ -260,7 +270,12 @@ export default function ExerciseLibraryScreen() {
     const selectedCount = selectedSet.size
     if (!selectedCount) return
 
-    const confirmed = window.confirm(`Remove ${selectedCount} personal exercise${selectedCount === 1 ? '' : 's'} from your library? Any personal swap links that depend on them will be removed too.`)
+    const confirmed = await confirmGlobalAction({
+      title: `Remove ${selectedCount} personal exercise${selectedCount === 1 ? '' : 's'}?`,
+      message: `Remove ${selectedCount} personal exercise${selectedCount === 1 ? '' : 's'} from your library? Any personal swap links that depend on them will be removed too.`,
+      confirmLabel: 'Remove exercises',
+      tone: 'danger',
+    })
     if (!confirmed) return
 
     setBulkDeleting(true)
@@ -315,7 +330,11 @@ export default function ExerciseLibraryScreen() {
     if (!keepExerciseId || !removeExerciseIds.length || mergingGroupKey || bulkDeleting || deletingExerciseId || savingExerciseId) return
 
     const keepExercise = items.find(item => Number(item.id) === keepExerciseId)
-    const confirmed = window.confirm(`Merge ${removeExerciseIds.length} duplicate exercise${removeExerciseIds.length === 1 ? '' : 's'} into ${keepExercise?.name || 'the selected exercise'}? This will move personal substitutions, training-plan references, and workout-session references to the kept exercise.`)
+    const confirmed = await confirmGlobalAction({
+      title: 'Merge duplicate exercises?',
+      message: `Merge ${removeExerciseIds.length} duplicate exercise${removeExerciseIds.length === 1 ? '' : 's'} into ${keepExercise?.name || 'the selected exercise'}? This will move personal substitutions, training-plan references, and workout-session references to the kept exercise.`,
+      confirmLabel: 'Merge duplicates',
+    })
     if (!confirmed) return
 
     setMergingGroupKey(groupKey)
@@ -366,8 +385,7 @@ export default function ExerciseLibraryScreen() {
           <span className="dashboard-chip subtle">{exercises.length} loaded</span>
         </div>
         <div className="workout-library-toolbar-grid">
-          <label className="exercise-note-label workout-library-toolbar-field" htmlFor="exercise-library-search">
-            <span>Search your personal exercise library</span>
+          <Field className="exercise-note-label workout-library-toolbar-field" label="Search your personal exercise library">
             <ClearableInput
               id="exercise-library-search"
               type="text"
@@ -375,16 +393,15 @@ export default function ExerciseLibraryScreen() {
               onChange={event => setQuery(event.target.value)}
               placeholder="Search by exercise name or setup"
             />
-          </label>
-          <label className="exercise-note-label workout-library-toolbar-field" htmlFor="exercise-library-sort">
-            <span>Sort by</span>
+          </Field>
+          <Field className="exercise-note-label workout-library-toolbar-field" label="Sort by">
             <select id="exercise-library-sort" value={sortBy} onChange={event => setSortBy(event.target.value)}>
               <option value="newest">Newest saved</option>
               <option value="name">Name</option>
               <option value="muscle">Primary muscle</option>
               <option value="equipment">Equipment</option>
             </select>
-          </label>
+          </Field>
         </div>
         {visibleExerciseIds.length ? (
           <div className="workout-library-bulk-bar">
@@ -406,7 +423,7 @@ export default function ExerciseLibraryScreen() {
           </div>
         ) : null}
         {message ? <p className="success-msg">{message}</p> : null}
-        {error ? <p className="error">{error}</p> : null}
+        {error ? <ErrorState message={error} title="Could not load your exercise library" /> : null}
       </section>
 
       {mergeSummary ? (
@@ -514,9 +531,11 @@ export default function ExerciseLibraryScreen() {
 
       {loading ? <div className="dash-card"><p>Loading your saved exercises...</p></div> : null}
       {!loading && !groupedExercises.length ? (
-        <div className="dash-card">
-          <p>No personal exercises found yet. Save one from a workout swap suggestion and it will appear here.</p>
-        </div>
+        <EmptyState
+          className="workout-library-empty-state"
+          message="Save one from a workout swap suggestion and it will appear here."
+          title="No personal exercises found yet"
+        />
       ) : null}
 
       <div className="workout-library-groups">

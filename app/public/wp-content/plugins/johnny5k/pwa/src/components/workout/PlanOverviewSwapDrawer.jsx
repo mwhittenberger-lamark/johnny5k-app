@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react'
 import { aiApi } from '../../api/modules/ai'
 import { trainingApi } from '../../api/modules/training'
+import AppDrawer from '../ui/AppDrawer'
 import ClearableInput from '../ui/ClearableInput'
+import ErrorState from '../ui/ErrorState'
+import Field from '../ui/Field'
 import {
   buildExerciseMeta,
   buildLocalOptionReason,
@@ -253,9 +256,12 @@ export default function PlanOverviewSwapDrawer({
   }
 
   return (
-    <div className="exercise-drawer-shell" role="dialog" aria-modal="true" aria-labelledby={`plan-overview-swap-${exercise.plan_exercise_id}`}>
-      <button type="button" className="exercise-drawer-backdrop" aria-label="Close swap drawer" onClick={onClose} />
-      <aside className="exercise-drawer workout-plan-swap-drawer">
+    <AppDrawer
+      open
+      onClose={onClose}
+      overlayClassName="exercise-drawer-shell"
+      className="exercise-drawer workout-plan-swap-drawer"
+    >
         <div className="exercise-drawer-head">
           <div>
             <p className="exercise-drawer-eyebrow">Plan Overview</p>
@@ -301,22 +307,23 @@ export default function PlanOverviewSwapDrawer({
           <div className="dashboard-card-head">
             <span className="dashboard-chip subtle">Exercise library</span>
           </div>
-          <label className="exercise-note-label" htmlFor={`plan-swap-search-${exercise.plan_exercise_id}`}>Search saved exercises</label>
-          <ClearableInput
-            id={`plan-swap-search-${exercise.plan_exercise_id}`}
-            type="text"
-            value={searchQuery}
-            onChange={event => setSearchQuery(event.target.value)}
-            placeholder="Search your exercise library"
-          />
+          <Field className="exercise-note-label" label="Search saved exercises">
+            <ClearableInput
+              id={`plan-swap-search-${exercise.plan_exercise_id}`}
+              type="text"
+              value={searchQuery}
+              onChange={event => setSearchQuery(event.target.value)}
+              placeholder="Search your exercise library"
+            />
+          </Field>
           {searchingLibrary ? <p className="settings-subtitle">Searching the library...</p> : null}
-          {searchError ? <p className="error">{searchError}</p> : null}
+          {searchError ? <ErrorState className="workout-inline-state" message={searchError} title="Could not search your library" /> : null}
           <div className="workout-swap-subsection-head">
             <strong>My exercises</strong>
             <span className="workout-swap-badge personal">Personal library</span>
           </div>
           {loadingMyExercises ? <p className="settings-subtitle">Loading your saved exercises...</p> : null}
-          {myExercisesError ? <p className="error">{myExercisesError}</p> : null}
+          {myExercisesError ? <ErrorState className="workout-inline-state" message={myExercisesError} title="Could not load your saved exercises" /> : null}
           {myExercises.length ? (
             <div className="workout-swap-list workout-swap-list-personal">
               {myExercises.map(option => {
@@ -450,13 +457,14 @@ export default function PlanOverviewSwapDrawer({
           </div>
           <p className="settings-subtitle">Johnny will stay inside your saved exercise library by default. If you explicitly ask him to check broader options, he can review that too and show sources when available. You can save a new suggestion into your personal library directly from here.</p>
           <form className="exercise-ai-swap-form" onSubmit={handleAskJohnny}>
-            <label className="exercise-note-label" htmlFor={`plan-swap-ai-${exercise.plan_exercise_id}`}>Describe what you want instead</label>
-            <textarea
-              id={`plan-swap-ai-${exercise.plan_exercise_id}`}
-              value={aiPrompt}
-              onChange={event => setAiPrompt(event.target.value)}
-              placeholder="Example: I want a machine-based chest option because my shoulder feels touchy."
-            />
+            <Field className="exercise-note-label" label="Describe what you want instead">
+              <textarea
+                id={`plan-swap-ai-${exercise.plan_exercise_id}`}
+                value={aiPrompt}
+                onChange={event => setAiPrompt(event.target.value)}
+                placeholder="Example: I want a machine-based chest option because my shoulder feels touchy."
+              />
+            </Field>
             <div className="exercise-panel-actions">
               <button type="submit" className="btn-secondary small exercise-ai-review-button" disabled={aiLoading || !aiPrompt.trim()}>
                 {aiLoading ? 'Reviewing...' : 'Ask Johnny to review'}
@@ -464,7 +472,7 @@ export default function PlanOverviewSwapDrawer({
             </div>
           </form>
 
-          {aiError ? <p className="error">{aiError}</p> : null}
+          {aiError ? <ErrorState className="workout-inline-state" message={aiError} title="Johnny could not review this swap" /> : null}
           {saveMessage ? <p className="success-msg">{saveMessage}</p> : null}
           {aiOpinion ? (
             <div className="exercise-ai-swap-reply">
@@ -523,7 +531,6 @@ export default function PlanOverviewSwapDrawer({
             </div>
           ) : null}
         </section>
-      </aside>
-    </div>
+    </AppDrawer>
   )
 }

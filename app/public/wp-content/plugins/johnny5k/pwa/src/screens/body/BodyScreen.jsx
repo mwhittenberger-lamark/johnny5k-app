@@ -7,6 +7,7 @@ import SupportIconButton from '../../components/ui/SupportIconButton'
 import { formatUsShortDate } from '../../lib/dateFormat'
 import { openSupportGuide } from '../../lib/supportHelp'
 import { DAY_TYPE_OPTIONS } from '../../lib/trainingDayTypes'
+import { confirmGlobalAction, showGlobalToast } from '../../lib/uiFeedback'
 import { useDashboardStore } from '../../store/dashboardStore'
 import { useJohnnyAssistantStore } from '../../store/johnnyAssistantStore'
 
@@ -33,7 +34,6 @@ export default function BodyScreen() {
   const [editingSleepId, setEditingSleepId] = useState(null)
   const [editingStepId, setEditingStepId] = useState(null)
   const [saving, setSaving]     = useState(false)
-  const [msg, setMsg]           = useState('')
   const [pendingScrollTarget, setPendingScrollTarget] = useState('')
   const [pendingRouteFocus, setPendingRouteFocus] = useState(null)
   const weightFormRef = useRef(null)
@@ -82,7 +82,16 @@ export default function BodyScreen() {
   }, [])
 
   const setFlash = useCallback((message) => {
-    setMsg(message)
+    const normalizedMessage = String(message || '').trim()
+    if (!normalizedMessage) {
+      return
+    }
+
+    showGlobalToast({
+      title: normalizedMessage.startsWith('Error:') ? 'Could not complete that action' : '',
+      message: normalizedMessage,
+      tone: normalizedMessage.startsWith('Error:') ? 'error' : 'success',
+    })
   }, [])
 
   useEffect(() => {
@@ -93,16 +102,6 @@ export default function BodyScreen() {
 
     return () => window.cancelAnimationFrame(frameId)
   }, [loadSnapshot, refreshBodyData])
-
-  useEffect(() => {
-    if (!msg || msg.startsWith('Error')) return undefined
-
-    const timer = window.setTimeout(() => {
-      setMsg('')
-    }, 4200)
-
-    return () => window.clearTimeout(timer)
-  }, [msg])
 
   useEffect(() => {
     const focusTab = String(location.state?.focusTab || '').trim()
@@ -126,7 +125,12 @@ export default function BodyScreen() {
     }
 
     startTransition(() => {
-      setMsg(notice)
+      showGlobalToast({
+        title: 'Johnny update',
+        message: notice,
+        tone: 'info',
+        kind: 'johnny-action-notice',
+      })
     })
     const nextState = { ...(location.state || {}) }
     delete nextState.johnnyActionNotice
@@ -266,7 +270,13 @@ export default function BodyScreen() {
   }
 
   async function removeWeight(id) {
-    if (!window.confirm('Delete this weight entry?')) return
+    const confirmed = await confirmGlobalAction({
+      title: 'Delete weight entry?',
+      message: 'This removes the saved weight log from your progress history.',
+      confirmLabel: 'Delete entry',
+      tone: 'danger',
+    })
+    if (!confirmed) return
     setSaving(true)
     try {
       await bodyApi.deleteWeight(id)
@@ -282,7 +292,13 @@ export default function BodyScreen() {
   }
 
   async function removeSleep(id) {
-    if (!window.confirm('Delete this sleep entry?')) return
+    const confirmed = await confirmGlobalAction({
+      title: 'Delete sleep entry?',
+      message: 'This removes the saved sleep log from your recovery history.',
+      confirmLabel: 'Delete entry',
+      tone: 'danger',
+    })
+    if (!confirmed) return
     setSaving(true)
     try {
       await bodyApi.deleteSleep(id)
@@ -298,7 +314,13 @@ export default function BodyScreen() {
   }
 
   async function removeSteps(id) {
-    if (!window.confirm('Delete this step entry?')) return
+    const confirmed = await confirmGlobalAction({
+      title: 'Delete step entry?',
+      message: 'This removes the saved step log from your movement history.',
+      confirmLabel: 'Delete entry',
+      tone: 'danger',
+    })
+    if (!confirmed) return
     setSaving(true)
     try {
       await bodyApi.deleteSteps(id)
@@ -482,16 +504,6 @@ export default function BodyScreen() {
           </button>
         </div>
       </header>
-
-      {msg ? (
-        <div className={`app-toast ${msg.startsWith('Error') ? 'error' : 'success'}`} role="status" aria-live="polite">
-          <div className="app-toast-copy">
-            <p className="app-toast-title">{msg.startsWith('Error') ? 'Could not save' : 'Saved'}</p>
-            <p className="app-toast-message">{msg}</p>
-          </div>
-          <button type="button" className="app-toast-dismiss" onClick={() => setMsg('')} aria-label="Dismiss toast">×</button>
-        </div>
-      ) : null}
 
       <section className="body-summary-grid">
         <SummaryCard label="Latest weight" value={latestWeight} suffix=" lbs" meta={weightTrend} accent="orange" />
@@ -944,7 +956,13 @@ function WorkoutHistoryTab({ workoutLogs, currentWeight, invalidate, onRefreshSn
   }
 
   async function handleDelete(id) {
-    if (!window.confirm('Delete this workout and its logged sets?')) return
+    const confirmed = await confirmGlobalAction({
+      title: 'Delete workout history?',
+      message: 'This removes the workout and all of its logged sets from your recent activity.',
+      confirmLabel: 'Delete workout',
+      tone: 'danger',
+    })
+    if (!confirmed) return
     setSaving(true)
     try {
     await workoutApi.deleteHistory(id)
@@ -1142,7 +1160,13 @@ function CardioTab({ invalidate, cardioLogs, cardioSeries, cardioRange, currentW
   }
 
   async function handleDelete(id) {
-    if (!window.confirm('Delete this cardio entry?')) return
+    const confirmed = await confirmGlobalAction({
+      title: 'Delete cardio entry?',
+      message: 'This removes the saved cardio log from your conditioning history.',
+      confirmLabel: 'Delete entry',
+      tone: 'danger',
+    })
+    if (!confirmed) return
     setSaving(true)
     try {
       await bodyApi.deleteCardio(id)

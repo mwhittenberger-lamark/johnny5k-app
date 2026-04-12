@@ -6,6 +6,7 @@ import { formatUsShortDate } from '../../lib/dateFormat'
 import { getAppImageUrl } from '../../lib/appImages'
 import { reportClientDiagnostic } from '../../lib/clientDiagnostics'
 import { readLiveWorkoutVoicePrefs } from '../../lib/liveWorkoutVoice'
+import { confirmGlobalAction } from '../../lib/uiFeedback'
 import { useAuthStore } from '../../store/authStore'
 import { useDashboardStore } from '../../store/dashboardStore'
 import { useJohnnyAssistantStore } from '../../store/johnnyAssistantStore'
@@ -222,7 +223,13 @@ export default function JohnnyAssistantDrawer() {
 
   async function handleExitWorkout() {
     if (!workoutSession?.session?.id || exitingWorkout) return
-    if (!window.confirm('Exit and discard this workout? Nothing from this session will be logged and it will be treated as if it never happened.')) return
+    const confirmed = await confirmGlobalAction({
+      title: 'Discard in-progress workout?',
+      message: 'Exit and discard this workout? Nothing from this session will be logged and it will be treated as if it never happened.',
+      confirmLabel: 'Discard workout',
+      tone: 'danger',
+    })
+    if (!confirmed) return
 
     setExitingWorkout(true)
     try {

@@ -56,6 +56,7 @@ export function useWorkoutSessionController({
   const [sessionTimerPausedAt, setSessionTimerPausedAt] = useState(null)
   const [sessionTimerPausedMs, setSessionTimerPausedMs] = useState(0)
   const [completionReview, setCompletionReview] = useState(null)
+  const [pendingSessionAction, setPendingSessionAction] = useState(null)
   const queryClient = useQueryClient()
   const locationStateRef = useLatest(location.state && typeof location.state === 'object' ? location.state : null)
 
@@ -346,7 +347,6 @@ export function useWorkoutSessionController({
 
   async function handleRestartSession() {
     if (!session?.session?.id) return
-    if (!window.confirm('Drop this current session and go back to split selection?')) return
 
     setRestarting(true)
     setStatusError('')
@@ -364,7 +364,6 @@ export function useWorkoutSessionController({
 
   async function handleExitSession() {
     if (!session?.session?.id) return
-    if (!window.confirm('Exit and discard this workout? Nothing from this session will be logged and it will be treated as if it never happened.')) return
 
     setExiting(true)
     setStatusError('')
@@ -375,6 +374,46 @@ export function useWorkoutSessionController({
       setStatusError(error?.message || 'Could not exit this workout right now.')
     } finally {
       setExiting(false)
+    }
+  }
+
+  function requestRestartSession() {
+    if (!session?.session?.id) return
+    setPendingSessionAction({
+      kind: 'restart',
+      title: 'Start Over And Pick A New Split?',
+      message: 'This clears the current in-progress session and takes you back to split selection so you can rebuild today.',
+      confirmLabel: 'Yes, start over',
+      tone: 'restart',
+    })
+  }
+
+  function requestExitSession() {
+    if (!session?.session?.id) return
+    setPendingSessionAction({
+      kind: 'exit',
+      title: 'Exit And Discard This Workout?',
+      message: 'Nothing from this session will be logged, and it will be treated as if it never happened.',
+      confirmLabel: 'Yes, exit workout',
+      tone: 'exit',
+    })
+  }
+
+  function closePendingSessionAction() {
+    setPendingSessionAction(null)
+  }
+
+  async function confirmPendingSessionAction() {
+    const nextAction = pendingSessionAction?.kind || ''
+    setPendingSessionAction(null)
+
+    if (nextAction === 'restart') {
+      await handleRestartSession()
+      return
+    }
+
+    if (nextAction === 'exit') {
+      await handleExitSession()
     }
   }
 
@@ -418,9 +457,14 @@ export function useWorkoutSessionController({
     openLiveMode: () => setLiveModeOpen(true),
     closeLiveMode: () => setLiveModeOpen(false),
     pauseSessionTimer,
+    pendingSessionAction,
     restarting,
+    requestExitSession,
+    requestRestartSession,
     resumeSessionTimer,
     sessionTimerPaused,
+    closePendingSessionAction,
+    confirmPendingSessionAction,
     takingRestDay,
     undoing,
   }

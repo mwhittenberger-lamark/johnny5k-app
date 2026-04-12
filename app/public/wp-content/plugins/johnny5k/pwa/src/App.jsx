@@ -6,6 +6,7 @@ import { pushApi } from './api/modules/push'
 import RouteErrorScreen from './components/resilience/RouteErrorScreen'
 import StartupIssueTray from './components/resilience/StartupIssueTray'
 import ResiliencePanel from './components/resilience/ResiliencePanel'
+import GlobalConfirmDialog from './components/ui/GlobalConfirmDialog'
 import GlobalToastViewport from './components/ui/GlobalToastViewport'
 import { reportClientDiagnostic } from './lib/clientDiagnostics'
 import { normalizeDailyCheckInEntry } from './lib/dailyCheckIn'
@@ -50,6 +51,7 @@ export function RequireAdminLayout() {
 export function RootLayout() {
   return (
     <>
+      <GlobalConfirmDialog />
       <GlobalToastViewport />
       <StartupIssueTray />
       <ScrollToTopOnRouteChange />

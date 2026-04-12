@@ -18,6 +18,7 @@ import {
 import { useAuthStore } from '../../store/authStore'
 import { useJohnnyAssistantStore } from '../../store/johnnyAssistantStore'
 import AppIcon from '../ui/AppIcon'
+import AppDialog from '../ui/AppDialog'
 
 const JohnnyAssistantDrawer = lazy(() => import('../ai/JohnnyAssistantDrawer'))
 
@@ -661,9 +662,14 @@ export default function AppShell({ children }) {
 
 function DailyCheckInModal({ answers, closeButtonRef, onAnswer, onClose }) {
   return (
-    <div className="app-shell-checkin-shell" role="dialog" aria-modal="true" aria-labelledby="daily-checkin-title">
-      <button type="button" className="app-shell-checkin-backdrop" aria-label="Close daily check-in" onClick={onClose} />
-      <section className="app-shell-checkin-modal">
+    <AppDialog
+      ariaLabel="Daily check-in"
+      className="app-shell-checkin-modal"
+      onClose={onClose}
+      open
+      overlayClassName="app-shell-checkin-shell"
+      size="lg"
+    >
         <div className="app-shell-checkin-head">
           <div>
             <p className="dashboard-eyebrow">Daily check-in</p>
@@ -702,16 +708,20 @@ function DailyCheckInModal({ answers, closeButtonRef, onAnswer, onClose }) {
         <div className="app-shell-checkin-actions">
           <button type="button" className="btn-secondary" onClick={onClose}>Continue to app</button>
         </div>
-      </section>
-    </div>
+    </AppDialog>
   )
 }
 
 function InstallHelpModal({ onClose }) {
   return (
-    <div className="app-shell-checkin-shell" role="dialog" aria-modal="true" aria-labelledby="install-help-title">
-      <button type="button" className="app-shell-checkin-backdrop" aria-label="Close install help" onClick={onClose} />
-      <section className="app-shell-checkin-modal app-shell-install-modal">
+    <AppDialog
+      ariaLabel="Install Johnny5k"
+      className="app-shell-checkin-modal app-shell-install-modal"
+      onClose={onClose}
+      open
+      overlayClassName="app-shell-checkin-shell"
+      size="lg"
+    >
         <div className="app-shell-checkin-head">
           <div>
             <p className="dashboard-eyebrow">Install Johnny5k</p>
@@ -743,8 +753,7 @@ function InstallHelpModal({ onClose }) {
         <div className="app-shell-checkin-actions">
           <button type="button" className="btn-secondary" onClick={onClose}>Back to app</button>
         </div>
-      </section>
-    </div>
+    </AppDialog>
   )
 }
 
