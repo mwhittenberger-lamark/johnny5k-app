@@ -1,64 +1,31 @@
 import AppIcon from '../../../components/ui/AppIcon'
 import CoachingSummaryPanel from '../../../components/ui/CoachingSummaryPanel'
+import { trackCoachingPromptOpen } from '../../../lib/coaching/coachingAnalytics'
+import { buildCoachingPromptOptions } from '../../../lib/coaching/coachingDrawerContext'
 import { DashboardIconBadge } from './dashboardSharedCards'
 
-export function CoachingSummaryCard({ summary, onAction, onAskJohnny }) {
-  if (!summary) return null
-
-  return (
-    <CoachingSummaryPanel
-      summary={summary}
-      className="dash-card dashboard-coaching-summary-card"
-      chipLabel="Coaching summary"
-      titleTag="h2"
-      maxInsights={3}
-      onAction={onAction}
-      onAskJohnny={onAskJohnny}
-      askJohnnyLabel="Ask Johnny why"
-    />
-  )
-}
-
-export function BestNextMoveCard({ model, onAction }) {
-  if (!model) return null
-
-  return (
-    <button className="dash-card dashboard-card-button dashboard-best-next-card" type="button" onClick={() => onAction(model)}>
-      <div className="dashboard-card-head">
-        <span className="dashboard-chip ai">Best next move</span>
-        <span className="dashboard-card-kicker">Right now</span>
-      </div>
-      <h2>{model.title}</h2>
-      <p>{model.body}</p>
-      <div className="dashboard-best-next-meta">
-        <span>{model.context}</span>
-        <span>{model.actionLabel}</span>
-      </div>
-    </button>
-  )
-}
-
-export function CoachReviewCard({
+export function CoachingSummaryCard({
+  summary,
+  onAction,
+  onAskJohnny,
   coachFreshness,
   johnnyReview,
   johnnyReviewError,
   coachMetrics,
-  coachNextStepMeta,
   coachBackupStep,
   coachBackupAction,
   quickPrompts,
   coachPromptsOpen,
-  starterPrompt,
   pendingFollowUps,
   followUpOverview,
   onTogglePrompts,
   onRefresh,
   johnnyReviewLoading,
-  onAskJohnny,
-  onAction,
 }) {
+  if (!summary) return null
+
   return (
-    <article className="dash-card dashboard-coach-card">
+    <article className="dash-card dashboard-coach-card dashboard-coaching-summary-card">
       <div className="dashboard-card-head">
         <div className="dashboard-johnny-head-actions">
           <div className="dashboard-johnny-head-copy">
@@ -69,93 +36,133 @@ export function CoachReviewCard({
                   <AppIcon name="coach" />
                   Johnny5k
                 </strong>
-                <span>{coachFreshness.subtitle || (johnnyReviewError ? 'Fallback review from your current board' : 'Review of today\'s board')}</span>
+                <span>{coachFreshness?.subtitle || 'Unified coaching read from your current board'}</span>
               </div>
             </div>
           </div>
           <div className="dashboard-johnny-head-meta">
-            <span className={`dashboard-chip ${coachFreshness.cached ? 'subtle' : 'success'} dashboard-johnny-freshness`}>{coachFreshness.badge}</span>
-            <button type="button" className="btn-ghost small dashboard-johnny-refresh" onClick={onRefresh} disabled={johnnyReviewLoading}>
-              {johnnyReviewLoading ? 'Refreshing…' : 'Refresh'}
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <div className="dashboard-johnny-zone dashboard-johnny-summary-zone">
-        <h3>{johnnyReview.title}</h3>
-        <p className="dashboard-johnny-message">{johnnyReview.message}</p>
-        <div className="dashboard-johnny-metric-grid">
-          {coachMetrics.map(metric => (
-            <div key={`${metric.label}-${metric.value}`} className="dashboard-johnny-metric-card">
-              <span>{metric.label}</span>
-              <strong>{metric.value}</strong>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="dashboard-johnny-zone dashboard-johnny-action-zone">
-        <div className="dashboard-johnny-next-step">
-          <div className="dashboard-johnny-next-step-icon">
-            <AppIcon name={coachNextStepMeta.icon} />
-          </div>
-          <div className="dashboard-johnny-next-step-copy">
-            <strong>{coachNextStepMeta.label}</strong>
-            <span>{johnnyReview.nextStep}</span>
-            {coachNextStepMeta.hint ? <small>{coachNextStepMeta.hint}</small> : null}
-          </div>
-        </div>
-        {coachBackupStep ? (
-          <div className="dashboard-johnny-backup-step">
-            <strong>Backup move</strong>
-            <span>{coachBackupStep}</span>
-            {coachBackupAction ? (
-              <button type="button" className="btn-outline small" onClick={() => onAction(coachBackupAction)}>
-                {coachBackupAction.actionLabel}
+            {coachFreshness?.badge ? <span className={`dashboard-chip ${coachFreshness.cached ? 'subtle' : 'success'} dashboard-johnny-freshness`}>{coachFreshness.badge}</span> : null}
+            {onRefresh ? (
+              <button type="button" className="btn-ghost small dashboard-johnny-refresh" onClick={onRefresh} disabled={johnnyReviewLoading}>
+                {johnnyReviewLoading ? 'Refreshing…' : 'Refresh'}
               </button>
             ) : null}
           </div>
-        ) : null}
-        {pendingFollowUps?.length ? (
-          <div className="dashboard-johnny-backup-step">
-            <strong>Coach queue</strong>
-            <span>{pendingFollowUps[0]?.prompt}</span>
-            <small>{followUpOverview?.pending_count ?? pendingFollowUps.length} pending follow-up{(followUpOverview?.pending_count ?? pendingFollowUps.length) === 1 ? '' : 's'} in Johnny.</small>
-            <button type="button" className="btn-outline small" onClick={() => onAskJohnny('Show me my current Johnny follow-ups and what matters most right now.')}>
-              Open queue
-            </button>
-          </div>
-        ) : null}
-        <p className="dashboard-johnny-encouragement">{johnnyReview.encouragement}</p>
-        {johnnyReviewError ? <p className="dashboard-johnny-status">Johnny review is using the fallback summary right now.</p> : null}
-        <div className="dashboard-johnny-actions">
-          <button type="button" className="btn-primary small" onClick={() => onAskJohnny(starterPrompt)}>
-            Ask Johnny about today
-          </button>
         </div>
       </div>
 
-      <div className="dashboard-johnny-zone dashboard-johnny-followups">
-        <div className="dashboard-johnny-followups-head">
-          <div>
-            <strong>More ways to ask</strong>
-            <p>{quickPrompts.length} focused follow-up{quickPrompts.length === 1 ? '' : 's'} based on your board right now.</p>
-          </div>
-          <button type="button" className="btn-ghost small dashboard-johnny-followups-toggle" onClick={onTogglePrompts}>
-            {coachPromptsOpen ? 'Hide prompts' : 'Show prompts'}
-          </button>
+      <CoachingSummaryPanel
+        summary={summary}
+        chipLabel="Coaching summary"
+        titleTag="h2"
+        maxInsights={3}
+        onAction={onAction}
+        onAskJohnny={onAskJohnny}
+        askJohnnyLabel="Ask Johnny why"
+        analyticsContext={{ screen: 'dashboard', surface: 'dashboard_coaching_card' }}
+      />
+
+      {johnnyReview ? (
+        <div className="dashboard-johnny-zone dashboard-johnny-summary-zone">
+          <h3>{johnnyReview.title}</h3>
+          <p className="dashboard-johnny-message">{johnnyReview.message}</p>
+          {coachMetrics?.length ? (
+            <div className="dashboard-johnny-metric-grid">
+              {coachMetrics.map(metric => (
+                <div key={`${metric.label}-${metric.value}`} className="dashboard-johnny-metric-card">
+                  <span>{metric.label}</span>
+                  <strong>{metric.value}</strong>
+                </div>
+              ))}
+            </div>
+          ) : null}
         </div>
-        {coachPromptsOpen ? (
-          <div className="dashboard-prompt-list dashboard-prompt-list-secondary">
-            {quickPrompts.map(prompt => (
-              <button key={prompt.id} className="dashboard-prompt-chip" type="button" onClick={() => onAskJohnny(prompt.prompt)}>
-                {prompt.prompt}
+      ) : null}
+
+      {coachBackupStep || pendingFollowUps?.length || johnnyReview?.encouragement || johnnyReviewError ? (
+        <div className="dashboard-johnny-zone dashboard-johnny-action-zone">
+          {coachBackupStep ? (
+            <div className="dashboard-johnny-backup-step">
+              <strong>Backup move</strong>
+              <span>{coachBackupStep}</span>
+              {coachBackupAction ? (
+                <button type="button" className="btn-outline small" onClick={() => onAction?.(coachBackupAction)}>
+                  {coachBackupAction.actionLabel}
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+          {pendingFollowUps?.length ? (
+            <div className="dashboard-johnny-backup-step">
+              <strong>Coach queue</strong>
+              <span>{pendingFollowUps[0]?.prompt}</span>
+              <small>{followUpOverview?.pending_count ?? pendingFollowUps.length} pending follow-up{(followUpOverview?.pending_count ?? pendingFollowUps.length) === 1 ? '' : 's'} in Johnny.</small>
+              <button type="button" className="btn-outline small" onClick={() => {
+                const prompt = 'Show me my current Johnny follow-ups and what matters most right now.'
+                trackCoachingPromptOpen(summary, prompt, {
+                  screen: 'dashboard',
+                  surface: 'dashboard_coach_queue',
+                  promptKind: 'follow_up_prompt',
+                  promptId: 'coach_queue',
+                })
+                onAskJohnny?.(
+                  prompt,
+                  buildCoachingPromptOptions(summary, {
+                    screen: 'dashboard',
+                    surface: 'dashboard_coach_queue',
+                    promptKind: 'follow_up_prompt',
+                    promptId: 'coach_queue',
+                  }),
+                )
+              }}>
+                Open queue
               </button>
-            ))}
+            </div>
+          ) : null}
+          {johnnyReview?.encouragement ? <p className="dashboard-johnny-encouragement">{johnnyReview.encouragement}</p> : null}
+          {johnnyReviewError ? <p className="dashboard-johnny-status">Johnny review is using the fallback summary right now.</p> : null}
+        </div>
+      ) : null}
+
+      {quickPrompts?.length ? (
+        <div className="dashboard-johnny-zone dashboard-johnny-followups">
+          <div className="dashboard-johnny-followups-head">
+            <div>
+              <strong>More ways to ask</strong>
+              <p>{quickPrompts.length} focused follow-up{quickPrompts.length === 1 ? '' : 's'} based on your board right now.</p>
+            </div>
+            <button type="button" className="btn-ghost small dashboard-johnny-followups-toggle" onClick={onTogglePrompts}>
+              {coachPromptsOpen ? 'Hide prompts' : 'Show prompts'}
+            </button>
           </div>
-        ) : null}
-      </div>
+          {coachPromptsOpen ? (
+            <div className="dashboard-prompt-list dashboard-prompt-list-secondary">
+              {quickPrompts.map(prompt => (
+                <button key={prompt.id} className="dashboard-prompt-chip" type="button" onClick={() => {
+                  trackCoachingPromptOpen(summary, prompt.prompt, {
+                    screen: 'dashboard',
+                    surface: 'dashboard_coaching_followups',
+                    promptKind: 'follow_up_prompt',
+                    promptId: prompt.id,
+                  })
+                  onAskJohnny?.(
+                    prompt.prompt,
+                    buildCoachingPromptOptions(summary, {
+                      screen: 'dashboard',
+                      surface: 'dashboard_coaching_followups',
+                      promptKind: 'follow_up_prompt',
+                      promptId: prompt.id,
+                      promptLabel: prompt.label,
+                    }),
+                  )
+                }}>
+                  {prompt.prompt}
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </article>
   )
 }

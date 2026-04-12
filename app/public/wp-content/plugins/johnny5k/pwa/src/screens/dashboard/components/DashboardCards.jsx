@@ -1,4 +1,4 @@
-export { BestNextMoveCard, CoachReviewCard, CoachingSummaryCard, RealSuccessStoriesCard } from './dashboardCoachCards'
+export { CoachingSummaryCard, RealSuccessStoriesCard } from './dashboardCoachCards'
 export { TodayIntakeCard, ProteinRunwayCard, MealRhythmCard, GroceryGapSpotlightCard, ReminderQueueCard } from './dashboardNutritionCards'
 export { RecoveryLoopCard, SleepDebtCard, StepForecastCard } from './dashboardRecoveryCards'
 export { TrainingTodayCard, TomorrowPreviewCard, MomentumDashboardCard, WeeklyTrendCard, JohnnyImageGalleryCard } from './dashboardTrainingCards'

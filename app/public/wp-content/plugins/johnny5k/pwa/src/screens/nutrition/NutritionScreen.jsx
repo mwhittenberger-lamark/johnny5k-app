@@ -11,12 +11,15 @@ import ErrorState from '../../components/ui/ErrorState'
 import Field from '../../components/ui/Field'
 import OfflineState from '../../components/ui/OfflineState'
 import SupportIconButton from '../../components/ui/SupportIconButton'
-import { buildCoachingSummary, runCoachingAction } from '../../lib/coachingSummary'
+import { buildCoachingPromptOptions, buildCoachingSummary, runCoachingAction } from '../../lib/coachingSummary'
+import { trackCoachingPromptOpen } from '../../lib/coaching/coachingAnalytics'
+import { scrollAppToTop } from '../../lib/scrollAppToTop'
 import { openSupportGuide } from '../../lib/supportHelp'
 import { useOnlineStatus } from '../../lib/useOnlineStatus'
 import { useDashboardStore } from '../../store/dashboardStore'
 import { useJohnnyAssistantStore } from '../../store/johnnyAssistantStore'
 import {
+  LabelReviewCard,
   LibraryNutritionView,
   NutritionAiReviewPanels,
   NutritionModeTabs,
@@ -29,12 +32,10 @@ import {
   useNutritionToastQueue,
 } from './hooks/nutritionScreenHooks'
 import {
-  approximatelyEqualServingCount,
   dedupeIngredientList,
   normalisePantryMatchText,
   normaliseRawServingUnitLabel,
   normaliseServingUnitLabel,
-  parseQuantifiedServingUnit,
 } from './servingUtils'
 import {
   buildLabelLogPayload,
@@ -123,6 +124,11 @@ function scrollNodeIntoView(node) {
   })
 }
 
+function handleFormCancel(action) {
+  action?.()
+  scrollAppToTop()
+}
+
 function readFileAsDataUrl(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
@@ -189,6 +195,7 @@ export default function NutritionScreen() {
   const [showAddForm, setShowAddForm] = useState(false)
   const [showMealPhotoPrompt, setShowMealPhotoPrompt] = useState(false)
   const [showLabelScanPrompt, setShowLabelScanPrompt] = useState(false)
+  const [labelScanContext, setLabelScanContext] = useState('today')
   const [showSavedMealForm, setShowSavedMealForm] = useState(false)
   const [showSavedFoodForm, setShowSavedFoodForm] = useState(false)
   const [showPantryForm, setShowPantryForm] = useState(false)
@@ -343,10 +350,6 @@ export default function NutritionScreen() {
   const proteinMacroCard = macroCards.find(card => card.priority === 'primary') || null
   const secondaryMacroCards = macroCards.filter(card => card.priority !== 'primary')
   const labelReviewTotals = useMemo(() => getLabelReviewQuantityTotals(labelReview), [labelReview])
-  const coachPrompts = useMemo(
-    () => buildNutritionCoachPrompts(summary),
-    [summary],
-  )
 
   useEffect(() => {
     setCollapsedPantryCategories(current => {
@@ -633,8 +636,10 @@ export default function NutritionScreen() {
     }
   }
 
-  function openLabelScanPrompt() {
-    setActiveView('today')
+  function openLabelScanPrompt(context = 'today') {
+    const nextContext = context === 'saved-foods' ? 'saved-foods' : 'today'
+    setLabelScanContext(nextContext)
+    setActiveView(nextContext === 'saved-foods' ? 'library' : 'today')
     setAiMealDraft(null)
     setShowMealPhotoPrompt(false)
     setLabelReview(null)
@@ -665,7 +670,7 @@ export default function NutritionScreen() {
       return
     }
 
-    setActiveView('today')
+    setActiveView(labelScanContext === 'saved-foods' ? 'library' : 'today')
     setAnalyzing(true)
     setAiMealDraft(null)
     setLabelReview(null)
@@ -694,6 +699,7 @@ export default function NutritionScreen() {
   function handleCancelLabelReview() {
     setLabelReview(null)
     setLabelReviewAction('')
+    scrollAppToTop()
   }
 
   function handleUpdateLabelReviewField(field, value) {
@@ -1155,7 +1161,14 @@ export default function NutritionScreen() {
     snapshot: dashboardSnapshot,
     nutritionSummary: summary,
     weeklyCaloriesReview,
-  }), [dashboardSnapshot, summary, weeklyCaloriesReview])
+    meals,
+  }), [dashboardSnapshot, meals, summary, weeklyCaloriesReview])
+  const coachPrompts = useMemo(
+    () => coachingSummary?.followUpPrompts?.length
+      ? coachingSummary.followUpPrompts
+      : buildNutritionCoachPrompts(summary),
+    [coachingSummary, summary],
+  )
 
   const featureViewDeps = {
     AddMealForm,
@@ -1171,6 +1184,8 @@ export default function NutritionScreen() {
     getRecipeKey,
     GroceryGapForm,
     GroceryGapVoiceCapture,
+    LabelReviewCard,
+    LabelScanPromptPanel,
     MacroStat,
     MEAL_TYPES,
     MealCard,
@@ -1230,8 +1245,36 @@ export default function NutritionScreen() {
     handleDeleteRecentFood,
     handleCheckAllRecentFoods,
     handleCancelLabelReview,
+    handleFormCancel,
     handleClearCheckedRecentFoods,
-    handleCoachingAction: action => runCoachingAction(action, { navigate, openDrawer }),
+    handleCoachingAction: (action, summaryOverride) => runCoachingAction(
+      action,
+      { navigate, openDrawer },
+      (summaryOverride || coachingSummary) ? buildCoachingPromptOptions(summaryOverride || coachingSummary, {
+        screen: 'nutrition',
+        surface: 'nutrition_coaching_summary',
+        promptKind: 'next_action_prompt',
+      }) : null,
+    ),
+    handleCoachingPromptOpen: prompt => {
+      const text = String(prompt?.prompt || '').trim()
+      if (!text) return
+      if (coachingSummary) {
+        trackCoachingPromptOpen(coachingSummary, text, {
+          screen: 'nutrition',
+          surface: 'nutrition_coach_prompt_grid',
+          promptKind: 'follow_up_prompt',
+          promptId: String(prompt?.id || '').trim(),
+        })
+      }
+      openDrawer(text, coachingSummary ? buildCoachingPromptOptions(coachingSummary, {
+        screen: 'nutrition',
+        surface: 'nutrition_coach_prompt_grid',
+        promptKind: 'follow_up_prompt',
+        promptId: String(prompt?.id || '').trim(),
+        promptLabel: String(prompt?.label || '').trim(),
+      }) : undefined)
+    },
     handleLogSavedFood,
     handleLogSavedMeal,
     handleMoveGapToPantry,
@@ -1247,7 +1290,9 @@ export default function NutritionScreen() {
     labelReview,
     labelReviewAction,
     labelReviewTotals,
+    labelScanContext,
     labelScanImages,
+    labelScanPromptAnchor: labelScanPromptRef,
     labelScanNote,
     latestMealLabel,
     libraryItemCount,
@@ -1258,6 +1303,7 @@ export default function NutritionScreen() {
     mealsSectionAnchor: mealsSectionRef,
     mergedMeals,
     openDrawer,
+    openSavedFoodsLabelScanPrompt: () => openLabelScanPrompt('saved-foods'),
     openPantrySupport: handleOpenPantrySupport,
     openPantryPage,
     orderedSavedFoods,
@@ -1270,6 +1316,8 @@ export default function NutritionScreen() {
     pantrySectionAnchor: pantrySectionRef,
     pantrySortMode,
     pantryVoiceAnchor: pantryVoiceRef,
+    pickLabelScanBack: () => labelBackInputRef.current?.click(),
+    pickLabelScanFront: () => labelFrontInputRef.current?.click(),
     planningAccordions,
     planningItemCount,
     planningSectionAnchor: planningSectionRef,
@@ -1313,6 +1361,8 @@ export default function NutritionScreen() {
     setShowPantryVoice,
     setShowSavedFoodForm,
     setShowSavedMealForm,
+    showGlobalLabelReview: Boolean(labelReview) && labelScanContext !== 'saved-foods',
+    showGlobalLabelScanPrompt: showLabelScanPrompt && labelScanContext !== 'saved-foods',
     showAddForm,
     showErrorToast,
     showGroceryGapForm,
@@ -1321,12 +1371,18 @@ export default function NutritionScreen() {
     showMicros,
     showPantryForm,
     showPantryVoice,
+    showSavedFoodsLabelReview: Boolean(labelReview) && labelScanContext === 'saved-foods',
+    showSavedFoodsLabelScanPrompt: showLabelScanPrompt && labelScanContext === 'saved-foods',
     showSavedFoodForm,
     showSavedMealForm,
     showToast,
     summary,
     weeklyCaloriesReview,
     syncingGapToPantry,
+    handleSavedFoodsLabelScanCancel: () => {
+      resetLabelScanFlow()
+      handleFormCancel(() => setShowLabelScanPrompt(false))
+    },
     toggleRecentFoodChecked,
     toggleGapItemChecked,
     togglePlanningAccordion,
@@ -1400,12 +1456,12 @@ export default function NutritionScreen() {
           note={mealPhotoNote}
           onChangeNote={setMealPhotoNote}
           onPickImage={() => mealInputRef.current?.click()}
-          onCancel={() => setShowMealPhotoPrompt(false)}
+          onCancel={() => handleFormCancel(() => setShowMealPhotoPrompt(false))}
           busy={analyzing}
         />
       ) : null}
 
-      {showLabelScanPrompt ? (
+      {screen.showGlobalLabelScanPrompt ? (
         <LabelScanPromptPanel
           anchorRef={labelScanPromptRef}
           busy={analyzing}
@@ -1417,7 +1473,7 @@ export default function NutritionScreen() {
           onSubmit={() => { void handleSubmitLabelScan() }}
           onCancel={() => {
             resetLabelScanFlow()
-            setShowLabelScanPrompt(false)
+            handleFormCancel(() => setShowLabelScanPrompt(false))
           }}
         />
       ) : null}
@@ -1645,7 +1701,7 @@ function MealCard({ meal, savedFoods, onSave, onDelete, onError }) {
             setEditing(false)
             scrollNodeIntoView(cardRef.current)
           }}
-          onCancel={() => setEditing(false)}
+          onCancel={() => handleFormCancel(() => setEditing(false))}
         />
       </div>
     )
@@ -2122,7 +2178,7 @@ function RecentFoodRow({ food, checked, onToggleChecked, onSave, onDelete, onErr
             setEditing(false)
             scrollNodeIntoView(rowRef.current)
           }}
-          onCancel={() => setEditing(false)}
+          onCancel={() => handleFormCancel(() => setEditing(false))}
         />
       </div>
     )
@@ -2169,7 +2225,7 @@ function SavedFoodRow({ food, onLog, onSave, onDelete, onError }) {
             setEditing(false)
             scrollNodeIntoView(rowRef.current)
           }}
-          onCancel={() => setEditing(false)}
+          onCancel={() => handleFormCancel(() => setEditing(false))}
         />
       </div>
     )
@@ -2217,7 +2273,7 @@ function SavedMealRow({ meal, savedFoods, onLog, onSave, onDelete, onError }) {
             setEditing(false)
             scrollNodeIntoView(rowRef.current)
           }}
-          onCancel={() => setEditing(false)}
+          onCancel={() => handleFormCancel(() => setEditing(false))}
         />
       </div>
     )
@@ -2714,7 +2770,7 @@ function PantryRow({ item, onSave, onDelete }) {
         </div>
         <div className="nutrition-row-actions">
           <button className="btn-primary small" type="submit">Save</button>
-          <button className="btn-secondary small" type="button" onClick={() => setEditing(false)}>Cancel</button>
+          <button className="btn-secondary small" type="button" onClick={() => handleFormCancel(() => setEditing(false))}>Cancel</button>
         </div>
       </form>
     )
@@ -3113,7 +3169,7 @@ function MealComposerForm({ title, savedFoods, requireName = false, submitLabel,
               setShowMealVoice(false)
               onToast?.(`Added ${nextItems.length} item${nextItems.length === 1 ? '' : 's'} from voice.`)
             }}
-            onCancel={() => setShowMealVoice(false)}
+            onCancel={() => handleFormCancel(() => setShowMealVoice(false))}
             onError={onError}
             onToast={onToast}
           />
@@ -4246,10 +4302,12 @@ function clearStoredCookbookRecipes() {
   }
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function getRecipeKey(recipe) {
   return String(recipe?.key || `${recipe?.meal_type || 'meal'}-${recipe?.recipe_name || recipe?.id || ''}`).trim()
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function normaliseCookbookRecipe(recipe) {
   return {
     key: getRecipeKey(recipe),
@@ -4268,6 +4326,7 @@ export function normaliseCookbookRecipe(recipe) {
   }
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function filterRecipesByPlanningState({
   recipes,
   cookbookRecipes,
@@ -4348,6 +4407,7 @@ function pantryContainsIngredient(pantry, ingredient) {
   })
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function buildRecipeAwareGroceryGap(baseGap, recipes, pantry, selectedRecipeKeys) {
   const gapItems = new Map()
   const recipeItems = new Map()

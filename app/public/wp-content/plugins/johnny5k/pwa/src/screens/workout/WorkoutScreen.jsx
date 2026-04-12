@@ -10,7 +10,7 @@ import { cacheWorkoutPlanSnapshot, countQueuedWorkoutSetEntries, readCachedWorko
 import { useJohnnyAssistantStore } from '../../store/johnnyAssistantStore'
 import { useDashboardStore } from '../../store/dashboardStore'
 import { useWorkoutStore } from '../../store/workoutStore'
-import { buildCoachingSummary, runCoachingAction } from '../../lib/coachingSummary'
+import { buildCoachingPromptOptions, buildCoachingSummary, runCoachingAction } from '../../lib/coachingSummary'
 import WorkoutActiveSession from './components/WorkoutActiveSession'
 import WorkoutCompletionReviewModal from './components/WorkoutCompletionReviewModal'
 import WorkoutLaunchpad from './components/WorkoutLaunchpad'
@@ -177,6 +177,11 @@ export default function WorkoutScreen() {
 
   const liveWorkoutFrames = useLiveWorkoutFrames()
   const isMaintenanceMode = (sessionMode || session?.session_mode) === 'maintenance' || Number(session?.session?.readiness_score ?? readinessScore) <= 3
+  const launchpadCoachingSummary = useMemo(() => buildCoachingSummary({
+    surface: 'workout_pre',
+    snapshot: dashboardSnapshot,
+    readinessScore,
+  }), [dashboardSnapshot, readinessScore])
   const workoutCoachingSummary = useMemo(() => buildCoachingSummary({
     surface: 'workout_post',
     snapshot: dashboardSnapshot,
@@ -344,8 +349,16 @@ export default function WorkoutScreen() {
       <WorkoutCompletionReviewModal
         completionReview={sessionController.completionReview}
         coachingSummary={workoutCoachingSummary}
-        onAction={action => runCoachingAction(action, { navigate, openDrawer })}
-        onAskJohnny={openDrawer}
+        onAction={(action, summary) => runCoachingAction(
+          action,
+          { navigate, openDrawer },
+          summary ? buildCoachingPromptOptions(summary, {
+            screen: 'workout',
+            surface: 'workout_post_summary',
+            promptKind: 'next_action_prompt',
+          }) : null,
+        )}
+        onAskJohnny={(prompt, options) => openDrawer(prompt, options)}
         onClose={sessionController.handleCloseCompletionReview}
       />
     )
@@ -370,6 +383,17 @@ export default function WorkoutScreen() {
         statusNotice={statusNotice}
         statusError={statusError}
         offlineStatus={<WorkoutOfflineStatusCard {...workoutOfflineStatus} />}
+        coachingSummary={launchpadCoachingSummary?.primaryType === 'recovery' ? launchpadCoachingSummary : null}
+        onCoachingAction={(action, summary) => runCoachingAction(
+          action,
+          { navigate, openDrawer },
+          summary ? buildCoachingPromptOptions(summary, {
+            screen: 'workout',
+            surface: 'workout_pre_summary',
+            promptKind: 'next_action_prompt',
+          }) : null,
+        )}
+        onAskJohnny={(prompt, options) => openDrawer(prompt, options)}
         onOpenWorkoutSupport={handleOpenWorkoutSupport}
         planning={planning}
         sessionController={sessionController}

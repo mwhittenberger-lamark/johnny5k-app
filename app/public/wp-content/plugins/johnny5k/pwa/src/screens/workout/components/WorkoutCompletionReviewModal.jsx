@@ -59,6 +59,7 @@ export default function WorkoutCompletionReviewModal({ completionReview, coachin
             onAction={onAction}
             onAskJohnny={onAskJohnny}
             askJohnnyLabel="Ask Johnny"
+            analyticsContext={{ screen: 'workout', surface: 'workout_post_summary' }}
           />
         ) : null}
 

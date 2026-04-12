@@ -16,7 +16,6 @@ import {
   makeDashboardCard,
 } from '../dashboardCardRegistry'
 import {
-  buildBestNextMove,
   buildCoachBackupAction,
   buildCoachBackupStep,
   buildCoachFreshnessLabel,
@@ -57,9 +56,7 @@ import {
   routeRecoveryAction,
 } from '../dashboardRecommendationHelpers'
 import {
-  BestNextMoveCard,
   CoachingSummaryCard,
-  CoachReviewCard,
   GroceryGapSpotlightCard,
   JohnnyImageGalleryCard,
   MealRhythmCard,
@@ -82,7 +79,8 @@ import { useDashboardStore } from '../../../store/dashboardStore'
 import { useAuthStore } from '../../../store/authStore'
 import { useJohnnyAssistantStore } from '../../../store/johnnyAssistantStore'
 import { useOnlineStatus } from '../../../lib/useOnlineStatus'
-import { buildCoachingSummary } from '../../../lib/coachingSummary'
+import { buildCoachingPromptOptions, buildCoachingSummary } from '../../../lib/coachingSummary'
+import { trackCoachingPromptOpen } from '../../../lib/coaching/coachingAnalytics'
 import { useDashboardPreferences } from './useDashboardPreferences'
 import { useDashboardSupplementalData } from './useDashboardSupplementalData'
 
@@ -153,9 +151,7 @@ export function useDashboardViewModel() {
   }, [thoughtWindowKey])
 
   const s = snapshot
-  const quickPrompts = useMemo(() => buildQuickPrompts(s), [s])
   const fallbackJohnnyReview = useMemo(() => buildJohnnyDashboardReview(s), [s])
-  const bestNextMove = useMemo(() => buildBestNextMove(s), [s])
   const trainingCard = useMemo(() => buildTrainingCardModel(s), [s])
   const trainingQuickAction = useMemo(() => buildTrainingQuickAction(s), [s])
   const editorialCard = useMemo(() => buildEditorialCard(s), [s])
@@ -186,13 +182,20 @@ export function useDashboardViewModel() {
   const coachMetrics = useMemo(() => buildCoachMetricGrid(johnnyReview.metrics), [johnnyReview.metrics])
   const coachNextStepMeta = useMemo(() => buildCoachNextStepMeta(s, johnnyReview.nextStepMeta), [johnnyReview.nextStepMeta, s])
   const coachBackupStep = useMemo(() => buildCoachBackupStep(s, johnnyReview.backupStep), [johnnyReview.backupStep, s])
-  const coachBackupAction = useMemo(
-    () => dedupeSecondaryDashboardAction(bestNextMove, buildCoachBackupAction(s, coachBackupStep)),
-    [bestNextMove, coachBackupStep, s],
-  )
-  const coachStarterPrompt = useMemo(() => buildCoachStarterPrompt(johnnyReview, coachNextStepMeta), [coachNextStepMeta, johnnyReview])
-  const coachFreshness = useMemo(() => buildCoachFreshnessLabel(johnnyReview.generatedAt, johnnyReview.cached), [johnnyReview.cached, johnnyReview.generatedAt])
   const coachingSummary = useMemo(() => buildCoachingSummary({ surface: 'dashboard', snapshot: s }), [s])
+  const coachBackupAction = useMemo(
+    () => dedupeSecondaryDashboardAction(coachingSummary?.nextAction || null, buildCoachBackupAction(s, coachBackupStep)),
+    [coachBackupStep, coachingSummary, s],
+  )
+  const coachFreshness = useMemo(() => buildCoachFreshnessLabel(johnnyReview.generatedAt, johnnyReview.cached), [johnnyReview.cached, johnnyReview.generatedAt])
+  const quickPrompts = useMemo(
+    () => coachingSummary?.followUpPrompts?.length ? coachingSummary.followUpPrompts : buildQuickPrompts(s),
+    [coachingSummary, s],
+  )
+  const coachStarterPrompt = useMemo(
+    () => coachingSummary?.starterPrompt || buildCoachStarterPrompt(johnnyReview, coachNextStepMeta),
+    [coachNextStepMeta, coachingSummary, johnnyReview],
+  )
 
   const goal = s?.goal
   const nt = s?.nutrition_totals
@@ -224,10 +227,14 @@ export function useDashboardViewModel() {
   const tomorrowMetaPrimary = tomorrow?.time_tier ? `${tomorrow.time_tier} session` : 'medium session'
   const tomorrowMetaSecondary = tomorrow?.date ? formatFriendlyDate(tomorrow.date) : 'Tomorrow'
 
-  function handleDashboardAction(action) {
+  function handleDashboardAction(action, sourceSummary = null) {
     if (!action) return
     if (action.prompt) {
-      openDrawer(action.prompt)
+      openDrawer(action.prompt, sourceSummary ? buildCoachingPromptOptions(sourceSummary, {
+        screen: 'dashboard',
+        surface: 'dashboard_coaching_card',
+        promptKind: 'next_action_prompt',
+      }) : undefined)
       return
     }
     if (action.href) {
@@ -299,8 +306,26 @@ export function useDashboardViewModel() {
   }
 
   const dashboardCards = [
-    makeDashboardCard('coaching_summary', <CoachingSummaryCard summary={coachingSummary} onAction={handleDashboardAction} onAskJohnny={openDrawer} />),
-    makeDashboardCard('best_next_move', <BestNextMoveCard model={bestNextMove} onAction={handleDashboardAction} />),
+    makeDashboardCard('coaching_summary', (
+      <CoachingSummaryCard
+        summary={coachingSummary}
+        onAction={handleDashboardAction}
+        onAskJohnny={(prompt, options) => openDrawer(prompt, options)}
+        coachFreshness={coachFreshness}
+        johnnyReview={johnnyReview}
+        johnnyReviewError={johnnyReviewError}
+        coachMetrics={coachMetrics}
+        coachBackupStep={coachBackupStep}
+        coachBackupAction={coachBackupAction}
+        quickPrompts={quickPrompts}
+        coachPromptsOpen={coachPromptsOpen}
+        pendingFollowUps={pendingFollowUps}
+        followUpOverview={followUpOverview}
+        onTogglePrompts={() => setCoachPromptsOpen(open => !open)}
+        onRefresh={handleRefreshReview}
+        johnnyReviewLoading={johnnyReviewLoading}
+      />
+    )),
     makeDashboardCard('today_intake', (
       <TodayIntakeCard
         caloriesRemaining={caloriesRemaining}
@@ -333,30 +358,25 @@ export function useDashboardViewModel() {
     )),
     makeDashboardCard('protein_runway', <ProteinRunwayCard model={proteinRunway} onOpenNutrition={() => navigate('/nutrition')} onAskJohnny={openDrawer} />),
     makeDashboardCard('meal_rhythm', <MealRhythmCard model={mealRhythm} onOpenNutrition={() => navigate('/nutrition')} />),
-    makeDashboardCard('coach_review', (
-      <CoachReviewCard
-        coachFreshness={coachFreshness}
-        johnnyReview={johnnyReview}
-        johnnyReviewError={johnnyReviewError}
-        coachMetrics={coachMetrics}
-        coachNextStepMeta={coachNextStepMeta}
-        coachBackupStep={coachBackupStep}
-        coachBackupAction={coachBackupAction}
-        quickPrompts={quickPrompts}
-        coachPromptsOpen={coachPromptsOpen}
-        starterPrompt={coachStarterPrompt}
-        pendingFollowUps={pendingFollowUps}
-        followUpOverview={followUpOverview}
-        onTogglePrompts={() => setCoachPromptsOpen(open => !open)}
-        onRefresh={handleRefreshReview}
-        johnnyReviewLoading={johnnyReviewLoading}
-        onAskJohnny={openDrawer}
-        onAction={handleDashboardAction}
-      />
-    )),
     makeDashboardCard('quick_log_meal', <QuickActionCard title="Log meal" meta="Nutrition" icon="meal" onClick={() => navigate('/nutrition')} />),
     makeDashboardCard('quick_training', <QuickActionCard title={trainingQuickAction.title} meta={trainingQuickAction.meta} icon="workout" onClick={() => handleDashboardAction(trainingQuickAction)} />),
-    makeDashboardCard('quick_ask_johnny', <QuickActionCard title="Ask Johnny" meta="Coach" icon="coach" onClick={() => openDrawer(quickPrompts[0]?.prompt || coachStarterPrompt)} />),
+    makeDashboardCard('quick_ask_johnny', <QuickActionCard title="Ask Johnny" meta="Coach" icon="coach" onClick={() => {
+      const prompt = quickPrompts[0]?.prompt || coachStarterPrompt
+      if (coachingSummary && prompt) {
+        trackCoachingPromptOpen(coachingSummary, prompt, {
+          screen: 'dashboard',
+          surface: 'dashboard_quick_ask_johnny',
+          promptKind: quickPrompts[0]?.id ? 'follow_up_prompt' : 'starter_prompt',
+          promptId: String(quickPrompts[0]?.id || '').trim(),
+        })
+      }
+      openDrawer(prompt, coachingSummary ? buildCoachingPromptOptions(coachingSummary, {
+        screen: 'dashboard',
+        surface: 'dashboard_quick_ask_johnny',
+        promptKind: quickPrompts[0]?.id ? 'follow_up_prompt' : 'starter_prompt',
+        promptId: String(quickPrompts[0]?.id || '').trim(),
+      }) : undefined)
+    }} />),
     makeDashboardCard('quick_add_sleep', <QuickActionCard title="Add sleep" meta="Recovery" icon="sleep" onClick={() => navigate('/body', { state: { focusTab: 'sleep' } })} />),
     makeDashboardCard('quick_add_cardio', <QuickActionCard title="Add cardio" meta="Conditioning" icon="cardio" onClick={() => navigate('/body', { state: { focusTab: 'cardio' } })} />),
     makeDashboardCard('quick_progress_photos', <QuickActionCard title="Progress photos" meta="Timeline" icon="photos" onClick={() => navigate('/progress-photos')} />),

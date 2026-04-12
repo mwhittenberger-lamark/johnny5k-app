@@ -493,6 +493,7 @@
 .settings-push-anchor {
   width: 1px;
   height: 1px;
+  scroll-margin-top: calc(var(--space-6) + env(safe-area-inset-top, 0px));
 }
 .settings-push-refusal {
   display: flex;

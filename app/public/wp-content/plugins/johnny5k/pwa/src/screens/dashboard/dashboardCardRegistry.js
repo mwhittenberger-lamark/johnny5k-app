@@ -1,9 +1,7 @@
 export const DASHBOARD_CARD_DEFS = [
   { id: 'coaching_summary', bucket: 'primary_main', label: 'Coaching summary', description: 'Cross-screen coaching summary with the top trend read and next action.', iconName: 'coach', iconTone: 'teal' },
-  { id: 'best_next_move', bucket: 'primary_main', label: 'Best next move', description: 'The top recommended action based on your board.', iconName: 'coach', iconTone: 'teal' },
   { id: 'today_intake', bucket: 'primary_main', label: 'Today\'s intake', description: 'Calories, macros, and meal count for today.', iconName: 'nutrition', iconTone: 'teal' },
   { id: 'recovery_loop', bucket: 'primary_main', label: 'Recovery Loop', description: 'Recovery mode, sleep, and recovery flags.', iconName: 'star', iconTone: 'slate' },
-  { id: 'coach_review', bucket: 'primary_side', label: 'Johnny coach', description: 'Johnny\'s current review, next move, and follow-up prompts.', iconName: 'coach', iconTone: 'teal' },
   { id: 'quick_log_meal', bucket: 'quick_actions', label: 'Quick action · Log meal', description: 'Jump straight into nutrition logging.', iconName: 'nutrition', iconTone: 'teal' },
   { id: 'quick_training', bucket: 'quick_actions', label: 'Quick action · Training', description: 'Open the current workout or cardio action.', iconName: 'workout', iconTone: 'pink' },
   { id: 'quick_ask_johnny', bucket: 'quick_actions', label: 'Quick action · Ask Johnny', description: 'Open Johnny with a dashboard-aware prompt.', iconName: 'coach', iconTone: 'teal' },
@@ -36,11 +34,11 @@ export const DASHBOARD_CARD_DEF_MAP = new Map(DASHBOARD_CARD_DEFS.map(card => [c
 export const DASHBOARD_BUCKET_META = {
   primary_main: {
     label: 'Today focus',
-    description: 'Best next move, nutrition, and recovery cards.',
+    description: 'Coaching summary, nutrition, and recovery cards.',
   },
   primary_side: {
-    label: 'Coach',
-    description: 'Johnny review and follow-up prompts.',
+    label: 'Supporting focus',
+    description: 'Optional supporting cards beside the main focus column.',
   },
   quick_actions: {
     label: 'Do this now',

@@ -6,8 +6,9 @@ import ClearableInput from '../../components/ui/ClearableInput'
 import CoachingSummaryPanel from '../../components/ui/CoachingSummaryPanel'
 import SupportIconButton from '../../components/ui/SupportIconButton'
 import { formatUsShortDate } from '../../lib/dateFormat'
-import { buildCoachingSummary, runCoachingAction } from '../../lib/coachingSummary'
+import { buildCoachingPromptOptions, buildCoachingSummary, runCoachingAction } from '../../lib/coachingSummary'
 import { openSupportGuide } from '../../lib/supportHelp'
+import { scrollAppToTop } from '../../lib/scrollAppToTop'
 import { DAY_TYPE_OPTIONS } from '../../lib/trainingDayTypes'
 import { confirmGlobalAction, showGlobalToast } from '../../lib/uiFeedback'
 import { useDashboardStore } from '../../store/dashboardStore'
@@ -356,7 +357,11 @@ export default function BodyScreen() {
     surface: 'body',
     snapshot,
     weights,
-  }), [snapshot, weights])
+    sleepLogs,
+    stepLogs,
+    cardioLogs,
+    workoutHistory: workoutLogs,
+  }), [cardioLogs, sleepLogs, snapshot, stepLogs, weights, workoutLogs])
 
   function handleRecoveryQuickAction() {
     routeRecoveryAction(recoverySummary, navigate)
@@ -436,6 +441,11 @@ export default function BodyScreen() {
     setWeightDate(todayInputValue())
   }
 
+  function cancelWeightEdit() {
+    resetWeightForm()
+    scrollAppToTop()
+  }
+
   function resetSleepForm() {
     setEditingSleepId(null)
     setSleep('')
@@ -443,10 +453,20 @@ export default function BodyScreen() {
     setSleepDate(yesterdayInputValue())
   }
 
+  function cancelSleepEdit() {
+    resetSleepForm()
+    scrollAppToTop()
+  }
+
   function resetStepsForm() {
     setEditingStepId(null)
     setSteps('')
     setStepsDate(todayInputValue())
+  }
+
+  function cancelStepsEdit() {
+    resetStepsForm()
+    scrollAppToTop()
   }
 
   useEffect(() => {
@@ -494,7 +514,10 @@ export default function BodyScreen() {
     }
 
     scrollToForm(formRef)
-    setPendingRouteFocus(current => current?.key === pendingRouteFocus.key ? null : current)
+    const timeoutId = window.setTimeout(() => {
+      setPendingRouteFocus(current => current?.key === pendingRouteFocus.key ? null : current)
+    }, 0)
+    return () => window.clearTimeout(timeoutId)
   }, [pendingRouteFocus, tab])
 
   return (
@@ -524,9 +547,18 @@ export default function BodyScreen() {
           className="dash-card"
           chipLabel="Coaching read"
           maxInsights={2}
-          onAction={action => runCoachingAction(action, { navigate, openDrawer })}
-          onAskJohnny={openDrawer}
+          onAction={(action, nextSummary) => runCoachingAction(
+            action,
+            { navigate, openDrawer },
+            nextSummary ? buildCoachingPromptOptions(nextSummary, {
+              screen: 'body',
+              surface: 'body_coaching_summary',
+              promptKind: 'next_action_prompt',
+            }) : null,
+          )}
+          onAskJohnny={(prompt, options) => openDrawer(prompt, options)}
           askJohnnyLabel="Ask Johnny"
+          analyticsContext={{ screen: 'body', surface: 'body_coaching_summary' }}
         />
       ) : null}
 
@@ -663,7 +695,7 @@ export default function BodyScreen() {
                 <input type="date" value={weightDate} onChange={e => setWeightDate(e.target.value)} required />
               </label>
               <div className="body-form-actions body-form-actions-full">
-                {editingWeightId ? <button className="btn-secondary" type="button" onClick={resetWeightForm}>Cancel</button> : null}
+                {editingWeightId ? <button className="btn-secondary" type="button" onClick={cancelWeightEdit}>Cancel</button> : null}
                 <button className="btn-primary" type="submit" disabled={saving}>{saving ? 'Saving…' : editingWeightId ? 'Update Weight' : 'Log Weight'}</button>
               </div>
             </form>
@@ -736,7 +768,7 @@ export default function BodyScreen() {
                 <input type="date" value={sleepDate} onChange={e => setSleepDate(e.target.value)} required />
               </label>
               <div className="body-form-actions body-form-actions-full">
-                {editingSleepId ? <button className="btn-secondary" type="button" onClick={resetSleepForm}>Cancel</button> : null}
+                {editingSleepId ? <button className="btn-secondary" type="button" onClick={cancelSleepEdit}>Cancel</button> : null}
                 <button className="btn-primary" type="submit" disabled={saving}>{saving ? 'Saving…' : editingSleepId ? 'Update Last Night' : 'Log Last Night'}</button>
               </div>
             </form>
@@ -804,7 +836,7 @@ export default function BodyScreen() {
                 <input type="date" value={stepsDate} onChange={e => setStepsDate(e.target.value)} required />
               </label>
               <div className="body-form-actions body-form-actions-full">
-                {editingStepId ? <button className="btn-secondary" type="button" onClick={resetStepsForm}>Cancel</button> : null}
+                {editingStepId ? <button className="btn-secondary" type="button" onClick={cancelStepsEdit}>Cancel</button> : null}
                 <button className="btn-primary" type="submit" disabled={saving}>{saving ? 'Saving…' : editingStepId ? 'Update Steps' : 'Save Steps'}</button>
               </div>
             </form>
@@ -929,6 +961,11 @@ function WorkoutHistoryTab({ workoutLogs, currentWeight, invalidate, onRefreshSn
     setEditingWorkoutId(null)
     setForm({ session_date: todayInputValue(), actual_day_type: 'push', duration_minutes: '', time_tier: 'medium', estimated_calories: '' })
     setCaloriesDirty(false)
+  }
+
+  function cancelForm() {
+    resetForm()
+    scrollAppToTop()
   }
 
   function startEdit(entry) {
@@ -1060,7 +1097,7 @@ function WorkoutHistoryTab({ workoutLogs, currentWeight, invalidate, onRefreshSn
         </label>
         <div className="body-form-actions body-form-actions-full">
         <button className="btn-outline small" type="button" onClick={() => setCaloriesDirty(false)}>Recalculate calories</button>
-        <button className="btn-secondary" type="button" onClick={resetForm}>Cancel</button>
+        <button className="btn-secondary" type="button" onClick={cancelForm}>Cancel</button>
         <button className="btn-primary" type="submit" disabled={saving}>{saving ? 'Saving…' : 'Update Workout'}</button>
         </div>
       </form>
@@ -1148,6 +1185,11 @@ function CardioTab({ invalidate, cardioLogs, cardioSeries, cardioRange, currentW
     setEditingCardioId(null)
     setForm({ cardio_type: nextType, duration_minutes: '', intensity: nextIntensity, estimated_calories: '', notes: '', date: todayInputValue() })
     setCaloriesDirty(false)
+  }
+
+  function cancelCardioEdit() {
+    resetCardioForm()
+    scrollAppToTop()
   }
 
   async function handleSubmit(e) {
@@ -1290,7 +1332,7 @@ function CardioTab({ invalidate, cardioLogs, cardioSeries, cardioRange, currentW
           </label>
           <div className="body-form-actions body-form-actions-full">
             <button className="btn-outline small" type="button" onClick={() => setCaloriesDirty(false)}>Recalculate calories</button>
-            {editingCardioId ? <button className="btn-secondary" type="button" onClick={() => resetCardioForm()}>Cancel</button> : null}
+            {editingCardioId ? <button className="btn-secondary" type="button" onClick={cancelCardioEdit}>Cancel</button> : null}
             <button className="btn-primary" type="submit" disabled={saving}>{saving ? 'Saving…' : editingCardioId ? 'Update Cardio' : 'Log Cardio'}</button>
           </div>
         </form>

@@ -665,7 +665,10 @@
   align-items: flex-start;
   gap: var(--space-3-5);
 }
-.nutrition-header > div:first-child {
+.nutrition-screen .support-icon-anchor {
+  padding-right: 0;
+}
+.nutrition-header > :nth-child(2) {
   width: 100%;
 }
 .nutrition-header-actions {
@@ -673,8 +676,11 @@
   grid-template-columns: minmax(0, 1fr);
   gap: var(--space-2-5);
   width: 100%;
+  align-self: stretch;
 }
 .nutrition-header-actions > .header-action-button {
+  grid-column: 1 / -1;
+  justify-self: stretch;
   width: 100%;
   min-inline-size: 0;
   min-height: 50px;

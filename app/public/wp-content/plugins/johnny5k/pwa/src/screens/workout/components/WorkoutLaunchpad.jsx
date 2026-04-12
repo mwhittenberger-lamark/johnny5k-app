@@ -1,4 +1,5 @@
 import ClearableInput from '../../../components/ui/ClearableInput'
+import CoachingSummaryPanel from '../../../components/ui/CoachingSummaryPanel'
 import ErrorState from '../../../components/ui/ErrorState'
 import SupportIconButton from '../../../components/ui/SupportIconButton'
 import PlanOverviewSwapDrawer from '../../../components/workout/PlanOverviewSwapDrawer'
@@ -28,6 +29,9 @@ export default function WorkoutLaunchpad({
   statusNotice,
   statusError,
   offlineStatus,
+  coachingSummary,
+  onCoachingAction,
+  onAskJohnny,
   onOpenWorkoutSupport,
   planning,
   sessionController,
@@ -102,6 +106,20 @@ export default function WorkoutLaunchpad({
                 Low readiness shifts today into maintenance mode and auto-reduces each set target by {Math.abs(readinessRepDelta)} reps. You can fine-tune reps below.
               </p>
             ) : null}
+          </div>
+        ) : null}
+
+        {coachingSummary ? (
+          <div className="workout-launchpad-section">
+            <CoachingSummaryPanel
+              summary={coachingSummary}
+              chipLabel="Pre-workout cue"
+              maxInsights={2}
+              onAction={onCoachingAction}
+              onAskJohnny={onAskJohnny}
+              askJohnnyLabel="Ask Johnny"
+              analyticsContext={{ screen: 'workout', surface: 'workout_pre_summary' }}
+            />
           </div>
         ) : null}
 

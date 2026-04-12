@@ -4,6 +4,7 @@ export const LIVE_WORKOUT_VOICE_RATE_OPTIONS = [0.85, 1, 1.1, 1.2, 1.3]
 export const OPENAI_TTS_VOICE_OPTIONS = ['alloy', 'ash', 'ballad', 'coral', 'echo', 'fable', 'nova', 'onyx', 'sage', 'shimmer']
 export const LIVE_WORKOUT_VOICE_MODE_OPTIONS = ['premium', 'instant', 'auto', 'mute']
 export const LIVE_WORKOUT_DEFAULT_INSTANT_VOICE = 'default'
+export const LIVE_WORKOUT_INSTANT_RATE_MULTIPLIER = 1.25
 
 const DEFAULT_LIVE_WORKOUT_VOICE_PREFS = {
   autoSpeak: true,
@@ -128,4 +129,14 @@ export function formatInstantVoiceLabel(voice) {
   const lang = String(voice.lang || '').trim()
   const defaultLabel = voice.default ? 'default' : ''
   return [name, lang, defaultLabel].filter(Boolean).join(' • ')
+}
+
+export function getLiveWorkoutInstantVoiceRate(rate, boostInstantVoice = true) {
+  const normalizedRate = Number(rate)
+  const safeRate = Number.isFinite(normalizedRate) && normalizedRate > 0 ? normalizedRate : DEFAULT_LIVE_WORKOUT_VOICE_PREFS.rate
+  if (!boostInstantVoice) {
+    return safeRate
+  }
+
+  return Math.min(10, Number((safeRate * LIVE_WORKOUT_INSTANT_RATE_MULTIPLIER).toFixed(3)))
 }

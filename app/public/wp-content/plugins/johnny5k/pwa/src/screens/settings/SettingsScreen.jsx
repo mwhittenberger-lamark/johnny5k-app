@@ -360,24 +360,46 @@ export default function SettingsScreen() {
     }
 
     setShowPushRefusalChoice(Boolean(location.state?.revealPushRefusal))
-    setAccordionSections(current => {
-      if (current.notifications) {
-        return current
-      }
+    if (!accordionSections.notifications) {
+      setAccordionSections(current => {
+        if (current.notifications) {
+          return current
+        }
 
-      return {
-        ...writeStoredProfileAccordionSections(accordionStorageKey, {
-          ...current,
-          notifications: true,
-        }),
-      }
+        return {
+          ...writeStoredProfileAccordionSections(accordionStorageKey, {
+            ...current,
+            notifications: true,
+          }),
+        }
+      })
+      return
+    }
+
+    const nextState = { ...(location.state ?? {}) }
+    delete nextState.focusSection
+    delete nextState.revealPushRefusal
+    delete nextState.johnnyActionNotice
+
+    let frameOne = 0
+    let frameTwo = 0
+
+    frameOne = requestAnimationFrame(() => {
+      frameTwo = requestAnimationFrame(() => {
+        pushPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        pushEnableButtonRef.current?.focus()
+        navigate(location.pathname, {
+          replace: true,
+          state: Object.keys(nextState).length ? nextState : null,
+        })
+      })
     })
 
-    requestAnimationFrame(() => {
-      pushPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-      pushEnableButtonRef.current?.focus()
-    })
-  }, [accordionStorageKey, location.state])
+    return () => {
+      if (frameOne) cancelAnimationFrame(frameOne)
+      if (frameTwo) cancelAnimationFrame(frameTwo)
+    }
+  }, [accordionSections.notifications, accordionStorageKey, location.pathname, location.state, navigate])
 
   function updateLiveVoicePref(field, value) {
     setLiveVoicePrefs(current => ({

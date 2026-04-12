@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest'
 import {
   formatInstantVoiceLabel,
   getDefaultInstantVoice,
+  getLiveWorkoutInstantVoiceRate,
   getPreferredInstantVoice,
+  LIVE_WORKOUT_INSTANT_RATE_MULTIPLIER,
   normalizeInstantVoiceOptions,
 } from './liveWorkoutVoice'
 
@@ -41,5 +43,14 @@ describe('liveWorkoutVoice', () => {
   it('can target a specific native voice for testing without changing the default resolution', () => {
     expect(getPreferredInstantVoice(voices, 'com.apple.voice.enhanced')?.voiceURI).toBe('com.apple.voice.enhanced')
     expect(formatInstantVoiceLabel(getPreferredInstantVoice(voices))).toBe('Samantha • en-US • default')
+  })
+
+  it('boosts instant live workout speech by 125 percent without mutating the saved base rate', () => {
+    expect(getLiveWorkoutInstantVoiceRate(1)).toBe(LIVE_WORKOUT_INSTANT_RATE_MULTIPLIER)
+    expect(getLiveWorkoutInstantVoiceRate(1.2)).toBe(1.5)
+  })
+
+  it('can skip the boost when instant playback acceleration is disabled', () => {
+    expect(getLiveWorkoutInstantVoiceRate(1.2, false)).toBe(1.2)
   })
 })

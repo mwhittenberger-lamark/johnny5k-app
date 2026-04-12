@@ -81,13 +81,13 @@ export function PantryPageContent({ screen, deps }) {
 
       {screen.showPantryVoice ? (
         <div ref={screen.pantryVoiceAnchor} className="dash-card nutrition-planning-card nutrition-pantry-utility-card">
-          <PantryVoiceCapture onError={screen.showErrorToast} onToast={screen.showToast} onAddItems={screen.handleBulkPantryImport} onCancel={() => screen.setShowPantryVoice(false)} />
+          <PantryVoiceCapture onError={screen.showErrorToast} onToast={screen.showToast} onAddItems={screen.handleBulkPantryImport} onCancel={() => screen.handleFormCancel(() => screen.setShowPantryVoice(false))} />
         </div>
       ) : null}
 
       {screen.showPantryForm ? (
         <div ref={screen.pantryFormAnchor} className="dash-card nutrition-planning-card nutrition-pantry-utility-card">
-          <PantryForm onError={screen.showErrorToast} onSave={screen.handleCreatePantryItem} onCancel={() => screen.setShowPantryForm(false)} />
+          <PantryForm onError={screen.showErrorToast} onSave={screen.handleCreatePantryItem} onCancel={() => screen.handleFormCancel(() => screen.setShowPantryForm(false))} />
         </div>
       ) : null}
 
@@ -147,112 +147,120 @@ export function NutritionModeTabs({ screen }) {
 }
 
 export function NutritionAiReviewPanels({ screen, deps }) {
-  const { AiMealReviewCard } = deps
+  const { AiMealReviewCard, LabelReviewCard } = deps
 
   return (
     <>
       {screen.analyzing ? <p className="ai-thinking">Analyzing photo…</p> : null}
-      {screen.aiMealDraft ? <AiMealReviewCard draft={screen.aiMealDraft} caloriesRemaining={screen.caloriesRemaining} onChange={screen.setAiMealDraft} onConfirm={screen.handleConfirmAiMeal} onCancel={() => screen.setAiMealDraft(null)} onSaveFood={screen.handleSaveAiItemAsFood} /> : null}
-      {screen.labelReview ? (
-        <div className="dash-card label-review-card">
-          <div className="dashboard-card-head">
-            <span className="dashboard-chip nutrition">Label review</span>
-            <span className="dashboard-chip subtle">Editable per serving</span>
+      {screen.aiMealDraft ? <AiMealReviewCard draft={screen.aiMealDraft} caloriesRemaining={screen.caloriesRemaining} onChange={screen.setAiMealDraft} onConfirm={screen.handleConfirmAiMeal} onCancel={() => screen.handleFormCancel(() => screen.setAiMealDraft(null))} onSaveFood={screen.handleSaveAiItemAsFood} /> : null}
+      {screen.showGlobalLabelReview ? <LabelReviewCard screen={screen} showQuickLog /> : null}
+    </>
+  )
+}
+
+export function LabelReviewCard({ screen, showQuickLog = true }) {
+  if (!screen.labelReview) {
+    return null
+  }
+
+  return (
+    <div className="dash-card label-review-card">
+      <div className="dashboard-card-head">
+        <span className="dashboard-chip nutrition">Label review</span>
+        <span className="dashboard-chip subtle">Editable per serving</span>
+      </div>
+      <h3>{screen.labelReview.headline}</h3>
+      <div className="label-review-summary-band">
+        <span>{screen.labelReview.servingSize}</span>
+        <span>{screen.labelReviewTotals.calories} calories at {screen.labelReviewTotals.quantity} serving{screen.labelReviewTotals.quantity === 1 ? '' : 's'}</span>
+        <span>{screen.labelReview.mealType}</span>
+      </div>
+      <div className="label-review-form-grid">
+        <label className="field-label">
+          <span>Food</span>
+          <input value={screen.labelReview.foodName} onChange={event => screen.handleUpdateLabelReviewField('foodName', event.target.value)} />
+        </label>
+        <label className="field-label">
+          <span>Brand</span>
+          <input value={screen.labelReview.brand} onChange={event => screen.handleUpdateLabelReviewField('brand', event.target.value)} />
+        </label>
+        <label className="field-label">
+          <span>Serving size</span>
+          <input value={screen.labelReview.servingSize} onChange={event => screen.handleUpdateLabelReviewField('servingSize', event.target.value)} />
+        </label>
+        <label className="field-label">
+          <span>Meal type</span>
+          <select value={screen.labelReview.mealType} onChange={event => screen.handleUpdateLabelReviewField('mealType', event.target.value)}>
+            <option value="breakfast">Breakfast</option>
+            <option value="lunch">Lunch</option>
+            <option value="dinner">Dinner</option>
+            <option value="snack">Snack</option>
+          </select>
+        </label>
+      </div>
+      <div className="macro-inputs label-review-form-grid label-review-macro-grid">
+        <label className="field-label">
+          <span>Calories</span>
+          <input type="number" min="0" step="1" value={screen.labelReview.calories} onChange={event => screen.handleUpdateLabelReviewField('calories', Number(event.target.value || 0))} />
+        </label>
+        <label className="field-label">
+          <span>Protein (g)</span>
+          <input type="number" min="0" step="0.1" value={screen.labelReview.protein} onChange={event => screen.handleUpdateLabelReviewField('protein', Number(event.target.value || 0))} />
+        </label>
+        <label className="field-label">
+          <span>Carbs (g)</span>
+          <input type="number" min="0" step="0.1" value={screen.labelReview.carbs} onChange={event => screen.handleUpdateLabelReviewField('carbs', Number(event.target.value || 0))} />
+        </label>
+        <label className="field-label">
+          <span>Fat (g)</span>
+          <input type="number" min="0" step="0.1" value={screen.labelReview.fat} onChange={event => screen.handleUpdateLabelReviewField('fat', Number(event.target.value || 0))} />
+        </label>
+        <label className="field-label">
+          <span>Fiber (g)</span>
+          <input type="number" min="0" step="0.1" value={screen.labelReview.fiber} onChange={event => screen.handleUpdateLabelReviewField('fiber', Number(event.target.value || 0))} />
+        </label>
+        <label className="field-label">
+          <span>Sugar (g)</span>
+          <input type="number" min="0" step="0.1" value={screen.labelReview.sugar} onChange={event => screen.handleUpdateLabelReviewField('sugar', Number(event.target.value || 0))} />
+        </label>
+        <label className="field-label">
+          <span>Sodium (mg)</span>
+          <input type="number" min="0" step="1" value={screen.labelReview.sodium} onChange={event => screen.handleUpdateLabelReviewField('sodium', Number(event.target.value || 0))} />
+        </label>
+        <label className="field-label">
+          <span>Quantity</span>
+          <input type="number" min="0.1" step="0.1" value={screen.labelReview.quantity} onChange={event => screen.handleUpdateLabelReviewField('quantity', event.target.value)} />
+        </label>
+      </div>
+      <div className="label-review-grid">
+        <div><strong>Total calories</strong><span>{screen.labelReviewTotals.calories} for {screen.labelReviewTotals.quantity} serving{screen.labelReviewTotals.quantity === 1 ? '' : 's'}</span></div>
+        <div><strong>Total protein</strong><span>{screen.labelReviewTotals.protein}g</span></div>
+        <div><strong>Total carbs</strong><span>{screen.labelReviewTotals.carbs}g</span></div>
+        <div><strong>Total fat</strong><span>{screen.labelReviewTotals.fat}g</span></div>
+        <div><strong>Total fiber</strong><span>{screen.labelReviewTotals.fiber}g</span></div>
+        <div><strong>Total sugar</strong><span>{screen.labelReviewTotals.sugar}g</span></div>
+        <div><strong>Total sodium</strong><span>{screen.labelReviewTotals.sodium}mg</span></div>
+        <div><strong>Scan source</strong><span>{screen.labelReview.usedWebSearch ? 'Images + web fallback' : 'Images only'}</span></div>
+      </div>
+      <div className="nutrition-gap-list">{screen.labelReview.flags.map(flag => <span key={flag} className="onboarding-chip active">{flag}</span>)}</div>
+      <div className="nutrition-stack-list">{screen.labelReview.suggestions.map(suggestion => <div key={suggestion.title} className="nutrition-recipe-card label-suggestion-card"><strong>{suggestion.title}</strong><p>{suggestion.body}</p></div>)}</div>
+      {screen.labelReview.sources?.length ? (
+        <div className="label-review-sources">
+          <strong>Reference links</strong>
+          <div className="nutrition-gap-list">
+            {screen.labelReview.sources.map(source => (
+              <a key={source.url} className="onboarding-chip" href={source.url} target="_blank" rel="noreferrer">{source.label || source.url}</a>
+            ))}
           </div>
-          <h3>{screen.labelReview.headline}</h3>
-          <div className="label-review-summary-band">
-            <span>{screen.labelReview.servingSize}</span>
-            <span>{screen.labelReviewTotals.calories} calories at {screen.labelReviewTotals.quantity} serving{screen.labelReviewTotals.quantity === 1 ? '' : 's'}</span>
-            <span>{screen.labelReview.mealType}</span>
-          </div>
-          <div className="label-review-form-grid">
-            <label className="field-label">
-              <span>Food</span>
-              <input value={screen.labelReview.foodName} onChange={event => screen.handleUpdateLabelReviewField('foodName', event.target.value)} />
-            </label>
-            <label className="field-label">
-              <span>Brand</span>
-              <input value={screen.labelReview.brand} onChange={event => screen.handleUpdateLabelReviewField('brand', event.target.value)} />
-            </label>
-            <label className="field-label">
-              <span>Serving size</span>
-              <input value={screen.labelReview.servingSize} onChange={event => screen.handleUpdateLabelReviewField('servingSize', event.target.value)} />
-            </label>
-            <label className="field-label">
-              <span>Meal type</span>
-              <select value={screen.labelReview.mealType} onChange={event => screen.handleUpdateLabelReviewField('mealType', event.target.value)}>
-                <option value="breakfast">Breakfast</option>
-                <option value="lunch">Lunch</option>
-                <option value="dinner">Dinner</option>
-                <option value="snack">Snack</option>
-              </select>
-            </label>
-          </div>
-          <div className="macro-inputs label-review-form-grid label-review-macro-grid">
-            <label className="field-label">
-              <span>Calories</span>
-              <input type="number" min="0" step="1" value={screen.labelReview.calories} onChange={event => screen.handleUpdateLabelReviewField('calories', Number(event.target.value || 0))} />
-            </label>
-            <label className="field-label">
-              <span>Protein (g)</span>
-              <input type="number" min="0" step="0.1" value={screen.labelReview.protein} onChange={event => screen.handleUpdateLabelReviewField('protein', Number(event.target.value || 0))} />
-            </label>
-            <label className="field-label">
-              <span>Carbs (g)</span>
-              <input type="number" min="0" step="0.1" value={screen.labelReview.carbs} onChange={event => screen.handleUpdateLabelReviewField('carbs', Number(event.target.value || 0))} />
-            </label>
-            <label className="field-label">
-              <span>Fat (g)</span>
-              <input type="number" min="0" step="0.1" value={screen.labelReview.fat} onChange={event => screen.handleUpdateLabelReviewField('fat', Number(event.target.value || 0))} />
-            </label>
-            <label className="field-label">
-              <span>Fiber (g)</span>
-              <input type="number" min="0" step="0.1" value={screen.labelReview.fiber} onChange={event => screen.handleUpdateLabelReviewField('fiber', Number(event.target.value || 0))} />
-            </label>
-            <label className="field-label">
-              <span>Sugar (g)</span>
-              <input type="number" min="0" step="0.1" value={screen.labelReview.sugar} onChange={event => screen.handleUpdateLabelReviewField('sugar', Number(event.target.value || 0))} />
-            </label>
-            <label className="field-label">
-              <span>Sodium (mg)</span>
-              <input type="number" min="0" step="1" value={screen.labelReview.sodium} onChange={event => screen.handleUpdateLabelReviewField('sodium', Number(event.target.value || 0))} />
-            </label>
-            <label className="field-label">
-              <span>Quantity</span>
-              <input type="number" min="0.1" step="0.1" value={screen.labelReview.quantity} onChange={event => screen.handleUpdateLabelReviewField('quantity', event.target.value)} />
-            </label>
-          </div>
-          <div className="label-review-grid">
-            <div><strong>Total calories</strong><span>{screen.labelReviewTotals.calories} for {screen.labelReviewTotals.quantity} serving{screen.labelReviewTotals.quantity === 1 ? '' : 's'}</span></div>
-            <div><strong>Total protein</strong><span>{screen.labelReviewTotals.protein}g</span></div>
-            <div><strong>Total carbs</strong><span>{screen.labelReviewTotals.carbs}g</span></div>
-            <div><strong>Total fat</strong><span>{screen.labelReviewTotals.fat}g</span></div>
-            <div><strong>Total fiber</strong><span>{screen.labelReviewTotals.fiber}g</span></div>
-            <div><strong>Total sugar</strong><span>{screen.labelReviewTotals.sugar}g</span></div>
-            <div><strong>Total sodium</strong><span>{screen.labelReviewTotals.sodium}mg</span></div>
-            <div><strong>Scan source</strong><span>{screen.labelReview.usedWebSearch ? 'Images + web fallback' : 'Images only'}</span></div>
-          </div>
-          <div className="nutrition-gap-list">{screen.labelReview.flags.map(flag => <span key={flag} className="onboarding-chip active">{flag}</span>)}</div>
-          <div className="nutrition-stack-list">{screen.labelReview.suggestions.map(suggestion => <div key={suggestion.title} className="nutrition-recipe-card label-suggestion-card"><strong>{suggestion.title}</strong><p>{suggestion.body}</p></div>)}</div>
-          {screen.labelReview.sources?.length ? (
-            <div className="label-review-sources">
-              <strong>Reference links</strong>
-              <div className="nutrition-gap-list">
-                {screen.labelReview.sources.map(source => (
-                  <a key={source.url} className="onboarding-chip" href={source.url} target="_blank" rel="noreferrer">{source.label || source.url}</a>
-                ))}
-              </div>
-            </div>
-          ) : null}
-          <div className="ai-result-actions">
-            <button className="btn-primary" onClick={screen.handleSaveLabelFood} disabled={Boolean(screen.labelReviewAction)}>{screen.labelReviewAction === 'save' ? 'Saving…' : 'Save to foods'}</button>
-            <button className="btn-secondary" onClick={screen.handleQuickLogLabelFood} disabled={Boolean(screen.labelReviewAction)}>{screen.labelReviewAction === 'log' ? 'Saving…' : 'Save and log'}</button>
-            <button className="btn-secondary" onClick={screen.handleCancelLabelReview} disabled={Boolean(screen.labelReviewAction)}>Cancel</button>
-          </div>
-          {screen.labelReviewAction ? <p className="settings-subtitle">Working on your label review…</p> : null}
         </div>
       ) : null}
-    </>
+      <div className="ai-result-actions">
+        <button className="btn-primary" onClick={screen.handleSaveLabelFood} disabled={Boolean(screen.labelReviewAction)}>{screen.labelReviewAction === 'save' ? 'Saving…' : 'Save to foods'}</button>
+        {showQuickLog ? <button className="btn-secondary" onClick={screen.handleQuickLogLabelFood} disabled={Boolean(screen.labelReviewAction)}>{screen.labelReviewAction === 'log' ? 'Saving…' : 'Save and log'}</button> : null}
+        <button className="btn-secondary" onClick={screen.handleCancelLabelReview} disabled={Boolean(screen.labelReviewAction)}>Cancel</button>
+      </div>
+      {screen.labelReviewAction ? <p className="settings-subtitle">Working on your label review…</p> : null}
+    </div>
   )
 }
 
@@ -320,6 +328,7 @@ export function TodayNutritionView({ screen, deps }) {
             onAction={screen.handleCoachingAction}
             onAskJohnny={screen.openDrawer}
             askJohnnyLabel="Ask Johnny"
+            analyticsContext={{ screen: 'nutrition', surface: 'nutrition_coaching_summary' }}
           />
         ) : null}
         <div className="nutrition-coach-card">
@@ -336,7 +345,7 @@ export function TodayNutritionView({ screen, deps }) {
           <div className="dashboard-card-head"><span className="dashboard-chip ai">Ask Johnny</span><span className="dashboard-chip subtle">Context-aware</span></div>
           <h3>{buildNutritionCoachHeadline(screen.summary)}</h3>
           <p>{buildNutritionCoachBody(screen.summary)}</p>
-          <div className="nutrition-coach-prompt-grid">{screen.coachPrompts.map(prompt => <button key={prompt.label} type="button" className="nutrition-coach-prompt" onClick={() => screen.openDrawer(prompt.prompt)}><strong>{prompt.label}</strong><span>{prompt.meta}</span></button>)}</div>
+          <div className="nutrition-coach-prompt-grid">{screen.coachPrompts.map(prompt => <button key={prompt.label} type="button" className="nutrition-coach-prompt" onClick={() => screen.handleCoachingPromptOpen(prompt)}><strong>{prompt.label}</strong><span>{prompt.meta}</span></button>)}</div>
         </div>
       </div>
 
@@ -348,7 +357,7 @@ export function TodayNutritionView({ screen, deps }) {
           await screen.runAction(() => nutritionApi.logMeal(data), 'Meal logged.', { onSuccess: async () => { screen.invalidate(); screen.setShowAddForm(false); await screen.loadData(); scrollNodeIntoView(screen.mealsSectionAnchor.current) } })
         }} onSaveAsTemplate={async data => {
           await screen.runAction(() => nutritionApi.createSavedMeal(data), 'Saved meal created.', { onSuccess: async () => { screen.setShowAddForm(false); await screen.refreshPlanning(); scrollNodeIntoView(screen.mealsSectionAnchor.current) } })
-        }} onCancel={() => screen.setShowAddForm(false)} /></div> : null}
+        }} onCancel={() => screen.handleFormCancel(() => screen.setShowAddForm(false))} /></div> : null}
         <div className="meals-list">{screen.visibleMeals.map(meal => <MealCard key={meal.id} meal={meal} savedFoods={screen.savedFoods} onError={screen.showErrorToast} onSave={async data => {
           const mealIds = Array.isArray(meal.meal_ids) && meal.meal_ids.length ? meal.meal_ids : [meal.id]
           const primaryMealId = mealIds[0]
@@ -375,6 +384,8 @@ export function TodayNutritionView({ screen, deps }) {
 
 export function LibraryNutritionView({ screen, deps }) {
   const {
+    LabelReviewCard,
+    LabelScanPromptPanel,
     RecentFoodRow,
     SavedFoodForm,
     SavedFoodRow,
@@ -398,12 +409,14 @@ export function LibraryNutritionView({ screen, deps }) {
         </div>
 
         <div ref={screen.savedFoodsSectionAnchor} className="dash-card nutrition-planning-card">
-          <div className="dashboard-card-head"><span className="dashboard-chip nutrition">Saved foods</span><button className="btn-secondary small" onClick={() => screen.setShowSavedFoodForm(current => !current)}>New</button></div>
+          <div className="dashboard-card-head"><span className="dashboard-chip nutrition">Saved foods</span><div className="nutrition-row-actions"><button className="btn-secondary small" onClick={() => screen.openSavedFoodsLabelScanPrompt()}>Scan label</button><button className="btn-secondary small" onClick={() => screen.setShowSavedFoodForm(current => !current)}>New</button></div></div>
           <h3>First-class food library</h3>
           <p>Use this for repeat items from labels, snacks, or common proteins without rebuilding a whole meal.</p>
+          {screen.showSavedFoodsLabelScanPrompt ? <div ref={screen.labelScanPromptAnchor}><LabelScanPromptPanel anchorRef={null} busy={screen.analyzing} images={screen.labelScanImages} note={screen.labelScanNote} onChangeNote={screen.setLabelScanNote} onPickFront={screen.pickLabelScanFront} onPickBack={screen.pickLabelScanBack} onSubmit={() => { void screen.handleSubmitLabelScan() }} onCancel={screen.handleSavedFoodsLabelScanCancel} /></div> : null}
+          {screen.showSavedFoodsLabelReview ? <LabelReviewCard screen={screen} showQuickLog={false} /> : null}
           <div className="nutrition-stack-list">{screen.visibleSavedFoods.map(food => <SavedFoodRow key={food.id} food={food} onError={screen.showErrorToast} onLog={screen.handleLogSavedFood} onSave={async data => screen.runAction(() => nutritionApi.updateSavedFood(food.id, data), 'Saved food updated.', { onSuccess: screen.refreshPlanning })} onDelete={async () => screen.runAction(() => nutritionApi.deleteSavedFood(food.id), 'Saved food deleted.', { onSuccess: screen.refreshPlanning })} />)}{!screen.savedFoods.length ? <EmptyState className="nutrition-inline-state" message="Save one from a label review or meal scan." title="No saved foods yet" /> : null}</div>
           <SectionClampToggle count={screen.savedFoods.length} expanded={screen.expandedSections.savedFoods} limit={4} label="foods" onToggle={() => screen.toggleSection('savedFoods')} />
-          {screen.showSavedFoodForm ? <div ref={screen.savedFoodFormAnchor}><SavedFoodForm savedFoods={screen.orderedSavedFoods} onError={screen.showErrorToast} onLogExisting={async foodId => { await screen.handleLogSavedFood(foodId); screen.setShowSavedFoodForm(false) }} onSave={async data => screen.runAction(() => nutritionApi.createSavedFood(data), 'Saved food added.', { onSuccess: async () => { screen.setShowSavedFoodForm(false); await screen.refreshPlanning(); scrollNodeIntoView(screen.savedFoodsSectionAnchor.current) } })} onCancel={() => screen.setShowSavedFoodForm(false)} onToast={screen.showToast} /></div> : null}
+          {screen.showSavedFoodForm ? <div ref={screen.savedFoodFormAnchor}><SavedFoodForm savedFoods={screen.orderedSavedFoods} onError={screen.showErrorToast} onLogExisting={async foodId => { await screen.handleLogSavedFood(foodId); screen.setShowSavedFoodForm(false) }} onSave={async data => screen.runAction(() => nutritionApi.createSavedFood(data), 'Saved food added.', { onSuccess: async () => { screen.setShowSavedFoodForm(false); await screen.refreshPlanning(); scrollNodeIntoView(screen.savedFoodsSectionAnchor.current) } })} onCancel={() => screen.handleFormCancel(() => screen.setShowSavedFoodForm(false))} onToast={screen.showToast} /></div> : null}
         </div>
 
         <div ref={screen.savedMealsSectionAnchor} className="dash-card nutrition-planning-card">
@@ -412,7 +425,7 @@ export function LibraryNutritionView({ screen, deps }) {
           <p>Keep a few reliable meals ready so logging takes seconds.</p>
           <div className="nutrition-stack-list">{screen.visibleSavedMeals.map(meal => <SavedMealRow key={meal.id} meal={meal} savedFoods={screen.orderedSavedFoods} onError={screen.showErrorToast} onLog={screen.handleLogSavedMeal} onSave={async data => screen.runAction(() => nutritionApi.updateSavedMeal(meal.id, data), 'Saved meal updated.', { onSuccess: screen.refreshPlanning })} onDelete={async () => screen.runAction(() => nutritionApi.deleteSavedMeal(meal.id), 'Saved meal deleted.', { onSuccess: screen.refreshPlanning })} />)}{!screen.savedMeals.length ? <EmptyState className="nutrition-inline-state" message="Build one from your most common breakfast or lunch." title="No saved meals yet" /> : null}</div>
           <SectionClampToggle count={screen.savedMeals.length} expanded={screen.expandedSections.savedMeals} limit={4} label="saved meals" onToggle={() => screen.toggleSection('savedMeals')} />
-          {screen.showSavedMealForm ? <div ref={screen.savedMealFormAnchor}><SavedMealForm initialValues={screen.location.state?.savedMealDraft || null} savedFoods={screen.orderedSavedFoods} onError={screen.showErrorToast} onToast={screen.showToast} onSave={async data => screen.runAction(() => nutritionApi.createSavedMeal(data), 'Saved meal created.', { onSuccess: async () => { screen.setShowSavedMealForm(false); await screen.refreshPlanning(); scrollNodeIntoView(screen.savedMealsSectionAnchor.current) } })} onCancel={() => screen.setShowSavedMealForm(false)} /></div> : null}
+          {screen.showSavedMealForm ? <div ref={screen.savedMealFormAnchor}><SavedMealForm initialValues={screen.location.state?.savedMealDraft || null} savedFoods={screen.orderedSavedFoods} onError={screen.showErrorToast} onToast={screen.showToast} onSave={async data => screen.runAction(() => nutritionApi.createSavedMeal(data), 'Saved meal created.', { onSuccess: async () => { screen.setShowSavedMealForm(false); await screen.refreshPlanning(); scrollNodeIntoView(screen.savedMealsSectionAnchor.current) } })} onCancel={() => screen.handleFormCancel(() => screen.setShowSavedMealForm(false))} /></div> : null}
         </div>
       </section>
     </section>
@@ -438,7 +451,7 @@ export function PlanningNutritionView({ screen, deps }) {
     <section ref={screen.planningSectionAnchor} className="nutrition-section-shell nutrition-section-shell-plan">
       <div className="dash-card nutrition-planning-card nutrition-section-intro-card nutrition-section-intro-plan"><span className="dashboard-chip awards">Plan</span><h2>Recipes, pantry, and shopping</h2><p>Use this after logging to decide what to cook next, what you already have, and what still needs to be picked up.</p></div>
       <section className="dashboard-section dashboard-two-col nutrition-planning-grid"><PlanningAccordionCard innerRef={screen.pantrySectionAnchor} open={screen.planningAccordions.pantry} onToggle={() => screen.togglePlanningAccordion('pantry')} chip={<span className="dashboard-chip workout">Pantry</span>} title="Pantry on hand" description="Use what you already have before creating shopping friction. You can remove pantry items here fast, or open the pantry page for editing and category cleanup." meta={<span className="dashboard-chip subtle">{screen.pantry.length ? `${screen.pantry.length} items` : 'No items yet'}</span>} actions={<button className="btn-secondary small" onClick={screen.openPantryPage}>Open pantry</button>}><div className="nutrition-pantry-preview-list">{screen.pantry.map(item => <PantryDisplayRow key={item.id} item={item} actionLabel="Remove" onAction={() => screen.handleDeletePantryItem(item)} />)}{!screen.pantry.length ? <EmptyState className="nutrition-inline-state" message="Add your staples and Johnny5k can suggest meals around them." title="No pantry items yet" /> : null}</div>{screen.pantry.length ? <p className="nutrition-list-note">Grouped into {screen.pantryCategories.length} food type {screen.pantryCategories.length === 1 ? 'category' : 'categories'} so planning stays readable on mobile.</p> : null}</PlanningAccordionCard></section>
-      <section ref={screen.groceryGapSectionAnchor} className="dashboard-section dashboard-two-col nutrition-planning-grid"><PlanningAccordionCard open={screen.planningAccordions.groceryGap} onToggle={() => screen.togglePlanningAccordion('groceryGap')} chip={<span className="dashboard-chip awards">Grocery gap</span>} title="Missing staples" description="Check items off as you grab them at the store. Your checklist stays put after a refresh, and checked items drop to the bottom until you add them into pantry." meta={<span className="dashboard-chip subtle">{screen.displayedGroceryGap.recipe_items.length ? `${screen.displayedGroceryGap.recipe_items.length} recipe-driven` : 'Planning'}</span>}><div className="nutrition-gap-toolbar"><button className="btn-secondary small" onClick={() => screen.setShowGroceryGapVoice(current => !current)}>{screen.showGroceryGapVoice ? 'Close voice' : 'Speak list'}</button><button className="btn-secondary small" onClick={() => screen.setShowGroceryGapForm(current => !current)}>{screen.showGroceryGapForm ? 'Close add' : 'Add item'}</button></div>{screen.displayedGroceryGap.missing_items.length ? <div className="nutrition-gap-bulk-bar"><button type="button" className="btn-ghost small" onClick={screen.handleSelectAllGapItems} disabled={screen.allGapItemsChecked}>Check all</button><button type="button" className="btn-ghost small" onClick={screen.handleClearCheckedGapItems} disabled={!screen.checkedGapItems.length}>Clear checks</button><button type="button" className="btn-ghost small" onClick={screen.handleDeleteCheckedGapItems} disabled={!screen.checkedGapItems.length}>Delete checked{screen.checkedGapItems.length ? ` (${screen.checkedGapItems.length})` : ''}</button><button type="button" className="btn-primary small" onClick={screen.handleMoveGapToPantry} disabled={screen.syncingGapToPantry || !screen.checkedGapItems.length}>{screen.syncingGapToPantry ? 'Updating…' : `Add checked to pantry${screen.checkedGapItems.length ? ` (${screen.checkedGapItems.length})` : ''}`}</button></div> : null}{screen.showGroceryGapVoice ? <div ref={screen.groceryGapVoiceAnchor}><GroceryGapVoiceCapture onError={screen.showErrorToast} onToast={screen.showToast} onAddItems={screen.handleBulkGroceryGapImport} onCancel={() => screen.setShowGroceryGapVoice(false)} /></div> : null}{screen.showGroceryGapForm ? <div ref={screen.groceryGapFormAnchor}><GroceryGapForm onError={screen.showErrorToast} onSave={screen.handleCreateGroceryGapItem} onCancel={() => screen.setShowGroceryGapForm(false)} /></div> : null}<div className="nutrition-gap-list nutrition-gap-checklist">{screen.visibleGapItems.map(item => { const checked = screen.checkedGapItemSet.has(item.key); return <div key={item.key} className={`nutrition-gap-check-item${checked ? ' checked' : ''}`}><label className="nutrition-gap-check-main"><input type="checkbox" checked={checked} onChange={() => screen.toggleGapItemChecked(item.key)} /><span className="nutrition-gap-check-copy"><strong>{item.item_name}</strong>{item.quantity != null || item.unit || item.notes ? <span className="nutrition-gap-check-meta">{item.quantity != null || item.unit ? <span className="nutrition-gap-check-badge">{formatGroceryGapAmount(item.quantity, item.unit)}</span> : null}{item.notes ? <span className="nutrition-gap-check-note">{item.notes}</span> : null}</span> : null}</span></label><button type="button" className="btn-ghost small nutrition-gap-delete" onClick={() => screen.handleDeleteGroceryGapItem(item)}>Remove</button></div> })}{!screen.displayedGroceryGap.missing_items.length ? <EmptyState className="nutrition-inline-state" message="You have the main staples covered right now." title="Nothing missing" /> : null}</div>{screen.displayedGroceryGap.recipe_items.length ? <div className="nutrition-stack-list nutrition-gap-detail-list">{screen.displayedGroceryGap.recipe_items.map(entry => <div key={`${entry.item}-${entry.recipes.join('|')}`} className="nutrition-item-row nutrition-gap-detail-row"><div><strong>{entry.item}</strong><p>Needed for {entry.recipes.join(', ')}</p></div></div>)}</div> : null}<SectionClampToggle count={screen.displayedGroceryGap.missing_items.length} expanded={screen.expandedSections.groceryGap} limit={10} label="items" onToggle={() => screen.toggleSection('groceryGap')} /></PlanningAccordionCard></section>
+      <section ref={screen.groceryGapSectionAnchor} className="dashboard-section dashboard-two-col nutrition-planning-grid"><PlanningAccordionCard open={screen.planningAccordions.groceryGap} onToggle={() => screen.togglePlanningAccordion('groceryGap')} chip={<span className="dashboard-chip awards">Grocery gap</span>} title="Missing staples" description="Check items off as you grab them at the store. Your checklist stays put after a refresh, and checked items drop to the bottom until you add them into pantry." meta={<span className="dashboard-chip subtle">{screen.displayedGroceryGap.recipe_items.length ? `${screen.displayedGroceryGap.recipe_items.length} recipe-driven` : 'Planning'}</span>}><div className="nutrition-gap-toolbar"><button className="btn-secondary small" onClick={() => screen.setShowGroceryGapVoice(current => !current)}>{screen.showGroceryGapVoice ? 'Close voice' : 'Speak list'}</button><button className="btn-secondary small" onClick={() => screen.setShowGroceryGapForm(current => !current)}>{screen.showGroceryGapForm ? 'Close add' : 'Add item'}</button></div>{screen.displayedGroceryGap.missing_items.length ? <div className="nutrition-gap-bulk-bar"><button type="button" className="btn-ghost small" onClick={screen.handleSelectAllGapItems} disabled={screen.allGapItemsChecked}>Check all</button><button type="button" className="btn-ghost small" onClick={screen.handleClearCheckedGapItems} disabled={!screen.checkedGapItems.length}>Clear checks</button><button type="button" className="btn-ghost small" onClick={screen.handleDeleteCheckedGapItems} disabled={!screen.checkedGapItems.length}>Delete checked{screen.checkedGapItems.length ? ` (${screen.checkedGapItems.length})` : ''}</button><button type="button" className="btn-primary small" onClick={screen.handleMoveGapToPantry} disabled={screen.syncingGapToPantry || !screen.checkedGapItems.length}>{screen.syncingGapToPantry ? 'Updating…' : `Add checked to pantry${screen.checkedGapItems.length ? ` (${screen.checkedGapItems.length})` : ''}`}</button></div> : null}{screen.showGroceryGapVoice ? <div ref={screen.groceryGapVoiceAnchor}><GroceryGapVoiceCapture onError={screen.showErrorToast} onToast={screen.showToast} onAddItems={screen.handleBulkGroceryGapImport} onCancel={() => screen.handleFormCancel(() => screen.setShowGroceryGapVoice(false))} /></div> : null}{screen.showGroceryGapForm ? <div ref={screen.groceryGapFormAnchor}><GroceryGapForm onError={screen.showErrorToast} onSave={screen.handleCreateGroceryGapItem} onCancel={() => screen.handleFormCancel(() => screen.setShowGroceryGapForm(false))} /></div> : null}<div className="nutrition-gap-list nutrition-gap-checklist">{screen.visibleGapItems.map(item => { const checked = screen.checkedGapItemSet.has(item.key); return <div key={item.key} className={`nutrition-gap-check-item${checked ? ' checked' : ''}`}><label className="nutrition-gap-check-main"><input type="checkbox" checked={checked} onChange={() => screen.toggleGapItemChecked(item.key)} /><span className="nutrition-gap-check-copy"><strong>{item.item_name}</strong>{item.quantity != null || item.unit || item.notes ? <span className="nutrition-gap-check-meta">{item.quantity != null || item.unit ? <span className="nutrition-gap-check-badge">{formatGroceryGapAmount(item.quantity, item.unit)}</span> : null}{item.notes ? <span className="nutrition-gap-check-note">{item.notes}</span> : null}</span> : null}</span></label><button type="button" className="btn-ghost small nutrition-gap-delete" onClick={() => screen.handleDeleteGroceryGapItem(item)}>Remove</button></div> })}{!screen.displayedGroceryGap.missing_items.length ? <EmptyState className="nutrition-inline-state" message="You have the main staples covered right now." title="Nothing missing" /> : null}</div>{screen.displayedGroceryGap.recipe_items.length ? <div className="nutrition-stack-list nutrition-gap-detail-list">{screen.displayedGroceryGap.recipe_items.map(entry => <div key={`${entry.item}-${entry.recipes.join('|')}`} className="nutrition-item-row nutrition-gap-detail-row"><div><strong>{entry.item}</strong><p>Needed for {entry.recipes.join(', ')}</p></div></div>)}</div> : null}<SectionClampToggle count={screen.displayedGroceryGap.missing_items.length} expanded={screen.expandedSections.groceryGap} limit={10} label="items" onToggle={() => screen.toggleSection('groceryGap')} /></PlanningAccordionCard></section>
       <section className="dashboard-section nutrition-planning-grid"><PlanningAccordionCard innerRef={screen.recipesSectionAnchor} open={screen.planningAccordions.recipes} onToggle={() => screen.togglePlanningAccordion('recipes')} chip={<span className="dashboard-chip coach">Recipe ideas</span>} title="What you can make next" description="Select recipes to feed the grocery gap above. Use My cook book to focus only on the recipes you already picked." meta={<span className="dashboard-chip subtle">{screen.selectedRecipeKeys.length} selected</span>} actions={<>{screen.selectedRecipeKeys.length ? <button type="button" className="btn-ghost small" onClick={screen.handleClearSelectedRecipes}>Clear</button> : null}<button className="btn-secondary small" onClick={async () => { const refreshed = await screen.refreshPlanning({ recipeRefreshToken: String(Date.now()) }); if (refreshed) { screen.showToast('Recipe ideas refreshed.') } }} disabled={screen.loadingExtras}>{screen.loadingExtras ? 'Refreshing…' : 'Refresh'}</button></>}><details className="nutrition-filter-accordion" open={screen.recipeFiltersOpen} onToggle={event => screen.setRecipeFiltersOpen(event.currentTarget.open)}><summary><span>Search and filters</span><span className="nutrition-filter-accordion-meta">{screen.recipeSearchQuery ? `Search: ${screen.recipeSearchQuery}` : `${screen.recipeCollectionFilter === 'cookbook' ? 'My cook book' : 'All recipes'} · ${screen.recipeMealFilter === 'all' ? 'All meals' : formatMealTypeLabel(screen.recipeMealFilter)}`}</span></summary><div className="nutrition-filter-accordion-body"><label className="field-label nutrition-pantry-search"><span>Search recipes</span><ClearableInput type="search" placeholder="Search by recipe or ingredient" value={screen.recipeSearchQuery} onChange={event => screen.setRecipeSearchQuery(event.target.value)} /></label><div className="nutrition-gap-list nutrition-quick-picks"><button type="button" className={`onboarding-chip${screen.recipeCollectionFilter === 'all' ? ' active' : ''}`} onClick={() => screen.setRecipeCollectionFilter('all')}>All recipes</button><button type="button" className={`onboarding-chip${screen.recipeCollectionFilter === 'cookbook' ? ' active' : ''}`} onClick={() => screen.setRecipeCollectionFilter('cookbook')}>My cook book ({screen.selectedRecipeKeys.length})</button></div><div className="nutrition-gap-list nutrition-quick-picks"><button type="button" className={`onboarding-chip${screen.recipeMealFilter === 'all' ? ' active' : ''}`} onClick={() => screen.setRecipeMealFilter('all')}>All ({screen.recipes.length})</button>{MEAL_TYPES.map(mealType => { const count = screen.recipes.filter(recipe => recipe?.meal_type === mealType).length; return <button key={mealType} type="button" className={`onboarding-chip${screen.recipeMealFilter === mealType ? ' active' : ''}`} onClick={() => screen.setRecipeMealFilter(mealType)}>{formatMealTypeLabel(mealType)} ({count})</button> })}</div>{(screen.recipeSearchQuery || screen.recipeMealFilter !== 'all' || screen.recipeCollectionFilter !== 'all') ? <div className="nutrition-card-actions">{screen.recipeSearchQuery ? <button type="button" className="btn-secondary small" onClick={() => screen.setRecipeSearchQuery('')}>Clear search</button> : null}{screen.recipeMealFilter !== 'all' || screen.recipeCollectionFilter !== 'all' ? <button type="button" className="btn-ghost small" onClick={() => { screen.setRecipeMealFilter('all'); screen.setRecipeCollectionFilter('all') }}>Reset filters</button> : null}</div> : null}</div></details><div className="nutrition-stack-list">{screen.visibleRecipes.map(recipe => <RecipeIdeaCard key={getRecipeKey(recipe)} recipe={recipe} selected={screen.selectedRecipeKeys.includes(getRecipeKey(recipe))} onToggle={() => screen.toggleRecipeSelection(recipe)} />)}{!screen.recipes.length ? <EmptyState className="nutrition-inline-state" message="Add pantry items or refresh recipe ideas." title="No suggestions yet" /> : null}{screen.recipeCollectionFilter === 'cookbook' && !screen.selectedRecipeKeys.length ? <EmptyState className="nutrition-inline-state" message="Choose a few recipes first, then use My cook book to narrow the list." title="No cookbook picks yet" /> : null}{screen.recipes.length > 0 && screen.filteredRecipes.length === 0 && !(screen.recipeCollectionFilter === 'cookbook' && !screen.selectedRecipeKeys.length) ? <EmptyState className="nutrition-inline-state" message={`No ${formatMealTypeLabel(screen.recipeMealFilter).toLowerCase()} ideas match this search and filter state right now. Clear the search or refresh and try again.`} title="No recipe matches" /> : null}</div><SectionClampToggle count={screen.filteredRecipes.length} expanded={screen.expandedSections.recipes} limit={RECIPE_CARD_VISIBLE_LIMIT} label="recipes" onToggle={() => screen.toggleSection('recipes')} />{screen.filteredRecipes.length > RECIPE_CARD_VISIBLE_LIMIT ? <p className="nutrition-list-note">Showing 5 of {screen.filteredRecipes.length} recipe ideas on the dashboard.</p> : null}</PlanningAccordionCard></section>
     </section>
   )

@@ -1151,6 +1151,18 @@
   gap: var(--space-2-5);
   margin-top: var(--space-4);
 }
+.live-workout-nav-next-set {
+  grid-column: 1;
+}
+.live-workout-nav-previous-set {
+  grid-column: 2;
+}
+.live-workout-nav-next-exercise {
+  grid-column: 3;
+}
+.live-workout-nav-previous-exercise {
+  grid-column: 4;
+}
 .live-workout-nav-grid > button,
 .live-workout-coach-buttons > button {
   width: 100%;
@@ -2024,12 +2036,33 @@
     grid-template-columns: 1fr 1fr;
   }
 
+  .live-workout-nav-grid {
+    grid-template-areas:
+      "next-set next-exercise"
+      "previous-set previous-exercise";
+  }
+
+  .live-workout-nav-next-set {
+    grid-area: next-set;
+  }
+
+  .live-workout-nav-previous-set {
+    grid-area: previous-set;
+  }
+
+  .live-workout-nav-next-exercise {
+    grid-area: next-exercise;
+  }
+
+  .live-workout-nav-previous-exercise {
+    grid-area: previous-exercise;
+  }
+
   .live-workout-progress-grid > .live-workout-progress-card:last-child {
     grid-column: span 2;
   }
 
   .live-workout-set-form .live-workout-save,
-  .live-workout-nav-grid > button:last-child,
   .live-workout-coach-buttons > .btn-primary {
     grid-column: 1 / -1;
   }

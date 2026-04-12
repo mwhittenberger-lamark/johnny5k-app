@@ -10,6 +10,7 @@ import {
   formatLiveWorkoutVoiceModeLabel,
   formatOpenAiVoiceLabel,
   getPreferredInstantVoice,
+  getLiveWorkoutInstantVoiceRate,
   normalizeInstantVoiceOptions,
   readLiveWorkoutVoicePrefs,
   writeLiveWorkoutVoicePrefs,
@@ -1072,10 +1073,10 @@ export default function LiveWorkoutMode({
               {setError ? <p className="error live-workout-inline-error">{setError}</p> : null}
 
               <div className="live-workout-nav-grid">
-                <button type="button" className="btn-outline" onClick={() => moveSet(-1)} disabled={currentSetIdx <= 0}>Previous set</button>
-                <button type="button" className="btn-outline" onClick={() => moveSet(1)} disabled={currentSetIdx >= totalSetCount - 1}>Next set</button>
-                <button type="button" className="btn-secondary" onClick={() => moveExercise(-1)} disabled={activeExerciseIdx <= 0}>Previous exercise</button>
-                <button type="button" className="btn-secondary" onClick={() => moveExercise(1)} disabled={activeExerciseIdx >= totalExerciseCount - 1}>Next exercise</button>
+                <button type="button" className="btn-outline live-workout-nav-next-set" onClick={() => moveSet(1)} disabled={currentSetIdx >= totalSetCount - 1}>Next set</button>
+                <button type="button" className="btn-outline live-workout-nav-previous-set" onClick={() => moveSet(-1)} disabled={currentSetIdx <= 0}>Previous set</button>
+                <button type="button" className="btn-secondary live-workout-nav-next-exercise" onClick={() => moveExercise(1)} disabled={activeExerciseIdx >= totalExerciseCount - 1}>Next exercise</button>
+                <button type="button" className="btn-secondary live-workout-nav-previous-exercise" onClick={() => moveExercise(-1)} disabled={activeExerciseIdx <= 0}>Previous exercise</button>
               </div>
             </section>
 
@@ -1946,7 +1947,7 @@ function playInstantSpeech({
       resolve(false)
       return
     }
-    utterance.rate = rate
+    utterance.rate = getLiveWorkoutInstantVoiceRate(rate)
     utterance.voice = selectedVoice || null
     utterance.lang = selectedVoice?.lang || (typeof navigator !== 'undefined' ? navigator.language : 'en-US')
     utterance.onstart = () => {
