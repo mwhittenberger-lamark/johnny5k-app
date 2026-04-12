@@ -1,4 +1,5 @@
 export const DASHBOARD_CARD_DEFS = [
+  { id: 'coaching_summary', bucket: 'primary_main', label: 'Coaching summary', description: 'Cross-screen coaching summary with the top trend read and next action.', iconName: 'coach', iconTone: 'teal' },
   { id: 'best_next_move', bucket: 'primary_main', label: 'Best next move', description: 'The top recommended action based on your board.', iconName: 'coach', iconTone: 'teal' },
   { id: 'today_intake', bucket: 'primary_main', label: 'Today\'s intake', description: 'Calories, macros, and meal count for today.', iconName: 'nutrition', iconTone: 'teal' },
   { id: 'recovery_loop', bucket: 'primary_main', label: 'Recovery Loop', description: 'Recovery mode, sleep, and recovery flags.', iconName: 'star', iconTone: 'slate' },

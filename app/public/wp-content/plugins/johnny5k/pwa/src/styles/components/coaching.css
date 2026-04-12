@@ -1,0 +1,116 @@
+.coaching-summary-panel {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.coaching-summary-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.coaching-summary-chip-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.coaching-summary-status {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.coaching-summary-copy {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.coaching-summary-title {
+  margin: 0;
+  color: var(--text);
+  font-size: clamp(1.1rem, 2vw, 1.45rem);
+  line-height: 1.15;
+}
+
+.coaching-summary-body {
+  margin: 0;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
+.coaching-summary-insight-list {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.coaching-summary-insight {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(0, 188, 222, 0.18);
+  background: rgba(0, 188, 222, 0.06);
+}
+
+.coaching-summary-insight strong,
+.coaching-summary-next-action strong {
+  color: var(--text);
+  font-size: 0.85rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.coaching-summary-insight p,
+.coaching-summary-next-action p {
+  margin: 0;
+  color: var(--text-muted);
+  line-height: 1.55;
+}
+
+.coaching-summary-next-action {
+  display: grid;
+  gap: var(--space-1-5);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background:
+    radial-gradient(circle at top right, rgba(255, 208, 0, 0.18), transparent 42%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(247, 250, 252, 0.96));
+  border: 1px solid rgba(255, 208, 0, 0.28);
+}
+
+.coaching-summary-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.coaching-summary-panel.coaching-summary-panel-dark .coaching-summary-title,
+.coaching-summary-panel.coaching-summary-panel-dark .coaching-summary-insight strong,
+.coaching-summary-panel.coaching-summary-panel-dark .coaching-summary-next-action strong {
+  color: #f5fbff;
+}
+
+.coaching-summary-panel.coaching-summary-panel-dark .coaching-summary-status,
+.coaching-summary-panel.coaching-summary-panel-dark .coaching-summary-body,
+.coaching-summary-panel.coaching-summary-panel-dark .coaching-summary-insight p,
+.coaching-summary-panel.coaching-summary-panel-dark .coaching-summary-next-action p {
+  color: rgba(245, 251, 255, 0.8);
+}
+
+.coaching-summary-panel.coaching-summary-panel-dark .coaching-summary-insight {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.coaching-summary-panel.coaching-summary-panel-dark .coaching-summary-next-action {
+  border-color: rgba(255, 255, 255, 0.16);
+  background:
+    radial-gradient(circle at top right, rgba(255, 208, 0, 0.18), transparent 42%),
+    rgba(255, 255, 255, 0.08);
+}

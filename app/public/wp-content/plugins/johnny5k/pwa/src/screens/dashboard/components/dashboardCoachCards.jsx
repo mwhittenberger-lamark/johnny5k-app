@@ -1,5 +1,23 @@
 import AppIcon from '../../../components/ui/AppIcon'
+import CoachingSummaryPanel from '../../../components/ui/CoachingSummaryPanel'
 import { DashboardIconBadge } from './dashboardSharedCards'
+
+export function CoachingSummaryCard({ summary, onAction, onAskJohnny }) {
+  if (!summary) return null
+
+  return (
+    <CoachingSummaryPanel
+      summary={summary}
+      className="dash-card dashboard-coaching-summary-card"
+      chipLabel="Coaching summary"
+      titleTag="h2"
+      maxInsights={3}
+      onAction={onAction}
+      onAskJohnny={onAskJohnny}
+      askJohnnyLabel="Ask Johnny why"
+    />
+  )
+}
 
 export function BestNextMoveCard({ model, onAction }) {
   if (!model) return null

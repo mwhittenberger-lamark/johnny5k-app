@@ -3,6 +3,7 @@
 @import './styles/tokens.css' layer(tokens);
 @import './styles/base.css' layer(base);
 @import './styles/components/cards.css' layer(components);
+@import './styles/components/coaching.css' layer(components);
 @import './styles/components/forms.css' layer(components);
 @import './styles/components/primitives.css' layer(components);
 @import './styles/components/buttons.css' layer(components);

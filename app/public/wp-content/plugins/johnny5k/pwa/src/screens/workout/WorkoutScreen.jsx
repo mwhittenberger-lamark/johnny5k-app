@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { flushOfflineWriteQueue, getOfflineWriteQueueSnapshot, subscribeOfflineWriteQueue } from '../../api/client'
@@ -8,7 +8,9 @@ import { openSupportGuide } from '../../lib/supportHelp'
 import { useOnlineStatus } from '../../lib/useOnlineStatus'
 import { cacheWorkoutPlanSnapshot, countQueuedWorkoutSetEntries, readCachedWorkoutPlanSnapshot } from '../../lib/workoutOffline'
 import { useJohnnyAssistantStore } from '../../store/johnnyAssistantStore'
+import { useDashboardStore } from '../../store/dashboardStore'
 import { useWorkoutStore } from '../../store/workoutStore'
+import { buildCoachingSummary, runCoachingAction } from '../../lib/coachingSummary'
 import WorkoutActiveSession from './components/WorkoutActiveSession'
 import WorkoutCompletionReviewModal from './components/WorkoutCompletionReviewModal'
 import WorkoutLaunchpad from './components/WorkoutLaunchpad'
@@ -20,6 +22,8 @@ import { weekdayLabelForDate, weekdayOrderForDate } from './workoutScreenUtils'
 
 export default function WorkoutScreen() {
   const openDrawer = useJohnnyAssistantStore(state => state.openDrawer)
+  const dashboardSnapshot = useDashboardStore(state => state.snapshot)
+  const loadDashboardSnapshot = useDashboardStore(state => state.loadSnapshot)
   const {
     session,
     loading,
@@ -173,6 +177,12 @@ export default function WorkoutScreen() {
 
   const liveWorkoutFrames = useLiveWorkoutFrames()
   const isMaintenanceMode = (sessionMode || session?.session_mode) === 'maintenance' || Number(session?.session?.readiness_score ?? readinessScore) <= 3
+  const workoutCoachingSummary = useMemo(() => buildCoachingSummary({
+    surface: 'workout_post',
+    snapshot: dashboardSnapshot,
+    completionReview: sessionController.completionReview,
+    readinessScore,
+  }), [dashboardSnapshot, readinessScore, sessionController.completionReview])
 
   const recoverWorkoutState = useCallback(async (message = 'Connection restored. Your workout data was refreshed from the server.') => {
     setRecoveringWorkout(true)
@@ -208,6 +218,10 @@ export default function WorkoutScreen() {
   useEffect(() => {
     bootstrapSession()
   }, [bootstrapSession])
+
+  useEffect(() => {
+    void loadDashboardSnapshot()
+  }, [loadDashboardSnapshot])
 
   useEffect(() => subscribeOfflineWriteQueue((snapshot) => {
     setWorkoutQueueState({
@@ -329,6 +343,9 @@ export default function WorkoutScreen() {
     return (
       <WorkoutCompletionReviewModal
         completionReview={sessionController.completionReview}
+        coachingSummary={workoutCoachingSummary}
+        onAction={action => runCoachingAction(action, { navigate, openDrawer })}
+        onAskJohnny={openDrawer}
         onClose={sessionController.handleCloseCompletionReview}
       />
     )

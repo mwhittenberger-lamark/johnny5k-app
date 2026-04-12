@@ -259,6 +259,7 @@ export function NutritionAiReviewPanels({ screen, deps }) {
 export function TodayNutritionView({ screen, deps }) {
   const {
     AddMealForm,
+    CoachingSummaryPanel,
     MacroStat,
     MealCard,
     SectionClampToggle,
@@ -310,6 +311,17 @@ export function TodayNutritionView({ screen, deps }) {
             </div>
           </details>
         </div>
+        {screen.coachingSummary ? (
+          <CoachingSummaryPanel
+            summary={screen.coachingSummary}
+            className="nutrition-coach-card coaching-summary-panel-dark"
+            chipLabel="Coaching read"
+            maxInsights={2}
+            onAction={screen.handleCoachingAction}
+            onAskJohnny={screen.openDrawer}
+            askJohnnyLabel="Ask Johnny"
+          />
+        ) : null}
         <div className="nutrition-coach-card">
           <div className="dashboard-card-head"><span className="dashboard-chip nutrition">Weekly calories</span><span className="dashboard-chip subtle">{screen.weeklyCaloriesReview.periodLabel || 'Last 7 days'}</span></div>
           <h3>{screen.weeklyCaloriesReview.headline}</h3>

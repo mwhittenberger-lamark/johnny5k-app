@@ -1,6 +1,7 @@
 import AppDialog from '../../../components/ui/AppDialog'
+import CoachingSummaryPanel from '../../../components/ui/CoachingSummaryPanel'
 
-export default function WorkoutCompletionReviewModal({ completionReview, onClose }) {
+export default function WorkoutCompletionReviewModal({ completionReview, coachingSummary, onAction, onAskJohnny, onClose }) {
   if (!completionReview) return null
 
   return (
@@ -48,6 +49,18 @@ export default function WorkoutCompletionReviewModal({ completionReview, onClose
           </div>
           <p className="workout-complete-review-copy">{completionReview.message}</p>
         </div>
+
+        {coachingSummary ? (
+          <CoachingSummaryPanel
+            summary={coachingSummary}
+            className="workout-complete-review-card"
+            chipLabel="Coach recommendation"
+            maxInsights={2}
+            onAction={onAction}
+            onAskJohnny={onAskJohnny}
+            askJohnnyLabel="Ask Johnny"
+          />
+        ) : null}
 
         <div className="workout-complete-review-actions">
           <button type="button" className="btn-secondary" onClick={() => onClose('activity-log')}>

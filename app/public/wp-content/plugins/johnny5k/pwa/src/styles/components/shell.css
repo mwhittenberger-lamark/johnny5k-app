@@ -329,12 +329,16 @@
   top: 68px;
   left: 16px;
   right: 16px;
+  bottom: max(16px, env(safe-area-inset-bottom));
   z-index: 60;
   pointer-events: none;
 }
 .app-shell-mobile-nav-shell {
   display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   gap: 16px;
+  max-height: 100%;
+  min-height: 0;
   padding: 18px;
   border: 1.5px solid rgba(168, 212, 240, 0.95);
   border-radius: 26px;
@@ -345,6 +349,7 @@
   opacity: 0;
   transition: transform 0.22s ease, opacity 0.22s ease, filter 0.22s ease;
   filter: saturate(0.92);
+  overflow: hidden;
 }
 .app-shell-mobile-nav.open {
   pointer-events: auto;
@@ -366,6 +371,11 @@
 .app-shell-mobile-nav-grid {
   display: grid;
   gap: 10px;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding-right: 2px;
 }
 .app-shell-mobile-link {
   display: flex;

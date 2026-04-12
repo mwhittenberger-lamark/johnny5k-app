@@ -4,12 +4,14 @@ import { aiApi } from '../../api/modules/ai'
 import { nutritionApi } from '../../api/modules/nutrition'
 import AppIcon from '../../components/ui/AppIcon'
 import AppToast from '../../components/ui/AppToast'
+import CoachingSummaryPanel from '../../components/ui/CoachingSummaryPanel'
 import ClearableInput from '../../components/ui/ClearableInput'
 import EmptyState from '../../components/ui/EmptyState'
 import ErrorState from '../../components/ui/ErrorState'
 import Field from '../../components/ui/Field'
 import OfflineState from '../../components/ui/OfflineState'
 import SupportIconButton from '../../components/ui/SupportIconButton'
+import { buildCoachingSummary, runCoachingAction } from '../../lib/coachingSummary'
 import { openSupportGuide } from '../../lib/supportHelp'
 import { useOnlineStatus } from '../../lib/useOnlineStatus'
 import { useDashboardStore } from '../../store/dashboardStore'
@@ -226,6 +228,8 @@ export default function NutritionScreen() {
   const pantrySectionRef = useRef(null)
   const groceryGapSectionRef = useRef(null)
   const invalidate = useDashboardStore(state => state.invalidate)
+  const dashboardSnapshot = useDashboardStore(state => state.snapshot)
+  const loadDashboardSnapshot = useDashboardStore(state => state.loadSnapshot)
   const openDrawer = useJohnnyAssistantStore(state => state.openDrawer)
 
   function handleOpenNutritionSupport() {
@@ -263,6 +267,10 @@ export default function NutritionScreen() {
       context: { nutrition_view: 'pantry' },
     })
   }
+
+  useEffect(() => {
+    void loadDashboardSnapshot()
+  }, [loadDashboardSnapshot])
 
   const latestMeal = meals[0] ?? null
   const latestMealLabel = useMemo(() => formatMealTimeLabel(latestMeal?.meal_datetime), [latestMeal?.meal_datetime])
@@ -1142,10 +1150,18 @@ export default function NutritionScreen() {
     navigate('/nutrition', { state: { focusSection: 'pantry' } })
   }
 
+  const coachingSummary = useMemo(() => buildCoachingSummary({
+    surface: 'nutrition',
+    snapshot: dashboardSnapshot,
+    nutritionSummary: summary,
+    weeklyCaloriesReview,
+  }), [dashboardSnapshot, summary, weeklyCaloriesReview])
+
   const featureViewDeps = {
     AddMealForm,
     AiMealReviewCard,
     AppToast,
+    CoachingSummaryPanel,
     buildNutritionCoachBody,
     buildNutritionCoachHeadline,
     formatGroceryGapAmount,
@@ -1188,6 +1204,7 @@ export default function NutritionScreen() {
     checkedGapItems,
     closePantryPage,
     coachPrompts,
+    coachingSummary,
     collapsedPantryCategories,
     displayedGroceryGap,
     dismissToast,
@@ -1214,6 +1231,7 @@ export default function NutritionScreen() {
     handleCheckAllRecentFoods,
     handleCancelLabelReview,
     handleClearCheckedRecentFoods,
+    handleCoachingAction: action => runCoachingAction(action, { navigate, openDrawer }),
     handleLogSavedFood,
     handleLogSavedMeal,
     handleMoveGapToPantry,

@@ -1,10 +1,12 @@
-import { startTransition, useCallback, useEffect, useRef, useState } from 'react'
+import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { bodyApi } from '../../api/modules/body'
 import { workoutApi } from '../../api/modules/workout'
 import ClearableInput from '../../components/ui/ClearableInput'
+import CoachingSummaryPanel from '../../components/ui/CoachingSummaryPanel'
 import SupportIconButton from '../../components/ui/SupportIconButton'
 import { formatUsShortDate } from '../../lib/dateFormat'
+import { buildCoachingSummary, runCoachingAction } from '../../lib/coachingSummary'
 import { openSupportGuide } from '../../lib/supportHelp'
 import { DAY_TYPE_OPTIONS } from '../../lib/trainingDayTypes'
 import { confirmGlobalAction, showGlobalToast } from '../../lib/uiFeedback'
@@ -350,6 +352,11 @@ export default function BodyScreen() {
   const activeFlagLoad = Number(recoverySummary?.active_flag_load || 0)
   const recoveryActionPlan = buildRecoveryActionPlan(recoverySummary, activeFlagItems)
   const caloriePreview = snapshot?.calorie_adjustment_preview
+  const coachingSummary = useMemo(() => buildCoachingSummary({
+    surface: 'body',
+    snapshot,
+    weights,
+  }), [snapshot, weights])
 
   function handleRecoveryQuickAction() {
     routeRecoveryAction(recoverySummary, navigate)
@@ -510,6 +517,18 @@ export default function BodyScreen() {
         <SummaryCard label="Avg sleep" value={avgSleep ? avgSleep.toFixed(1) : '—'} suffix=" h" meta={lastSleep !== '—' ? `Last night ${lastSleep}h` : 'Log sleep to see recovery trends'} accent="teal" />
         <SummaryCard label="Movement today" value={Number(todayMovement).toLocaleString()} meta={`Target ${Number(stepTarget).toLocaleString()} • ${stepPct}%`} accent="pink" />
       </section>
+
+      {coachingSummary ? (
+        <CoachingSummaryPanel
+          summary={coachingSummary}
+          className="dash-card"
+          chipLabel="Coaching read"
+          maxInsights={2}
+          onAction={action => runCoachingAction(action, { navigate, openDrawer })}
+          onAskJohnny={openDrawer}
+          askJohnnyLabel="Ask Johnny"
+        />
+      ) : null}
 
       <section className="dash-card progress-photos-entry-card">
         <div className="body-progress-header">

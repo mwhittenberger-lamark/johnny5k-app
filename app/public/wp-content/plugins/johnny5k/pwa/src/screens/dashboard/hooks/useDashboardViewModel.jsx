@@ -58,6 +58,7 @@ import {
 } from '../dashboardRecommendationHelpers'
 import {
   BestNextMoveCard,
+  CoachingSummaryCard,
   CoachReviewCard,
   GroceryGapSpotlightCard,
   JohnnyImageGalleryCard,
@@ -81,6 +82,7 @@ import { useDashboardStore } from '../../../store/dashboardStore'
 import { useAuthStore } from '../../../store/authStore'
 import { useJohnnyAssistantStore } from '../../../store/johnnyAssistantStore'
 import { useOnlineStatus } from '../../../lib/useOnlineStatus'
+import { buildCoachingSummary } from '../../../lib/coachingSummary'
 import { useDashboardPreferences } from './useDashboardPreferences'
 import { useDashboardSupplementalData } from './useDashboardSupplementalData'
 
@@ -190,6 +192,7 @@ export function useDashboardViewModel() {
   )
   const coachStarterPrompt = useMemo(() => buildCoachStarterPrompt(johnnyReview, coachNextStepMeta), [coachNextStepMeta, johnnyReview])
   const coachFreshness = useMemo(() => buildCoachFreshnessLabel(johnnyReview.generatedAt, johnnyReview.cached), [johnnyReview.cached, johnnyReview.generatedAt])
+  const coachingSummary = useMemo(() => buildCoachingSummary({ surface: 'dashboard', snapshot: s }), [s])
 
   const goal = s?.goal
   const nt = s?.nutrition_totals
@@ -296,6 +299,7 @@ export function useDashboardViewModel() {
   }
 
   const dashboardCards = [
+    makeDashboardCard('coaching_summary', <CoachingSummaryCard summary={coachingSummary} onAction={handleDashboardAction} onAskJohnny={openDrawer} />),
     makeDashboardCard('best_next_move', <BestNextMoveCard model={bestNextMove} onAction={handleDashboardAction} />),
     makeDashboardCard('today_intake', (
       <TodayIntakeCard
