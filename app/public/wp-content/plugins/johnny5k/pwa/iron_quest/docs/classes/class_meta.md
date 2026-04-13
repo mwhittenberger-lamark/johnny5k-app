@@ -1,0 +1,74 @@
+# IronQuest Class Meta
+
+## Core Data Points
+
+- Document title
+- Class name
+- Document version
+- Overview
+- Class role summary
+- What the class thrives on
+- Intended user type
+- Core identity
+- Primary playstyle
+- Core bonuses
+- Base stats
+- Max HP
+- Recovery scaling
+- HP loss tolerance
+- Subclasses
+- Subclass name
+- Subclass identity
+- Subclass strengths
+- Subclass weaknesses
+- Gameplay systems interaction
+- Heavier lift mechanic
+- Boss synergy
+- Boss mechanics interaction
+- Example boss bonuses
+- Equipment synergy
+- Best gear types
+- Weapon synergy
+- Armor synergy
+- Accessory synergy
+- Example gear
+- Ability system
+- Ability unlock method
+- Example abilities
+- XP strategy
+- Gold strategy
+- Strengths
+- Weaknesses
+- Recommended user type
+- Beginner support notes
+- Visual identity
+- Narrative tone
+- Progression feel
+- Future expansion ideas
+- Summary
+- XP requirements by level
+- Level progression table
+- Level bonuses
+- General scaling rules
+- Milestone bonuses
+- Warrior titles by level
+- Title progression table
+- Visual evolution system
+- Visual evolution overview
+- Evolution reflection points
+- Evolution goal
+- Evolution tiers
+- Tier level ranges
+- Tier identity
+- Tier visual style
+- Tier tone
+- Tier pose direction
+- Tier environment
+- Gear integration
+- Dynamic visual update rules
+- Victory portrait evolution
+- Portrait trigger moments
+- Portrait progression effects
+- Side-by-side progression feature
+- Prompt structure
+- Example prompt modifiers

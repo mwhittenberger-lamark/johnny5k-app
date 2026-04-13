@@ -1,0 +1,52 @@
+# IronQuest Location Meta
+
+## Core Data Points
+
+- Location title
+- Location role summary
+- Design or teaching goals
+- Overview
+- Name
+- Theme
+- Tone
+- Level range
+- Short lore
+- Map position
+- Connected from
+- Unlocks toward
+- Travel requirement
+- Design intent
+- Location structure
+- Standard mission count
+- Boss mission count
+- Mission breakdown
+- Mission name
+- Mission type
+- Mission goal
+- Mission narrative
+- Mission enemy type
+- Mission workout feel
+- Boss mission name
+- Boss unlock conditions
+- Boss narrative
+- Boss workout mapping
+- Boss outcome variants
+- Rewards
+- Standard mission rewards
+- Boss rewards
+- Example boss item
+- Full clear bonus
+- Class-specific flavor
+- Class tone
+- Class emphasis
+- AI prompt anchors
+- Visual and UI notes
+- Map node presentation
+- Completion state presentation
+- Tavern integration
+- Tavern name
+- Tavern tone
+- Tavern flavor text
+- Tavern-themed actions
+- Why this location works
+- Core-loop teaching summary
