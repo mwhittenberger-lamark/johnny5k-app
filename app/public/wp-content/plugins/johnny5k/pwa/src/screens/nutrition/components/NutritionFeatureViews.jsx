@@ -399,19 +399,38 @@ export function TodayNutritionView({ screen, deps }) {
             </div>
           </details>
         </div>
-        <BeverageBoard screen={screen} />
         {screen.coachingSummary ? (
-          <CoachingSummaryPanel
-            summary={screen.coachingSummary}
-            className="nutrition-coach-card coaching-summary-panel-dark"
-            chipLabel="Coaching read"
-            maxInsights={2}
-            onAction={screen.handleCoachingAction}
-            onAskJohnny={screen.openDrawer}
-            askJohnnyLabel="Ask Johnny"
-            analyticsContext={{ screen: 'nutrition', surface: 'nutrition_coaching_summary' }}
-          />
+          <TodayPanelAccordion
+            open={Boolean(screen.todayAccordions?.coachingRead)}
+            onToggle={() => screen.toggleTodayAccordion('coachingRead')}
+            chip={<span className="dashboard-chip ai">Coaching read</span>}
+            title="Coaching Read"
+            description={screen.coachingSummary?.summary || 'Johnny summarizes the strongest pattern and the next move for today.'}
+            meta={screen.coachingSummary?.contextLabel ? <span className="dashboard-chip subtle">{screen.coachingSummary.contextLabel}</span> : null}
+          >
+            <CoachingSummaryPanel
+              summary={screen.coachingSummary}
+              className="coaching-summary-panel-dark nutrition-today-accordion-panel"
+              chipLabel="Coaching read"
+              maxInsights={2}
+              onAction={screen.handleCoachingAction}
+              onAskJohnny={screen.openDrawer}
+              askJohnnyLabel="Ask Johnny"
+              analyticsContext={{ screen: 'nutrition', surface: 'nutrition_coaching_summary' }}
+            />
+          </TodayPanelAccordion>
         ) : null}
+        <TodayPanelAccordion
+          innerRef={screen.beverageBoardSectionAnchor}
+          open={Boolean(screen.todayAccordions?.beverageBoard)}
+          onToggle={() => screen.toggleTodayAccordion('beverageBoard')}
+          chip={<span className="dashboard-chip nutrition">Beverage Board</span>}
+          title="Beverage Board"
+          description="Track the hidden calories, log drinks fast, and tap water as you go."
+          meta={<span className="dashboard-chip subtle">Water + drinks</span>}
+        >
+          <BeverageBoard screen={screen} showHeader={false} showShell={false} />
+        </TodayPanelAccordion>
         <div className="nutrition-coach-card">
           <div className="dashboard-card-head"><span className="dashboard-chip nutrition">Weekly calories</span><span className="dashboard-chip subtle">{screen.weeklyCaloriesReview.periodLabel || 'Last 7 days'}</span></div>
           <h3>{screen.weeklyCaloriesReview.headline}</h3>
@@ -459,6 +478,25 @@ export function TodayNutritionView({ screen, deps }) {
         }} />)}{!screen.mergedMeals.length && !screen.showAddForm ? <EmptyState className="nutrition-inline-state" message="Scan one or add one manually." title="No meals logged yet today" /> : null}</div>
         <SectionClampToggle count={screen.meals.length} expanded={screen.expandedSections.meals} limit={4} label="meals" onToggle={() => screen.toggleSection('meals')} />
       </div>
+    </section>
+  )
+}
+
+function TodayPanelAccordion({ innerRef = null, open, onToggle, chip, title, description, meta = null, children }) {
+  return (
+    <section ref={innerRef} className={`nutrition-coach-card nutrition-today-accordion${open ? ' open' : ''}`}>
+      <button type="button" className="nutrition-today-accordion-trigger" onClick={onToggle} aria-expanded={open}>
+        <div className="nutrition-today-accordion-copy">
+          <div className="nutrition-today-accordion-kicker">
+            {chip}
+            {meta}
+          </div>
+          <h3>{title}</h3>
+          <p>{description}</p>
+        </div>
+        <span className="nutrition-today-accordion-icon" aria-hidden="true">{open ? '−' : '+'}</span>
+      </button>
+      {open ? <div className="nutrition-today-accordion-body">{children}</div> : null}
     </section>
   )
 }

@@ -18,6 +18,7 @@ const VALID_ICON_NAMES = new Set([
   'star',
   'flame',
   'bolt',
+  'water',
   'question',
   'chevron-up',
   'chevron-down',

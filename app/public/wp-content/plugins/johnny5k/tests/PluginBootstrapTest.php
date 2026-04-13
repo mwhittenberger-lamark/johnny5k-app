@@ -121,4 +121,13 @@ class PluginBootstrapTest extends ServiceTestCase {
 		$hooks = array_column( $GLOBALS['johnny5k_test_action_scheduler_actions'], 'hook' );
 		$this->assertContains( $hook, $hooks );
 	}
+
+	public function test_plugin_lifecycle_maybe_upgrade_database_runs_schema_when_version_is_outdated(): void {
+		$GLOBALS['johnny5k_test_options']['jf_db_version'] = '1.1.11';
+
+		PluginLifecycle::maybe_upgrade_database();
+
+		$this->assertSame( [ 'create_tables' ], \Johnny5k\Database\Schema::$calls );
+		$this->assertSame( JF_DB_VERSION, \get_option( 'jf_db_version' ) );
+	}
 }

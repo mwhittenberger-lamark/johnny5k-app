@@ -368,6 +368,17 @@
     radial-gradient(circle at top right, rgba(0, 188, 222, 0.12), transparent 26%),
     linear-gradient(180deg, rgba(227, 242, 252, 0.92), rgba(241, 248, 253, 0.98));
 }
+.nutrition-screen .dashboard-chip.ai {
+  background: rgba(0, 188, 222, 0.2);
+  border-color: rgba(126, 244, 255, 0.28);
+  color: #eafcff;
+}
+.nutrition-screen .dashboard-chip.nutrition,
+.nutrition-screen .dashboard-chip:not(.ai):not(.subtle):not(.workout):not(.awards):not(.success):not(.coach) {
+  background: #ffffff;
+  border-color: rgba(24, 52, 79, 0.18);
+  color: #18344f;
+}
 .nutrition-mode-tabs {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -602,6 +613,75 @@
   border-color: rgba(255, 255, 255, 0.12);
   background: rgba(255, 255, 255, 0.08);
 }
+.nutrition-today-accordion {
+  padding: 0;
+  overflow: hidden;
+}
+.nutrition-today-accordion-trigger {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-3-5) var(--space-4);
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+.nutrition-today-accordion-copy {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+.nutrition-today-accordion-kicker {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.nutrition-today-accordion-trigger h3 {
+  margin: 0;
+  color: #f5fbff;
+}
+.nutrition-today-accordion-trigger p {
+  margin: 0;
+  color: rgba(245, 251, 255, 0.78);
+}
+.nutrition-today-accordion-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  min-width: 34px;
+  min-height: 34px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.08);
+  color: #f5fbff;
+  font-size: 1.2rem;
+  line-height: 1;
+}
+.nutrition-today-accordion-body {
+  display: grid;
+  gap: var(--space-3);
+  padding: 0 var(--space-4) var(--space-3-5);
+}
+.nutrition-today-accordion-panel {
+  display: grid;
+  gap: var(--space-3);
+}
+.nutrition-today-accordion-body .dashboard-card-head:first-child {
+  margin-top: 0;
+}
+.nutrition-screen .coaching-summary-panel.coaching-summary-panel-dark .btn-outline {
+  color: #f5fbff;
+  border-color: rgba(126, 244, 255, 0.34);
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 10px 24px rgba(8, 21, 51, 0.16);
+}
 .beverage-board-card {
   background:
     radial-gradient(circle at top right, rgba(255, 208, 0, 0.18), transparent 32%),
@@ -675,6 +755,9 @@
   gap: var(--space-1-5);
 }
 .beverage-water-glass {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-height: 48px;
   border-radius: 14px;
   border: 1px solid rgba(255, 255, 255, 0.14);
@@ -687,6 +770,10 @@
   border-color: rgba(0, 188, 222, 0.5);
   background: rgba(0, 188, 222, 0.18);
   color: #fff;
+}
+.beverage-water-glass-icon {
+  width: 22px;
+  height: 22px;
 }
 .beverage-board-review {
   display: flex;

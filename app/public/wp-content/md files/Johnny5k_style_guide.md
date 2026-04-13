@@ -2,490 +2,409 @@
 
 ## Design Direction
 
-Johnny5k should feel like **mid-century optimism translated into a modern mobile product**.
+Johnny5k uses a **retro-future mobile product system**.
 
-The intended tone is:
+The visual tone is:
 
-- warm
+- optimistic
 - energetic
-- friendly
-- clean
-- confident
+- touch-first
+- readable
 - slightly playful
-- never kitschy
-- never cluttered
-- never overly clinical
+- structured, not clinical
 
-The shorthand for the visual direction is:
+The practical shorthand is:
 
-**50s retro / modern**
+**space-age fitness utility**
 
-A more precise interpretation is:
-
-**optimistic mid-century energy + disciplined modern mobile UX**
+That means bright light surfaces, rounded geometry, expressive accents, and mobile-first interaction patterns without novelty styling.
 
 ---
 
-## Core Design Principles
+## Current Design Tokens
 
-### 1. Fast before flashy
-The UI should always feel quick, direct, and easy to use.
+These values should be treated as the source of truth because they match the live PWA tokens.
 
-### 2. Personality without gimmicks
-The app should have charm, but not become a themed novelty product.
+### Backgrounds
 
-### 3. Rounded, warm, approachable
-Hard edges and sterile layouts should be avoided where possible.
+- `--bg`: `#E6F3FD`
+- `--bg2`: `#FFFFFF`
+- `--bg3`: `#CCE6F8`
 
-### 4. Readability wins
-Numbers, inputs, and progress indicators must always be easy to scan.
+### Text
 
-### 5. Touch-first
-All primary interactions should feel comfortable on mobile, including one-hand use.
+- `--text`: `#0F1F55`
+- `--text-muted`: `#5878A0`
 
-### 6. Encouraging, not aggressive
-The brand should feel supportive and upbeat, not punishing or militaristic.
+### Accents
 
----
+- `--accent`: `#FF5530`
+- `--accent2`: `#00BCDE`
+- `--accent3`: `#FF38A0`
+- `--yellow`: `#FFD000`
+- `--success`: `#22C47E`
+- `--danger`: `#FF2E50`
 
-## Visual North Star
+### Borders and Effects
 
-The design should feel like:
-
-- a friendly high-performance fitness tool
-- a modern app with warmth
-- slightly retro in palette and shape language
-- clean enough to scale across many screens
-
-The design should not feel like:
-
-- a 1950s diner
-- a novelty atomic-age poster
-- a bodybuilding spreadsheet
-- a generic SaaS dashboard
-- a dark, hyper-aggressive fitness app
-
----
-
-## Color Palette
-
-### Core Backgrounds
-
-- **Cream / App Background:** `#F7F3EC`
-- **White / Primary Card Surface:** `#FFFFFF`
-- **Warm Surface Tint:** `#F9F6F0`
-- **Muted Neutral Surface:** `#F0ECE4`
-
-### Text Colors
-
-- **Primary Text / Charcoal:** `#1F2A2E`
-- **Secondary Text / Muted Gray:** `#5C6B70`
-
-### Accent Colors
-
-- **Primary Accent / Teal:** `#2FA4A9`
-- **Highlight / Coral:** `#F25F5C`
-- **Secondary Highlight / Mustard:** `#F2C14E`
-
-### Utility Colors
-
-- **Soft Yellow Prompt Background:** `#FFF4D6`
-- **Light Border:** `#E7E0D6`
-
----
-
-## Color Usage Rules
-
-### Teal
-Use teal for:
-- primary non-destructive actions
-- active highlights
-- positive UI emphasis
-- selected or currently active states
-
-Do not overuse teal on every element.
-
-### Coral
-Use coral for:
-- completion states
-- strong emphasis
-- key call-to-action buttons
-- celebratory or “done” feedback
-
-Coral should feel energetic, not alarming.
-
-### Mustard
-Use mustard for:
-- secondary highlights
-- subtle emphasis
-- supportive accent moments
-
-Do not use mustard as the main action color.
-
-### Cream
-Cream should be the dominant background across the app. It gives the app warmth and prevents the design from feeling too sterile.
+- `--border`: `#A8D4F0`
+- `--focus-ring`: `0 0 0 3px rgba(0, 188, 222, 0.22)`
+- `--shadow-xs`: `0 1px 6px rgba(15, 31, 85, 0.05)`
+- `--shadow-sm`: `0 2px 10px rgba(15, 31, 85, 0.07)`
+- `--shadow`: `0 4px 24px rgba(15, 31, 85, 0.10)`
+- `--shadow-lg`: `0 12px 30px rgba(15, 31, 85, 0.14)`
 
 ---
 
 ## Typography
 
-### Heading Font
-Recommended:
-- **Poppins**
+### Font Stack
 
-Use for:
-- screen titles
-- card titles
-- section headings
-- high-level emphasis
+- Heading / action font: `Exo 2`
+- Body / utility font: `Nunito`
 
-### Body Font
-Recommended:
-- **Inter**
+### Usage
 
-Use for:
-- body text
-- helper text
-- form labels
-- inputs
-- buttons
-- tab labels
+- `Exo 2` is used for headings, nav labels, buttons, chips, and branded UI emphasis.
+- `Nunito` is used for body copy, forms, descriptive text, and most app content.
 
-### Typography Philosophy
-Use personality in headings and clarity in functional UI.
+### Typography Rules
+
+- Prioritize clarity over decorative type treatment.
+- Headings should feel confident and slightly stylized.
+- Body copy should stay soft and readable.
+- Numeric readouts should be visually prominent and easy to scan.
 
 ---
 
-## Type Scale Recommendations
+## Spacing and Radius
 
-### Headings
-- Screen title: `28–32px`
-- Card title: `16–20px`
-- Section heading: `14–18px`
+Johnny5k uses a 4px-derived spacing scale.
 
-### Body
-- Standard body: `14–16px`
-- Supporting copy: `12–14px`
+### Common Spacing Tokens
 
-### Numbers
-- Weight, reps, calories, macros, timers should be slightly larger and visually prominent
-- Use **tabular numbers** if possible for consistency
+- `--space-1`: `4px`
+- `--space-2`: `8px`
+- `--space-3`: `12px`
+- `--space-4`: `16px`
+- `--space-5`: `20px`
+- `--space-6`: `24px`
+- `--space-7`: `32px`
+- `--space-8`: `40px`
 
----
+### Radius Tokens
 
-## Shape Language
+- `--radius-sm`: `12px`
+- `--radius-md`: `16px`
+- `--radius`: `18px`
+- `--radius-lg`: `24px`
+- `--radius-xl`: `28px`
 
-Johnny5k should use **rounded geometry** heavily.
+### Shape Rules
 
-### Recommended Border Radius
-- Large cards: `16–24px`
-- Buttons: pill or `999px`
-- Inputs: `10–14px`
-- Chips / tags: pill-shaped
-
-### Shape Intent
-Rounded shapes reinforce:
-- friendliness
-- optimism
-- retro-modern identity
-- touch comfort
-
-Avoid overly sharp corners throughout the interface.
+- Cards should feel rounded and soft.
+- Primary buttons should be pill-shaped.
+- Chips should stay pill-shaped.
+- Inputs should avoid sharp corners.
 
 ---
 
-## Shadows and Depth
+## Core Surface Patterns
 
-Depth should be subtle and soft.
+### Light Utility Cards
 
-### Recommended Card Shadow
-```css
-box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
-```
+Use:
 
-### Recommended Footer Shadow
-```css
-box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.05);
-```
-
-### Principles
-- Use shadows to separate surfaces
-- Avoid heavy elevation stacks
-- Avoid glossy or faux-3D styling
-
----
-
-## Spacing System
-
-Use a **4px base unit**.
-
-### Common Spacing Values
-- `4px`
-- `8px`
-- `12px`
-- `16px`
-- `20px`
-- `24px`
-- `32px`
-
-### Typical Usage
-- Card padding: `16px`
-- Space between cards: `12–16px`
-- Space between internal content groups: `8–12px`
-- Footer/action spacing: `8–12px`
-
-Spacing should feel open, not cramped.
-
----
-
-## Component Style Rules
-
-## Cards
-
-Cards are one of the main design signatures of the app.
-
-### Card Treatment
-- white or lightly tinted background
+- white or lightly tinted surfaces
+- soft blue borders
+- low-contrast shadows
 - rounded corners
-- soft shadow
-- clean internal spacing
-- no heavy outlines unless needed for clarity
 
-### Card Types
-- dashboard cards
-- exercise cards
-- meal cards
-- progress summary cards
-- AI response cards
+These are used for standard content areas like meals, settings sections, library lists, and planning cards.
+
+### Dark Coach Cards
+
+Use:
+
+- deep blue gradients
+- light text
+- teal-highlighted borders
+- stronger emphasis for coaching content
+
+These are used for:
+
+- coaching summary surfaces
+- Beverage Board
+- Today coaching utilities
+
+### Accent Gradients
+
+Gradients are allowed, but only with discipline.
+
+Use them for:
+
+- primary call-to-action buttons
+- hero cards
+- coaching or emphasis panels
+
+Do not use them everywhere.
+
+---
+
+## Chips
+
+### Base Chip Pattern
+
+Chips are compact, uppercase, rounded labels used for:
+
+- card labels
+- state markers
+- context metadata
+- AI or nutrition callouts
+
+### Nutrition Screen Overrides
+
+Nutrition now overrides some shared chip colors for readability.
+
+- AI chips on Nutrition use a lighter cyan-tinted treatment with very light text.
+- Standard Nutrition chips use white backgrounds with dark text for contrast.
+- Subtle chips on dark coaching cards stay translucent with light text.
+
+If adding new chips inside dark Nutrition surfaces, test contrast first instead of inheriting shared dashboard chip colors blindly.
 
 ---
 
 ## Buttons
 
 ### Primary Buttons
-- teal or coral depending on context
+
+- gradient background from orange to pink
 - white text
-- pill-shaped or heavily rounded
-- bold label text
+- pill shape
+- bold `Exo 2` label
+
+Use for:
+
+- primary save or confirm actions
+- key next-step CTAs
 
 ### Secondary Buttons
-- muted neutral background
-- charcoal text
-- rounded pill shape
 
-### Micro-action Buttons
-Examples:
-- `+5`
-- `-5`
-- `+2.5`
+- white or lightly tinted surface
+- dark text
+- blue border
+- pill shape
 
-These should:
-- be small but easy to tap
-- use subtle neutral backgrounds
-- remain visually distinct from primary CTAs
+Use for:
+
+- alternate actions
+- support actions
+- navigation helpers
+
+### Outline Buttons
+
+Use for secondary emphasis inside coaching surfaces.
+
+On dark coaching cards, outline buttons must be overridden to:
+
+- light text
+- brighter border
+- slightly translucent background
+
+This is currently required for the `Ask Johnny` CTA inside dark coaching panels.
 
 ---
 
 ## Inputs
 
 Inputs should feel:
-- clean
-- large
+
 - touch-friendly
+- wide
+- clean
 - easy to scan quickly
 
-### Input Styling
-- rounded corners
-- white background
-- light border
-- centered numeric text when appropriate
+Rules:
 
-### Workout Logging Inputs
-Weight and rep inputs should be:
-- larger than normal form inputs
-- easy to tap one-handed
-- optimized for fast repeated entry
+- use white backgrounds by default
+- use light blue borders
+- maintain generous vertical padding
+- keep labels concise and readable
 
 ---
 
-## Pills / Tags / Chips
+## Mobile Navigation
 
-Use pill-shaped labels for:
-- muscle groups
-- reason tags
-- small status labels
-- smart prompts
+The mobile menu is a **sheet-style dialog**, not a tiny dropdown.
 
-### Typical Styling
-- muted neutral background
-- charcoal or muted text
-- compact padding
-- very rounded corners
+### Current Behavior
 
----
+- fixed-position menu sheet
+- internal scrolling on the full sheet
+- backdrop behind the menu
+- close button in the menu header
+- primary nav links first
+- global actions like `Ask Johnny` and `Sign out` at the bottom
 
-## Prompts and Suggestions
+### Important Rule
 
-Smart suggestions should be visually supportive and non-intrusive.
-
-### Prompt Styling
-- soft yellow background
-- rounded pill or rounded card
-- short copy
-- subtle icon optional
-
-### Examples
-- “Try 80 lbs next set”
-- “Want to shorten and finish strong?”
-- “You may be fatiguing—drop 5 lbs?”
-
-Prompts should help the user, not interrupt them.
+The whole mobile menu sheet must scroll, not just the link grid. This prevents lower actions from becoming unreachable on smaller phones.
 
 ---
 
-## Motion and Interaction
+## Nutrition Screen Rules
 
-Motion should feel:
-- quick
-- soft
-- encouraging
-- responsive
-
-### Good Motion Uses
-- set completion feedback
-- row insertion
-- subtle button bounce
-- state changes
-- bottom sheet motion
-
-### Avoid
-- flashy transitions
-- long animations
-- constant movement
-- over-animated gradients
-
----
-
-## Icons
-
-Recommended style:
-- simple
-- rounded
-- readable
-- medium stroke weight
-
-Potential icon systems:
-- Phosphor
-- Lucide
-
-Avoid:
-- ultra-thin icons
-- overly futuristic icon sets
-- ornamental retro icons inside core workflow screens
-
----
-
-## Brand Voice in UI Copy
-
-The interface text should feel:
-- supportive
-- concise
-- calm
-- slightly upbeat
-
-### Good examples
-- “Nice—let’s keep it going.”
-- “Try 80 lbs next set.”
-- “Strong session.”
-- “You’re ready for push day.”
-
-### Avoid
-- overly technical jargon
-- shame-based phrasing
-- drill-sergeant language
-- robotic health language
-
----
-
-## Workout Screen Visual Rules
-
-The Active Workout Screen is the most important visual benchmark for the app.
+Nutrition is now one of the strongest references for the live design language.
 
 It should feel:
-- warm and clean
-- focused
-- efficient
-- lightly playful
-- easy to scan while moving
 
-### Key visual ingredients
-- cream background
-- white exercise cards
-- teal accent strip or active state
-- coral completion state
-- rounded set rows
-- sticky footer with large buttons
+- practical
+- bright
+- organized
+- supportive
+- easy to use quickly on mobile
+
+### Today View
+
+The Today view currently includes:
+
+- a bright hero card
+- macro summary cards
+- a micronutrient accordion
+- a Beverage Board accordion
+- a Coaching Read accordion
+- weekly calorie summary
+- prompt-based `Ask Johnny` coaching card
+
+### Accordion Pattern
+
+Use controlled accordions for dense secondary content.
+
+Current Nutrition accordion usage includes:
+
+- micronutrient detail
+- Beverage Board
+- Coaching Read
+- planning filters and recipe sections
+
+Accordion triggers should:
+
+- summarize the content clearly
+- show compact metadata in the kicker row
+- use clear `+` / `−` state treatment
+- remain easy to tap on mobile
+
+### Beverage Board
+
+The Beverage Board is a dark coaching-style module with:
+
+- drink search and logging
+- water tracking
+- 7-day beverage review
+
+Rules:
+
+- keep water interactions visually immediate
+- keep drink logging quick and suggestion-driven
+- preserve strong contrast inside the dark surface
+
+### Nutrition Contrast Rules
+
+The Nutrition page now has local contrast overrides that should be preserved:
+
+- AI chips use high-contrast light text
+- standard Nutrition chips use white backgrounds
+- coaching outline buttons use light text on dark surfaces
+
+Any new Nutrition feature should be checked against those overrides before shipping.
 
 ---
 
-## Dashboard Visual Rules
+## Coaching Panels
 
-The dashboard should feel:
-- uplifting
-- organized
-- digestible
+Coaching panels should feel high-value, not noisy.
 
 Use:
-- stacked cards
-- clear status modules
-- visual breathing room
-- light celebratory emphasis for streaks and awards
+
+- dark blue gradient surfaces
+- clear hierarchy
+- strong section labels
+- readable action buttons
+- concise summaries first, detail below
+
+Avoid:
+
+- weak contrast
+- low-emphasis CTAs
+- overly dense text blocks without grouping
 
 ---
 
-## Nutrition Screen Visual Rules
+## Dashboard and Shared Patterns
 
-Nutrition should feel:
-- easy
-- practical
-- not overly clinical
+The dashboard still defines many shared primitives:
 
-Meal cards and saved meals should feel friendly and reusable, not like spreadsheet entries.
+- chip base styles
+- card spacing rhythm
+- status modules
+- celebratory accents
+
+When a screen needs higher contrast than the shared default, prefer **local screen-level overrides** over changing the whole app without reason.
 
 ---
 
-## Progress Screen Visual Rules
+## Motion
 
-Progress should feel:
-- positive
-- calm
-- motivating
+Motion should remain:
 
-Charts and comparisons should support progress awareness without feeling harsh or judgmental.
+- quick
+- soft
+- informative
+
+Use motion for:
+
+- accordion open/close state shifts
+- menu sheet entrance
+- toast feedback
+- lightweight view transitions
+
+Avoid:
+
+- long ornamental transitions
+- constant animated decoration
+- effects that block touch speed
+
+---
+
+## Accessibility Rules
+
+- Contrast wins over palette purity.
+- Primary interactions must remain reachable on smaller phones.
+- Mobile menus and modal sheets must scroll correctly.
+- Chips and coaching CTAs on dark surfaces must be tested visually, not assumed.
+- Touch targets should generally stay at or above compact button height tokens.
 
 ---
 
 ## Do Not Do These Things
 
-- do not use heavy textures
-- do not use chrome, diner styling, or fake vintage materials
-- do not rely on dark aggressive palettes
-- do not overuse gradients
-- do not make buttons tiny
-- do not make the UI feel like enterprise software
-- do not make the app visually noisy
-- do not let the retro concept reduce usability
+- do not revert to generic SaaS neutrals
+- do not make dark coaching surfaces low-contrast
+- do not hide lower mobile menu actions below a non-scrolling sheet
+- do not add new accent colors without checking token alignment
+- do not let retro flavor override utility
+- do not introduce tiny action targets
 
 ---
 
-## Design Summary
+## Current Shorthand
 
-Johnny5k should look like a **friendly retro-futurist fitness app built with modern mobile standards**.
+Johnny5k should look and feel like:
 
-The best shorthand is:
+**optimistic retro-future fitness software with disciplined mobile UX**
 
-**rounded, warm, optimistic, fast**
+The three most important practical rules are:
 
-And the best practical reference phrase is:
-
-**mid-century optimism with modern product discipline**
+- keep it readable
+- keep it touch-first
+- keep the personality controlled

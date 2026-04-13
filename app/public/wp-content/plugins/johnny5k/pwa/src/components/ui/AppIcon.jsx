@@ -129,6 +129,13 @@ export default function AppIcon({ name, className = '' }) {
           <path d="M13 3 6 13h5l-1 8 8-11h-5l0-7Z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       )
+    case 'water':
+      return (
+        <svg viewBox="0 0 24 24" className={classes} aria-hidden="true">
+          <path d="M12 3.8c-2.2 3-5.2 6.2-5.2 9.6A5.2 5.2 0 0 0 12 18.6a5.2 5.2 0 0 0 5.2-5.2c0-3.4-3-6.6-5.2-9.6Z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M9.4 13.2c.2 1.4 1.2 2.3 2.6 2.6" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+        </svg>
+      )
     case 'question':
       return (
         <svg viewBox="0 0 24 24" className={classes} aria-hidden="true">

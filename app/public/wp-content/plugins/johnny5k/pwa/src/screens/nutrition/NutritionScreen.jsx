@@ -218,6 +218,10 @@ export default function NutritionScreen() {
   const [selectedRecipeKeys, setSelectedRecipeKeys] = useState([])
   const [weeklyCaloriesReview, setWeeklyCaloriesReview] = useState(() => buildEmptyWeeklyCaloriesReview())
   const [beverageBoard, setBeverageBoard] = useState(() => buildEmptyBeverageBoard(today))
+  const [todayAccordions, setTodayAccordions] = useState(() => ({
+    beverageBoard: true,
+    coachingRead: true,
+  }))
   const mealInputRef = useRef()
   const labelFrontInputRef = useRef()
   const labelBackInputRef = useRef()
@@ -237,10 +241,16 @@ export default function NutritionScreen() {
   const recipesSectionRef = useRef(null)
   const pantrySectionRef = useRef(null)
   const groceryGapSectionRef = useRef(null)
+  const beverageBoardSectionRef = useRef(null)
+  const beverageBoardRef = useRef(buildEmptyBeverageBoard(today))
   const invalidate = useDashboardStore(state => state.invalidate)
   const dashboardSnapshot = useDashboardStore(state => state.snapshot)
   const loadDashboardSnapshot = useDashboardStore(state => state.loadSnapshot)
   const openDrawer = useJohnnyAssistantStore(state => state.openDrawer)
+
+  useEffect(() => {
+    beverageBoardRef.current = beverageBoard
+  }, [beverageBoard])
 
   function handleOpenNutritionSupport() {
     const supportConfigByView = {
@@ -411,7 +421,7 @@ export default function NutritionScreen() {
         nutritionApi.getRecipes(),
         nutritionApi.getGroceryGap(),
         nutritionApi.getRecipeCookbook(),
-        nutritionApi.getBeverageBoard(today).catch(() => buildEmptyBeverageBoard(today)),
+        nutritionApi.getBeverageBoard(today).catch(() => beverageBoardRef.current || buildEmptyBeverageBoard(today)),
       ])
       setMeals(mealRows)
       setSummary(summaryRow)
@@ -424,7 +434,7 @@ export default function NutritionScreen() {
       setCookbookRecipes(nextCookbookRecipes)
       setSelectedRecipeKeys(nextCookbookRecipes.map(recipe => getRecipeKey(recipe)))
       setGroceryGap(groceryGapRow)
-      setBeverageBoard(beverageBoardRow || buildEmptyBeverageBoard(today))
+      setBeverageBoard(current => normaliseBeverageBoardPayload(beverageBoardRow, current || buildEmptyBeverageBoard(today), today))
       FOOD_SEARCH_CACHE.clear()
       await loadWeeklyCaloriesReview(today)
     } catch (err) {
@@ -1157,6 +1167,18 @@ export default function NutritionScreen() {
     navigate('/nutrition/pantry')
   }
 
+  function openBeverageBoard() {
+    setActiveView('today')
+    setShowLabelScanPrompt(false)
+    setShowMealPhotoPrompt(false)
+    setTodayAccordions(current => ({ ...current, beverageBoard: true }))
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        scrollNodeIntoView(beverageBoardSectionRef.current)
+      })
+    })
+  }
+
   function closePantryPage() {
     navigate('/nutrition', { state: { focusSection: 'pantry' } })
   }
@@ -1220,6 +1242,8 @@ export default function NutritionScreen() {
     allGapItemsChecked,
     analyzing,
     beverageBoard,
+    beverageBoardSectionAnchor: beverageBoardSectionRef,
+    setBeverageBoard,
     caloriesRemaining,
     changeActiveView,
     checkedGapItemSet,
@@ -1310,6 +1334,7 @@ export default function NutritionScreen() {
     mealsSectionAnchor: mealsSectionRef,
     mergedMeals,
     openDrawer,
+    openBeverageBoard,
     openSavedFoodsLabelScanPrompt: () => openLabelScanPrompt('saved-foods'),
     openPantrySupport: handleOpenPantrySupport,
     openPantryPage,
@@ -1350,7 +1375,6 @@ export default function NutritionScreen() {
     secondaryMacroCards,
     selectedRecipeKeys,
     setAiMealDraft,
-    setBeverageBoard,
     setCollapsedPantryCategories,
     setLabelScanNote,
     setPantryCategoryFilter,
@@ -1385,7 +1409,14 @@ export default function NutritionScreen() {
     showSavedMealForm,
     showToast,
     summary,
+    todayAccordions,
     today,
+    toggleTodayAccordion: key => {
+      setTodayAccordions(current => ({ ...current, [key]: !current[key] }))
+    },
+    setTodayAccordionOpen: (key, open) => {
+      setTodayAccordions(current => ({ ...current, [key]: Boolean(open) }))
+    },
     weeklyCaloriesReview,
     syncingGapToPantry,
     handleSavedFoodsLabelScanCancel: () => {
@@ -1452,6 +1483,10 @@ export default function NutritionScreen() {
           }} type="button">
             <AppIcon name="label" />
             <span>Scan label</span>
+          </button>
+          <button className="btn-secondary header-action-button" title="Jump to Beverage Board" onClick={openBeverageBoard} type="button">
+            <AppIcon name="water" />
+            <span>Beverage Board</span>
           </button>
         </div>
       </header>
@@ -2826,7 +2861,7 @@ function PlanningAccordionCard({ innerRef = null, open, onToggle, chip, title, d
   )
 }
 
-function BeverageBoard({ screen }) {
+function BeverageBoard({ screen, showHeader = true, showShell = true }) {
   const [query, setQuery] = useState('')
   const [selectedDrink, setSelectedDrink] = useState(null)
   const [suggestions, setSuggestions] = useState([])
@@ -2922,24 +2957,42 @@ function BeverageBoard({ screen }) {
   }
 
   async function handleWaterTap(index) {
+    const previousBoard = screen.beverageBoard || fallbackBoard
     const nextCount = water.glasses === index + 1 ? index : index + 1
+    screen.setBeverageBoard(current => {
+      const baseBoard = current || fallbackBoard
+
+      return {
+        ...baseBoard,
+        water: {
+          ...baseBoard.water,
+          glasses: nextCount,
+        },
+      }
+    })
+
     await screen.runAction(
       () => nutritionApi.setWaterIntake(screen.today, nextCount),
       nextCount ? `Water set to ${nextCount}/${water.target_glasses} glasses.` : 'Water cleared for today.',
       {
         onSuccess: result => {
-          screen.setBeverageBoard(result || buildEmptyBeverageBoard(screen.today))
+          screen.setBeverageBoard(current => normaliseBeverageBoardPayload(result, current || previousBoard, screen.today))
+        },
+        onError: () => {
+          screen.setBeverageBoard(previousBoard)
         },
       },
     )
   }
 
-  return (
-    <div className="nutrition-coach-card beverage-board-card">
-      <div className="dashboard-card-head">
-        <span className="dashboard-chip nutrition">Beverage Board</span>
-        <span className="dashboard-chip subtle">Track the hidden calories</span>
-      </div>
+  const content = (
+    <>
+      {showHeader ? (
+        <div className="dashboard-card-head">
+          <span className="dashboard-chip nutrition">Beverage Board</span>
+          <span className="dashboard-chip subtle">Track the hidden calories</span>
+        </div>
+      ) : null}
       <div className="beverage-board-grid">
         <div className="beverage-board-panel beverage-board-panel-search">
           <h3>Log drinks fast</h3>
@@ -3022,7 +3075,7 @@ function BeverageBoard({ screen }) {
                   aria-pressed={filled}
                   aria-label={`Water glass ${index + 1}`}
                 >
-                  <span aria-hidden="true">{filled ? '■' : '□'}</span>
+                  <AppIcon name="water" className="beverage-water-glass-icon" />
                 </button>
               )
             })}
@@ -3048,6 +3101,16 @@ function BeverageBoard({ screen }) {
           <span className="onboarding-chip">Days with drinks: {metrics.logged_days || 0}/7</span>
         </div>
       </div>
+    </>
+  )
+
+  if (!showShell) {
+    return content
+  }
+
+  return (
+    <div className="nutrition-coach-card beverage-board-card">
+      {content}
     </div>
   )
 }
@@ -5157,6 +5220,39 @@ function buildEmptyBeverageBoard(date = '') {
         water_logged_days: 0,
       },
     },
+  }
+}
+
+function normaliseBeverageBoardPayload(payload, fallback, date = '') {
+  const baseBoard = fallback || buildEmptyBeverageBoard(date)
+
+  if (!payload || typeof payload !== 'object') {
+    return baseBoard
+  }
+
+  const nextWater = payload.water && typeof payload.water === 'object'
+    ? {
+        ...baseBoard.water,
+        ...payload.water,
+      }
+    : baseBoard.water
+  const nextReview = payload.review && typeof payload.review === 'object'
+    ? {
+        ...baseBoard.review,
+        ...payload.review,
+        metrics: {
+          ...(baseBoard.review?.metrics || {}),
+          ...(payload.review?.metrics && typeof payload.review.metrics === 'object' ? payload.review.metrics : {}),
+        },
+      }
+    : baseBoard.review
+
+  return {
+    ...baseBoard,
+    ...payload,
+    date: payload.date || baseBoard.date || date,
+    water: nextWater,
+    review: nextReview,
   }
 }
 

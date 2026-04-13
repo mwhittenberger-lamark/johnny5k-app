@@ -10,6 +10,7 @@ class FakeWpdb {
 	public string $prefix = 'wp_';
 	public string $usermeta = 'wp_usermeta';
 	public int $insert_id = 0;
+	public string $last_error = '';
 
 	/** @var array<string,list<array{needle:string,response:mixed}>> */
 	private array $handlers = [
@@ -29,6 +30,10 @@ class FakeWpdb {
 	public array $deleted = [];
 	/** @var list<string> */
 	public array $queries = [];
+	/** @var list<int|false> */
+	private array $insertResults = [];
+	/** @var list<int|false> */
+	private array $updateResults = [];
 
 	public function expectGetVar( string $needle, mixed $response ): void {
 		$this->handlers['get_var'][] = [ 'needle' => $needle, 'response' => $response ];
@@ -44,6 +49,20 @@ class FakeWpdb {
 
 	public function expectGetCol( string $needle, mixed $response ): void {
 		$this->handlers['get_col'][] = [ 'needle' => $needle, 'response' => $response ];
+	}
+
+	public function queueInsertResult( int|false $result, string $error = '' ): void {
+		$this->insertResults[] = $result;
+		if ( false === $result ) {
+			$this->last_error = $error;
+		}
+	}
+
+	public function queueUpdateResult( int|false $result, string $error = '' ): void {
+		$this->updateResults[] = $result;
+		if ( false === $result ) {
+			$this->last_error = $error;
+		}
 	}
 
 	public function prepare( string $query, mixed ...$args ): string {
@@ -109,14 +128,19 @@ class FakeWpdb {
 		return is_array( $result ) ? array_values( $result ) : [];
 	}
 
-	public function insert( string $table, array $data ): int {
+	public function insert( string $table, array $data ): int|false {
 		$this->insert_id++;
 		$this->inserted[] = [
 			'table' => $table,
 			'data' => $data,
 		];
 
-		return 1;
+		$result = [] !== $this->insertResults ? array_shift( $this->insertResults ) : 1;
+		if ( false !== $result ) {
+			$this->last_error = '';
+		}
+
+		return $result;
 	}
 
 	public function replace( string $table, array $data ): int {
@@ -128,14 +152,19 @@ class FakeWpdb {
 		return 1;
 	}
 
-	public function update( string $table, array $data, array $where, mixed ...$ignored ): int {
+	public function update( string $table, array $data, array $where, mixed ...$ignored ): int|false {
 		$this->updated[] = [
 			'table' => $table,
 			'data' => $data,
 			'where' => $where,
 		];
 
-		return 1;
+		$result = [] !== $this->updateResults ? array_shift( $this->updateResults ) : 1;
+		if ( false !== $result ) {
+			$this->last_error = '';
+		}
+
+		return $result;
 	}
 
 	public function delete( string $table, array $where, mixed ...$ignored ): int {

@@ -140,4 +140,23 @@ class NutritionApiIntegrationTest extends ApiIntegrationTestCase {
 		$this->assertSame( 4, $db->inserted[0]['data']['glasses'] );
 		$this->assertSame( 4, $data['water']['glasses'] );
 	}
+
+	public function test_save_water_intake_returns_error_when_hydration_write_fails(): void {
+		$db = $this->wpdb();
+		$GLOBALS['johnny5k_test_current_user_id'] = 7;
+
+		$db->expectGetVar( "FROM wp_fit_hydration_logs WHERE user_id = 7 AND log_date = '2026-04-12'", 0 );
+		$db->queueInsertResult( false, 'Table \'wp_fit_hydration_logs\' doesn\'t exist' );
+
+		$req = new \WP_REST_Request( 'POST', '/fit/v1/nutrition/water' );
+		$req->set_param( 'date', '2026-04-12' );
+		$req->set_param( 'glasses', 4 );
+
+		$response = TestAiMealController::save_water_intake( $req );
+		$data = $response->get_data();
+
+		$this->assertSame( 500, $response->get_status() );
+		$this->assertSame( 'hydration_save_failed', $data['code'] );
+		$this->assertSame( 'Could not save water intake right now.', $data['message'] );
+	}
 }

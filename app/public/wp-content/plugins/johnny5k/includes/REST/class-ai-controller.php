@@ -285,14 +285,26 @@ abstract class AbstractNutritionController extends RestController {
 		];
 
 		if ( $existing_id > 0 ) {
-			$wpdb->update( $p . 'fit_hydration_logs', $data, [ 'id' => $existing_id ] );
+			$updated = $wpdb->update( $p . 'fit_hydration_logs', $data, [ 'id' => $existing_id ] );
+			if ( false === $updated ) {
+				return new \WP_REST_Response( [
+					'code' => 'hydration_save_failed',
+					'message' => 'Could not save water intake right now.',
+				], 500 );
+			}
 		} else {
-			$wpdb->insert( $p . 'fit_hydration_logs', [
+			$inserted = $wpdb->insert( $p . 'fit_hydration_logs', [
 				'user_id' => $user_id,
 				'log_date' => $date,
 				'glasses' => $glasses,
 				'target_glasses' => self::DEFAULT_WATER_GLASSES_TARGET,
 			] );
+			if ( false === $inserted ) {
+				return new \WP_REST_Response( [
+					'code' => 'hydration_save_failed',
+					'message' => 'Could not save water intake right now.',
+				], 500 );
+			}
 		}
 
 		BehaviorAnalyticsService::track(

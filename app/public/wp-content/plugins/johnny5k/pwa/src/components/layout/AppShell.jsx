@@ -116,7 +116,7 @@ export default function AppShell({ children }) {
       window.removeEventListener('offline', syncNetworkState)
       window.removeEventListener('focus', syncNetworkState)
     }
-  }, [])
+  }, [setPreferenceMeta])
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -159,7 +159,7 @@ export default function AppShell({ children }) {
       window.removeEventListener('appinstalled', handleAppInstalled)
       window.removeEventListener('johnny5k:pwa-update-ready', handlePwaUpdateReady)
     }
-  }, [])
+  }, [setPreferenceMeta])
 
   useEffect(() => subscribeOfflineWriteQueue((snapshot) => {
     setPendingOfflineWrites(snapshot.count || 0)
@@ -474,7 +474,7 @@ export default function AppShell({ children }) {
     <div className="app-shell">
       <header className="app-shell-header">
         {showPushPromptNotice ? (
-          <button type="button" className="app-shell-push-notice" onClick={handlePushPromptNoticeClick}>
+          <div className="app-shell-push-notice">
             <span className="app-shell-push-notice-copy">
               <strong>Enable push notifications</strong>
               <span>Breakfast, lunch, and dinner reminders are waiting for approval on this device.</span>
@@ -483,9 +483,11 @@ export default function AppShell({ children }) {
               <button type="button" className="app-shell-push-notice-dismiss" onClick={handleSnoozePushPrompt}>
                 Hide {PUSH_PROMPT_SNOOZE_DAYS} days
               </button>
-              <span className="app-shell-push-notice-action">Open Profile</span>
+              <button type="button" className="app-shell-push-notice-action app-shell-push-notice-action-button" onClick={handlePushPromptNoticeClick}>
+                Open Profile
+              </button>
             </span>
-          </button>
+          </div>
         ) : null}
         {showInstallNotice ? (
           <div className="app-shell-install-notice">

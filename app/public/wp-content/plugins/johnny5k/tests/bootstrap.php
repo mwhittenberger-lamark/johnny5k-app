@@ -10,7 +10,7 @@ if ( ! defined( 'JF_VERSION' ) ) {
 }
 
 if ( ! defined( 'JF_DB_VERSION' ) ) {
-	define( 'JF_DB_VERSION', '1.1.11' );
+	define( 'JF_DB_VERSION', '1.1.12' );
 }
 
 if ( ! defined( 'JF_PLUGIN_FILE' ) ) {
