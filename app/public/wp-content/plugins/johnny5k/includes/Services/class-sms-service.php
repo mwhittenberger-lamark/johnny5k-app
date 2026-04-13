@@ -3,6 +3,8 @@ namespace Johnny5k\Services;
 
 defined( 'ABSPATH' ) || exit;
 
+use Johnny5k\Bootstrap\CronBootstrap;
+
 /**
  * ClickSend SMS Service
  *
@@ -151,6 +153,10 @@ class SmsService {
 					return $canceled;
 				}
 			} else {
+				if ( function_exists( 'as_unschedule_all_actions' ) ) {
+					as_unschedule_all_actions( 'jf_send_scheduled_sms_reminder', [ $user_id, $reminder_id ], CronBootstrap::action_scheduler_group() );
+				}
+
 				$next_event = wp_next_scheduled( 'jf_send_scheduled_sms_reminder', [ $user_id, $reminder_id ] );
 				if ( $next_event ) {
 					wp_unschedule_event( $next_event, 'jf_send_scheduled_sms_reminder', [ $user_id, $reminder_id ] );

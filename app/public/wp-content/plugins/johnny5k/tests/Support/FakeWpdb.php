@@ -8,6 +8,7 @@ use RuntimeException;
 
 class FakeWpdb {
 	public string $prefix = 'wp_';
+	public string $usermeta = 'wp_usermeta';
 	public int $insert_id = 0;
 
 	/** @var array<string,list<array{needle:string,response:mixed}>> */

@@ -10,6 +10,7 @@ import ClearableInput from '../../components/ui/ClearableInput'
 import ErrorState from '../../components/ui/ErrorState'
 import Field from '../../components/ui/Field'
 import SupportIconButton from '../../components/ui/SupportIconButton'
+import { getAccessibleScrollBehavior } from '../../lib/accessibility'
 import { reportClientDiagnostic } from '../../lib/clientDiagnostics'
 import { decodeVapidPublicKey, ensurePushRegistration, getCurrentPushSubscription, getNotificationPermission, getPushSupportState, requestNotificationPermission, serializeSubscription } from '../../lib/pushNotifications'
 import { useDashboardStore } from '../../store/dashboardStore'
@@ -43,6 +44,7 @@ const PROFILE_ACCORDION_DEFAULTS = {
   images: false,
   trainingApp: false,
 }
+const SCROLL_BEHAVIOR = getAccessibleScrollBehavior()
 
 export default function SettingsScreen() {
   const initialPushSupport = getPushSupportState()
@@ -386,7 +388,7 @@ export default function SettingsScreen() {
 
     frameOne = requestAnimationFrame(() => {
       frameTwo = requestAnimationFrame(() => {
-        pushPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        pushPanelRef.current?.scrollIntoView({ behavior: SCROLL_BEHAVIOR, block: 'start' })
         pushEnableButtonRef.current?.focus()
         navigate(location.pathname, {
           replace: true,

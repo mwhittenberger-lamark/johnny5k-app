@@ -292,8 +292,9 @@
   min-height: 28px;
   padding: var(--space-2-5) var(--space-2-5) var(--space-1-5);
   border-radius: 999px;
-  background: rgba(255, 85, 48, 0.12);
-  color: var(--accent);
+  border: 1px solid rgba(151, 47, 21, 0.16);
+  background: rgba(255, 85, 48, 0.16);
+  color: #972f15;
   font-size: 0.76rem;
   font-weight: 800;
   letter-spacing: 0.04em;
@@ -302,13 +303,14 @@
   line-height: 1.1;
   justify-content: center;
 }
-.dashboard-chip.ai { background: rgba(0, 188, 222, 0.14); color: var(--accent2); }
-.dashboard-chip.workout { background: rgba(255, 56, 160, 0.12); color: var(--accent3); }
-.dashboard-chip.awards { background: rgba(255, 208, 0, 0.2); color: #8d6700; }
-.dashboard-chip.success { background: rgba(34, 197, 94, 0.14); color: #18794e; }
+.dashboard-chip.ai { background: rgba(0, 188, 222, 0.18); border-color: rgba(0, 95, 114, 0.16); color: #005f72; }
+.dashboard-chip.workout { background: rgba(255, 56, 160, 0.16); border-color: rgba(143, 27, 88, 0.16); color: #8f1b58; }
+.dashboard-chip.awards { background: rgba(255, 208, 0, 0.24); border-color: rgba(112, 82, 0, 0.16); color: #705200; }
+.dashboard-chip.success { background: rgba(34, 197, 94, 0.18); border-color: rgba(22, 104, 69, 0.16); color: #166845; }
 .dashboard-chip.subtle {
-  background: rgba(15, 31, 85, 0.06);
-  color: var(--text-muted);
+  background: rgba(15, 31, 85, 0.09);
+  border-color: rgba(50, 74, 115, 0.12);
+  color: #324a73;
 }
 .dashboard-hero-top h2,
 .dashboard-coach-card h3,

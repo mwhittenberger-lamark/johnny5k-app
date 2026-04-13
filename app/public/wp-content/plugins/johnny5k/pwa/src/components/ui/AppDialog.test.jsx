@@ -34,6 +34,14 @@ async function pressKey(key, options = {}) {
   })
 }
 
+async function pressTab(options = {}) {
+  await pressKey('Tab', options)
+}
+
+function getButtonByText(label) {
+  return Array.from(document.querySelectorAll('button')).find(button => button.textContent === label)
+}
+
 describe('AppDialog', () => {
   beforeEach(() => {
     vi.useFakeTimers()
@@ -117,5 +125,25 @@ describe('AppDialog', () => {
     await click(document.querySelector('.ui-overlay-backdrop'))
 
     expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('traps Tab focus within the dialog', async () => {
+    await renderComponent(
+      <AppDialog open onClose={() => {}} title="Dialog title">
+        <button type="button">First action</button>
+        <button type="button">Second action</button>
+      </AppDialog>,
+    )
+    await flushFocusTimer()
+
+    expect(document.activeElement?.textContent).toBe('First action')
+
+    getButtonByText('Second action').focus()
+    await pressTab()
+    expect(document.activeElement?.textContent).toBe('First action')
+
+    getButtonByText('First action').focus()
+    await pressTab({ shiftKey: true })
+    expect(document.activeElement?.textContent).toBe('Second action')
   })
 })

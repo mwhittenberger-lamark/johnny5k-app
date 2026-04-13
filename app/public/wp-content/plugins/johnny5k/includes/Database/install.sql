@@ -365,6 +365,7 @@ CREATE TABLE IF NOT EXISTS `wp_fit_foods` (
   `sugar_g` decimal(6,2) DEFAULT NULL,
   `sodium_mg` decimal(8,2) DEFAULT NULL,
   `micros_json` longtext DEFAULT NULL,
+  `is_beverage` tinyint(1) NOT NULL DEFAULT 0,
   `source` enum('manual','label','ai_photo','recipe','system','usda_ai_text','usda_ai_photo') NOT NULL DEFAULT 'manual',
   `label_json` longtext DEFAULT NULL,
   `source_json` longtext DEFAULT NULL,
@@ -380,7 +381,7 @@ CREATE TABLE IF NOT EXISTS `wp_fit_saved_meals` (
   `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
   `user_id` bigint(20) unsigned NOT NULL,
   `name` varchar(150) NOT NULL DEFAULT '',
-  `meal_type` enum('breakfast','lunch','dinner','snack') NOT NULL DEFAULT 'lunch',
+  `meal_type` enum('breakfast','lunch','dinner','snack','beverage') NOT NULL DEFAULT 'lunch',
   `items_json` longtext DEFAULT NULL,
   `calories` int(11) NOT NULL DEFAULT 0,
   `protein_g` decimal(6,2) NOT NULL DEFAULT 0.00,
@@ -397,7 +398,7 @@ CREATE TABLE IF NOT EXISTS `wp_fit_meals` (
   `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
   `user_id` bigint(20) unsigned NOT NULL,
   `meal_datetime` datetime NOT NULL,
-  `meal_type` enum('breakfast','lunch','dinner','snack') NOT NULL DEFAULT 'lunch',
+  `meal_type` enum('breakfast','lunch','dinner','snack','beverage') NOT NULL DEFAULT 'lunch',
   `source` enum('manual','saved_meal','photo','label','recipe') NOT NULL DEFAULT 'manual',
   `ai_confidence` decimal(4,3) DEFAULT NULL,
   `confirmed` tinyint(1) NOT NULL DEFAULT 1,
@@ -423,11 +424,24 @@ CREATE TABLE IF NOT EXISTS `wp_fit_meal_items` (
   `sugar_g` decimal(6,2) DEFAULT NULL,
   `sodium_mg` decimal(8,2) DEFAULT NULL,
   `micros_json` longtext DEFAULT NULL,
+  `is_beverage` tinyint(1) NOT NULL DEFAULT 0,
   `source_json` longtext DEFAULT NULL,
   `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   KEY `meal_id` (`meal_id`),
   KEY `food_id` (`food_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `wp_fit_hydration_logs` (
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `user_id` bigint(20) unsigned NOT NULL,
+  `log_date` date NOT NULL,
+  `glasses` tinyint(3) unsigned NOT NULL DEFAULT 0,
+  `target_glasses` tinyint(3) unsigned NOT NULL DEFAULT 6,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `user_log_date` (`user_id`,`log_date`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `wp_fit_pantry_items` (

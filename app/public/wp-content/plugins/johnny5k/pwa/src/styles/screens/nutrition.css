@@ -602,6 +602,98 @@
   border-color: rgba(255, 255, 255, 0.12);
   background: rgba(255, 255, 255, 0.08);
 }
+.beverage-board-card {
+  background:
+    radial-gradient(circle at top right, rgba(255, 208, 0, 0.18), transparent 32%),
+    linear-gradient(140deg, rgba(8, 21, 51, 0.98), rgba(10, 47, 83, 0.94));
+}
+.beverage-board-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) minmax(240px, 1fr);
+  gap: var(--space-3);
+}
+.beverage-board-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+}
+.beverage-board-panel h3,
+.beverage-board-review h3 {
+  margin: 0;
+}
+.beverage-board-search {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-2);
+  align-items: center;
+}
+.beverage-board-suggestions {
+  min-height: auto;
+}
+.beverage-board-suggestion {
+  width: 100%;
+  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.08);
+}
+.beverage-board-suggestion strong,
+.beverage-board-suggestion p {
+  color: #fff;
+}
+.beverage-board-selection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-top: var(--space-1);
+}
+.beverage-board-selection-head {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+  align-items: flex-start;
+}
+.beverage-board-selection-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1-5);
+}
+.beverage-board-size-picks .onboarding-chip {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+.beverage-board-size-picks .onboarding-chip.active {
+  background: rgba(255, 208, 0, 0.18);
+  border-color: rgba(255, 208, 0, 0.42);
+}
+.beverage-board-water-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: var(--space-1-5);
+}
+.beverage-water-glass {
+  min-height: 48px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.7);
+  font: inherit;
+  cursor: pointer;
+}
+.beverage-water-glass.filled {
+  border-color: rgba(0, 188, 222, 0.5);
+  background: rgba(0, 188, 222, 0.18);
+  color: #fff;
+}
+.beverage-board-review {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-top: var(--space-1);
+}
 .nutrition-micro-card {
   position: relative;
   overflow: hidden;
@@ -1619,6 +1711,12 @@ label.field-label.nutrition-saved-food-field {
   .settings-identity-main {
     grid-template-columns: 1fr;
   }
+  .beverage-board-grid {
+    grid-template-columns: 1fr;
+  }
+  .beverage-board-search {
+    grid-template-columns: 1fr;
+  }
   .nutrition-today-hero-head {
     flex-direction: column;
   }
@@ -1661,6 +1759,9 @@ label.field-label.nutrition-saved-food-field {
   }
   .meal-card-header {
     flex-wrap: wrap;
+  }
+  .beverage-board-water-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
   .meal-card-totals {
     grid-template-columns: repeat(2, minmax(0, 1fr));

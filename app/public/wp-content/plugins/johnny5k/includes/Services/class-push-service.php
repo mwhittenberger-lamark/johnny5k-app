@@ -114,6 +114,14 @@ class PushService {
 		$table = $wpdb->prefix . 'fit_push_subscriptions';
 		$now = current_time( 'mysql', true );
 		$endpoint_hash = hash( 'sha256', (string) $subscription['endpoint'] );
+		$conflicting_owner = (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT user_id FROM {$table} WHERE endpoint_hash = %s AND user_id != %d LIMIT 1",
+			$endpoint_hash,
+			$user_id
+		) );
+		if ( $conflicting_owner > 0 ) {
+			return new \WP_Error( 'push_subscription_conflict', 'This browser subscription is already linked to another account. Unsubscribe it before linking a new account.' );
+		}
 
 		$data = [
 			'user_id'           => $user_id,
@@ -130,7 +138,8 @@ class PushService {
 		];
 
 		$existing_id = (int) $wpdb->get_var( $wpdb->prepare(
-			"SELECT id FROM {$table} WHERE endpoint_hash = %s LIMIT 1",
+			"SELECT id FROM {$table} WHERE user_id = %d AND endpoint_hash = %s LIMIT 1",
+			$user_id,
 			$endpoint_hash
 		) );
 

@@ -8,6 +8,7 @@ use Johnny5k\Services\AwardEngine;
 use Johnny5k\Services\BehaviorAnalyticsService;
 use Johnny5k\Services\TrainingEngine;
 use Johnny5k\Services\UserTime;
+use Johnny5k\Support\PrivateMediaService;
 use Johnny5k\Support\TrainingDayTypes;
 
 /**
@@ -115,6 +116,10 @@ class OnboardingController {
 				'methods'             => 'POST',
 				'callback'            => [ __CLASS__, 'generate_personalized_images' ],
 				'permission_callback' => $auth,
+				'args'                => [
+					'prompt' => [ 'required' => false, 'type' => 'string', 'sanitize_callback' => 'sanitize_textarea_field' ],
+					'count'  => [ 'required' => false, 'type' => 'integer' ],
+				],
 			],
 		] );
 
@@ -188,6 +193,10 @@ class OnboardingController {
 		if ( empty( $files['headshot'] ) ) {
 			return new \WP_REST_Response( [ 'message' => 'No headshot file provided.' ], 400 );
 		}
+		$upload_validation = PrivateMediaService::validate_uploaded_image( (array) $files['headshot'], 'headshot' );
+		if ( is_wp_error( $upload_validation ) ) {
+			return new \WP_REST_Response( [ 'message' => $upload_validation->get_error_message() ], 400 );
+		}
 
 		require_once ABSPATH . 'wp-admin/includes/file.php';
 		require_once ABSPATH . 'wp-admin/includes/image.php';
@@ -197,6 +206,11 @@ class OnboardingController {
 		$attachment_id = media_handle_upload( 'headshot', 0 );
 		if ( is_wp_error( $attachment_id ) ) {
 			return new \WP_REST_Response( [ 'message' => $attachment_id->get_error_message() ], 500 );
+		}
+		$secured = PrivateMediaService::ensure_private_attachment( (int) $attachment_id, $user_id );
+		if ( is_wp_error( $secured ) ) {
+			wp_delete_attachment( (int) $attachment_id, true );
+			return new \WP_REST_Response( [ 'message' => $secured->get_error_message() ], 500 );
 		}
 
 		$previous_attachment_id = (int) get_user_meta( $user_id, self::HEADSHOT_META_KEY, true );
@@ -849,58 +863,28 @@ class OnboardingController {
 	}
 
 	private static function attachment_to_ai_data_url( int $attachment_id ): string|\WP_Error {
-		$file_path = get_attached_file( $attachment_id );
-		if ( ! $file_path || ! file_exists( $file_path ) ) {
-			return new \WP_Error( 'attachment_missing', 'One of the reference images could not be found.' );
-		}
-
-		$mime = mime_content_type( $file_path ) ?: 'image/jpeg';
-		$contents = file_get_contents( $file_path ); // phpcs:ignore WordPress.WP.AlternativeFunctions
-		if ( false === $contents ) {
-			return new \WP_Error( 'attachment_read_failed', 'One of the reference images could not be read.' );
-		}
-
-		return 'data:' . $mime . ';base64,' . base64_encode( $contents ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode
+		return PrivateMediaService::attachment_to_data_url(
+			$attachment_id,
+			'attachment_missing',
+			'One of the reference images could not be found.',
+			[ 'image/jpeg', 'image/png', 'image/webp' ]
+		);
 	}
 
 	private static function create_private_generated_attachment( int $user_id, string $mime_type, string $binary_data, string $slug ): int|\WP_Error {
-		require_once ABSPATH . 'wp-admin/includes/file.php';
-		require_once ABSPATH . 'wp-admin/includes/image.php';
-
-		$extension_map = [
-			'image/jpeg' => 'jpg',
-			'image/png'  => 'png',
-			'image/webp' => 'webp',
-		];
-		$extension = $extension_map[ $mime_type ] ?? 'png';
-		$filename = sanitize_file_name( 'johnny-scene-' . $slug . '-' . time() . '.' . $extension );
-		$upload = wp_upload_bits( $filename, null, $binary_data );
-		if ( ! empty( $upload['error'] ) ) {
-			return new \WP_Error( 'generated_image_upload_failed', (string) $upload['error'] );
-		}
-
-		$wp_filetype = wp_check_filetype( $upload['file'], null );
-		$attachment_id = wp_insert_attachment( [
-			'post_mime_type' => $wp_filetype['type'] ?: $mime_type,
-			'post_title'     => 'Johnny personalized image',
-			'post_status'    => 'inherit',
-		], $upload['file'] );
-
-		if ( is_wp_error( $attachment_id ) ) {
-			return $attachment_id;
-		}
-
-		$metadata = wp_generate_attachment_metadata( $attachment_id, $upload['file'] );
-		wp_update_attachment_metadata( $attachment_id, $metadata );
-		update_post_meta( $attachment_id, 'jf_private_photo', 1 );
-		update_post_meta( $attachment_id, 'jf_owner_user_id', $user_id );
-
-		return (int) $attachment_id;
+		$filename = sanitize_file_name( 'johnny-scene-' . $slug . '-' . time() );
+		return PrivateMediaService::create_private_attachment_from_binary(
+			$user_id,
+			$mime_type,
+			$binary_data,
+			$filename,
+			'Johnny personalized image'
+		);
 	}
 
 	private static function stream_private_attachment( int $attachment_id ): mixed {
-		$file_path = get_attached_file( $attachment_id );
-		if ( ! $file_path || ! file_exists( $file_path ) ) {
+		$file_path = PrivateMediaService::file_path_for_attachment( $attachment_id );
+		if ( is_wp_error( $file_path ) ) {
 			return new \WP_REST_Response( [ 'message' => 'Image file not found.' ], 404 );
 		}
 

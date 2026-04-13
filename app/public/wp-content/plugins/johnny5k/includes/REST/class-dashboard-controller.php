@@ -5,6 +5,7 @@ defined( 'ABSPATH' ) || exit;
 
 use Johnny5k\Services\AiService;
 use Johnny5k\Services\UserTime;
+use Johnny5k\Support\PrivateMediaService;
 
 /**
  * REST Controller: Dashboard
@@ -49,6 +50,20 @@ class DashboardController {
 			'methods'             => 'POST',
 			'callback'            => [ __CLASS__, 'upload_progress_photo' ],
 			'permission_callback' => $auth,
+			'args'                => [
+				'angle' => [
+					'required'          => false,
+					'type'              => 'string',
+					'sanitize_callback' => 'sanitize_text_field',
+					'validate_callback' => [ __CLASS__, 'validate_photo_angle' ],
+				],
+				'date'  => [
+					'required'          => false,
+					'type'              => 'string',
+					'sanitize_callback' => 'sanitize_text_field',
+					'validate_callback' => [ __CLASS__, 'validate_iso_date' ],
+				],
+			],
 		] );
 
 		register_rest_route( $ns, '/dashboard/photos', [
@@ -61,12 +76,25 @@ class DashboardController {
 			'methods'             => 'POST',
 			'callback'            => [ __CLASS__, 'compare_progress_photos' ],
 			'permission_callback' => $auth,
+			'args'                => [
+				'first_photo_id'  => [ 'required' => true, 'type' => 'integer' ],
+				'second_photo_id' => [ 'required' => true, 'type' => 'integer' ],
+			],
 		] );
 
 		register_rest_route( $ns, '/dashboard/photos/baseline', [
 			'methods'             => 'POST',
 			'callback'            => [ __CLASS__, 'set_progress_photo_baseline' ],
 			'permission_callback' => $auth,
+			'args'                => [
+				'photo_id' => [ 'required' => false, 'type' => 'integer' ],
+				'angle'    => [
+					'required'          => true,
+					'type'              => 'string',
+					'sanitize_callback' => 'sanitize_text_field',
+					'validate_callback' => [ __CLASS__, 'validate_photo_angle' ],
+				],
+			],
 		] );
 
 		register_rest_route( $ns, '/dashboard/photo/(?P<id>\d+)', [
@@ -715,6 +743,10 @@ class DashboardController {
 		if ( empty( $files['photo'] ) ) {
 			return new \WP_REST_Response( [ 'message' => 'No photo file provided.' ], 400 );
 		}
+		$upload_validation = PrivateMediaService::validate_uploaded_image( (array) $files['photo'], 'progress photo' );
+		if ( is_wp_error( $upload_validation ) ) {
+			return new \WP_REST_Response( [ 'message' => $upload_validation->get_error_message() ], 400 );
+		}
 
 		require_once ABSPATH . 'wp-admin/includes/file.php';
 		require_once ABSPATH . 'wp-admin/includes/image.php';
@@ -727,6 +759,11 @@ class DashboardController {
 		if ( is_wp_error( $attachment_id ) ) {
 			return new \WP_REST_Response( [ 'message' => $attachment_id->get_error_message() ], 500 );
 		}
+		$secured = PrivateMediaService::ensure_private_attachment( (int) $attachment_id, $user_id );
+		if ( is_wp_error( $secured ) ) {
+			wp_delete_attachment( (int) $attachment_id, true );
+			return new \WP_REST_Response( [ 'message' => $secured->get_error_message() ], 500 );
+		}
 
 		// Restrict direct URL access — mark as private so we serve via authenticated endpoint
 		update_post_meta( $attachment_id, 'jf_private_photo', 1 );
@@ -734,6 +771,10 @@ class DashboardController {
 
 		global $wpdb;
 		$angle = sanitize_text_field( $req->get_param( 'angle' ) ?: 'front' );
+		if ( ! in_array( $angle, [ 'front', 'side', 'back' ], true ) ) {
+			wp_delete_attachment( (int) $attachment_id, true );
+			return new \WP_REST_Response( [ 'message' => 'Invalid photo angle.' ], 400 );
+		}
 		$date  = sanitize_text_field( $req->get_param( 'date' ) ?: UserTime::today( $user_id ) );
 
 		$wpdb->insert( $wpdb->prefix . 'fit_progress_photos', [
@@ -796,6 +837,11 @@ class DashboardController {
 
 	public static function ajax_progress_photo(): void {
 		$photo_id = isset( $_GET['id'] ) ? (int) $_GET['id'] : 0; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		$nonce = isset( $_GET['_ajax_nonce'] ) ? sanitize_text_field( (string) $_GET['_ajax_nonce'] ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		if ( function_exists( 'wp_verify_nonce' ) && ! wp_verify_nonce( $nonce, 'jf_progress_photo_' . $photo_id ) ) {
+			status_header( 403 );
+			wp_die( 'Invalid photo token.' );
+		}
 		self::stream_progress_photo_response( get_current_user_id(), $photo_id, false );
 	}
 
@@ -952,8 +998,9 @@ class DashboardController {
 
 	private static function progress_photo_url( int $photo_id ): string {
 		return add_query_arg( [
-			'action' => 'jf_progress_photo',
-			'id'     => $photo_id,
+			'action'      => 'jf_progress_photo',
+			'id'          => $photo_id,
+			'_ajax_nonce' => wp_create_nonce( 'jf_progress_photo_' . $photo_id ),
 		], admin_url( 'admin-ajax.php' ) );
 	}
 
@@ -977,8 +1024,8 @@ class DashboardController {
 			wp_die( 'Photo not found.' );
 		}
 
-		$file_path = get_attached_file( (int) $photo->attachment_id );
-		if ( ! $file_path || ! file_exists( $file_path ) ) {
+		$file_path = PrivateMediaService::file_path_for_attachment( (int) $photo->attachment_id );
+		if ( is_wp_error( $file_path ) ) {
 			if ( $return_rest ) {
 				return new \WP_REST_Response( [ 'message' => 'Photo file not found.' ], 404 );
 			}
@@ -997,61 +1044,31 @@ class DashboardController {
 	}
 
 	private static function photo_attachment_to_data_url( int $attachment_id ): string|\WP_Error {
-		$file_path = get_attached_file( $attachment_id );
-		if ( ! $file_path || ! file_exists( $file_path ) ) {
-			return new \WP_Error( 'photo_missing', 'Progress photo file not found.' );
-		}
-
-		$mime = mime_content_type( $file_path ) ?: 'image/jpeg';
-		$contents = file_get_contents( $file_path ); // phpcs:ignore WordPress.WP.AlternativeFunctions
-		if ( false === $contents ) {
-			return new \WP_Error( 'photo_read_failed', 'Could not read the progress photo file.' );
-		}
-
-		return 'data:' . $mime . ';base64,' . base64_encode( $contents ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode
+		return PrivateMediaService::attachment_to_data_url(
+			$attachment_id,
+			'photo_missing',
+			'Progress photo file not found.',
+			[ 'image/jpeg', 'image/png', 'image/webp' ]
+		);
 	}
 
 	private static function photo_attachment_to_ai_data_url( int $attachment_id ): string|\WP_Error {
-		$file_path = get_attached_file( $attachment_id );
-		if ( ! $file_path || ! file_exists( $file_path ) ) {
-			return new \WP_Error( 'photo_missing', 'Progress photo file not found.' );
-		}
+		return PrivateMediaService::attachment_to_data_url(
+			$attachment_id,
+			'photo_missing',
+			'Progress photo file not found.',
+			[ 'image/jpeg', 'image/png', 'image/webp' ]
+		);
+	}
 
-		$mime = mime_content_type( $file_path ) ?: 'image/jpeg';
-		$allowed_mimes = [ 'image/jpeg', 'image/png', 'image/webp', 'image/gif' ];
+	public static function validate_photo_angle( $value ): bool {
+		$angle = sanitize_text_field( (string) $value );
+		return '' === $angle || in_array( $angle, [ 'front', 'side', 'back' ], true );
+	}
 
-		if ( in_array( $mime, $allowed_mimes, true ) ) {
-			return self::photo_attachment_to_data_url( $attachment_id );
-		}
-
-		if ( ! function_exists( 'wp_get_image_editor' ) ) {
-			return new \WP_Error( 'photo_format_unsupported', 'Progress photo format is not supported for AI comparison.' );
-		}
-
-		$image_editor = wp_get_image_editor( $file_path );
-		if ( is_wp_error( $image_editor ) ) {
-			return new \WP_Error( 'photo_convert_failed', 'Progress photo could not be prepared for AI comparison.' );
-		}
-
-		$temp_file = wp_tempnam( wp_basename( $file_path ) . '.jpg' );
-		if ( ! $temp_file ) {
-			return new \WP_Error( 'photo_temp_failed', 'Progress photo could not be prepared for AI comparison.' );
-		}
-
-		$saved = $image_editor->save( $temp_file, 'image/jpeg' );
-		if ( is_wp_error( $saved ) || empty( $saved['path'] ) ) {
-			@unlink( $temp_file ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
-			return new \WP_Error( 'photo_convert_failed', 'Progress photo could not be converted for AI comparison.' );
-		}
-
-		$jpeg_contents = file_get_contents( $saved['path'] ); // phpcs:ignore WordPress.WP.AlternativeFunctions
-		@unlink( $saved['path'] ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
-
-		if ( false === $jpeg_contents ) {
-			return new \WP_Error( 'photo_read_failed', 'Could not read the prepared progress photo file.' );
-		}
-
-		return 'data:image/jpeg;base64,' . base64_encode( $jpeg_contents ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode
+	public static function validate_iso_date( $value ): bool {
+		$date = sanitize_text_field( (string) $value );
+		return '' === $date || 1 === preg_match( '/^\d{4}-\d{2}-\d{2}$/', $date );
 	}
 
 	private static function build_recovery_summary( int $user_id, ?object $goal, ?object $sleep, int $steps_today ): array {

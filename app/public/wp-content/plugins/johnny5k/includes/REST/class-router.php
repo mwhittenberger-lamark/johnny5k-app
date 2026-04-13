@@ -10,14 +10,22 @@ defined( 'ABSPATH' ) || exit;
 class Router {
 
 	public static function register_routes(): void {
+		// Core access and onboarding.
 		AuthController::register_routes();
 		OnboardingController::register_routes();
+
+		// User state and coaching surfaces.
 		BodyMetricsController::register_routes();
-		AnalyticsController::register_routes();
 		DashboardController::register_routes();
 		TrainingController::register_routes();
 		WorkoutController::register_routes();
+
+		// Nutrition and AI assistants.
+		NutritionController::register_routes();
 		AiController::register_routes();
+
+		// Reporting and admin.
+		AnalyticsController::register_routes();
 		PushController::register_routes();
 		AdminApiController::register_routes();
 	}

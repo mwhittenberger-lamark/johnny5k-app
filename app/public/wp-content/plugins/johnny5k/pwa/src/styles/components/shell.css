@@ -359,6 +359,12 @@
   opacity: 1;
   filter: saturate(1);
 }
+.app-shell-mobile-nav-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
 .app-shell-mobile-nav-head h2 {
   margin: 0 0 4px;
   font-size: 1.4rem;
@@ -367,6 +373,16 @@
   margin: 0;
   color: var(--text-muted);
   font-size: 1rem;
+}
+.app-shell-mobile-nav-close {
+  flex-shrink: 0;
+  min-height: 42px;
+  padding: 10px 14px;
+  border: 1px solid rgba(168, 212, 240, 0.9);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--text);
+  font-weight: 700;
 }
 .app-shell-mobile-nav-grid {
   display: grid;

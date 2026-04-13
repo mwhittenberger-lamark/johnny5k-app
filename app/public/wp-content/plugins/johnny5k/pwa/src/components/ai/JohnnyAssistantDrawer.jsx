@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { aiApi } from '../../api/modules/ai'
 import { analyticsApi } from '../../api/modules/analytics'
+import { getAccessibleScrollBehavior, useOverlayAccessibility } from '../../lib/accessibility'
 import { formatUsShortDate } from '../../lib/dateFormat'
 import { getAppImageUrl } from '../../lib/appImages'
 import { reportClientDiagnostic } from '../../lib/clientDiagnostics'
@@ -84,6 +85,7 @@ export default function JohnnyAssistantDrawer() {
   const [statusMessage, setStatusMessage] = useState('')
   const [voicePrefs, setVoicePrefs] = useState(() => readLiveWorkoutVoicePrefs())
   const recognitionRef = useRef(null)
+  const drawerRef = useRef(null)
   const bottomRef = useRef(null)
   const textareaRef = useRef(null)
   const ttsAudioRef = useRef(null)
@@ -93,6 +95,16 @@ export default function JohnnyAssistantDrawer() {
   const chatMode = deriveJohnnyMode(location.pathname, messages)
   const johnnyDrawerImage = getAppImageUrl(appImages, 'johnny_drawer')
   const starterSuggestions = getStarterSuggestionsForCurrentTime()
+  const drawerTitleId = useId()
+  const drawerDescriptionId = useId()
+  const scrollBehavior = getAccessibleScrollBehavior()
+
+  useOverlayAccessibility({
+    open: isOpen,
+    containerRef: drawerRef,
+    initialFocusRef: textareaRef,
+    onClose: closeDrawer,
+  })
 
   async function hydrateThread() {
     try {
@@ -150,13 +162,8 @@ export default function JohnnyAssistantDrawer() {
   }, [stopTtsPlayback])
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, loading, isOpen])
-
-  useEffect(() => {
-    if (!isOpen) return
-    textareaRef.current?.focus()
-  }, [isOpen])
+    bottomRef.current?.scrollIntoView({ behavior: scrollBehavior })
+  }, [messages, loading, isOpen, scrollBehavior])
 
   useEffect(() => {
     setVoicePrefs(readLiveWorkoutVoicePrefs())
@@ -166,17 +173,6 @@ export default function JohnnyAssistantDrawer() {
     if (isOpen || !playbackSupported) return
     stopTtsPlayback()
   }, [isOpen, playbackSupported, stopTtsPlayback])
-
-  useEffect(() => {
-    if (!isOpen) return undefined
-
-    function handleKeyDown(event) {
-      if (event.key === 'Escape') closeDrawer()
-    }
-
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [isOpen, closeDrawer])
 
   function stopListening() {
     recognitionRef.current?.stop()
@@ -537,17 +533,29 @@ export default function JohnnyAssistantDrawer() {
     setStatusMessage(buildModelActionSummary(action))
   }
 
+  if (!isOpen) {
+    return null
+  }
+
   return (
     <>
-      <div className={`johnny-drawer-backdrop ${isOpen ? 'open' : ''}`} onClick={closeDrawer} aria-hidden={!isOpen} />
-      <aside className={`johnny-drawer ${isOpen ? 'open' : ''}`} aria-hidden={!isOpen} aria-label="Johnny assistant">
+      <div className="johnny-drawer-backdrop open" onClick={closeDrawer} aria-hidden="true" />
+      <aside
+        ref={drawerRef}
+        className="johnny-drawer open"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={drawerTitleId}
+        aria-describedby={drawerDescriptionId}
+        tabIndex={-1}
+      >
         <div className="johnny-drawer-shell">
           <header className="johnny-drawer-header">
             <div className="johnny-drawer-header-main">
               <div>
                 <span className="dashboard-chip ai">Coach</span>
-                <h2>Johnny5k</h2>
-                <p>Ask Johnny for health advice or have him log an entry for you.</p>
+                <h2 id={drawerTitleId}>Johnny5k</h2>
+                <p id={drawerDescriptionId}>Ask Johnny for health advice or have him log an entry for you.</p>
               </div>
               <span className="johnny-drawer-header-art" aria-hidden="true">
                 <img src={johnnyDrawerImage} alt="" />
@@ -571,9 +579,9 @@ export default function JohnnyAssistantDrawer() {
             </div>
           </header>
 
-          {statusMessage ? <p className="johnny-drawer-status">{statusMessage}</p> : null}
+          {statusMessage ? <p className="johnny-drawer-status" role="status" aria-live="polite">{statusMessage}</p> : null}
 
-          <div className="chat-log johnny-drawer-log">
+          <div className="chat-log johnny-drawer-log" role="log" aria-live="polite" aria-relevant="additions text" aria-busy={loading} aria-label="Johnny conversation">
             {initialising ? <p className="chat-loading">Loading…</p> : null}
             {!initialising && (durableMemory.length || editingMemory) ? (
               <DurableMemoryCard
@@ -691,17 +699,18 @@ export default function JohnnyAssistantDrawer() {
               value={input}
               onChange={event => setInput(event.target.value)}
               onKeyDown={handleInputKeyDown}
+              aria-label="Message Johnny"
               placeholder="Ask Johnny to coach you or do something for you…"
               rows={3}
               disabled={loading}
             />
             <div className="johnny-input-actions">
               {voiceSupported ? (
-                <button type="button" className={`btn-secondary small johnny-drawer-action-button johnny-voice-btn ${listening ? 'recording' : ''}`} onClick={listening ? stopListening : startListening} disabled={loading}>
+                <button type="button" className={`btn-secondary small johnny-drawer-action-button johnny-voice-btn ${listening ? 'recording' : ''}`} onClick={listening ? stopListening : startListening} disabled={loading} aria-pressed={listening} aria-label={listening ? 'Stop voice input' : 'Start voice input'}>
                   {listening ? 'Stop' : 'Voice'}
                 </button>
               ) : null}
-              <button type="submit" className="btn-send small johnny-drawer-action-button" disabled={loading || !input.trim()}>
+              <button type="submit" className="btn-send small johnny-drawer-action-button" disabled={loading || !input.trim()} aria-label="Send message to Johnny">
                 <span>Send</span>
                 <AppIcon name="send" />
               </button>

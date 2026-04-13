@@ -5,8 +5,32 @@ declare(strict_types=1);
 define( 'ABSPATH', dirname( __DIR__ ) . '/' );
 define( 'JF_REST_NAMESPACE', 'fit/v1' );
 
+if ( ! defined( 'JF_VERSION' ) ) {
+	define( 'JF_VERSION', '1.0.0' );
+}
+
+if ( ! defined( 'JF_DB_VERSION' ) ) {
+	define( 'JF_DB_VERSION', '1.1.11' );
+}
+
+if ( ! defined( 'JF_PLUGIN_FILE' ) ) {
+	define( 'JF_PLUGIN_FILE', dirname( __DIR__ ) . '/johnny5k.php' );
+}
+
 if ( ! defined( 'JF_PLUGIN_URL' ) ) {
 	define( 'JF_PLUGIN_URL', 'https://example.test/wp-content/plugins/johnny5k/' );
+}
+
+if ( ! defined( 'DAY_IN_SECONDS' ) ) {
+	define( 'DAY_IN_SECONDS', 86400 );
+}
+
+if ( ! defined( 'HOUR_IN_SECONDS' ) ) {
+	define( 'HOUR_IN_SECONDS', 3600 );
+}
+
+if ( ! defined( 'WEEK_IN_SECONDS' ) ) {
+	define( 'WEEK_IN_SECONDS', 604800 );
 }
 
 if ( ! defined( 'OBJECT' ) ) {
@@ -99,6 +123,52 @@ if ( ! class_exists( 'WP_REST_Response' ) ) {
 	}
 }
 
+if ( ! class_exists( 'ActionScheduler_Action' ) ) {
+	class ActionScheduler_Action {
+		public function __construct(
+			private string $hook,
+			private array $args = [],
+			private string $group = ''
+		) {}
+
+		public function get_hook(): string {
+			return $this->hook;
+		}
+
+		public function get_args(): array {
+			return $this->args;
+		}
+
+		public function get_group(): string {
+			return $this->group;
+		}
+	}
+}
+
+if ( ! class_exists( 'ActionScheduler_Store' ) ) {
+	class ActionScheduler_Store {
+		public static function instance(): self {
+			return new self();
+		}
+
+		public function fetch_action( int $action_id ): ?ActionScheduler_Action {
+			foreach ( $GLOBALS['johnny5k_test_action_scheduler_actions'] ?? [] as $action ) {
+				if ( (int) $action['action_id'] !== $action_id ) {
+					continue;
+				}
+
+				return new ActionScheduler_Action(
+					(string) $action['hook'],
+					is_array( $action['args'] ?? null ) ? $action['args'] : [],
+					(string) ( $action['group'] ?? '' )
+				);
+			}
+
+			return null;
+		}
+	}
+}
+
 if ( ! function_exists( 'is_wp_error' ) ) {
 	function is_wp_error( mixed $thing ): bool {
 		return $thing instanceof WP_Error;
@@ -185,7 +255,54 @@ if ( ! function_exists( 'rest_sanitize_boolean' ) ) {
 
 if ( ! function_exists( 'register_rest_route' ) ) {
 	function register_rest_route( string $namespace, string $route, array $args ): bool {
+		$GLOBALS['johnny5k_test_registered_routes'][] = [
+			'namespace' => $namespace,
+			'route' => $route,
+			'args' => $args,
+		];
 		return true;
+	}
+}
+
+if ( ! function_exists( 'johnny5k_test_store_hook' ) ) {
+	function johnny5k_test_store_hook( string $type, string $hook, callable|array|string $callback, int $priority, int $accepted_args ): bool {
+		$GLOBALS['johnny5k_test_hooks'][ $type ][ $hook ][] = [
+			'callback' => $callback,
+			'priority' => $priority,
+			'accepted_args' => $accepted_args,
+		];
+
+		return true;
+	}
+}
+
+if ( ! function_exists( 'add_action' ) ) {
+	function add_action( string $hook, callable|array|string $callback, int $priority = 10, int $accepted_args = 1 ): bool {
+		return johnny5k_test_store_hook( 'actions', $hook, $callback, $priority, $accepted_args );
+	}
+}
+
+if ( ! function_exists( 'add_filter' ) ) {
+	function add_filter( string $hook, callable|array|string $callback, int $priority = 10, int $accepted_args = 1 ): bool {
+		return johnny5k_test_store_hook( 'filters', $hook, $callback, $priority, $accepted_args );
+	}
+}
+
+if ( ! function_exists( 'register_activation_hook' ) ) {
+	function register_activation_hook( string $file, callable|array|string $callback ): void {
+		$GLOBALS['johnny5k_test_activation_hooks'][] = [
+			'file' => $file,
+			'callback' => $callback,
+		];
+	}
+}
+
+if ( ! function_exists( 'register_deactivation_hook' ) ) {
+	function register_deactivation_hook( string $file, callable|array|string $callback ): void {
+		$GLOBALS['johnny5k_test_deactivation_hooks'][] = [
+			'file' => $file,
+			'callback' => $callback,
+		];
 	}
 }
 
@@ -262,14 +379,39 @@ if ( ! function_exists( 'delete_user_meta' ) ) {
 	}
 }
 
-if ( ! function_exists( 'wp_schedule_single_event' ) ) {
-	function wp_schedule_single_event( int $timestamp, string $hook, array $args = [] ): bool {
+if ( ! function_exists( 'wp_schedule_event' ) ) {
+	function wp_schedule_event( int $timestamp, string $recurrence, string $hook, array $args = [] ): bool {
 		$GLOBALS['johnny5k_test_scheduled_events'][] = [
 			'timestamp' => $timestamp,
+			'schedule' => $recurrence,
 			'hook' => $hook,
 			'args' => $args,
 		];
 		return true;
+	}
+}
+
+if ( ! function_exists( 'wp_schedule_single_event' ) ) {
+	function wp_schedule_single_event( int $timestamp, string $hook, array $args = [] ): bool {
+		$GLOBALS['johnny5k_test_scheduled_events'][] = [
+			'timestamp' => $timestamp,
+			'schedule' => false,
+			'hook' => $hook,
+			'args' => $args,
+		];
+		return true;
+	}
+}
+
+if ( ! function_exists( 'wp_get_scheduled_event' ) ) {
+	function wp_get_scheduled_event( string $hook, array $args = [] ): object|false {
+		foreach ( $GLOBALS['johnny5k_test_scheduled_events'] ?? [] as $event ) {
+			if ( $event['hook'] === $hook && $event['args'] === $args ) {
+				return (object) $event;
+			}
+		}
+
+		return false;
 	}
 }
 
@@ -300,12 +442,179 @@ if ( ! function_exists( 'wp_unschedule_event' ) ) {
 	}
 }
 
+if ( ! function_exists( 'wp_clear_scheduled_hook' ) ) {
+	function wp_clear_scheduled_hook( string $hook, array $args = [] ): int {
+		$events = $GLOBALS['johnny5k_test_scheduled_events'] ?? [];
+		$cleared = 0;
+
+		foreach ( $events as $index => $event ) {
+			if ( $event['hook'] === $hook && ( [] === $args || $event['args'] === $args ) ) {
+				unset( $events[ $index ] );
+				$cleared++;
+			}
+		}
+
+		$GLOBALS['johnny5k_test_scheduled_events'] = array_values( $events );
+
+		return $cleared;
+	}
+}
+
+if ( ! function_exists( 'as_schedule_recurring_action' ) ) {
+	function as_schedule_recurring_action( int $timestamp, int $interval_in_seconds, string $hook, array $args = [], string $group = '', bool $unique = false, int $priority = 10 ): int {
+		if ( $unique ) {
+			$existing = as_has_scheduled_action( $hook, $args, $group );
+			if ( false !== $existing ) {
+				return (int) $existing;
+			}
+		}
+
+		$action_id = (int) ( $GLOBALS['johnny5k_test_next_action_scheduler_id'] ?? 1 );
+		$GLOBALS['johnny5k_test_next_action_scheduler_id'] = $action_id + 1;
+		$GLOBALS['johnny5k_test_action_scheduler_actions'][] = [
+			'action_id' => $action_id,
+			'timestamp' => $timestamp,
+			'interval' => $interval_in_seconds,
+			'hook' => $hook,
+			'args' => $args,
+			'group' => $group,
+			'unique' => $unique,
+			'priority' => $priority,
+			'status' => 'pending',
+			'schedule' => 'recurring',
+		];
+
+		return $action_id;
+	}
+}
+
+if ( ! function_exists( 'as_schedule_single_action' ) ) {
+	function as_schedule_single_action( int $timestamp, string $hook, array $args = [], string $group = '', bool $unique = false, int $priority = 10 ): int {
+		if ( $unique ) {
+			$existing = as_has_scheduled_action( $hook, $args, $group );
+			if ( false !== $existing ) {
+				return (int) $existing;
+			}
+		}
+
+		$action_id = (int) ( $GLOBALS['johnny5k_test_next_action_scheduler_id'] ?? 1 );
+		$GLOBALS['johnny5k_test_next_action_scheduler_id'] = $action_id + 1;
+		$GLOBALS['johnny5k_test_action_scheduler_actions'][] = [
+			'action_id' => $action_id,
+			'timestamp' => $timestamp,
+			'interval' => 0,
+			'hook' => $hook,
+			'args' => $args,
+			'group' => $group,
+			'unique' => $unique,
+			'priority' => $priority,
+			'status' => 'pending',
+			'schedule' => 'single',
+		];
+
+		return $action_id;
+	}
+}
+
+if ( ! function_exists( 'as_has_scheduled_action' ) ) {
+	function as_has_scheduled_action( string $hook, ?array $args = null, string $group = '' ): int|false {
+		foreach ( $GLOBALS['johnny5k_test_action_scheduler_actions'] ?? [] as $action ) {
+			$matches_args = null === $args || $action['args'] === $args;
+			if ( $action['hook'] === $hook && $matches_args && $action['group'] === $group && in_array( $action['status'], [ 'pending', 'running', 'in-progress' ], true ) ) {
+				return (int) $action['action_id'];
+			}
+		}
+
+		return false;
+	}
+}
+
+if ( ! function_exists( 'as_unschedule_all_actions' ) ) {
+	function as_unschedule_all_actions( string $hook, array $args = [], string $group = '' ): void {
+		$actions = $GLOBALS['johnny5k_test_action_scheduler_actions'] ?? [];
+		foreach ( $actions as $index => $action ) {
+			if ( $action['hook'] === $hook && $action['group'] === $group && ( [] === $args || $action['args'] === $args ) ) {
+				unset( $actions[ $index ] );
+			}
+		}
+
+		$GLOBALS['johnny5k_test_action_scheduler_actions'] = array_values( $actions );
+	}
+}
+
+if ( ! function_exists( 'as_get_scheduled_actions' ) ) {
+	function as_get_scheduled_actions( array $query_args = [], string $return_format = OBJECT ): array {
+		$actions = array_values( $GLOBALS['johnny5k_test_action_scheduler_actions'] ?? [] );
+
+		$actions = array_values( array_filter( $actions, static function( array $action ) use ( $query_args ): bool {
+			if ( isset( $query_args['hook'] ) && $action['hook'] !== $query_args['hook'] ) {
+				return false;
+			}
+
+			if ( isset( $query_args['group'] ) && $action['group'] !== $query_args['group'] ) {
+				return false;
+			}
+
+			if ( isset( $query_args['status'] ) && $action['status'] !== $query_args['status'] ) {
+				return false;
+			}
+
+			return true;
+		} ) );
+
+		$per_page = (int) ( $query_args['per_page'] ?? count( $actions ) );
+		if ( $per_page > 0 ) {
+			$actions = array_slice( $actions, 0, $per_page );
+		}
+
+		if ( 'ids' === $return_format ) {
+			return array_map( static fn( array $action ): int => (int) $action['action_id'], $actions );
+		}
+
+		return array_map( static fn( array $action ): object => (object) $action, $actions );
+	}
+}
+
+if ( ! function_exists( 'johnny5k_test_get_hook_callbacks' ) ) {
+	function johnny5k_test_get_hook_callbacks( string $type, string $hook ): array {
+		$callbacks = $GLOBALS['johnny5k_test_hooks'][ $type ][ $hook ] ?? [];
+
+		usort( $callbacks, static function( array $left, array $right ): int {
+			return $left['priority'] <=> $right['priority'];
+		} );
+
+		return $callbacks;
+	}
+}
+
 if ( ! function_exists( 'do_action' ) ) {
 	function do_action( string $hook, mixed ...$args ): void {
+		$GLOBALS['johnny5k_test_did_actions'][ $hook ] = (int) ( $GLOBALS['johnny5k_test_did_actions'][ $hook ] ?? 0 ) + 1;
 		$GLOBALS['johnny5k_test_actions'][] = [
 			'hook' => $hook,
 			'args' => $args,
 		];
+
+		foreach ( johnny5k_test_get_hook_callbacks( 'actions', $hook ) as $callback ) {
+			call_user_func_array( $callback['callback'], array_slice( $args, 0, $callback['accepted_args'] ) );
+		}
+	}
+}
+
+if ( ! function_exists( 'apply_filters' ) ) {
+	function apply_filters( string $hook, mixed $value, mixed ...$args ): mixed {
+		foreach ( johnny5k_test_get_hook_callbacks( 'filters', $hook ) as $callback ) {
+			$filter_args = array_merge( [ $value ], $args );
+			$value = call_user_func_array( $callback['callback'], array_slice( $filter_args, 0, $callback['accepted_args'] ) );
+		}
+
+		return $value;
+	}
+}
+
+if ( ! function_exists( 'did_action' ) ) {
+	function did_action( string $hook ): int {
+		return (int) ( $GLOBALS['johnny5k_test_did_actions'][ $hook ] ?? 0 );
 	}
 }
 
@@ -493,6 +802,12 @@ if ( ! function_exists( 'sanitize_title' ) ) {
 	}
 }
 
+if ( ! function_exists( 'sanitize_file_name' ) ) {
+	function sanitize_file_name( string $value ): string {
+		return preg_replace( '/[^A-Za-z0-9._-]/', '-', $value ) ?? '';
+	}
+}
+
 if ( ! function_exists( 'get_user_by' ) ) {
 	function get_user_by( string $field, string|int $value ): WP_User|false {
 		foreach ( $GLOBALS['johnny5k_test_users'] ?? [] as $user ) {
@@ -531,14 +846,182 @@ if ( ! function_exists( 'user_can' ) ) {
 	}
 }
 
+if ( ! function_exists( 'current_user_can' ) ) {
+	function current_user_can( string $capability ): bool {
+		return user_can( wp_get_current_user(), $capability );
+	}
+}
+
+if ( ! function_exists( 'is_admin' ) ) {
+	function is_admin(): bool {
+		return (bool) ( $GLOBALS['johnny5k_test_is_admin'] ?? false );
+	}
+}
+
+if ( ! function_exists( 'home_url' ) ) {
+	function home_url( string $path = '' ): string {
+		return 'https://example.test' . $path;
+	}
+}
+
+if ( ! function_exists( 'wp_specialchars_decode' ) ) {
+	function wp_specialchars_decode( string $text, int $quote_style = ENT_NOQUOTES ): string {
+		return html_entity_decode( $text, $quote_style );
+	}
+}
+
+if ( ! function_exists( 'plugins_url' ) ) {
+	function plugins_url( string $path = '', string $plugin = '' ): string {
+		return 'https://example.test/wp-content/plugins/johnny5k/' . ltrim( $path, '/' );
+	}
+}
+
+if ( ! function_exists( 'add_menu_page' ) ) {
+	function add_menu_page( string $page_title, string $menu_title, string $capability, string $menu_slug, callable|array|string $callback = '', string $icon_url = '', int|float|null $position = null ): string {
+		$GLOBALS['johnny5k_test_admin_pages']['menu'][] = compact( 'page_title', 'menu_title', 'capability', 'menu_slug', 'callback', 'icon_url', 'position' );
+		return $menu_slug;
+	}
+}
+
+if ( ! function_exists( 'add_submenu_page' ) ) {
+	function add_submenu_page( string $parent_slug, string $page_title, string $menu_title, string $capability, string $menu_slug, callable|array|string $callback = '' ): string {
+		$GLOBALS['johnny5k_test_admin_pages']['submenu'][] = compact( 'parent_slug', 'page_title', 'menu_title', 'capability', 'menu_slug', 'callback' );
+		return $menu_slug;
+	}
+}
+
+if ( ! function_exists( 'wp_enqueue_style' ) ) {
+	function wp_enqueue_style( string $handle, string $src = '', array $deps = [], string|bool|null $ver = false, string $media = 'all' ): void {
+		$GLOBALS['johnny5k_test_enqueued_styles'][] = compact( 'handle', 'src', 'deps', 'ver', 'media' );
+	}
+}
+
+if ( ! function_exists( 'esc_html' ) ) {
+	function esc_html( string $text ): string {
+		return htmlspecialchars( $text, ENT_QUOTES );
+	}
+}
+
+if ( ! function_exists( 'number_format_i18n' ) ) {
+	function number_format_i18n( int|float $number, int $decimals = 0 ): string {
+		return number_format( $number, $decimals );
+	}
+}
+
+if ( ! function_exists( 'status_header' ) ) {
+	function status_header( int $code ): void {
+		$GLOBALS['johnny5k_test_status_headers'][] = $code;
+	}
+}
+
+if ( ! function_exists( 'wp_die' ) ) {
+	function wp_die( string $message = '' ): never {
+		throw new RuntimeException( $message ?: 'wp_die called' );
+	}
+}
+
+if ( ! function_exists( 'dbDelta' ) ) {
+	function dbDelta( string $sql ): array {
+		$GLOBALS['johnny5k_test_dbdelta'][] = $sql;
+		return [];
+	}
+}
+
 if ( ! function_exists( 'wp_create_nonce' ) ) {
 	function wp_create_nonce( string $action ): string {
 		return 'test-nonce';
 	}
 }
 
+if ( ! function_exists( 'get_post_meta' ) ) {
+	function get_post_meta( int $post_id, string $key, bool $single = false ): mixed {
+		$store = $GLOBALS['johnny5k_test_post_meta'] ?? [];
+		return $store[ $post_id ][ $key ] ?? ( $single ? '' : [] );
+	}
+}
+
+if ( ! function_exists( 'update_post_meta' ) ) {
+	function update_post_meta( int $post_id, string $key, mixed $value ): bool {
+		$GLOBALS['johnny5k_test_post_meta'][ $post_id ][ $key ] = $value;
+		return true;
+	}
+}
+
+if ( ! function_exists( 'get_attached_file' ) ) {
+	function get_attached_file( int $attachment_id ): string|false {
+		return $GLOBALS['johnny5k_test_attached_files'][ $attachment_id ] ?? false;
+	}
+}
+
+if ( ! function_exists( 'update_attached_file' ) ) {
+	function update_attached_file( int $attachment_id, string $file ): bool {
+		$GLOBALS['johnny5k_test_attached_files'][ $attachment_id ] = $file;
+		return true;
+	}
+}
+
+if ( ! function_exists( 'wp_insert_attachment' ) ) {
+	function wp_insert_attachment( array $attachment, string $file ): int|\WP_Error {
+		$attachment_id = (int) ( $GLOBALS['johnny5k_test_next_attachment_id'] ?? 500 );
+		$GLOBALS['johnny5k_test_next_attachment_id'] = $attachment_id + 1;
+		$GLOBALS['johnny5k_test_posts'][ $attachment_id ] = (object) array_merge( [
+			'ID' => $attachment_id,
+			'post_date_gmt' => '2026-04-09 12:00:00',
+			'post_modified_gmt' => '2026-04-09 12:00:00',
+		], $attachment );
+		$GLOBALS['johnny5k_test_attached_files'][ $attachment_id ] = $file;
+		return $attachment_id;
+	}
+}
+
+if ( ! function_exists( 'get_post' ) ) {
+	function get_post( int $post_id ): object|null {
+		return $GLOBALS['johnny5k_test_posts'][ $post_id ] ?? null;
+	}
+}
+
+if ( ! function_exists( 'wp_generate_attachment_metadata' ) ) {
+	function wp_generate_attachment_metadata( int $attachment_id, string $file ): array {
+		return [
+			'generated_for' => $attachment_id,
+			'file' => $file,
+		];
+	}
+}
+
+if ( ! function_exists( 'wp_update_attachment_metadata' ) ) {
+	function wp_update_attachment_metadata( int $attachment_id, array $metadata ): bool {
+		$GLOBALS['johnny5k_test_attachment_metadata'][ $attachment_id ] = $metadata;
+		return true;
+	}
+}
+
+if ( ! function_exists( 'wp_delete_attachment' ) ) {
+	function wp_delete_attachment( int $attachment_id, bool $force_delete = false ): bool {
+		$file = $GLOBALS['johnny5k_test_attached_files'][ $attachment_id ] ?? null;
+		if ( is_string( $file ) && file_exists( $file ) ) {
+			@unlink( $file );
+		}
+		unset( $GLOBALS['johnny5k_test_attached_files'][ $attachment_id ] );
+		unset( $GLOBALS['johnny5k_test_posts'][ $attachment_id ] );
+		unset( $GLOBALS['johnny5k_test_post_meta'][ $attachment_id ] );
+		return true;
+	}
+}
+
+if ( ! function_exists( 'wp_mkdir_p' ) ) {
+	function wp_mkdir_p( string $target ): bool {
+		return is_dir( $target ) || mkdir( $target, 0777, true );
+	}
+}
+
+if ( ! defined( 'UPLOAD_ERR_OK' ) ) {
+	define( 'UPLOAD_ERR_OK', 0 );
+}
+
 require_once __DIR__ . '/Support/FakeWpdb.php';
 require_once __DIR__ . '/Support/ServiceTestCase.php';
+require_once dirname( __DIR__ ) . '/vendor/autoload.php';
 
 $GLOBALS['johnny5k_test_now'] = '2026-04-09 12:00:00';
 
@@ -560,6 +1043,10 @@ require_once dirname( __DIR__ ) . '/includes/Services/class-workout-action-servi
 require_once dirname( __DIR__ ) . '/includes/Services/class-sms-service.php';
 require_once dirname( __DIR__ ) . '/includes/Services/class-push-service.php';
 require_once dirname( __DIR__ ) . '/includes/Support/class-training-day-types.php';
+require_once dirname( __DIR__ ) . '/includes/Support/class-private-media-service.php';
+require_once dirname( __DIR__ ) . '/includes/Admin/class-overview-stats.php';
+require_once dirname( __DIR__ ) . '/includes/Admin/class-overview-page.php';
+require_once dirname( __DIR__ ) . '/includes/Admin/class-admin-menu.php';
 require_once dirname( __DIR__ ) . '/includes/REST/class-auth-controller.php';
 require_once dirname( __DIR__ ) . '/includes/REST/class-admin-api-controller.php';
 require_once dirname( __DIR__ ) . '/includes/REST/class-onboarding-controller.php';

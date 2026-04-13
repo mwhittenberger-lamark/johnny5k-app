@@ -3,9 +3,9 @@ namespace Johnny5k\Services;
 
 defined( 'ABSPATH' ) || exit;
 
-use Johnny5k\REST\AiController;
 use Johnny5k\REST\BodyMetricsController;
 use Johnny5k\REST\DashboardController;
+use Johnny5k\REST\NutritionController;
 use Johnny5k\REST\NutritionRecipeController;
 use Johnny5k\REST\TrainingController;
 use Johnny5k\REST\WorkoutController;
@@ -59,6 +59,30 @@ class AiToolHandlerService {
 		}
 
 		return $callable( ...$args );
+	}
+
+	private static function nutrition_log_meal( array $deps, \WP_REST_Request $request ): \WP_REST_Response {
+		$callable = $deps['nutrition_log_meal'] ?? null;
+		if ( is_callable( $callable ) ) {
+			$response = $callable( $request );
+			if ( $response instanceof \WP_REST_Response ) {
+				return $response;
+			}
+		}
+
+		return NutritionController::log_meal( $request );
+	}
+
+	private static function nutrition_add_pantry_items_bulk( array $deps, \WP_REST_Request $request ): \WP_REST_Response {
+		$callable = $deps['nutrition_add_pantry_items_bulk'] ?? null;
+		if ( is_callable( $callable ) ) {
+			$response = $callable( $request );
+			if ( $response instanceof \WP_REST_Response ) {
+				return $response;
+			}
+		}
+
+		return NutritionController::add_pantry_items_bulk( $request );
 	}
 
 	/**
@@ -374,7 +398,7 @@ class AiToolHandlerService {
 		}
 
 		$meal_type = sanitize_key( (string) ( $arguments['meal_type'] ?? 'lunch' ) );
-		if ( ! in_array( $meal_type, [ 'breakfast', 'lunch', 'dinner', 'snack', 'shake' ], true ) ) {
+		if ( ! in_array( $meal_type, [ 'breakfast', 'lunch', 'dinner', 'snack', 'beverage', 'shake' ], true ) ) {
 			$meal_type = 'lunch';
 		}
 
@@ -398,7 +422,7 @@ class AiToolHandlerService {
 			'micros'         => (array) ( $analysis['micros'] ?? [] ),
 		] ] );
 
-		$response = AiController::log_meal( $request );
+		$response = self::nutrition_log_meal( $deps, $request );
 		$data     = $response->get_data();
 		$status   = (int) $response->get_status();
 
@@ -634,7 +658,7 @@ class AiToolHandlerService {
 		$request = new \WP_REST_Request( 'POST', '/fit/v1/nutrition/pantry/bulk' );
 		$request->set_param( 'items', $items );
 
-		$response = AiController::add_pantry_items_bulk( $request );
+		$response = self::nutrition_add_pantry_items_bulk( $deps, $request );
 		$data     = $response->get_data();
 		$status   = (int) $response->get_status();
 
@@ -804,7 +828,7 @@ class AiToolHandlerService {
 
 	private static function sanitize_meal_type_value( string $meal_type, bool $default_to_lunch = true ): string {
 		$meal_type = sanitize_key( $meal_type );
-		if ( in_array( $meal_type, [ 'breakfast', 'lunch', 'dinner', 'snack' ], true ) ) {
+		if ( in_array( $meal_type, [ 'breakfast', 'lunch', 'dinner', 'snack', 'beverage' ], true ) ) {
 			return $meal_type;
 		}
 

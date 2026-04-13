@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Johnny5k\Tests\Support;
 
-use Johnny5k\REST\AiController;
+use Johnny5k\REST\AbstractNutritionController;
 use Johnny5k\REST\WorkoutController;
 
 class TestWorkoutController extends WorkoutController {
@@ -66,7 +66,7 @@ class TestWorkoutController extends WorkoutController {
 	}
 }
 
-class TestAiMealController extends AiController {
+class TestAiMealController extends AbstractNutritionController {
 	public static array $synced_awards = [];
 
 	protected static function sync_user_awards( int $user_id ): void {

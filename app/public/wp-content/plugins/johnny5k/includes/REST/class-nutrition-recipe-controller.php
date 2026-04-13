@@ -5,12 +5,15 @@ defined( 'ABSPATH' ) || exit;
 
 use Johnny5k\Services\AiService;
 
-class NutritionRecipeController {
+class NutritionRecipeController extends RestController {
 	private const GROCERY_GAP_ITEMS_META_KEY = 'jf_nutrition_grocery_gap_items';
 	private const GROCERY_GAP_HIDDEN_ITEMS_META_KEY = 'jf_nutrition_grocery_gap_hidden_items';
 	private const RECIPE_COOKBOOK_META_KEY = 'johnny5k_recipe_cookbook';
 
-	public static function register_routes( string $ns, $auth ): void {
+	public static function register_routes(): void {
+		$ns   = JF_REST_NAMESPACE;
+		$auth = self::auth_callback();
+
 		register_rest_route( $ns, '/nutrition/recipes', [
 			'methods'             => 'GET',
 			'callback'            => [ self::class, 'get_recipe_suggestions' ],

@@ -7,6 +7,7 @@ import { onboardingApi } from '../../api/modules/onboarding'
 import { getAppImageUrl } from '../../lib/appImages'
 import { reportClientDiagnostic } from '../../lib/clientDiagnostics'
 import { DAILY_CHECK_IN_QUESTIONS, createDailyCheckInAnswers, getDailyCheckInDateKey, getNextDailyCheckInBoundary, isDailyCheckInWindowOpen, normalizeDailyCheckInEntry } from '../../lib/dailyCheckIn'
+import { useOverlayAccessibility } from '../../lib/accessibility'
 import {
   buildInstallPromptSnoozedUntil,
   buildPushPromptSnoozedUntil,
@@ -50,6 +51,7 @@ export default function AppShell({ children }) {
   const [offlineQueueSyncing, setOfflineQueueSyncing] = useState(false)
   const [swUpdateReady, setSwUpdateReady] = useState(false)
   const menuButtonRef = useRef(null)
+  const mobileNavRef = useRef(null)
   const firstMobileLinkRef = useRef(null)
   const dailyCheckInCloseRef = useRef(null)
   const dailyCheckInStateRef = useRef(normalizeDailyCheckInEntry(dailyCheckInEntry))
@@ -82,6 +84,18 @@ export default function AppShell({ children }) {
   useEffect(() => {
     setMenuOpen(false)
   }, [location.pathname])
+
+  const closeMobileMenu = useCallback(() => {
+    setMenuOpen(false)
+  }, [])
+
+  useOverlayAccessibility({
+    open: menuOpen,
+    containerRef: mobileNavRef,
+    initialFocusRef: firstMobileLinkRef,
+    restoreFocusRef: menuButtonRef,
+    onClose: closeMobileMenu,
+  })
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -191,27 +205,6 @@ export default function AppShell({ children }) {
     const nextUrl = `${location.pathname}${nextSearch ? `?${nextSearch}` : ''}${location.hash || ''}`
     window.history.replaceState(window.history.state, '', nextUrl)
   }, [location.hash, location.pathname, location.search, openDrawer])
-
-  useEffect(() => {
-    if (!menuOpen) return undefined
-
-    const previousOverflow = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    firstMobileLinkRef.current?.focus()
-
-    function handleKeyDown(event) {
-      if (event.key !== 'Escape') return
-      setMenuOpen(false)
-      menuButtonRef.current?.focus()
-    }
-
-    window.addEventListener('keydown', handleKeyDown)
-
-    return () => {
-      document.body.style.overflow = previousOverflow
-      window.removeEventListener('keydown', handleKeyDown)
-    }
-  }, [menuOpen])
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -590,56 +583,71 @@ export default function AppShell({ children }) {
         </div>
       </header>
 
-      <div className={`app-shell-nav-backdrop ${menuOpen ? 'open' : ''}`} onClick={() => setMenuOpen(false)} aria-hidden={!menuOpen} />
+      {menuOpen ? (
+        <>
+          <div className="app-shell-nav-backdrop open" onClick={closeMobileMenu} aria-hidden="true" />
 
-      <nav id="app-shell-mobile-nav" className={`app-shell-mobile-nav ${menuOpen ? 'open' : ''}`} aria-hidden={!menuOpen}>
-        <div className="app-shell-mobile-nav-shell">
-          <div className="app-shell-mobile-nav-head">
-            <div>
-              <p className="dashboard-eyebrow">Navigation</p>
-              <h2>Menu</h2>
-              <p>Choose where you want to go.</p>
+          <div
+            ref={mobileNavRef}
+            id="app-shell-mobile-nav"
+            className="app-shell-mobile-nav open"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="app-shell-mobile-nav-title"
+            tabIndex={-1}
+          >
+            <div className="app-shell-mobile-nav-shell">
+              <div className="app-shell-mobile-nav-head">
+                <div>
+                  <p className="dashboard-eyebrow">Navigation</p>
+                  <h2 id="app-shell-mobile-nav-title">Menu</h2>
+                  <p>Choose where you want to go.</p>
+                </div>
+                <button type="button" className="app-shell-mobile-nav-close" onClick={closeMobileMenu}>
+                  Close
+                </button>
+              </div>
+
+              <nav className="app-shell-mobile-nav-grid" aria-label="Primary">
+                {tabs.map((tab, index) => (
+                  <NavLink key={tab.to} to={tab.to} ref={index === 0 ? firstMobileLinkRef : undefined} className={({ isActive }) => `app-shell-mobile-link ${isActive ? 'active' : ''}`}>
+                    <span className="app-shell-mobile-link-icon">
+                      <AppIcon name={tab.icon} />
+                    </span>
+                    <span className="app-shell-mobile-link-copy">
+                      <strong>{tab.label}</strong>
+                      <span>{tab.note}</span>
+                    </span>
+                  </NavLink>
+                ))}
+
+                {canAccessPwaAdmin ? (
+                  <NavLink to="/admin" className={({ isActive }) => `app-shell-mobile-link ${isActive ? 'active' : ''}`}>
+                    <span className="app-shell-mobile-link-icon">
+                      <AppIcon name="admin" />
+                    </span>
+                    <span className="app-shell-mobile-link-copy">
+                      <strong>Admin</strong>
+                      <span>Persona, users, recipes</span>
+                    </span>
+                  </NavLink>
+                ) : null}
+              </nav>
+
+              <div className="app-shell-mobile-actions">
+                <button className="btn-secondary app-shell-menu-action" onClick={() => { closeMobileMenu(); openDrawer() }} type="button">
+                  <AppIcon name="coach" />
+                  <span>Ask Johnny</span>
+                </button>
+                <button className="btn-secondary app-shell-menu-action app-shell-logout" onClick={handleLogout} disabled={loggingOut} type="button">
+                  <AppIcon name="logout" />
+                  <span>{loggingOut ? 'Signing out…' : 'Sign out'}</span>
+                </button>
+              </div>
             </div>
           </div>
-
-          <div className="app-shell-mobile-nav-grid">
-            {tabs.map((tab, index) => (
-              <NavLink key={tab.to} to={tab.to} ref={index === 0 ? firstMobileLinkRef : undefined} className={({ isActive }) => `app-shell-mobile-link ${isActive ? 'active' : ''}`}>
-                <span className="app-shell-mobile-link-icon">
-                  <AppIcon name={tab.icon} />
-                </span>
-                <span className="app-shell-mobile-link-copy">
-                  <strong>{tab.label}</strong>
-                  <span>{tab.note}</span>
-                </span>
-              </NavLink>
-            ))}
-
-            {canAccessPwaAdmin ? (
-              <NavLink to="/admin" className={({ isActive }) => `app-shell-mobile-link ${isActive ? 'active' : ''}`}>
-                <span className="app-shell-mobile-link-icon">
-                  <AppIcon name="admin" />
-                </span>
-                <span className="app-shell-mobile-link-copy">
-                  <strong>Admin</strong>
-                  <span>Persona, users, recipes</span>
-                </span>
-              </NavLink>
-            ) : null}
-          </div>
-
-          <div className="app-shell-mobile-actions">
-            <button className="btn-secondary app-shell-menu-action" onClick={() => { setMenuOpen(false); openDrawer() }} type="button">
-              <AppIcon name="coach" />
-              <span>Ask Johnny</span>
-            </button>
-            <button className="btn-secondary app-shell-menu-action app-shell-logout" onClick={handleLogout} disabled={loggingOut} type="button">
-              <AppIcon name="logout" />
-              <span>{loggingOut ? 'Signing out…' : 'Sign out'}</span>
-            </button>
-          </div>
-        </div>
-      </nav>
+        </>
+      ) : null}
 
       <main className="app-content" data-route-scroll-root="true">{children}</main>
       {dailyCheckInOpen ? (

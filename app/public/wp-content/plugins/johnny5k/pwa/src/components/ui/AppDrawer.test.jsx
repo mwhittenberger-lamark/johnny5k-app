@@ -34,6 +34,16 @@ async function pressKey(key) {
   })
 }
 
+async function pressTab(options = {}) {
+  await act(async () => {
+    window.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Tab', ...options }))
+  })
+}
+
+function getButtonByText(label) {
+  return Array.from(document.querySelectorAll('button')).find(button => button.textContent === label)
+}
+
 describe('AppDrawer', () => {
   beforeEach(() => {
     vi.useFakeTimers()
@@ -114,5 +124,25 @@ describe('AppDrawer', () => {
     await click(document.querySelector('.ui-overlay-backdrop'))
 
     expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('traps Tab focus within the drawer', async () => {
+    await renderComponent(
+      <AppDrawer open onClose={() => {}} title="Drawer title">
+        <button type="button">First action</button>
+        <button type="button">Second action</button>
+      </AppDrawer>,
+    )
+    await flushFocusTimer()
+
+    expect(document.activeElement?.textContent).toBe('First action')
+
+    getButtonByText('Second action').focus()
+    await pressTab()
+    expect(document.activeElement?.textContent).toBe('First action')
+
+    getButtonByText('First action').focus()
+    await pressTab({ shiftKey: true })
+    expect(document.activeElement?.textContent).toBe('Second action')
   })
 })

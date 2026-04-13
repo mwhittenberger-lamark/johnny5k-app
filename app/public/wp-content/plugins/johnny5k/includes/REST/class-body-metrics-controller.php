@@ -25,8 +25,21 @@ class BodyMetricsController {
 		$auth = [ 'Johnny5k\REST\AuthController', 'require_auth' ];
 
 		register_rest_route( $ns, '/body/weight', [
-			[ 'methods' => 'POST', 'callback' => [ __CLASS__, 'log_weight' ], 'permission_callback' => $auth ],
-			[ 'methods' => 'GET',  'callback' => [ __CLASS__, 'get_weight' ], 'permission_callback' => $auth ],
+			[
+				'methods'             => 'POST',
+				'callback'            => [ __CLASS__, 'log_weight' ],
+				'permission_callback' => $auth,
+				'args'                => [
+					'weight_lb' => [ 'required' => true, 'type' => 'number', 'validate_callback' => [ __CLASS__, 'validate_positive_number' ] ],
+					'date'      => [ 'required' => false, 'type' => 'string', 'sanitize_callback' => 'sanitize_text_field', 'validate_callback' => [ __CLASS__, 'validate_iso_date' ] ],
+				],
+			],
+			[
+				'methods'             => 'GET',
+				'callback'            => [ __CLASS__, 'get_weight' ],
+				'permission_callback' => $auth,
+				'args'                => [ 'limit' => [ 'required' => false, 'type' => 'integer', 'validate_callback' => [ __CLASS__, 'validate_limit' ] ] ],
+			],
 		] );
 
 		register_rest_route( $ns, '/body/weight/(?P<id>\d+)', [
@@ -35,8 +48,21 @@ class BodyMetricsController {
 		] );
 
 		register_rest_route( $ns, '/body/sleep', [
-			[ 'methods' => 'POST', 'callback' => [ __CLASS__, 'log_sleep' ], 'permission_callback' => $auth ],
-			[ 'methods' => 'GET',  'callback' => [ __CLASS__, 'get_sleep' ], 'permission_callback' => $auth ],
+			[
+				'methods'             => 'POST',
+				'callback'            => [ __CLASS__, 'log_sleep' ],
+				'permission_callback' => $auth,
+				'args'                => [
+					'hours_sleep' => [ 'required' => true, 'type' => 'number', 'validate_callback' => [ __CLASS__, 'validate_sleep_hours' ] ],
+					'date'        => [ 'required' => false, 'type' => 'string', 'sanitize_callback' => 'sanitize_text_field', 'validate_callback' => [ __CLASS__, 'validate_iso_date' ] ],
+				],
+			],
+			[
+				'methods'             => 'GET',
+				'callback'            => [ __CLASS__, 'get_sleep' ],
+				'permission_callback' => $auth,
+				'args'                => [ 'limit' => [ 'required' => false, 'type' => 'integer', 'validate_callback' => [ __CLASS__, 'validate_limit' ] ] ],
+			],
 		] );
 
 		register_rest_route( $ns, '/body/sleep/(?P<id>\d+)', [
@@ -45,8 +71,21 @@ class BodyMetricsController {
 		] );
 
 		register_rest_route( $ns, '/body/steps', [
-			[ 'methods' => 'POST', 'callback' => [ __CLASS__, 'log_steps' ], 'permission_callback' => $auth ],
-			[ 'methods' => 'GET',  'callback' => [ __CLASS__, 'get_steps' ], 'permission_callback' => $auth ],
+			[
+				'methods'             => 'POST',
+				'callback'            => [ __CLASS__, 'log_steps' ],
+				'permission_callback' => $auth,
+				'args'                => [
+					'steps' => [ 'required' => true, 'type' => 'integer', 'validate_callback' => [ __CLASS__, 'validate_non_negative_int' ] ],
+					'date'  => [ 'required' => false, 'type' => 'string', 'sanitize_callback' => 'sanitize_text_field', 'validate_callback' => [ __CLASS__, 'validate_iso_date' ] ],
+				],
+			],
+			[
+				'methods'             => 'GET',
+				'callback'            => [ __CLASS__, 'get_steps' ],
+				'permission_callback' => $auth,
+				'args'                => [ 'limit' => [ 'required' => false, 'type' => 'integer', 'validate_callback' => [ __CLASS__, 'validate_limit' ] ] ],
+			],
 		] );
 
 		register_rest_route( $ns, '/body/steps/(?P<id>\d+)', [
@@ -55,8 +94,22 @@ class BodyMetricsController {
 		] );
 
 		register_rest_route( $ns, '/body/cardio', [
-			[ 'methods' => 'POST', 'callback' => [ __CLASS__, 'log_cardio' ], 'permission_callback' => $auth ],
-			[ 'methods' => 'GET',  'callback' => [ __CLASS__, 'get_cardio' ], 'permission_callback' => $auth ],
+			[
+				'methods'             => 'POST',
+				'callback'            => [ __CLASS__, 'log_cardio' ],
+				'permission_callback' => $auth,
+				'args'                => [
+					'duration_minutes' => [ 'required' => true, 'type' => 'integer', 'validate_callback' => [ __CLASS__, 'validate_positive_int' ] ],
+					'date'             => [ 'required' => false, 'type' => 'string', 'sanitize_callback' => 'sanitize_text_field', 'validate_callback' => [ __CLASS__, 'validate_iso_date' ] ],
+					'intensity'        => [ 'required' => false, 'type' => 'string', 'sanitize_callback' => 'sanitize_text_field', 'validate_callback' => [ __CLASS__, 'validate_cardio_intensity' ] ],
+				],
+			],
+			[
+				'methods'             => 'GET',
+				'callback'            => [ __CLASS__, 'get_cardio' ],
+				'permission_callback' => $auth,
+				'args'                => [ 'limit' => [ 'required' => false, 'type' => 'integer', 'validate_callback' => [ __CLASS__, 'validate_limit' ] ] ],
+			],
 		] );
 
 		register_rest_route( $ns, '/body/cardio/(?P<id>\d+)', [
@@ -68,6 +121,7 @@ class BodyMetricsController {
 			'methods'             => 'GET',
 			'callback'            => [ __CLASS__, 'get_metrics' ],
 			'permission_callback' => $auth,
+			'args'                => [ 'days' => [ 'required' => false, 'type' => 'integer', 'validate_callback' => [ __CLASS__, 'validate_limit' ] ] ],
 		] );
 
 		register_rest_route( $ns, '/body/health-flags', [
@@ -608,5 +662,36 @@ class BodyMetricsController {
 		}
 
 		return UserTime::today( $user_id );
+	}
+
+	public static function validate_iso_date( $value ): bool {
+		$date = sanitize_text_field( (string) $value );
+		return '' === $date || 1 === preg_match( '/^\d{4}-\d{2}-\d{2}$/', $date );
+	}
+
+	public static function validate_limit( $value ): bool {
+		$limit = (int) $value;
+		return $limit >= 1 && $limit <= 90;
+	}
+
+	public static function validate_positive_number( $value ): bool {
+		return is_numeric( $value ) && (float) $value > 0;
+	}
+
+	public static function validate_sleep_hours( $value ): bool {
+		return is_numeric( $value ) && (float) $value > 0 && (float) $value <= 24;
+	}
+
+	public static function validate_non_negative_int( $value ): bool {
+		return is_numeric( $value ) && (int) $value >= 0;
+	}
+
+	public static function validate_positive_int( $value ): bool {
+		return is_numeric( $value ) && (int) $value > 0;
+	}
+
+	public static function validate_cardio_intensity( $value ): bool {
+		$intensity = sanitize_text_field( (string) $value );
+		return '' === $intensity || in_array( $intensity, [ 'light', 'moderate', 'hard', 'low', 'high', 'max' ], true );
 	}
 }

@@ -1,14 +1,6 @@
-import { useEffect, useId, useRef } from 'react'
+import { useId, useRef } from 'react'
 import { createPortal } from 'react-dom'
-
-const FOCUSABLE_SELECTOR = [
-  'a[href]',
-  'button:not([disabled])',
-  'input:not([disabled])',
-  'select:not([disabled])',
-  'textarea:not([disabled])',
-  '[tabindex]:not([tabindex="-1"])',
-].join(', ')
+import { useOverlayAccessibility } from '../../lib/accessibility'
 
 function getPortalRoot() {
   if (typeof document === 'undefined') {
@@ -32,6 +24,7 @@ export default function AppDrawer({
   description = '',
   dismissible = true,
   footer = null,
+  initialFocusRef = null,
   onClose,
   open = false,
   overlayClassName = '',
@@ -42,37 +35,13 @@ export default function AppDrawer({
   const descriptionId = useId()
   const panelRef = useRef(null)
 
-  useEffect(() => {
-    if (!open || typeof document === 'undefined') {
-      return undefined
-    }
-
-    const previousActiveElement = document.activeElement
-    const previousOverflow = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-
-    const focusTimer = window.setTimeout(() => {
-      const focusableElements = Array.from(panelRef.current?.querySelectorAll(FOCUSABLE_SELECTOR) || [])
-      const nextFocusTarget = focusableElements[0] || panelRef.current
-      nextFocusTarget?.focus()
-    }, 0)
-
-    function handleKeydown(event) {
-      if (event.key === 'Escape' && dismissible) {
-        event.preventDefault()
-        onClose?.()
-      }
-    }
-
-    window.addEventListener('keydown', handleKeydown)
-
-    return () => {
-      window.clearTimeout(focusTimer)
-      window.removeEventListener('keydown', handleKeydown)
-      document.body.style.overflow = previousOverflow
-      previousActiveElement?.focus?.()
-    }
-  }, [dismissible, onClose, open])
+  useOverlayAccessibility({
+    open,
+    containerRef: panelRef,
+    initialFocusRef,
+    onClose,
+    dismissible,
+  })
 
   if (!open) {
     return null

@@ -1,3 +1,5 @@
+import { useRef } from 'react'
+
 /* eslint-disable react-hooks/refs */
 
 import { nutritionApi } from '../../../api/modules/nutrition'
@@ -128,20 +130,97 @@ export function PantryPageContent({ screen, deps }) {
 }
 
 export function NutritionModeTabs({ screen }) {
+  const tabRefs = useRef([])
+  const tabs = [
+    {
+      key: 'today',
+      label: 'Today',
+      note: screen.meals.length ? `${screen.meals.length} logged` : 'Start logging',
+      anchor: screen.mealsSectionAnchor,
+      buttonId: 'nutrition-mode-tab-today',
+      panelId: 'nutrition-view-panel-today',
+    },
+    {
+      key: 'library',
+      label: 'Library',
+      note: screen.libraryItemCount ? `${screen.libraryItemCount} saved` : 'Foods and meals',
+      anchor: screen.savedFoodsSectionAnchor,
+      buttonId: 'nutrition-mode-tab-library',
+      panelId: 'nutrition-view-panel-library',
+    },
+    {
+      key: 'plan',
+      label: 'Plan',
+      note: screen.planningItemCount ? `${screen.planningItemCount} planning items` : 'Recipes and grocery gap',
+      anchor: screen.planningSectionAnchor,
+      buttonId: 'nutrition-mode-tab-plan',
+      panelId: 'nutrition-view-panel-plan',
+    },
+  ]
+
+  function focusTab(index) {
+    tabRefs.current[index]?.focus()
+  }
+
+  function handleTabKeyDown(event, index) {
+    const lastIndex = tabs.length - 1
+
+    if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+      event.preventDefault()
+      const nextIndex = index === lastIndex ? 0 : index + 1
+      screen.changeActiveView(tabs[nextIndex].key, tabs[nextIndex].anchor)
+      focusTab(nextIndex)
+      return
+    }
+
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+      event.preventDefault()
+      const nextIndex = index === 0 ? lastIndex : index - 1
+      screen.changeActiveView(tabs[nextIndex].key, tabs[nextIndex].anchor)
+      focusTab(nextIndex)
+      return
+    }
+
+    if (event.key === 'Home') {
+      event.preventDefault()
+      screen.changeActiveView(tabs[0].key, tabs[0].anchor)
+      focusTab(0)
+      return
+    }
+
+    if (event.key === 'End') {
+      event.preventDefault()
+      screen.changeActiveView(tabs[lastIndex].key, tabs[lastIndex].anchor)
+      focusTab(lastIndex)
+    }
+  }
+
   return (
     <div className="nutrition-mode-tabs" role="tablist" aria-label="Nutrition sections">
-      <button type="button" className={`nutrition-mode-tab${screen.activeView === 'today' ? ' active' : ''}`} onClick={() => screen.changeActiveView('today', screen.mealsSectionAnchor)}>
-        Today
-        <small>{screen.meals.length ? `${screen.meals.length} logged` : 'Start logging'}</small>
-      </button>
-      <button type="button" className={`nutrition-mode-tab${screen.activeView === 'library' ? ' active' : ''}`} onClick={() => screen.changeActiveView('library', screen.savedFoodsSectionAnchor)}>
-        Library
-        <small>{screen.libraryItemCount ? `${screen.libraryItemCount} saved` : 'Foods and meals'}</small>
-      </button>
-      <button type="button" className={`nutrition-mode-tab${screen.activeView === 'plan' ? ' active' : ''}`} onClick={() => screen.changeActiveView('plan', screen.planningSectionAnchor)}>
-        Plan
-        <small>{screen.planningItemCount ? `${screen.planningItemCount} planning items` : 'Recipes and grocery gap'}</small>
-      </button>
+      {tabs.map((tab, index) => {
+        const isActive = screen.activeView === tab.key
+
+        return (
+          <button
+            key={tab.key}
+            ref={element => {
+              tabRefs.current[index] = element
+            }}
+            id={tab.buttonId}
+            type="button"
+            role="tab"
+            className={`nutrition-mode-tab${isActive ? ' active' : ''}`}
+            aria-selected={isActive}
+            aria-controls={tab.panelId}
+            tabIndex={isActive ? 0 : -1}
+            onClick={() => screen.changeActiveView(tab.key, tab.anchor)}
+            onKeyDown={event => handleTabKeyDown(event, index)}
+          >
+            {tab.label}
+            <small>{tab.note}</small>
+          </button>
+        )
+      })}
     </div>
   )
 }
@@ -267,6 +346,7 @@ export function LabelReviewCard({ screen, showQuickLog = true }) {
 export function TodayNutritionView({ screen, deps }) {
   const {
     AddMealForm,
+    BeverageBoard,
     CoachingSummaryPanel,
     MacroStat,
     MealCard,
@@ -319,6 +399,7 @@ export function TodayNutritionView({ screen, deps }) {
             </div>
           </details>
         </div>
+        <BeverageBoard screen={screen} />
         {screen.coachingSummary ? (
           <CoachingSummaryPanel
             summary={screen.coachingSummary}

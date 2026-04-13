@@ -3,6 +3,7 @@ import { aiApi } from '../../api/modules/ai'
 import { onboardingApi } from '../../api/modules/onboarding'
 import AppDialog from '../ui/AppDialog'
 import { getDefaultLiveWorkoutFrames } from '../../lib/appImages'
+import { getAccessibleScrollBehavior, useOverlayAccessibility } from '../../lib/accessibility'
 import { reportClientDiagnostic, showGlobalToast } from '../../lib/clientDiagnostics'
 import {
   cycleLiveWorkoutVoiceMode,
@@ -84,10 +85,10 @@ export default function LiveWorkoutMode({
   const requestedSpeechKeyRef = useRef('')
   const initializedSessionRef = useRef(0)
   const previousExerciseIdRef = useRef(0)
+  const exitButtonRef = useRef(null)
   const textareaRef = useRef(null)
   const spokenMessageRef = useRef('')
   const isOpenRef = useRef(isOpen)
-  const onCloseRef = useRef(onClose)
   const panelRef = useRef(null)
   const stickyMetaRef = useRef(null)
   const currentLiftRef = useRef(null)
@@ -113,6 +114,7 @@ export default function LiveWorkoutMode({
   const voiceLabel = formatOpenAiVoiceLabel(voicePrefs.openAiVoice)
   const defaultLiveWorkoutFrames = useMemo(() => getDefaultLiveWorkoutFrames(appImages), [appImages])
   const voiceTestBusy = premiumVoiceTest.status === 'running' || instantVoiceTest.status === 'running'
+  const scrollBehavior = getAccessibleScrollBehavior()
   const coachFrames = useMemo(() => {
     const configuredFrames = normalizeLiveWorkoutFrames(liveFrames)
     return configuredFrames.length ? configuredFrames : defaultLiveWorkoutFrames
@@ -124,12 +126,17 @@ export default function LiveWorkoutMode({
   }, [])
 
   useEffect(() => {
-    onCloseRef.current = onClose
-  }, [onClose])
-
-  useEffect(() => {
     isOpenRef.current = isOpen
   }, [isOpen])
+
+  useOverlayAccessibility({
+    open: isOpen,
+    containerRef: panelRef,
+    initialFocusRef: exitButtonRef,
+    onClose: onClose,
+    dismissible: !showIntroModal,
+    trapFocus: !showIntroModal,
+  })
 
   useEffect(() => {
     if (!isOpen) return undefined
@@ -141,21 +148,6 @@ export default function LiveWorkoutMode({
       }, 1000)
       : null
 
-    const previousOverflow = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-
-    function handleKeyDown(event) {
-      if (event.key === 'Escape') {
-        if (showIntroModal) {
-          dismissIntroModal()
-          return
-        }
-        onCloseRef.current?.()
-      }
-    }
-
-    window.addEventListener('keydown', handleKeyDown)
-
     panelRef.current?.scrollTo({ top: 0, behavior: 'auto' })
     window.scrollTo({ top: 0, behavior: 'auto' })
 
@@ -163,10 +155,8 @@ export default function LiveWorkoutMode({
       if (intervalId != null) {
         window.clearInterval(intervalId)
       }
-      document.body.style.overflow = previousOverflow
-      window.removeEventListener('keydown', handleKeyDown)
     }
-  }, [dismissIntroModal, isOpen, restTimerPausedAt, showIntroModal])
+  }, [isOpen, restTimerPausedAt])
 
   useEffect(() => () => recognitionRef.current?.stop(), [])
 
@@ -330,8 +320,8 @@ export default function LiveWorkoutMode({
 
   useEffect(() => {
     if (!isOpen || !coachLogOpen) return
-    coachLogRef.current?.scrollTo({ top: coachLogRef.current.scrollHeight, behavior: 'smooth' })
-  }, [coachBusy, coachLogOpen, coachMessages, isOpen])
+    coachLogRef.current?.scrollTo({ top: coachLogRef.current.scrollHeight, behavior: scrollBehavior })
+  }, [coachBusy, coachLogOpen, coachMessages, isOpen, scrollBehavior])
 
   useEffect(() => {
     if (!isOpen) return
@@ -929,7 +919,7 @@ export default function LiveWorkoutMode({
 
     panelNode.scrollTo({
       top: Math.max(0, nextTop),
-      behavior: 'smooth',
+      behavior: scrollBehavior,
     })
   }
 
@@ -948,7 +938,7 @@ export default function LiveWorkoutMode({
         {timerLabel ? <span className="dashboard-chip subtle workout-session-timer">Workout {timerLabel}</span> : null}
         <span className={`dashboard-chip subtle live-workout-rest-chip ${restGuidance.tone}`}>{restGuidance.label}</span>
       </div>
-      <div className="live-workout-sticky-nav" aria-label="Live workout shortcuts">
+      <nav className="live-workout-sticky-nav" aria-label="Live workout shortcuts">
         <button
           type="button"
           className="btn-secondary small live-workout-sticky-arrow"
@@ -965,25 +955,26 @@ export default function LiveWorkoutMode({
         >
           ↓
         </button>
-      </div>
+      </nav>
     </div>
   )
 
   return (
-    <div className="live-workout-shell" role="dialog" aria-modal="true" aria-label="Live workout mode">
+    <div className="live-workout-shell">
       <div className="live-workout-backdrop" onClick={onClose} aria-hidden="true" />
-      <section ref={panelRef} className="live-workout-panel">
+      <section ref={panelRef} className="live-workout-panel" role="dialog" aria-modal="true" aria-labelledby="live-workout-title" aria-describedby="live-workout-description" tabIndex={-1}>
         <header className="live-workout-header">
           <div className="live-workout-header-copy">
             <span className="dashboard-chip ai">Live Workout Mode</span>
-            <h2>{todayLabel} • {formatToken(displayDayType || session?.session?.planned_day_type || 'workout')} day</h2>
+            <h2 id="live-workout-title">{todayLabel} • {formatToken(displayDayType || session?.session?.planned_day_type || 'workout')} day</h2>
             <div className="live-workout-header-meta">
               {voicePlaybackSupported ? <span className={`dashboard-chip subtle ${liveVoiceMode !== 'mute' ? 'success' : ''}`}>{voiceStatusLabel}</span> : null}
             </div>
-            {latestVoiceIssue ? <p className="settings-subtitle live-workout-voice-diagnostic">{latestVoiceIssue.message}</p> : null}
+            <p id="live-workout-description" className="sr-only">Live workout mode with set logging, session navigation, and Johnny coaching controls.</p>
+            {latestVoiceIssue ? <p className="settings-subtitle live-workout-voice-diagnostic" role="status" aria-live="polite">{latestVoiceIssue.message}</p> : null}
           </div>
           <div className="live-workout-header-actions">
-            <button type="button" className="btn-secondary" onClick={onClose}>Exit live mode</button>
+            <button ref={exitButtonRef} type="button" className="btn-secondary" onClick={onClose}>Exit live mode</button>
             {voicePlaybackSupported ? (
               <div className="live-workout-voice-switch-shell">
                 <button
@@ -1000,6 +991,10 @@ export default function LiveWorkoutMode({
             ) : null}
           </div>
         </header>
+
+        <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+          {latestCoachMessage?.role === 'assistant' ? latestCoachMessage.text : ''}
+        </div>
 
         {stickyMeta}
 
@@ -1129,7 +1124,7 @@ export default function LiveWorkoutMode({
                     <span>{coachMessages.length ? `${Math.min(coachMessages.length, 6)} recent message${Math.min(coachMessages.length, 6) === 1 ? '' : 's'}` : 'Open to review Johnny updates and your questions.'}</span>
                   </div>
                 </summary>
-                <div ref={coachLogRef} className="live-workout-coach-log" role="log" aria-live="polite">
+                <div ref={coachLogRef} className="live-workout-coach-log" role="log" aria-live="polite" aria-relevant="additions text" aria-busy={coachBusy}>
                   {coachMessages.length ? coachMessages.slice(-6).map((message, index) => (
                     <div key={`${message.role}-${message.createdAt || index}`} className={`live-workout-coach-bubble ${message.role}`}>
                       <span>{message.role === 'assistant' ? 'Johnny' : 'You'}</span>
@@ -1156,7 +1151,8 @@ export default function LiveWorkoutMode({
                 </div>
               </details>
 
-              {coachStatus ? <p className="settings-subtitle">{coachStatus}</p> : null}
+              {coachStatus ? <p className="settings-subtitle" role="status" aria-live="polite">{coachStatus}</p> : null}
+              {!voiceSupported ? <p className="settings-subtitle" id="live-workout-voice-unavailable">Voice capture is unavailable in this browser. Type your question instead.</p> : null}
 
               <div className="live-workout-coach-actions">
                 <textarea
@@ -1164,12 +1160,13 @@ export default function LiveWorkoutMode({
                   value={coachInput}
                   onChange={event => setCoachInput(event.target.value)}
                   onKeyDown={handleCoachInputKeyDown}
+                  aria-label="Ask Johnny a workout question"
                   placeholder="Type or record your question here."
                   rows={3}
                 />
                 <div className="live-workout-coach-buttons">
-                  <button type="button" className={`btn-secondary ${listening ? 'recording' : ''}`} onClick={listening ? stopListening : startListening}>
-                    {listening ? 'Stop recording' : 'Record question'}
+                  <button type="button" className={`btn-secondary ${listening ? 'recording' : ''}`} onClick={listening ? stopListening : startListening} disabled={!voiceSupported} aria-pressed={listening} aria-label={listening ? 'Stop recording workout question' : 'Record workout question'} aria-describedby={!voiceSupported ? 'live-workout-voice-unavailable' : undefined}>
+                    {voiceSupported ? (listening ? 'Stop recording' : 'Record question') : 'Voice unavailable'}
                   </button>
                   <button type="button" className="btn-primary" onClick={handleAskJohnny} disabled={!coachInput.trim()}>
                     Ask Johnny

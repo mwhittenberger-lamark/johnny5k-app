@@ -5,6 +5,7 @@ import { workoutApi } from '../../api/modules/workout'
 import ClearableInput from '../../components/ui/ClearableInput'
 import CoachingSummaryPanel from '../../components/ui/CoachingSummaryPanel'
 import SupportIconButton from '../../components/ui/SupportIconButton'
+import { getAccessibleScrollBehavior } from '../../lib/accessibility'
 import { formatUsShortDate } from '../../lib/dateFormat'
 import { buildCoachingPromptOptions, buildCoachingSummary, runCoachingAction } from '../../lib/coachingSummary'
 import { openSupportGuide } from '../../lib/supportHelp'
@@ -15,6 +16,7 @@ import { useDashboardStore } from '../../store/dashboardStore'
 import { useJohnnyAssistantStore } from '../../store/johnnyAssistantStore'
 
 export default function BodyScreen() {
+  const scrollBehavior = getAccessibleScrollBehavior()
   const openDrawer = useJohnnyAssistantStore(state => state.openDrawer)
   const location = useLocation()
   const navigate = useNavigate()
@@ -407,7 +409,7 @@ export default function BodyScreen() {
 
   function scrollToForm(ref) {
     requestAnimationFrame(() => {
-      ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      ref.current?.scrollIntoView({ behavior: scrollBehavior, block: 'start' })
       const input = ref.current?.querySelector('input, select, textarea')
       input?.focus()
     })
@@ -474,7 +476,7 @@ export default function BodyScreen() {
 
     if (pendingScrollTarget === 'weight' && weights.length && weightListRef.current) {
       requestAnimationFrame(() => {
-        weightListRef.current?.querySelector('.body-log-row')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        weightListRef.current?.querySelector('.body-log-row')?.scrollIntoView({ behavior: scrollBehavior, block: 'center' })
         setPendingScrollTarget('')
       })
       return
@@ -482,7 +484,7 @@ export default function BodyScreen() {
 
     if (pendingScrollTarget === 'sleep' && sleepLogs.length && sleepListRef.current) {
       requestAnimationFrame(() => {
-        sleepListRef.current?.querySelector('.body-log-row')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        sleepListRef.current?.querySelector('.body-log-row')?.scrollIntoView({ behavior: scrollBehavior, block: 'center' })
         setPendingScrollTarget('')
       })
       return
@@ -490,11 +492,11 @@ export default function BodyScreen() {
 
     if (pendingScrollTarget === 'steps' && stepLogs.length && stepsListRef.current) {
       requestAnimationFrame(() => {
-        stepsListRef.current?.querySelector('.body-log-row')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        stepsListRef.current?.querySelector('.body-log-row')?.scrollIntoView({ behavior: scrollBehavior, block: 'center' })
         setPendingScrollTarget('')
       })
     }
-  }, [pendingScrollTarget, sleepLogs, stepLogs, weights])
+  }, [pendingScrollTarget, scrollBehavior, sleepLogs, stepLogs, weights])
 
   useEffect(() => {
     if (!pendingRouteFocus || pendingRouteFocus.tab !== tab) {
@@ -951,7 +953,7 @@ function WorkoutHistoryTab({ workoutLogs, currentWeight, invalidate, onRefreshSn
 
   function scrollToForm() {
     requestAnimationFrame(() => {
-    workoutFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    workoutFormRef.current?.scrollIntoView({ behavior: scrollBehavior, block: 'start' })
     const input = workoutFormRef.current?.querySelector('input, select')
     input?.focus()
     })
@@ -1039,7 +1041,7 @@ function WorkoutHistoryTab({ workoutLogs, currentWeight, invalidate, onRefreshSn
     if (!pendingScrollToLatest || !workoutLogs?.length || !workoutListRef.current) return
 
     requestAnimationFrame(() => {
-      workoutListRef.current?.querySelector('.body-log-row')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      workoutListRef.current?.querySelector('.body-log-row')?.scrollIntoView({ behavior: scrollBehavior, block: 'center' })
       setPendingScrollToLatest(false)
     })
   }, [pendingScrollToLatest, workoutLogs])
@@ -1175,7 +1177,7 @@ function CardioTab({ invalidate, cardioLogs, cardioSeries, cardioRange, currentW
 
   function scrollToCardioForm() {
     requestAnimationFrame(() => {
-      cardioFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      cardioFormRef.current?.scrollIntoView({ behavior: scrollBehavior, block: 'start' })
       const input = cardioFormRef.current?.querySelector('input, select, textarea')
       input?.focus()
     })
@@ -1248,7 +1250,7 @@ function CardioTab({ invalidate, cardioLogs, cardioSeries, cardioRange, currentW
     if (!pendingScrollToLatest || !cardioLogs?.length || !cardioListRef.current) return
 
     requestAnimationFrame(() => {
-      cardioListRef.current?.querySelector('.body-log-row')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      cardioListRef.current?.querySelector('.body-log-row')?.scrollIntoView({ behavior: scrollBehavior, block: 'center' })
       setPendingScrollToLatest(false)
     })
   }, [cardioLogs, pendingScrollToLatest])
@@ -1463,15 +1465,58 @@ function SparklineCard({ values, stroke, fill, emptyLabel, referenceValue = null
 
 function RangeTabs({ value, onChange }) {
   const ranges = [7, 14, 30]
+  const buttonRefs = useRef([])
+
+  function focusRange(index) {
+    buttonRefs.current[index]?.focus()
+  }
+
+  function handleKeyDown(event, index) {
+    const lastIndex = ranges.length - 1
+
+    if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+      event.preventDefault()
+      const nextIndex = index === lastIndex ? 0 : index + 1
+      onChange(ranges[nextIndex])
+      focusRange(nextIndex)
+      return
+    }
+
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+      event.preventDefault()
+      const nextIndex = index === 0 ? lastIndex : index - 1
+      onChange(ranges[nextIndex])
+      focusRange(nextIndex)
+      return
+    }
+
+    if (event.key === 'Home') {
+      event.preventDefault()
+      onChange(ranges[0])
+      focusRange(0)
+      return
+    }
+
+    if (event.key === 'End') {
+      event.preventDefault()
+      onChange(ranges[lastIndex])
+      focusRange(lastIndex)
+    }
+  }
 
   return (
-    <div className="range-tabs" role="tablist" aria-label="Chart range">
-      {ranges.map(days => (
+    <div className="range-tabs" role="group" aria-label="Chart range">
+      {ranges.map((days, index) => (
         <button
           key={days}
+          ref={element => {
+            buttonRefs.current[index] = element
+          }}
           type="button"
           className={`range-tab ${value === days ? 'active' : ''}`}
+          aria-pressed={value === days}
           onClick={() => onChange(days)}
+          onKeyDown={event => handleKeyDown(event, index)}
         >
           {days}d
         </button>

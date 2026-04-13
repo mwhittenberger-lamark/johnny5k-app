@@ -1,6 +1,11 @@
 {
   "name": "johnny5k/backend-tests",
   "type": "project",
+  "autoload": {
+    "classmap": [
+      "includes/"
+    ]
+  },
   "scripts": {
     "test": "phpunit",
     "test:api": "phpunit --filter ApiIntegrationTest",
@@ -11,6 +16,7 @@
     "phpstan/phpstan": "^1.12"
   },
   "require": {
-    "minishlink/web-push": "^10.0"
+    "minishlink/web-push": "^10.0",
+    "woocommerce/action-scheduler": "^3.9"
   }
 }

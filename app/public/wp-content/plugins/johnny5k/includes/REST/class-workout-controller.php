@@ -35,12 +35,22 @@ class WorkoutController {
 			'methods'             => 'POST',
 			'callback'            => [ __CLASS__, 'start' ],
 			'permission_callback' => $auth,
+			'args'                => [
+				'time_tier'       => [ 'required' => false, 'type' => 'string', 'sanitize_callback' => 'sanitize_text_field', 'validate_callback' => [ __CLASS__, 'validate_time_tier' ] ],
+				'day_type'        => [ 'required' => false, 'type' => 'string', 'sanitize_callback' => 'sanitize_text_field', 'validate_callback' => [ __CLASS__, 'validate_day_type' ] ],
+				'readiness_score' => [ 'required' => false, 'type' => 'integer', 'validate_callback' => [ __CLASS__, 'validate_readiness_score' ] ],
+			],
 		] );
 
 		register_rest_route( $ns, '/workout/preview', [
 			'methods'             => 'POST',
 			'callback'            => [ __CLASS__, 'preview' ],
 			'permission_callback' => $auth,
+			'args'                => [
+				'time_tier'       => [ 'required' => false, 'type' => 'string', 'sanitize_callback' => 'sanitize_text_field', 'validate_callback' => [ __CLASS__, 'validate_time_tier' ] ],
+				'day_type'        => [ 'required' => false, 'type' => 'string', 'sanitize_callback' => 'sanitize_text_field', 'validate_callback' => [ __CLASS__, 'validate_day_type' ] ],
+				'readiness_score' => [ 'required' => false, 'type' => 'integer', 'validate_callback' => [ __CLASS__, 'validate_readiness_score' ] ],
+			],
 		] );
 
 		register_rest_route( $ns, '/workout/current', [
@@ -1791,6 +1801,19 @@ class WorkoutController {
 		}
 
 		return TrainingDayTypes::normalize( $value );
+	}
+
+	public static function validate_time_tier( $value ): bool {
+		$time_tier = sanitize_text_field( (string) $value );
+		return '' === $time_tier || in_array( $time_tier, [ 'short', 'medium', 'long' ], true );
+	}
+
+	public static function validate_day_type( $value ): bool {
+		return null !== self::normalize_day_type( $value ) || '' === (string) $value;
+	}
+
+	public static function validate_readiness_score( $value ): bool {
+		return is_numeric( $value ) && (int) $value >= 1 && (int) $value <= 10;
 	}
 
 	protected static function build_training_session( int $user_id, string $time_tier, bool $maintenance_mode, ?string $day_type_override, array $exercise_swaps, array $exercise_order, array $rep_adjustments = [], array $exercise_removals = [], array $exercise_additions = [] ) {

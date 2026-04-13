@@ -1,15 +1,13 @@
 import { lazy } from 'react'
 import { createBrowserRouter, Navigate, Outlet } from 'react-router-dom'
-import {
-  AppBootstrapLayout,
-  AppShellErrorElement,
-  LazyRoute,
-  RequireAdminLayout,
-  RequireAuthLayout,
-  RequireOnboardedLayout,
-  RootLayout,
-  ShellLayout,
-} from './App'
+import { AppBootstrapLayout } from './App'
+import { AppShellErrorElement } from './app/routing/AppShellErrorElement'
+import { LazyRoute } from './app/routing/LazyRoute'
+import { RequireAdminLayout } from './app/routing/RequireAdminLayout'
+import { RequireAuthLayout } from './app/routing/RequireAuthLayout'
+import { RequireOnboardedLayout } from './app/routing/RequireOnboardedLayout'
+import { RootLayout } from './app/routing/RootLayout'
+import { ShellLayout } from './app/routing/ShellLayout'
 import RouteErrorScreen from './components/resilience/RouteErrorScreen'
 
 const LoginScreen = lazy(() => import('./screens/auth/LoginScreen'))

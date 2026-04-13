@@ -5,9 +5,12 @@ defined( 'ABSPATH' ) || exit;
 
 use Johnny5k\Services\AiService;
 
-class AiChatController {
+class AiChatController extends RestController {
 
-	public static function register_routes( string $ns, $auth ): void {
+	public static function register_routes(): void {
+		$ns   = JF_REST_NAMESPACE;
+		$auth = self::auth_callback();
+
 		register_rest_route( $ns, '/ai/chat', [
 			'methods'             => 'POST',
 			'callback'            => [ __CLASS__, 'chat' ],
@@ -98,7 +101,7 @@ class AiChatController {
 		$context    = self::sanitize_ai_context_overrides( $req->get_param( 'context' ) );
 
 		if ( ! $message ) {
-			return new \WP_REST_Response( [ 'message' => 'No message provided.' ], 400 );
+			return self::message( 'No message provided.', 400 );
 		}
 
 		$thread_key = 'u' . $user_id . '_' . $thread_key;
@@ -108,7 +111,7 @@ class AiChatController {
 			return new \WP_REST_Response( [ 'message' => $result->get_error_message() ], 500 );
 		}
 
-		return new \WP_REST_Response( [
+		return self::response( [
 			'reply'             => $result['reply'],
 			'actions'           => $result['actions'] ?? [],
 			'sources'           => $result['sources'] ?? [],
@@ -128,7 +131,7 @@ class AiChatController {
 		$meal_note = sanitize_textarea_field( (string) ( $req->get_param( 'meal_note' ) ?: '' ) );
 
 		if ( ! $image ) {
-			return new \WP_REST_Response( [ 'message' => 'No image provided.' ], 400 );
+			return self::message( 'No image provided.', 400 );
 		}
 
 		$result = AiService::analyse_food_image( $user_id, $image, 'meal_photo', $meal_note );

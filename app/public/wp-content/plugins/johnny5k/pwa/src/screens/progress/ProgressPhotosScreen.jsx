@@ -3,10 +3,12 @@ import { dashboardApi } from '../../api/modules/dashboard'
 import EmptyState from '../../components/ui/EmptyState'
 import ErrorState from '../../components/ui/ErrorState'
 import Field from '../../components/ui/Field'
+import { getAccessibleScrollBehavior } from '../../lib/accessibility'
 import { formatUsShortDate } from '../../lib/dateFormat'
 import { confirmGlobalAction, showGlobalToast } from '../../lib/uiFeedback'
 
 const ANGLES = ['front', 'side', 'back']
+const SCROLL_BEHAVIOR = getAccessibleScrollBehavior()
 
 function titleCase(value) {
   return value.charAt(0).toUpperCase() + value.slice(1)
@@ -170,7 +172,7 @@ export default function ProgressPhotosScreen() {
     if (!showComparisonCard || !comparisonRef.current) return
 
     window.requestAnimationFrame(() => {
-      comparisonRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      comparisonRef.current?.scrollIntoView({ behavior: SCROLL_BEHAVIOR, block: 'start' })
     })
   }, [showComparisonCard])
 

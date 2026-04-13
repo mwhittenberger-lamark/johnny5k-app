@@ -1005,19 +1005,19 @@
   font-variant-numeric: tabular-nums;
 }
 .live-workout-rest-chip.tight {
-  background: rgba(255, 255, 255, 0.1);
-  border-color: rgba(255, 255, 255, 0.18);
-  color: #eff7ff;
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.26);
+  color: #ffffff;
 }
 .live-workout-rest-chip.sweet {
-  background: rgba(97, 225, 179, 0.14);
-  border-color: rgba(97, 225, 179, 0.28);
-  color: #dffef1;
+  background: rgba(97, 225, 179, 0.2);
+  border-color: rgba(97, 225, 179, 0.34);
+  color: #f0fff7;
 }
 .live-workout-rest-chip.drift {
-  background: rgba(255, 208, 0, 0.16);
-  border-color: rgba(255, 208, 0, 0.28);
-  color: #fff3c2;
+  background: rgba(255, 208, 0, 0.22);
+  border-color: rgba(255, 208, 0, 0.36);
+  color: #fff7d6;
 }
 .live-workout-grid {
   display: grid;

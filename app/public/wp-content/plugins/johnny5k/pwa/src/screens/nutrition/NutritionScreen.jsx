@@ -11,6 +11,7 @@ import ErrorState from '../../components/ui/ErrorState'
 import Field from '../../components/ui/Field'
 import OfflineState from '../../components/ui/OfflineState'
 import SupportIconButton from '../../components/ui/SupportIconButton'
+import { getAccessibleScrollBehavior } from '../../lib/accessibility'
 import { buildCoachingPromptOptions, buildCoachingSummary, runCoachingAction } from '../../lib/coachingSummary'
 import { trackCoachingPromptOpen } from '../../lib/coaching/coachingAnalytics'
 import { scrollAppToTop } from '../../lib/scrollAppToTop'
@@ -45,7 +46,7 @@ import {
   getLabelReviewQuantityTotals,
 } from './labelScanUtils'
 
-const MEAL_TYPES = ['breakfast', 'lunch', 'dinner', 'snack']
+const MEAL_TYPES = ['breakfast', 'lunch', 'dinner', 'snack', 'beverage']
 const RECIPE_CARD_VISIBLE_LIMIT = 5
 const PANTRY_CATEGORY_CONFIG = [
   { key: 'proteins', label: 'Proteins', keywords: ['chicken', 'beef', 'turkey', 'salmon', 'tuna', 'shrimp', 'tofu', 'tempeh', 'protein', 'sausage', 'bacon', 'pork', 'ham'] },
@@ -70,6 +71,7 @@ const DRAWER_NUTRITION_ACTION_TOOLS = new Set([
   'add_pantry_items',
   'add_grocery_gap_items',
 ])
+const SCROLL_BEHAVIOR = getAccessibleScrollBehavior()
 const MICRO_TARGETS = {
   calcium: { amount: 1300, unit: 'mg' },
   choline: { amount: 550, unit: 'mg' },
@@ -109,7 +111,7 @@ function useAutoScrollWhenActive(active) {
     }
 
     const frameId = window.requestAnimationFrame(() => {
-      ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      ref.current?.scrollIntoView({ behavior: SCROLL_BEHAVIOR, block: 'start' })
     })
 
     return () => window.cancelAnimationFrame(frameId)
@@ -120,7 +122,7 @@ function useAutoScrollWhenActive(active) {
 
 function scrollNodeIntoView(node) {
   window.requestAnimationFrame(() => {
-    node?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    node?.scrollIntoView({ behavior: SCROLL_BEHAVIOR, block: 'start' })
   })
 }
 
@@ -215,6 +217,7 @@ export default function NutritionScreen() {
   const [cookbookRecipes, setCookbookRecipes] = useState([])
   const [selectedRecipeKeys, setSelectedRecipeKeys] = useState([])
   const [weeklyCaloriesReview, setWeeklyCaloriesReview] = useState(() => buildEmptyWeeklyCaloriesReview())
+  const [beverageBoard, setBeverageBoard] = useState(() => buildEmptyBeverageBoard(today))
   const mealInputRef = useRef()
   const labelFrontInputRef = useRef()
   const labelBackInputRef = useRef()
@@ -398,7 +401,7 @@ export default function NutritionScreen() {
   const loadData = useCallback(async () => {
     setError('')
     try {
-      const [mealRows, summaryRow, recentFoodRows, savedMealRows, savedFoodRows, pantryRows, recipeRows, groceryGapRow, cookbookRows] = await Promise.all([
+      const [mealRows, summaryRow, recentFoodRows, savedMealRows, savedFoodRows, pantryRows, recipeRows, groceryGapRow, cookbookRows, beverageBoardRow] = await Promise.all([
         nutritionApi.getMeals(today),
         nutritionApi.getSummary(today),
         nutritionApi.getRecentFoods(),
@@ -408,6 +411,7 @@ export default function NutritionScreen() {
         nutritionApi.getRecipes(),
         nutritionApi.getGroceryGap(),
         nutritionApi.getRecipeCookbook(),
+        nutritionApi.getBeverageBoard(today).catch(() => buildEmptyBeverageBoard(today)),
       ])
       setMeals(mealRows)
       setSummary(summaryRow)
@@ -420,6 +424,7 @@ export default function NutritionScreen() {
       setCookbookRecipes(nextCookbookRecipes)
       setSelectedRecipeKeys(nextCookbookRecipes.map(recipe => getRecipeKey(recipe)))
       setGroceryGap(groceryGapRow)
+      setBeverageBoard(beverageBoardRow || buildEmptyBeverageBoard(today))
       FOOD_SEARCH_CACHE.clear()
       await loadWeeklyCaloriesReview(today)
     } catch (err) {
@@ -470,7 +475,7 @@ export default function NutritionScreen() {
             ? groceryGapSectionRef
             : null
     const frameId = window.requestAnimationFrame(() => {
-      targetRef?.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      targetRef?.current?.scrollIntoView({ behavior: SCROLL_BEHAVIOR, block: 'start' })
     })
 
     return () => window.cancelAnimationFrame(frameId)
@@ -892,7 +897,7 @@ export default function NutritionScreen() {
     }
 
     window.requestAnimationFrame(() => {
-      ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      ref.current?.scrollIntoView({ behavior: SCROLL_BEHAVIOR, block: 'start' })
     })
   }
 
@@ -1174,6 +1179,7 @@ export default function NutritionScreen() {
     AddMealForm,
     AiMealReviewCard,
     AppToast,
+    BeverageBoard,
     CoachingSummaryPanel,
     buildNutritionCoachBody,
     buildNutritionCoachHeadline,
@@ -1213,6 +1219,7 @@ export default function NutritionScreen() {
     aiMealDraft,
     allGapItemsChecked,
     analyzing,
+    beverageBoard,
     caloriesRemaining,
     changeActiveView,
     checkedGapItemSet,
@@ -1343,6 +1350,7 @@ export default function NutritionScreen() {
     secondaryMacroCards,
     selectedRecipeKeys,
     setAiMealDraft,
+    setBeverageBoard,
     setCollapsedPantryCategories,
     setLabelScanNote,
     setPantryCategoryFilter,
@@ -1377,6 +1385,7 @@ export default function NutritionScreen() {
     showSavedMealForm,
     showToast,
     summary,
+    today,
     weeklyCaloriesReview,
     syncingGapToPantry,
     handleSavedFoodsLabelScanCancel: () => {
@@ -1482,9 +1491,15 @@ export default function NutritionScreen() {
 
       <NutritionModeTabs screen={screen} />
       <NutritionAiReviewPanels screen={screen} deps={featureViewDeps} />
-      {activeView === 'today' ? <TodayNutritionView screen={screen} deps={featureViewDeps} /> : null}
-      {activeView === 'library' ? <LibraryNutritionView screen={screen} deps={featureViewDeps} /> : null}
-      {activeView === 'plan' ? <PlanningNutritionView screen={screen} deps={featureViewDeps} /> : null}
+      <div id="nutrition-view-panel-today" role="tabpanel" aria-labelledby="nutrition-mode-tab-today" hidden={activeView !== 'today'}>
+        {activeView === 'today' ? <TodayNutritionView screen={screen} deps={featureViewDeps} /> : null}
+      </div>
+      <div id="nutrition-view-panel-library" role="tabpanel" aria-labelledby="nutrition-mode-tab-library" hidden={activeView !== 'library'}>
+        {activeView === 'library' ? <LibraryNutritionView screen={screen} deps={featureViewDeps} /> : null}
+      </div>
+      <div id="nutrition-view-panel-plan" role="tabpanel" aria-labelledby="nutrition-mode-tab-plan" hidden={activeView !== 'plan'}>
+        {activeView === 'plan' ? <PlanningNutritionView screen={screen} deps={featureViewDeps} /> : null}
+      </div>
 
       {activeToast ? <AppToast toast={activeToast} onDismiss={() => dismissToast(activeToast.id)} /> : null}
     </div>
@@ -1680,6 +1695,7 @@ function MealCard({ meal, savedFoods, onSave, onDelete, onError }) {
   const totals = getMealNutritionTotals(meal.items)
   const mealCount = meal.items?.length ?? 0
   const entryCount = Array.isArray(meal.meal_ids) ? meal.meal_ids.length : 1
+  const itemLabel = meal?.meal_type === 'beverage' ? 'drink' : 'item'
 
   if (editing) {
     return (
@@ -1725,7 +1741,7 @@ function MealCard({ meal, savedFoods, onSave, onDelete, onError }) {
           </button>
         </div>
       </div>
-      <p className="meal-card-meta">{entryCount > 1 ? `${entryCount} entries merged • ` : ''}{mealCount} item{mealCount === 1 ? '' : 's'} logged</p>
+      <p className="meal-card-meta">{entryCount > 1 ? `${entryCount} entries merged • ` : ''}{mealCount} {itemLabel}{mealCount === 1 ? '' : 's'} logged</p>
       <div className="meal-card-totals" aria-label="Meal nutrition totals">
         <div className="meal-total-stat meal-total-stat-calories">
           <span className="meal-total-label">Calories</span>
@@ -1754,7 +1770,7 @@ function MealCard({ meal, savedFoods, onSave, onDelete, onError }) {
               aria-expanded={openItemIndex === index}
             >
               <div className="nutrition-meal-accordion-copy meal-card-item-copy">
-                <span className="nutrition-meal-accordion-label">Food {index + 1}</span>
+                <span className="nutrition-meal-accordion-label">{meal?.meal_type === 'beverage' ? 'Drink' : 'Food'} {index + 1}</span>
                 <strong className="meal-item-name">{item.food_name || 'Food item'}</strong>
                 <p>{formatMealServing(item.serving_amount, item.serving_unit)} · {Math.round(Number(item.calories) || 0)} Calories · {formatMealMacroValue(item.protein_g)}g protein</p>
               </div>
@@ -2810,6 +2826,232 @@ function PlanningAccordionCard({ innerRef = null, open, onToggle, chip, title, d
   )
 }
 
+function BeverageBoard({ screen }) {
+  const [query, setQuery] = useState('')
+  const [selectedDrink, setSelectedDrink] = useState(null)
+  const [suggestions, setSuggestions] = useState([])
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false)
+  const [lookingUp, setLookingUp] = useState(false)
+  const [servingMultiplier, setServingMultiplier] = useState(1)
+  const trimmedQuery = query.trim()
+  const fallbackBoard = buildEmptyBeverageBoard(screen.today)
+  const review = screen.beverageBoard?.review || fallbackBoard.review
+  const water = screen.beverageBoard?.water || fallbackBoard.water
+  const metrics = review?.metrics || {}
+  const servingOptions = useMemo(() => buildBeverageServingOptions(selectedDrink), [selectedDrink])
+  const scaledDrink = useMemo(() => scaleBeverageSelection(selectedDrink, servingMultiplier), [selectedDrink, servingMultiplier])
+
+  useEffect(() => {
+    if (trimmedQuery.length < 2) {
+      setSuggestions([])
+      return undefined
+    }
+
+    let cancelled = false
+    const timeoutId = window.setTimeout(async () => {
+      setLoadingSuggestions(true)
+      try {
+        const results = await nutritionApi.searchFoods(trimmedQuery, { beverageOnly: true })
+        if (!cancelled) {
+          setSuggestions(Array.isArray(results) ? results : [])
+        }
+      } catch {
+        if (!cancelled) {
+          setSuggestions([])
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingSuggestions(false)
+        }
+      }
+    }, 120)
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(timeoutId)
+    }
+  }, [trimmedQuery])
+
+  function applyDrinkSelection(selection) {
+    setSelectedDrink(normaliseBeverageSelection(selection))
+    setServingMultiplier(1)
+    setSuggestions([])
+    setQuery(buildBeverageSelectionLabel(selection))
+  }
+
+  async function handleLookupDrink() {
+    if (!trimmedQuery) {
+      screen.showErrorToast('Type a drink first.')
+      return
+    }
+
+    setLookingUp(true)
+    try {
+      const result = await aiApi.analyseFoodText(trimmedQuery)
+      applyDrinkSelection(buildBeverageLookupSelection(result, trimmedQuery))
+      if (result?.used_web_search || (Array.isArray(result?.sources) && result.sources.length)) {
+        screen.showToast(buildAiSourceToast('Drink lookup', result?.notes || 'Johnny checked this drink against online nutrition data.', result?.sources || []))
+      }
+    } catch (err) {
+      screen.showErrorToast(err, 'Johnny could not look up that drink.')
+    } finally {
+      setLookingUp(false)
+    }
+  }
+
+  async function handleSaveDrink() {
+    if (!selectedDrink) {
+      screen.showErrorToast('Choose or look up a drink first.')
+      return
+    }
+
+    await screen.runAction(
+      () => nutritionApi.logMeal(buildBeverageMealPayload(selectedDrink, servingMultiplier, screen.today)),
+      'Drink logged.',
+      {
+        onSuccess: async () => {
+          screen.invalidate()
+          await screen.loadData()
+          setQuery('')
+          setSelectedDrink(null)
+          setServingMultiplier(1)
+          setSuggestions([])
+        },
+      },
+    )
+  }
+
+  async function handleWaterTap(index) {
+    const nextCount = water.glasses === index + 1 ? index : index + 1
+    await screen.runAction(
+      () => nutritionApi.setWaterIntake(screen.today, nextCount),
+      nextCount ? `Water set to ${nextCount}/${water.target_glasses} glasses.` : 'Water cleared for today.',
+      {
+        onSuccess: result => {
+          screen.setBeverageBoard(result || buildEmptyBeverageBoard(screen.today))
+        },
+      },
+    )
+  }
+
+  return (
+    <div className="nutrition-coach-card beverage-board-card">
+      <div className="dashboard-card-head">
+        <span className="dashboard-chip nutrition">Beverage Board</span>
+        <span className="dashboard-chip subtle">Track the hidden calories</span>
+      </div>
+      <div className="beverage-board-grid">
+        <div className="beverage-board-panel beverage-board-panel-search">
+          <h3>Log drinks fast</h3>
+          <p>Search recent or saved beverages first. If nothing matches, let Johnny look up the drink and pull in a serving to save.</p>
+          <div className="beverage-board-search">
+            <ClearableInput
+              type="search"
+              placeholder="Coke Zero, latte, Gatorade, iced tea..."
+              value={query}
+              onChange={event => setQuery(event.target.value)}
+            />
+            <button type="button" className="btn-secondary" onClick={handleLookupDrink} disabled={!trimmedQuery || lookingUp}>
+              {lookingUp ? 'Looking up…' : 'Find drink'}
+            </button>
+          </div>
+          {loadingSuggestions ? <p className="settings-subtitle">Checking saved and recent beverage matches…</p> : null}
+          {suggestions.length ? (
+            <div className="nutrition-stack-list beverage-board-suggestions">
+              {suggestions.slice(0, 5).map(suggestion => (
+                <button
+                  key={`${suggestion.match_type}-${suggestion.id}-${suggestion.canonical_name}`}
+                  type="button"
+                  className="nutrition-item-row nutrition-suggestion-row beverage-board-suggestion"
+                  onClick={() => applyDrinkSelection(suggestion)}
+                >
+                  <div>
+                    <strong>{buildBeverageSelectionLabel(suggestion)}</strong>
+                    <p>{suggestion.match_type === 'saved_food' ? 'Saved beverage' : 'Recent beverage'} · {suggestion.serving_size || '1 serving'} · {Math.round(Number(suggestion.calories) || 0)} Calories</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          ) : trimmedQuery.length >= 2 && !loadingSuggestions ? <p className="settings-subtitle">No saved or recent beverage matches yet. Use the lookup button to resolve this one.</p> : null}
+
+          {selectedDrink ? (
+            <div className="beverage-board-selection">
+              <div className="beverage-board-selection-head">
+                <div>
+                  <strong>{buildBeverageSelectionLabel(selectedDrink)}</strong>
+                  <p>{selectedDrink.serving_size || '1 serving'} · {Math.round(Number(selectedDrink.calories) || 0)} Calories per serving</p>
+                </div>
+                <button type="button" className="btn-ghost small" onClick={() => { setSelectedDrink(null); setServingMultiplier(1) }}>Clear</button>
+              </div>
+              <div className="nutrition-gap-list nutrition-quick-picks beverage-board-size-picks">
+                {servingOptions.map(option => (
+                  <button
+                    key={option.multiplier}
+                    type="button"
+                    className={`onboarding-chip${Math.abs(servingMultiplier - option.multiplier) < 0.001 ? ' active' : ''}`}
+                    onClick={() => setServingMultiplier(option.multiplier)}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+              <div className="beverage-board-selection-stats">
+                <span className="onboarding-chip active">{Math.round(Number(scaledDrink?.calories) || 0)} Calories</span>
+                <span className="onboarding-chip">{formatMealMacroValue(scaledDrink?.carbs_g)}g carbs</span>
+                <span className="onboarding-chip">{formatMealMacroValue(scaledDrink?.sugar_g)}g sugar</span>
+              </div>
+              <div className="form-actions">
+                <button type="button" className="btn-primary" onClick={handleSaveDrink}>Save drink</button>
+              </div>
+            </div>
+          ) : null}
+        </div>
+
+        <div className="beverage-board-panel beverage-board-panel-water">
+          <h3>Water first</h3>
+          <p>Tap the glasses as you go. Water stays separate from calories, but Johnny still checks the 7-day hydration pattern.</p>
+          <div className="beverage-board-water-grid" role="group" aria-label="Daily water glasses">
+            {Array.from({ length: water.target_glasses || 6 }, (_, index) => {
+              const filled = index < water.glasses
+              return (
+                <button
+                  key={index}
+                  type="button"
+                  className={`beverage-water-glass${filled ? ' filled' : ''}`}
+                  onClick={() => { void handleWaterTap(index) }}
+                  aria-pressed={filled}
+                  aria-label={`Water glass ${index + 1}`}
+                >
+                  <span aria-hidden="true">{filled ? '■' : '□'}</span>
+                </button>
+              )
+            })}
+          </div>
+          <div className="beverage-board-selection-stats">
+            <span className="onboarding-chip active">Today: {water.glasses}/{water.target_glasses}</span>
+            <span className="onboarding-chip">7-day water: {metrics.water_glasses || 0}</span>
+            <span className="onboarding-chip">Days logged: {metrics.water_logged_days || 0}/7</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="beverage-board-review">
+        <div className="dashboard-card-head">
+          <span className="dashboard-chip ai">Johnny</span>
+          <span className="dashboard-chip subtle">{review.period_label || 'Last 7 days'}</span>
+        </div>
+        <h3>{review.headline}</h3>
+        <p>{review.review}</p>
+        <div className="beverage-board-selection-stats">
+          <span className="onboarding-chip active">Drink calories: {metrics.total_beverage_calories || 0}</span>
+          <span className="onboarding-chip">Drinks logged: {metrics.drink_count || 0}</span>
+          <span className="onboarding-chip">Days with drinks: {metrics.logged_days || 0}/7</span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function PantryDisplayRow({ item, categoryLabel = '', detailText = '', actionLabel, secondaryAction = null, onAction }) {
   const resolvedCategory = categoryLabel || getPantryCategoryLabel(item)
   const detail = detailText || `${item.quantity != null || item.unit ? formatGroceryGapAmount(item.quantity, item.unit) : 'No quantity set'}${item.notes ? ` · ${item.notes}` : ''}`
@@ -2923,7 +3165,7 @@ function MealComposerForm({ title, savedFoods, requireName = false, submitLabel,
     }
 
     window.requestAnimationFrame(() => {
-      mealVoiceRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      mealVoiceRef.current?.scrollIntoView({ behavior: SCROLL_BEHAVIOR, block: 'start' })
     })
   }, [showMealVoice])
 
@@ -2951,7 +3193,7 @@ function MealComposerForm({ title, savedFoods, requireName = false, submitLabel,
     }
 
     const frameId = window.requestAnimationFrame(() => {
-      itemAccordionRefs.current[openItemIndex]?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      itemAccordionRefs.current[openItemIndex]?.scrollIntoView({ behavior: SCROLL_BEHAVIOR, block: 'start' })
     })
 
     return () => window.cancelAnimationFrame(frameId)
@@ -3413,6 +3655,7 @@ function normaliseMealItems(items) {
     sodium_mg: Number(item.sodium_mg ?? 0),
     micros: Array.isArray(item.micros) ? item.micros : [],
     source: item.source || null,
+    is_beverage: Boolean(item.is_beverage ?? item.source?.is_beverage),
     food_confidence: Number(item.food_confidence ?? item.source?.food_confidence ?? 0),
     portion_confidence: Number(item.portion_confidence ?? item.source?.portion_confidence ?? 0),
     notes: item.notes || '',
@@ -3667,6 +3910,7 @@ function createEmptyMealItem() {
     sodium_mg: '',
     micros: [],
     source: null,
+    is_beverage: false,
     notes: '',
   }
 }
@@ -3687,7 +3931,8 @@ function applyFoodSuggestion(currentItem, suggestion) {
     sugar_g: String(suggestion.sugar_g ?? currentItem.sugar_g ?? ''),
     sodium_mg: String(suggestion.sodium_mg ?? currentItem.sodium_mg ?? ''),
     micros: Array.isArray(suggestion.micros) ? suggestion.micros : currentItem.micros,
-    source: suggestion.match_type ? { type: suggestion.match_type, food_id: suggestion.id || null } : currentItem.source,
+    is_beverage: Boolean(suggestion.is_beverage ?? suggestion.source?.is_beverage ?? currentItem.is_beverage),
+    source: suggestion.match_type ? { type: suggestion.match_type, food_id: suggestion.id || null, is_beverage: Boolean(suggestion.is_beverage ?? suggestion.source?.is_beverage) } : currentItem.source,
     notes: suggestion.notes || currentItem.notes || '',
   }
 }
@@ -3756,6 +4001,7 @@ function buildMealItemPayload(item) {
     sugar_g: Number(item.sugar_g) || 0,
     sodium_mg: Number(item.sodium_mg) || 0,
     micros: Array.isArray(item.micros) ? item.micros : [],
+    is_beverage: Boolean(item.is_beverage ?? item.source?.is_beverage),
     source: item.source,
   }
 }
@@ -4888,6 +5134,140 @@ function formatMealTimeLabel(mealDateTime) {
   }
 
   return parsed.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }).toLowerCase()
+}
+
+function buildEmptyBeverageBoard(date = '') {
+  return {
+    date,
+    water: {
+      glasses: 0,
+      target_glasses: 6,
+      seven_day_glasses: 0,
+      logged_days: 0,
+    },
+    review: {
+      period_label: 'Last 7 days',
+      headline: 'Beverage Board is ready',
+      review: 'Log drinks and tap your water glasses so Johnny can catch hidden calories before they stack.',
+      metrics: {
+        total_beverage_calories: 0,
+        drink_count: 0,
+        logged_days: 0,
+        water_glasses: 0,
+        water_logged_days: 0,
+      },
+    },
+  }
+}
+
+function normaliseBeverageSelection(selection) {
+  if (!selection) {
+    return null
+  }
+
+  return {
+    food_id: selection.food_id ?? selection.id ?? null,
+    canonical_name: String(selection.canonical_name || selection.food_name || '').trim() || 'Drink',
+    brand: String(selection.brand || '').trim(),
+    serving_size: normaliseRawServingUnitLabel(selection.serving_size || selection.serving_unit || '1 serving'),
+    calories: Number(selection.calories ?? 0) || 0,
+    protein_g: Number(selection.protein_g ?? 0) || 0,
+    carbs_g: Number(selection.carbs_g ?? 0) || 0,
+    fat_g: Number(selection.fat_g ?? 0) || 0,
+    fiber_g: Number(selection.fiber_g ?? 0) || 0,
+    sugar_g: Number(selection.sugar_g ?? 0) || 0,
+    sodium_mg: Number(selection.sodium_mg ?? 0) || 0,
+    micros: Array.isArray(selection.micros) ? selection.micros : [],
+    is_beverage: true,
+    source: typeof selection.source === 'object' && selection.source
+      ? { ...selection.source, is_beverage: true }
+      : { type: selection.match_type || 'manual', is_beverage: true },
+  }
+}
+
+function buildBeverageLookupSelection(result, fallbackQuery) {
+  return normaliseBeverageSelection({
+    food_name: result?.food_name || fallbackQuery,
+    brand: result?.brand || '',
+    serving_size: result?.serving_size || '1 serving',
+    calories: result?.calories ?? 0,
+    protein_g: result?.protein_g ?? 0,
+    carbs_g: result?.carbs_g ?? 0,
+    fat_g: result?.fat_g ?? 0,
+    fiber_g: result?.fiber_g ?? 0,
+    sugar_g: result?.sugar_g ?? 0,
+    sodium_mg: result?.sodium_mg ?? 0,
+    micros: Array.isArray(result?.micros) ? result.micros : [],
+    source: typeof result?.source === 'object'
+      ? { ...result.source, is_beverage: true }
+      : { provider: result?.used_web_search ? 'web_search' : 'manual', is_beverage: true },
+  })
+}
+
+function buildBeverageSelectionLabel(selection) {
+  const name = formatFoodDisplayName(selection)
+  const brand = String(selection?.brand || '').trim()
+  if (brand && brand.toLowerCase() !== name.toLowerCase()) {
+    return `${name} (${brand})`
+  }
+  return name
+}
+
+function buildBeverageServingOptions(selection) {
+  const servingSize = String(selection?.serving_size || '1 serving').trim() || '1 serving'
+  return [0.5, 1, 1.5, 2].map(multiplier => ({
+    multiplier,
+    label: multiplier === 1 ? servingSize : `${formatMealMacroValue(multiplier)} x ${servingSize}`,
+  }))
+}
+
+function scaleBeverageSelection(selection, multiplier = 1) {
+  if (!selection) {
+    return null
+  }
+
+  return {
+    ...selection,
+    calories: Math.round((Number(selection.calories) || 0) * multiplier),
+    protein_g: roundTo((Number(selection.protein_g) || 0) * multiplier, 2),
+    carbs_g: roundTo((Number(selection.carbs_g) || 0) * multiplier, 2),
+    fat_g: roundTo((Number(selection.fat_g) || 0) * multiplier, 2),
+    fiber_g: roundTo((Number(selection.fiber_g) || 0) * multiplier, 2),
+    sugar_g: roundTo((Number(selection.sugar_g) || 0) * multiplier, 2),
+    sodium_mg: roundTo((Number(selection.sodium_mg) || 0) * multiplier, 2),
+    micros: scaleMicrosClient(selection.micros, multiplier),
+  }
+}
+
+function buildBeverageMealPayload(selection, multiplier, date) {
+  const scaled = scaleBeverageSelection(selection, multiplier)
+  return {
+    meal_datetime: combineMealDateTime(date, getCurrentLocalTimeString()),
+    meal_type: 'beverage',
+    source: scaled?.source?.type === 'label' ? 'label' : 'manual',
+    items: [
+      {
+        food_id: scaled?.food_id || null,
+        food_name: scaled?.canonical_name || 'Drink',
+        serving_amount: roundTo(multiplier, multiplier % 1 === 0 ? 0 : 2),
+        serving_unit: scaled?.serving_size || 'serving',
+        calories: scaled?.calories || 0,
+        protein_g: scaled?.protein_g || 0,
+        carbs_g: scaled?.carbs_g || 0,
+        fat_g: scaled?.fat_g || 0,
+        fiber_g: scaled?.fiber_g || 0,
+        sugar_g: scaled?.sugar_g || 0,
+        sodium_mg: scaled?.sodium_mg || 0,
+        micros: Array.isArray(scaled?.micros) ? scaled.micros : [],
+        is_beverage: true,
+        source: {
+          ...(typeof scaled?.source === 'object' && scaled.source ? scaled.source : {}),
+          brand: scaled?.brand || '',
+          is_beverage: true,
+        },
+      },
+    ],
+  }
 }
 
 function buildEmptyWeeklyCaloriesReview() {

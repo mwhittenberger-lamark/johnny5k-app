@@ -4327,7 +4327,7 @@ PROMPT;
 
 	private static function sanitize_meal_type_value( string $meal_type, bool $default_to_lunch = true ): string {
 		$meal_type = sanitize_key( $meal_type );
-		if ( in_array( $meal_type, [ 'breakfast', 'lunch', 'dinner', 'snack' ], true ) ) {
+		if ( in_array( $meal_type, [ 'breakfast', 'lunch', 'dinner', 'snack', 'beverage' ], true ) ) {
 			return $meal_type;
 		}
 

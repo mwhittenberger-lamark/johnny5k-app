@@ -8,15 +8,7 @@ use Johnny5k\Services\BehaviorAnalyticsService;
 use Johnny5k\Services\UserTime;
 
 /**
- * REST Controller: AI / Johnny5k
- *
- * POST /fit/v1/ai/chat              — general chat
- * POST /fit/v1/ai/analyse/meal      — send meal photo for nutrition analysis
- * POST /fit/v1/ai/analyse/label     — send food label photo for extraction
- * GET  /fit/v1/ai/thread/{key}      — get conversation history for a thread
- * DELETE /fit/v1/ai/thread/{key}    — clear a thread's history
- *
- * REST Controller: Nutrition
+ * Shared nutrition endpoint implementation used by NutritionController.
  *
  * POST /fit/v1/nutrition/meal       — log a meal (manual)
  * GET  /fit/v1/nutrition/meals      — get meals for a date range
@@ -25,17 +17,10 @@ use Johnny5k\Services\UserTime;
  * POST /fit/v1/nutrition/pantry     — add pantry item
  * GET  /fit/v1/nutrition/pantry     — list pantry items
  */
-class AiController {
+abstract class AbstractNutritionController extends RestController {
 	private const PANTRY_CATEGORY_OVERRIDES_META_KEY = 'johnny5k_pantry_category_overrides';
 	private const HIDDEN_RECENT_FOOD_KEYS_META_KEY = 'johnny5k_hidden_recent_food_keys';
-
-	public static function register_routes(): void {
-		$ns   = JF_REST_NAMESPACE;
-		$auth = [ 'Johnny5k\REST\AuthController', 'require_auth' ];
-
-		AiChatController::register_routes( $ns, $auth );
-		NutritionController::register_routes( $ns, $auth );
-	}
+	private const DEFAULT_WATER_GLASSES_TARGET = 6;
 
 	// ── POST /nutrition/meal ──────────────────────────────────────────────────
 
@@ -50,7 +35,7 @@ class AiController {
 		$items   = $req->get_param( 'items' ); // array of item objects
 
 		if ( ! is_array( $items ) || empty( $items ) ) {
-			return new \WP_REST_Response( [ 'message' => 'At least one meal item is required.' ], 400 );
+			return self::message( 'At least one meal item is required.', 400 );
 		}
 
 		$items   = self::enrich_meal_items_with_micros( $user_id, $items );
@@ -83,7 +68,7 @@ class AiController {
 				]
 			);
 
-			return new \WP_REST_Response( [ 'meal_id' => $meal_id, 'merged' => true ], 200 );
+			return self::response( [ 'meal_id' => $meal_id, 'merged' => true ] );
 		}
 
 		$wpdb->insert( $p . 'fit_meals', [
@@ -111,7 +96,7 @@ class AiController {
 			]
 		);
 
-		return new \WP_REST_Response( [ 'meal_id' => $meal_id ], 201 );
+		return self::response( [ 'meal_id' => $meal_id ], 201 );
 	}
 
 	public static function update_meal( \WP_REST_Request $req ): \WP_REST_Response {
@@ -126,7 +111,7 @@ class AiController {
 		) );
 
 		if ( ! $meal || (int) $meal->user_id !== $user_id ) {
-			return new \WP_REST_Response( [ 'message' => 'Meal not found.' ], 404 );
+			return self::message( 'Meal not found.', 404 );
 		}
 
 		$meal_type = sanitize_text_field( (string) ( $req->get_param( 'meal_type' ) ?: 'lunch' ) );
@@ -145,7 +130,7 @@ class AiController {
 		self::replace_meal_items( $meal_id, $items );
 		static::sync_user_awards( $user_id );
 
-		return new \WP_REST_Response( [ 'updated' => true ] );
+		return self::response( [ 'updated' => true ] );
 	}
 
 	// ── GET /nutrition/meals ──────────────────────────────────────────────────
@@ -166,13 +151,14 @@ class AiController {
 
 		foreach ( $meals as $meal ) {
 			$meal->items = $wpdb->get_results( $wpdb->prepare(
-				"SELECT food_id, food_name, serving_amount, serving_unit, calories, protein_g, carbs_g, fat_g, fiber_g, sugar_g, sodium_mg, micros_json, source_json
+				"SELECT food_id, food_name, serving_amount, serving_unit, calories, protein_g, carbs_g, fat_g, fiber_g, sugar_g, sodium_mg, micros_json, is_beverage, source_json
 				 FROM {$p}fit_meal_items WHERE meal_id = %d",
 				$meal->id
 			) );
 
 			foreach ( $meal->items as $item ) {
 				$item->micros = $item->micros_json ? self::decode_json_list( $item->micros_json ) : [];
+				$item->is_beverage = ! empty( $item->is_beverage );
 				$item->source = $item->source_json ? json_decode( (string) $item->source_json, true ) : null;
 				unset( $item->micros_json, $item->source_json );
 			}
@@ -273,13 +259,64 @@ class AiController {
 		] );
 	}
 
+	public static function get_beverage_board( \WP_REST_Request $req ): \WP_REST_Response {
+		$user_id = get_current_user_id();
+		$date = sanitize_text_field( $req->get_param( 'date' ) ?: UserTime::today( $user_id ) );
+
+		return new \WP_REST_Response( self::build_beverage_board_payload( $user_id, $date ) );
+	}
+
+	public static function save_water_intake( \WP_REST_Request $req ): \WP_REST_Response {
+		global $wpdb;
+		$p = $wpdb->prefix;
+		$user_id = get_current_user_id();
+		$date = sanitize_text_field( (string) ( $req->get_param( 'date' ) ?: UserTime::today( $user_id ) ) );
+		$glasses = max( 0, min( self::DEFAULT_WATER_GLASSES_TARGET, (int) $req->get_param( 'glasses' ) ) );
+
+		$existing_id = (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT id FROM {$p}fit_hydration_logs WHERE user_id = %d AND log_date = %s LIMIT 1",
+			$user_id,
+			$date
+		) );
+
+		$data = [
+			'glasses' => $glasses,
+			'target_glasses' => self::DEFAULT_WATER_GLASSES_TARGET,
+		];
+
+		if ( $existing_id > 0 ) {
+			$wpdb->update( $p . 'fit_hydration_logs', $data, [ 'id' => $existing_id ] );
+		} else {
+			$wpdb->insert( $p . 'fit_hydration_logs', [
+				'user_id' => $user_id,
+				'log_date' => $date,
+				'glasses' => $glasses,
+				'target_glasses' => self::DEFAULT_WATER_GLASSES_TARGET,
+			] );
+		}
+
+		BehaviorAnalyticsService::track(
+			$user_id,
+			'water_logged',
+			'nutrition',
+			'save_water_intake',
+			(float) $glasses,
+			[
+				'log_date' => $date,
+				'target_glasses' => self::DEFAULT_WATER_GLASSES_TARGET,
+			]
+		);
+
+		return new \WP_REST_Response( self::build_beverage_board_payload( $user_id, $date ) );
+	}
+
 	public static function get_saved_foods( \WP_REST_Request $req ): \WP_REST_Response {
 		global $wpdb;
 		$p       = $wpdb->prefix;
 		$user_id = get_current_user_id();
 
 		$rows = $wpdb->get_results( $wpdb->prepare(
-			"SELECT id, canonical_name, brand, serving_size, serving_grams, calories, protein_g, carbs_g, fat_g, fiber_g, sugar_g, sodium_mg, micros_json, source, label_json, source_json
+			"SELECT id, canonical_name, brand, serving_size, serving_grams, calories, protein_g, carbs_g, fat_g, fiber_g, sugar_g, sodium_mg, micros_json, is_beverage, source, label_json, source_json
 			 FROM {$p}fit_foods
 			 WHERE user_id = %d AND active = 1
 			 ORDER BY updated_at DESC, id DESC",
@@ -291,6 +328,7 @@ class AiController {
 			$row->label = $row->label_json ? json_decode( (string) $row->label_json, true ) : null;
 			$row->source_details = $row->source_json ? json_decode( (string) $row->source_json, true ) : null;
 			$row->source = $row->source_details ?: $row->source;
+			$row->is_beverage = ! empty( $row->is_beverage );
 			unset( $row->micros_json );
 			unset( $row->label_json );
 			unset( $row->source_json );
@@ -320,6 +358,7 @@ class AiController {
 			'sugar_g'       => $payload['sugar_g'],
 			'sodium_mg'     => $payload['sodium_mg'],
 			'micros_json'   => $payload['micros_json'],
+			'is_beverage'   => ! empty( $payload['is_beverage'] ) ? 1 : 0,
 			'source'        => $payload['source'],
 			'label_json'    => $payload['label_json'],
 			'source_json'   => $payload['source_json'],
@@ -353,6 +392,7 @@ class AiController {
 			'sugar_g'       => $payload['sugar_g'],
 			'sodium_mg'     => $payload['sodium_mg'],
 			'micros_json'   => $payload['micros_json'],
+			'is_beverage'   => ! empty( $payload['is_beverage'] ) ? 1 : 0,
 			'source'        => $payload['source'],
 			'label_json'    => $payload['label_json'],
 			'source_json'   => $payload['source_json'],
@@ -415,7 +455,8 @@ class AiController {
 		}
 
 		$serving_amount = max( 0.1, (float) ( $req->get_param( 'serving_amount' ) ?: 1 ) );
-		$req->set_param( 'meal_type', sanitize_text_field( (string) ( $req->get_param( 'meal_type' ) ?: 'snack' ) ) );
+		$default_meal_type = ! empty( $food->is_beverage ) ? 'beverage' : 'snack';
+		$req->set_param( 'meal_type', sanitize_text_field( (string) ( $req->get_param( 'meal_type' ) ?: $default_meal_type ) ) );
 		$req->set_param( 'source', 'label' === $food->source ? 'label' : 'manual' );
 		$req->set_param( 'items', [
 			[
@@ -431,7 +472,8 @@ class AiController {
 				'sugar_g'        => null !== $food->sugar_g ? round( (float) $food->sugar_g * $serving_amount, 2 ) : null,
 				'sodium_mg'      => null !== $food->sodium_mg ? round( (float) $food->sodium_mg * $serving_amount, 2 ) : null,
 				'micros'         => self::scale_micros( $food_micros, $serving_amount ),
-				'source'         => [ 'type' => 'saved_food', 'food_id' => (int) $food->id ],
+				'is_beverage'    => ! empty( $food->is_beverage ),
+				'source'         => [ 'type' => 'saved_food', 'food_id' => (int) $food->id, 'is_beverage' => ! empty( $food->is_beverage ) ],
 			],
 		] );
 
@@ -704,17 +746,18 @@ class AiController {
 		$p       = $wpdb->prefix;
 		$user_id = get_current_user_id();
 		$query   = trim( sanitize_text_field( (string) ( $req->get_param( 'q' ) ?: '' ) ) );
+		$beverage_only = rest_sanitize_boolean( $req->get_param( 'beverage_only' ) );
 
 		if ( '' === $query ) {
-			return new \WP_REST_Response( [] );
+			return self::response( [] );
 		}
 
 		$like = '%' . $wpdb->esc_like( $query ) . '%';
 
 		$saved_foods = $wpdb->get_results( $wpdb->prepare(
-			"SELECT id, canonical_name, brand, serving_size, calories, protein_g, carbs_g, fat_g, fiber_g, sugar_g, sodium_mg, micros_json, 'saved_food' AS match_type
+			"SELECT id, canonical_name, brand, serving_size, calories, protein_g, carbs_g, fat_g, fiber_g, sugar_g, sodium_mg, micros_json, is_beverage, 'saved_food' AS match_type
 			 FROM {$p}fit_foods
-			 WHERE user_id = %d AND active = 1 AND (canonical_name LIKE %s OR brand LIKE %s)
+			 WHERE user_id = %d AND active = 1 AND (canonical_name LIKE %s OR brand LIKE %s)" . ( $beverage_only ? ' AND is_beverage = 1' : '' ) . "
 			 ORDER BY CASE WHEN canonical_name LIKE %s THEN 0 ELSE 1 END, updated_at DESC
 			 LIMIT 8",
 			$user_id,
@@ -722,7 +765,7 @@ class AiController {
 			$like,
 			$like
 		) );
-		$recent_items = self::get_recent_food_entries( $user_id, $query, 12 );
+		$recent_items = self::get_recent_food_entries( $user_id, $query, 12, $beverage_only );
 
 		$merged = [];
 		$seen = [];
@@ -747,6 +790,7 @@ class AiController {
 				'sugar_g'      => round( (float) $row->sugar_g, 2 ),
 				'sodium_mg'    => round( (float) $row->sodium_mg, 2 ),
 				'micros'       => $row->micros_json ? self::decode_json_list( $row->micros_json ) : [],
+				'is_beverage'  => ! empty( $row->is_beverage ),
 				'match_type'   => (string) $row->match_type,
 			];
 		}
@@ -894,7 +938,7 @@ class AiController {
 		$p = $wpdb->prefix;
 
 		$items = $wpdb->get_results( $wpdb->prepare(
-			"SELECT food_id, food_name, serving_amount, serving_unit, calories, protein_g, carbs_g, fat_g, fiber_g, sugar_g, sodium_mg, micros_json, source_json
+			"SELECT food_id, food_name, serving_amount, serving_unit, calories, protein_g, carbs_g, fat_g, fiber_g, sugar_g, sodium_mg, micros_json, is_beverage, source_json
 			 FROM {$p}fit_meal_items WHERE meal_id = %d",
 			$meal_id
 		), ARRAY_A );
@@ -902,6 +946,7 @@ class AiController {
 		return array_map( static function( array $item ): array {
 			$item['micros'] = ! empty( $item['micros_json'] ) ? self::decode_json_list( $item['micros_json'] ) : [];
 			$item['source'] = ! empty( $item['source_json'] ) ? json_decode( (string) $item['source_json'], true ) : null;
+			$item['is_beverage'] = ! empty( $item['is_beverage'] );
 			unset( $item['micros_json'], $item['source_json'] );
 			return $item;
 		}, $items );
@@ -929,6 +974,7 @@ class AiController {
 				'sugar_g'        => isset( $item['sugar_g'] ) ? (float) $item['sugar_g'] : null,
 				'sodium_mg'      => isset( $item['sodium_mg'] ) ? (float) $item['sodium_mg'] : null,
 				'micros_json'    => ! empty( $item['micros'] ) && is_array( $item['micros'] ) ? wp_json_encode( $item['micros'] ) : null,
+				'is_beverage'    => self::is_beverage_item_payload( $item ) ? 1 : 0,
 				'source_json'    => ! empty( $item['source'] ) ? wp_json_encode( $item['source'] ) : null,
 			], static fn( $value ) => null !== $value ) );
 		}
@@ -951,6 +997,7 @@ class AiController {
 				'fiber_g'        => isset( $item['fiber_g'] ) ? (float) $item['fiber_g'] : null,
 				'sugar_g'        => isset( $item['sugar_g'] ) ? (float) $item['sugar_g'] : null,
 				'sodium_mg'      => isset( $item['sodium_mg'] ) ? (float) $item['sodium_mg'] : null,
+				'is_beverage'    => self::is_beverage_item_payload( $item ),
 				'micros'         => ! empty( $item['micros'] ) && is_array( $item['micros'] ) ? array_values( $item['micros'] ) : [],
 			];
 		}, $items ) ) : [];
@@ -999,6 +1046,7 @@ class AiController {
 			'sugar_g'        => $req->get_param( 'sugar_g' ) !== null ? round( (float) $req->get_param( 'sugar_g' ), 2 ) : null,
 			'sodium_mg'      => $req->get_param( 'sodium_mg' ) !== null ? round( (float) $req->get_param( 'sodium_mg' ), 2 ) : null,
 			'micros_json'    => ! empty( $micros ) ? wp_json_encode( $micros ) : null,
+			'is_beverage'    => rest_sanitize_boolean( $req->get_param( 'is_beverage' ) ),
 			'source'         => sanitize_text_field( (string) ( $req->get_param( 'source' ) ?: 'manual' ) ),
 			'label_json'     => ! empty( $label ) ? wp_json_encode( $label ) : null,
 			'source_json'    => ! empty( $source_details ) ? wp_json_encode( $source_details ) : null,
@@ -1025,13 +1073,13 @@ class AiController {
 		];
 	}
 
-	private static function get_recent_food_entries( int $user_id, string $query = '', int $limit = 20 ): array {
+	private static function get_recent_food_entries( int $user_id, string $query = '', int $limit = 20, bool $beverage_only = false ): array {
 		global $wpdb;
 		$p = $wpdb->prefix;
 		$hidden_keys = array_fill_keys( self::get_hidden_recent_food_keys( $user_id ), true );
 
 		$limit = max( 1, min( 100, $limit ) );
-		$sql = "SELECT mi.id, mi.food_id, mi.food_name, mi.serving_amount, mi.serving_unit, mi.calories, mi.protein_g, mi.carbs_g, mi.fat_g, mi.fiber_g, mi.sugar_g, mi.sodium_mg, mi.micros_json, mi.source_json, m.id AS meal_id, m.meal_datetime
+		$sql = "SELECT mi.id, mi.food_id, mi.food_name, mi.serving_amount, mi.serving_unit, mi.calories, mi.protein_g, mi.carbs_g, mi.fat_g, mi.fiber_g, mi.sugar_g, mi.sodium_mg, mi.micros_json, mi.is_beverage, mi.source_json, m.id AS meal_id, m.meal_datetime
 			FROM {$p}fit_meal_items mi
 			JOIN {$p}fit_meals m ON m.id = mi.meal_id
 			WHERE m.user_id = %d AND m.confirmed = 1";
@@ -1040,6 +1088,10 @@ class AiController {
 		if ( '' !== $query ) {
 			$sql .= ' AND mi.food_name LIKE %s';
 			$params[] = '%' . $wpdb->esc_like( $query ) . '%';
+		}
+
+		if ( $beverage_only ) {
+			$sql .= ' AND mi.is_beverage = 1';
 		}
 
 		$sql .= ' ORDER BY m.meal_datetime DESC, mi.id DESC LIMIT %d';
@@ -1103,6 +1155,7 @@ class AiController {
 			'sugar_g'        => round( (float) ( $row['sugar_g'] ?? 0 ) / $serving_multiplier, 2 ),
 			'sodium_mg'      => round( (float) ( $row['sodium_mg'] ?? 0 ) / $serving_multiplier, 2 ),
 			'micros'         => $per_serving_micros,
+			'is_beverage'    => ! empty( $row['is_beverage'] ),
 			'match_type'     => 'recent_item',
 			'meal_id'        => isset( $row['meal_id'] ) ? (int) $row['meal_id'] : null,
 			'meal_datetime'  => (string) ( $row['meal_datetime'] ?? '' ),
@@ -1147,6 +1200,249 @@ class AiController {
 		};
 
 		return $normalize( $name ) . '|' . $normalize( $brand ) . '|' . $normalize( $serving_size );
+	}
+
+	private static function is_beverage_item_payload( array $item ): bool {
+		if ( ! empty( $item['is_beverage'] ) ) {
+			return true;
+		}
+
+		$source = is_array( $item['source'] ?? null ) ? $item['source'] : [];
+		if ( ! empty( $source['is_beverage'] ) ) {
+			return true;
+		}
+
+		return self::looks_like_beverage_text(
+			(string) ( $item['food_name'] ?? '' ),
+			(string) ( $item['serving_unit'] ?? '' )
+		);
+	}
+
+	private static function looks_like_beverage_text( string $name, string $unit = '' ): bool {
+		$text = strtolower( trim( $name . ' ' . $unit ) );
+		if ( '' === $text ) {
+			return false;
+		}
+
+		foreach ( [
+			'coffee',
+			'latte',
+			'mocha',
+			'frapp',
+			'tea',
+			'soda',
+			'cola',
+			'juice',
+			'water',
+			'sparkling water',
+			'electrolyte',
+			'energy drink',
+			'sports drink',
+			'lemonade',
+			'milk',
+			'protein shake',
+			'shake',
+			'smoothie',
+			'kombucha',
+			'bottle',
+			'can',
+			'cup',
+			'glass',
+			'fl oz',
+			'ml',
+		] as $keyword ) {
+			if ( false !== strpos( $text, $keyword ) ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	private static function build_beverage_board_payload( int $user_id, string $date ): array {
+		global $wpdb;
+		$p = $wpdb->prefix;
+
+		$anchor = \DateTimeImmutable::createFromFormat( 'Y-m-d H:i:s', $date . ' 12:00:00', UserTime::timezone( $user_id ) );
+		if ( false === $anchor ) {
+			$anchor = UserTime::now( $user_id );
+			$date = $anchor->format( 'Y-m-d' );
+		}
+
+		$period_start = $anchor->modify( '-6 day' )->format( 'Y-m-d' );
+		$period_end = $anchor->format( 'Y-m-d' );
+
+		$beverage_rows = $wpdb->get_results( $wpdb->prepare(
+			"SELECT DATE(m.meal_datetime) AS log_date, mi.food_name, mi.calories, mi.sugar_g
+			 FROM {$p}fit_meal_items mi
+			 JOIN {$p}fit_meals m ON m.id = mi.meal_id
+			 WHERE m.user_id = %d
+			   AND m.confirmed = 1
+			   AND DATE(m.meal_datetime) BETWEEN %s AND %s
+			   AND mi.is_beverage = 1
+			 ORDER BY m.meal_datetime DESC, mi.id DESC",
+			$user_id,
+			$period_start,
+			$period_end
+		), ARRAY_A );
+
+		$hydration_rows = $wpdb->get_results( $wpdb->prepare(
+			"SELECT log_date, glasses, target_glasses
+			 FROM {$p}fit_hydration_logs
+			 WHERE user_id = %d AND log_date BETWEEN %s AND %s
+			 ORDER BY log_date ASC",
+			$user_id,
+			$period_start,
+			$period_end
+		), ARRAY_A );
+
+		$drink_dates = [];
+		$total_beverage_calories = 0;
+		$drink_count = 0;
+		$sugary_drink_count = 0;
+		$coffee_drink_count = 0;
+		$coffee_beverage_calories = 0;
+
+		foreach ( is_array( $beverage_rows ) ? $beverage_rows : [] as $row ) {
+			$drink_count++;
+			$drink_date = (string) ( $row['log_date'] ?? '' );
+			if ( '' !== $drink_date ) {
+				$drink_dates[ $drink_date ] = true;
+			}
+
+			$calories = (int) round( (float) ( $row['calories'] ?? 0 ) );
+			$total_beverage_calories += $calories;
+
+			$name = strtolower( trim( (string) ( $row['food_name'] ?? '' ) ) );
+			$sugar = (float) ( $row['sugar_g'] ?? 0 );
+			if ( $sugar >= 10 || preg_match( '/\b(soda|cola|juice|lemonade|frapp|mocha|energy drink|sports drink)\b/', $name ) ) {
+				$sugary_drink_count++;
+			}
+
+			if ( preg_match( '/\b(coffee|latte|mocha|frapp|cappuccino|macchiato|cold brew)\b/', $name ) ) {
+				$coffee_drink_count++;
+				$coffee_beverage_calories += $calories;
+			}
+		}
+
+		$water_today = [
+			'glasses' => 0,
+			'target_glasses' => self::DEFAULT_WATER_GLASSES_TARGET,
+		];
+		$seven_day_water_glasses = 0;
+		$water_logged_days = 0;
+
+		foreach ( is_array( $hydration_rows ) ? $hydration_rows : [] as $row ) {
+			$glasses = max( 0, (int) ( $row['glasses'] ?? 0 ) );
+			$target_glasses = max( 1, (int) ( $row['target_glasses'] ?? self::DEFAULT_WATER_GLASSES_TARGET ) );
+			$seven_day_water_glasses += $glasses;
+			if ( $glasses > 0 ) {
+				$water_logged_days++;
+			}
+
+			if ( (string) ( $row['log_date'] ?? '' ) === $date ) {
+				$water_today = [
+					'glasses' => $glasses,
+					'target_glasses' => $target_glasses,
+				];
+			}
+		}
+
+		$review = self::build_beverage_board_review( [
+			'total_beverage_calories' => $total_beverage_calories,
+			'drink_count' => $drink_count,
+			'logged_days' => count( $drink_dates ),
+			'sugary_drink_count' => $sugary_drink_count,
+			'coffee_drink_count' => $coffee_drink_count,
+			'coffee_beverage_calories' => $coffee_beverage_calories,
+			'water_glasses' => $seven_day_water_glasses,
+			'water_logged_days' => $water_logged_days,
+			'target_glasses' => $water_today['target_glasses'],
+		] );
+
+		return [
+			'date' => $date,
+			'period_start' => $period_start,
+			'period_end' => $period_end,
+			'water' => [
+				'glasses' => $water_today['glasses'],
+				'target_glasses' => $water_today['target_glasses'],
+				'seven_day_glasses' => $seven_day_water_glasses,
+				'logged_days' => $water_logged_days,
+			],
+			'review' => $review,
+		];
+	}
+
+	private static function build_beverage_board_review( array $metrics ): array {
+		$total_beverage_calories = (int) ( $metrics['total_beverage_calories'] ?? 0 );
+		$drink_count = (int) ( $metrics['drink_count'] ?? 0 );
+		$logged_days = (int) ( $metrics['logged_days'] ?? 0 );
+		$sugary_drink_count = (int) ( $metrics['sugary_drink_count'] ?? 0 );
+		$coffee_drink_count = (int) ( $metrics['coffee_drink_count'] ?? 0 );
+		$coffee_beverage_calories = (int) ( $metrics['coffee_beverage_calories'] ?? 0 );
+		$water_glasses = (int) ( $metrics['water_glasses'] ?? 0 );
+		$water_logged_days = (int) ( $metrics['water_logged_days'] ?? 0 );
+		$target_glasses = max( 1, (int) ( $metrics['target_glasses'] ?? self::DEFAULT_WATER_GLASSES_TARGET ) );
+
+		$headline = 'Beverage Board is ready';
+		$review = 'Log drinks and tap your water glasses so Johnny can catch hidden calories before they drift.';
+
+		if ( $drink_count <= 0 && $water_glasses <= 0 ) {
+			return [
+				'period_label' => 'Last 7 days',
+				'headline' => $headline,
+				'review' => $review,
+				'metrics' => $metrics,
+			];
+		}
+
+		if ( $coffee_drink_count >= 3 && $coffee_beverage_calories >= 300 ) {
+			$headline = 'Coffee drinks are carrying more calories than they look';
+			$review = sprintf(
+				'Johnny: %1$d coffee-style drink%2$s added about %3$d calories in the last 7 days. Tighten the add-ins before you start cutting meals.',
+				$coffee_drink_count,
+				1 === $coffee_drink_count ? '' : 's',
+				$coffee_beverage_calories
+			);
+		} elseif ( $sugary_drink_count >= 3 && $total_beverage_calories >= 400 ) {
+			$headline = sprintf( 'Hidden beverage calories reached %d this week', $total_beverage_calories );
+			$review = sprintf(
+				'Johnny: %1$d higher-sugar drink%2$s showed up over the last 7 days. Clean up liquid calories first before making the food plan stricter.',
+				$sugary_drink_count,
+				1 === $sugary_drink_count ? '' : 's'
+			);
+		} elseif ( $water_logged_days <= 2 ) {
+			$headline = 'Hydration logging is not consistent yet';
+			$review = sprintf(
+				'Johnny: water showed up on %1$d of the last 7 days. Hit the glass tracker earlier in the day so hydration does not become an afterthought.',
+				$water_logged_days
+			);
+		} elseif ( $water_logged_days >= 5 && $water_glasses >= ( $target_glasses * 5 ) ) {
+			$headline = 'Hydration has been steady';
+			$review = sprintf(
+				'Johnny: you logged %1$d water glasses across %2$d of the last 7 days. Keep that rhythm and let the Beverage Board keep liquid calories visible.',
+				$water_glasses,
+				$water_logged_days
+			);
+		} elseif ( $drink_count > 0 && $total_beverage_calories <= 250 ) {
+			$headline = 'Beverage calories stayed under control';
+			$review = sprintf(
+				'Johnny: %1$d drink%2$s were logged across %3$d day%4$s with only about %5$d beverage calories total. Keep using the board so the quiet wins stay visible.',
+				$drink_count,
+				1 === $drink_count ? '' : 's',
+				$logged_days,
+				1 === $logged_days ? '' : 's',
+				$total_beverage_calories
+			);
+		}
+
+		return [
+			'period_label' => 'Last 7 days',
+			'headline' => $headline,
+			'review' => $review,
+			'metrics' => $metrics,
+		];
 	}
 
 	private static function enrich_meal_items_with_micros( int $user_id, array $items ): array {
@@ -1614,8 +1910,24 @@ class AiController {
 		return max( 0, $total );
 	}
 
-	protected static function sync_user_awards( int $user_id ): void {
+protected static function sync_user_awards( int $user_id ): void {
 		\Johnny5k\Services\AwardEngine::sync_user_awards( $user_id );
 	}
 
+}
+
+/**
+ * REST Controller: AI / Johnny5k
+ *
+ * POST /fit/v1/ai/chat              — general chat
+ * POST /fit/v1/ai/analyse/meal      — send meal photo for nutrition analysis
+ * POST /fit/v1/ai/analyse/label     — send food label photo for extraction
+ * GET  /fit/v1/ai/thread/{key}      — get conversation history for a thread
+ * DELETE /fit/v1/ai/thread/{key}    — clear a thread's history
+ */
+class AiController extends RestController {
+
+	public static function register_routes(): void {
+		AiChatController::register_routes();
+	}
 }
