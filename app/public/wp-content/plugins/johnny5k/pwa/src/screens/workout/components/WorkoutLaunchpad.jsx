@@ -1,6 +1,6 @@
-import ClearableInput from '../../../components/ui/ClearableInput'
 import CoachingSummaryPanel from '../../../components/ui/CoachingSummaryPanel'
 import ErrorState from '../../../components/ui/ErrorState'
+import PlanOverviewAddDrawer from '../../../components/workout/PlanOverviewAddDrawer'
 import SupportIconButton from '../../../components/ui/SupportIconButton'
 import PlanOverviewSwapDrawer from '../../../components/workout/PlanOverviewSwapDrawer'
 import { formatDayType, formatPreviewSetRepLabel, formatRemoveButtonLabel, getReadinessRepDelta } from '../workoutScreenUtils'
@@ -319,31 +319,14 @@ export default function WorkoutLaunchpad({
                   <span className="dashboard-chip subtle">Add exercise</span>
                   <span className="dashboard-chip subtle">{planning.previewAddedExercises.length} added</span>
                 </div>
-                <ClearableInput
-                  type="search"
-                  className="input"
-                  placeholder="Search exercise library to add..."
-                  value={planning.addExerciseQuery}
-                  onChange={event => planning.setAddExerciseQuery(event.target.value)}
-                />
-                {planning.addExerciseLoading ? <p className="settings-subtitle">Searching exercises...</p> : null}
-                {planning.addExerciseError ? <ErrorState className="workout-inline-error" eyebrow="Exercise search" message={planning.addExerciseError} title="Could not add an exercise" /> : null}
-                {planning.addExerciseQuery.trim().length >= 2 && !planning.addExerciseLoading && !planning.addExerciseError ? (
-                  planning.addExerciseResults.length ? (
-                    <div className="workout-plan-list">
-                      {planning.addExerciseResults.slice(0, 6).map(option => (
-                        <div key={option.id} className="workout-plan-row">
-                          <span>{option.name}</span>
-                          <button type="button" className="btn-outline small" onClick={() => planning.handleAddExerciseCandidate(option)}>
-                            Add
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="settings-subtitle">No matching exercises found.</p>
-                  )
-                ) : null}
+                <p className="settings-subtitle workout-plan-helper">
+                  Open the exercise drawer to add something the same way you handle a custom swap, then Johnny5k will drop it into today&apos;s plan.
+                </p>
+                <div className="settings-actions">
+                  <button type="button" className="btn-outline" onClick={planning.openAddDrawer}>
+                    Browse and add exercise
+                  </button>
+                </div>
               </div>
             ) : null}
             {!planning.isCardioSelection && !planning.isRestSelection && planning.previewLoading ? <p className="settings-subtitle">Refreshing preview...</p> : null}
@@ -467,6 +450,13 @@ export default function WorkoutLaunchpad({
         onClose={() => planning.setSwapDrawerExercise(null)}
         onSwap={planning.handlePreviewSwap}
         onClearSwap={planning.handleClearPreviewSwap}
+      />
+      <PlanOverviewAddDrawer
+        isOpen={planning.addDrawerOpen}
+        dayType={planning.previewDayType}
+        existingExerciseIds={planning.existingPlanningExerciseIds}
+        onClose={planning.closeAddDrawer}
+        onAdd={planning.handleAddExerciseCandidate}
       />
     </div>
   )

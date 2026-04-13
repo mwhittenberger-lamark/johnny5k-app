@@ -190,4 +190,72 @@ describe('useWorkoutStore', () => {
     expect(setRow.reps).toBe(9)
     expect(setRow.sync_status).toBe('queued')
   })
+
+  it('keeps the planning draft in place after a workout starts', async () => {
+    const store = await loadWorkoutStore()
+    store.setState({
+      timeTier: 'full',
+      readinessScore: 8,
+      previewDayType: 'push',
+      previewDrafts: {
+        push: {
+          exerciseSwaps: { 101: 202 },
+          exerciseOrder: [101, 102],
+          repAdjustments: { 101: 1 },
+          exerciseRemovals: [103],
+          exerciseAdditions: [{
+            plan_exercise_id: 900001,
+            exercise_id: 777,
+            exercise_name: 'Cable Fly',
+            slot_type: 'accessory',
+            rep_min: 10,
+            rep_max: 15,
+            sets: 3,
+          }],
+        },
+      },
+    })
+    workoutApiMock.start.mockResolvedValue({
+      session: { id: 321, session_date: '2026-04-13', time_tier: 'full', readiness_score: 8, started_at: '2026-04-13 14:00:00' },
+      exercises: [],
+    })
+
+    await store.getState().startSession({ dayType: 'push' })
+
+    const state = store.getState()
+    expect(state.sessionId).toBe(321)
+    expect(state.previewDayType).toBe('push')
+    expect(state.previewDrafts.push.exerciseOrder).toEqual([101, 102])
+    expect(state.previewDrafts.push.exerciseSwaps).toEqual({ 101: 202 })
+  })
+
+  it('clears the planning draft when the workout is discarded', async () => {
+    const store = await loadWorkoutStore()
+    store.setState({
+      sessionId: 321,
+      session: {
+        session: { id: 321, session_date: '2026-04-13' },
+        exercises: [],
+      },
+      previewDayType: 'push',
+      previewDrafts: {
+        push: {
+          exerciseSwaps: { 101: 202 },
+          exerciseOrder: [101, 102],
+          repAdjustments: {},
+          exerciseRemovals: [],
+          exerciseAdditions: [],
+        },
+      },
+    })
+    workoutApiMock.discard.mockResolvedValue({ discarded: true })
+
+    await store.getState().exitSession()
+
+    const state = store.getState()
+    expect(state.session).toBeNull()
+    expect(state.sessionId).toBeNull()
+    expect(state.previewDayType).toBe('')
+    expect(state.previewDrafts).toEqual({})
+  })
 })

@@ -17,7 +17,7 @@ import {
   writeLiveWorkoutVoicePrefs,
 } from '../../lib/liveWorkoutVoice'
 import { useAuthStore } from '../../store/authStore'
-import { getPausedTimerNowValue } from '../../screens/workout/workoutScreenUtils'
+import { formatWorkoutElapsedTime, getPausedTimerNowValue } from '../../screens/workout/workoutScreenUtils'
 
 const DEFAULT_REST_TIMING = {
   setMinSeconds: 30,
@@ -108,6 +108,7 @@ export default function LiveWorkoutMode({
   const currentSetKey = activeExercise?.id ? `${activeExercise.id}:${currentSetIdx}` : 'idle'
   const currentDraft = drafts[currentSetKey] ?? buildDraftFromSet(currentSet)
   const effectiveRestNow = getPausedTimerNowValue(now, restTimerPausedAt, restTimerPausedMs)
+  const workoutTimerLabel = formatWorkoutElapsedTime(session?.session?.started_at, effectiveRestNow) || timerLabel
   const restElapsedSeconds = Math.max(0, Math.floor((effectiveRestNow - Number(lastTransition?.at || effectiveRestNow)) / 1000))
   const restGuidance = useMemo(() => buildRestGuidance(lastTransition?.kind, restElapsedSeconds, restTiming), [lastTransition?.kind, restElapsedSeconds, restTiming])
   const liveVoiceMode = String(voicePrefs.liveModeVoiceMode || 'premium').trim().toLowerCase()
@@ -115,6 +116,21 @@ export default function LiveWorkoutMode({
   const defaultLiveWorkoutFrames = useMemo(() => getDefaultLiveWorkoutFrames(appImages), [appImages])
   const voiceTestBusy = premiumVoiceTest.status === 'running' || instantVoiceTest.status === 'running'
   const scrollBehavior = getAccessibleScrollBehavior()
+  const scrollPanelToSection = useCallback((targetRef) => {
+    const panelNode = panelRef.current
+    const targetNode = targetRef?.current
+    if (!panelNode || !targetNode) return
+
+    const panelRect = panelNode.getBoundingClientRect()
+    const targetRect = targetNode.getBoundingClientRect()
+    const stickyHeight = stickyMetaRef.current?.offsetHeight || 0
+    const nextTop = panelNode.scrollTop + (targetRect.top - panelRect.top) - stickyHeight - 12
+
+    panelNode.scrollTo({
+      top: Math.max(0, nextTop),
+      behavior: scrollBehavior,
+    })
+  }, [scrollBehavior])
   const coachFrames = useMemo(() => {
     const configuredFrames = normalizeLiveWorkoutFrames(liveFrames)
     return configuredFrames.length ? configuredFrames : defaultLiveWorkoutFrames
@@ -332,7 +348,7 @@ export default function LiveWorkoutMode({
 
     latestAssistantMessageKeyRef.current = nextKey
     scrollPanelToSection(johnnyCardRef)
-  }, [coachMessages, isOpen])
+  }, [coachMessages, isOpen, scrollPanelToSection])
 
   useEffect(() => {
     setFrameIndex(0)
@@ -493,7 +509,7 @@ export default function LiveWorkoutMode({
             restElapsedSeconds,
             restGuidance,
             event: nextEvent,
-            timerLabel,
+            timerLabel: workoutTimerLabel,
           }),
         },
       )
@@ -907,22 +923,6 @@ export default function LiveWorkoutMode({
     }
   }
 
-  function scrollPanelToSection(targetRef) {
-    const panelNode = panelRef.current
-    const targetNode = targetRef?.current
-    if (!panelNode || !targetNode) return
-
-    const panelRect = panelNode.getBoundingClientRect()
-    const targetRect = targetNode.getBoundingClientRect()
-    const stickyHeight = stickyMetaRef.current?.offsetHeight || 0
-    const nextTop = panelNode.scrollTop + (targetRect.top - panelRect.top) - stickyHeight - 12
-
-    panelNode.scrollTo({
-      top: Math.max(0, nextTop),
-      behavior: scrollBehavior,
-    })
-  }
-
   const latestCoachMessage = [...coachMessages].reverse().find(message => message.role === 'assistant')
   const voiceModeLabel = formatLiveWorkoutVoiceModeLabel(liveVoiceMode)
   const voiceStatusLabel = liveVoiceMode === 'mute'
@@ -935,7 +935,7 @@ export default function LiveWorkoutMode({
   const stickyMeta = (
     <div ref={stickyMetaRef} className="live-workout-sticky-meta">
       <div className="live-workout-sticky-meta-copy">
-        {timerLabel ? <span className="dashboard-chip subtle workout-session-timer">Workout {timerLabel}</span> : null}
+        {workoutTimerLabel ? <span className="dashboard-chip subtle workout-session-timer">Workout {workoutTimerLabel}</span> : null}
         <span className={`dashboard-chip subtle live-workout-rest-chip ${restGuidance.tone}`}>{restGuidance.label}</span>
       </div>
       <nav className="live-workout-sticky-nav" aria-label="Live workout shortcuts">

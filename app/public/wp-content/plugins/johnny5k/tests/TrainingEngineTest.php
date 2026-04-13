@@ -72,6 +72,83 @@ class TrainingEngineTest extends ServiceTestCase {
 		$this->assertSame( 502, $result['exercises'][1]['exercise_id'] );
 	}
 
+	public function test_preview_session_can_apply_light_push_day_variation(): void {
+		$db = $this->wpdb();
+
+		$db->expectGetRow( 'FROM wp_fit_user_training_plans', (object) [ 'id' => 11 ] );
+		$db->expectGetVar( 'SELECT timezone FROM wp_fit_user_profiles', 'UTC' );
+		$db->expectGetVar( 'COUNT(*) FROM wp_fit_workout_sessions', 0 );
+		$db->expectGetRow( 'FROM wp_fit_user_training_days', (object) [ 'id' => 21 ] );
+		$db->expectGetResults( 'FROM wp_fit_user_training_day_exercises ude', [
+			(object) [
+				'id' => 1001,
+				'exercise_id' => 501,
+				'exercise_name' => 'Bench Press',
+				'primary_muscle' => 'chest',
+				'equipment' => 'barbell',
+				'difficulty' => 'intermediate',
+				'slot_type' => 'main',
+				'sets_target' => 3,
+				'rep_min' => 5,
+				'rep_max' => 8,
+			],
+			(object) [
+				'id' => 1002,
+				'exercise_id' => 502,
+				'exercise_name' => 'Cable Fly',
+				'primary_muscle' => 'chest',
+				'equipment' => 'cable',
+				'difficulty' => 'beginner',
+				'slot_type' => 'accessory',
+				'sets_target' => 3,
+				'rep_min' => 10,
+				'rep_max' => 15,
+			],
+		] );
+		$db->expectGetVar( 'exercise_avoid_json FROM wp_fit_user_preferences', null );
+		$db->expectGetVar( 'equipment_available_json FROM wp_fit_user_preferences', null );
+		$db->expectGetRow( 'FROM wp_fit_workout_sessions', [ 'id' => 4 ] );
+		$db->expectGetResults( 'FROM wp_fit_workout_session_exercises', [
+			[ 'sort_order' => 1, 'exercise_id' => 501, 'original_exercise_id' => 0, 'slot_type' => 'main' ],
+			[ 'sort_order' => 2, 'exercise_id' => 502, 'original_exercise_id' => 0, 'slot_type' => 'accessory' ],
+		] );
+		$db->expectGetVar( 'SELECT e.id', 503 );
+		$db->expectGetRow( 'FROM wp_fit_exercises WHERE id = 501', (object) [
+			'id' => 501,
+			'name' => 'Bench Press',
+			'primary_muscle' => 'chest',
+			'equipment' => 'barbell',
+			'difficulty' => 'intermediate',
+		] );
+		$db->expectGetVar( 'SELECT equipment FROM wp_fit_exercises WHERE id = 501', 'barbell' );
+		$db->expectGetResults( 'FROM wp_fit_workout_sets ws', [] );
+		$db->expectGetRow( 'FROM wp_fit_exercises WHERE id = 502', (object) [
+			'id' => 502,
+			'name' => 'Cable Fly',
+			'primary_muscle' => 'chest',
+			'equipment' => 'cable',
+			'difficulty' => 'beginner',
+		] );
+		$db->expectGetRow( 'FROM wp_fit_exercises WHERE id = 503', (object) [
+			'id' => 503,
+			'name' => 'Machine Chest Fly',
+			'primary_muscle' => 'chest',
+			'equipment' => 'machine',
+			'difficulty' => 'beginner',
+		] );
+		$db->expectGetVar( 'SELECT equipment FROM wp_fit_exercises WHERE id = 503', 'machine' );
+		$db->expectGetResults( 'FROM wp_fit_workout_sets ws', [] );
+
+		$result = TrainingEngine::preview_session( 7, 'short', false, 'push' );
+
+		$this->assertSame( 'push', $result['day_type'] );
+		$this->assertCount( 2, $result['exercises'] );
+		$this->assertSame( 501, $result['exercises'][0]['exercise_id'] );
+		$this->assertSame( 503, $result['exercises'][1]['exercise_id'] );
+		$this->assertTrue( $result['exercises'][1]['was_swapped'] );
+		$this->assertSame( 'Cable Fly', $result['exercises'][1]['original_exercise_name'] );
+	}
+
 	public function test_record_snapshots_marks_a_new_pr_and_grants_the_first_pr_award(): void {
 		$db = $this->wpdb();
 

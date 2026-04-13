@@ -48,14 +48,11 @@ export function useWorkoutPlanningController({
   setStatusError,
 }) {
   const [swapDrawerExercise, setSwapDrawerExercise] = useState(null)
+  const [addDrawerOpen, setAddDrawerOpen] = useState(false)
   const [draggedPlanExerciseId, setDraggedPlanExerciseId] = useState(0)
-  const [addExerciseQuery, setAddExerciseQuery] = useState('')
-  const [addExerciseResults, setAddExerciseResults] = useState([])
-  const [addExerciseLoading, setAddExerciseLoading] = useState(false)
-  const [addExerciseError, setAddExerciseError] = useState('')
   const [recoveryLoopTierOverride, setRecoveryLoopTierOverride] = useState(null)
   const previewExerciseRowRefs = useRef(new Map())
-  const pendingPreviewScrollPlanExerciseIdRef = useRef(0)
+  const pendingPreviewScrollRequestRef = useRef(null)
 
   const hasCustomWorkoutDraft = !session && Boolean(customWorkoutDraft?.id)
   const normalizedCustomWorkoutDayType = hasCustomWorkoutDraft
@@ -199,6 +196,15 @@ export function useWorkoutPlanningController({
     () => adjustedPreviewExercises.filter(exercise => exercise?.is_bonus_fill).length,
     [adjustedPreviewExercises],
   )
+  const resolvedSwapDrawerExercise = useMemo(() => {
+    if (!swapDrawerExercise?.plan_exercise_id) {
+      return null
+    }
+
+    return previewExercises.find(
+      exercise => Number(exercise?.plan_exercise_id) === Number(swapDrawerExercise.plan_exercise_id),
+    ) ?? swapDrawerExercise
+  }, [previewExercises, swapDrawerExercise])
   const repAdjustmentsPayload = useMemo(
     () => Object.entries(effectiveRepAdjustmentsByExercise)
       .map(([planExerciseId, repDelta]) => ({ plan_exercise_id: Number(planExerciseId), rep_delta: Number(repDelta) }))
@@ -217,18 +223,6 @@ export function useWorkoutPlanningController({
   ]
   const isCardioSelection = !hasCustomWorkoutDraft && previewDayType === 'cardio'
   const isRestSelection = !hasCustomWorkoutDraft && previewDayType === 'rest'
-  const activeSessionId = Number(session?.session?.id || 0)
-  const addExerciseQueryTrimmed = addExerciseQuery.trim()
-  const previewExerciseIdsSignature = useMemo(
-    () => (previewExercises || []).map(exercise => Number(exercise?.exercise_id) || 0).filter(Boolean).sort((a, b) => a - b).join('|'),
-    [previewExercises],
-  )
-  const previewAddedExerciseIdsSignature = useMemo(
-    () => (previewAddedExercises || []).map(exercise => Number(exercise?.exercise_id) || 0).filter(Boolean).sort((a, b) => a - b).join('|'),
-    [previewAddedExercises],
-  )
-  const previewExercisesRef = useLatest(previewExercises)
-  const previewAddedExercisesRef = useLatest(previewAddedExercises)
   const existingPlanningExerciseIds = useMemo(
     () => new Set([
       ...previewExercises.map(exercise => Number(exercise?.exercise_id || 0)),
@@ -298,13 +292,20 @@ export function useWorkoutPlanningController({
     delete nextState.recoveryLoopWorkoutTier
     delete nextState.recoveryLoopWorkoutSource
 
+    let timeoutId = 0
     if (nextTier !== timeTier) {
       setTimeTier(nextTier)
-      setRecoveryLoopTierOverride({ tier: nextTier })
+      timeoutId = window.setTimeout(() => {
+        setRecoveryLoopTierOverride({ tier: nextTier })
+      }, 0)
     }
 
     navigate(location.pathname, { replace: true, state: Object.keys(nextState).length ? nextState : null })
-    return undefined
+    return () => {
+      if (timeoutId) {
+        window.clearTimeout(timeoutId)
+      }
+    }
   }, [location.pathname, navigate, locationStateRef, session, setTimeTier, timeTier])
 
   useEffect(() => {
@@ -314,15 +315,23 @@ export function useWorkoutPlanningController({
     if (planningDraftKey) {
       syncPreviewExerciseOrder(planningDraftKey, nextIds)
     }
-    setSwapDrawerExercise(current => {
-      if (!current?.plan_exercise_id) return null
-      return nextExercises.find(exercise => Number(exercise.plan_exercise_id) === Number(current.plan_exercise_id)) ?? null
-    })
   }, [planningDraftKey, previewSession, session, syncPreviewExerciseOrder])
 
   useEffect(() => {
-    const targetPlanExerciseId = Number(pendingPreviewScrollPlanExerciseIdRef.current || 0)
-    if (!targetPlanExerciseId || session || isCardioSelection || isRestSelection) {
+    const request = pendingPreviewScrollRequestRef.current
+    if (!request || session || isCardioSelection || isRestSelection) {
+      return undefined
+    }
+
+    if (request.waitForDrawerClose && (Boolean(resolvedSwapDrawerExercise) || addDrawerOpen)) {
+      return undefined
+    }
+
+    const targetPlanExerciseId = Number(request.planExerciseId || 0)
+      || Number(
+        previewExercises.find(exercise => Number(exercise?.exercise_id || 0) === Number(request.exerciseId || 0))?.plan_exercise_id || 0,
+      )
+    if (!targetPlanExerciseId) {
       return undefined
     }
 
@@ -332,67 +341,11 @@ export function useWorkoutPlanningController({
 
       targetRow.scrollIntoView({ behavior: 'smooth', block: 'center' })
       targetRow.focus({ preventScroll: true })
-      pendingPreviewScrollPlanExerciseIdRef.current = 0
+      pendingPreviewScrollRequestRef.current = null
     })
 
     return () => window.cancelAnimationFrame(frameId)
-  }, [isCardioSelection, isRestSelection, previewExerciseOrderSignature, previewSwapPayloadSignature, session])
-
-  useEffect(() => {
-    setAddExerciseQuery('')
-    setAddExerciseResults([])
-    setAddExerciseError('')
-  }, [planningDraftKey])
-
-  useEffect(() => {
-    if (activeSessionId || isCardioSelection || isRestSelection) {
-      setAddExerciseResults([])
-      setAddExerciseError('')
-      setAddExerciseLoading(false)
-      return undefined
-    }
-
-    if (addExerciseQueryTrimmed.length < 2) {
-      setAddExerciseResults([])
-      setAddExerciseError('')
-      setAddExerciseLoading(false)
-      return undefined
-    }
-
-    let active = true
-    const timer = window.setTimeout(async () => {
-      setAddExerciseLoading(true)
-      setAddExerciseError('')
-
-      try {
-        const rows = await trainingApi.getExercises({
-          q: addExerciseQueryTrimmed,
-          limit: 12,
-          day_type: previewDayType || '',
-        })
-        if (!active) return
-
-        const existingIds = new Set((previewExercisesRef.current || []).map(exercise => Number(exercise.exercise_id)).filter(Boolean))
-        const pendingIds = new Set((previewAddedExercisesRef.current || []).map(exercise => Number(exercise.exercise_id)).filter(Boolean))
-        const normalized = (Array.isArray(rows) ? rows : [])
-          .map(item => normalizeExerciseCandidate(item))
-          .filter(item => item.id > 0 && !existingIds.has(item.id) && !pendingIds.has(item.id))
-        setAddExerciseResults(normalized)
-      } catch (error) {
-        if (!active) return
-        setAddExerciseError(error?.message || 'Could not search exercises right now.')
-      } finally {
-        if (active) {
-          setAddExerciseLoading(false)
-        }
-      }
-    }, 220)
-
-    return () => {
-      active = false
-      window.clearTimeout(timer)
-    }
-  }, [activeSessionId, addExerciseQueryTrimmed, isCardioSelection, isRestSelection, previewAddedExerciseIdsSignature, previewDayType, previewExerciseIdsSignature, previewExercisesRef, previewAddedExercisesRef])
+  }, [addDrawerOpen, exerciseAdditionsPayloadSignature, isCardioSelection, isRestSelection, previewExercises, previewExerciseOrderSignature, previewSwapPayloadSignature, resolvedSwapDrawerExercise, session])
 
   function handleSelectTimeTier(nextTier) {
     setTimeTier(nextTier)
@@ -439,7 +392,7 @@ export function useWorkoutPlanningController({
     )
   }
 
-  function handleAddExerciseCandidate(candidate) {
+  function handleAddExerciseCandidate(candidate, options = {}) {
     if (!candidate?.id || !planningDraftKey) return
 
     if (previewAddedExercises.some(item => Number(item.exercise_id) === Number(candidate.id))) {
@@ -459,8 +412,15 @@ export function useWorkoutPlanningController({
         sets: Number(candidate.default_sets || 3),
       },
     ])
-    setAddExerciseQuery('')
-    setAddExerciseResults([])
+    pendingPreviewScrollRequestRef.current = {
+      planExerciseId: 0,
+      exerciseId: Number(candidate.id),
+      waitForDrawerClose: Boolean(options.waitForDrawerClose),
+    }
+
+    if (options.closeDrawer) {
+      setAddDrawerOpen(false)
+    }
   }
 
   async function handleUseScheduledSplit() {
@@ -476,12 +436,20 @@ export function useWorkoutPlanningController({
   }
 
   async function handlePreviewSwap(planExerciseId, exerciseId) {
-    pendingPreviewScrollPlanExerciseIdRef.current = Number(planExerciseId) || 0
+    pendingPreviewScrollRequestRef.current = {
+      planExerciseId: Number(planExerciseId) || 0,
+      exerciseId: Number(exerciseId) || 0,
+      waitForDrawerClose: true,
+    }
     applyPreviewSwap(planningDraftKey, planExerciseId, exerciseId)
   }
 
   async function handleClearPreviewSwap(planExerciseId) {
-    pendingPreviewScrollPlanExerciseIdRef.current = Number(planExerciseId) || 0
+    pendingPreviewScrollRequestRef.current = {
+      planExerciseId: Number(planExerciseId) || 0,
+      exerciseId: 0,
+      waitForDrawerClose: true,
+    }
     clearPreviewSwap(planningDraftKey, planExerciseId)
   }
 
@@ -511,23 +479,28 @@ export function useWorkoutPlanningController({
       return
     }
 
-    pendingPreviewScrollPlanExerciseIdRef.current = Number(draggedPlanExerciseId) || 0
+    pendingPreviewScrollRequestRef.current = {
+      planExerciseId: Number(draggedPlanExerciseId) || 0,
+      exerciseId: 0,
+      waitForDrawerClose: false,
+    }
     setPreviewExerciseOrder(planningDraftKey, reorderPreviewExerciseOrder(previewExerciseOrder, draggedPlanExerciseId, targetPlanExerciseId, previewExercises))
     setDraggedPlanExerciseId(0)
   }
 
   function handlePreviewMove(planExerciseId, direction) {
-    pendingPreviewScrollPlanExerciseIdRef.current = Number(planExerciseId) || 0
+    pendingPreviewScrollRequestRef.current = {
+      planExerciseId: Number(planExerciseId) || 0,
+      exerciseId: 0,
+      waitForDrawerClose: false,
+    }
     setPreviewExerciseOrder(planningDraftKey, movePreviewExerciseOrder(previewExerciseOrder, planExerciseId, direction, previewExercises))
   }
 
   return {
-    addExerciseError,
     absAddOnLoading: absAddOnQuery.isFetching,
     absAddOnSuggestions,
-    addExerciseLoading,
-    addExerciseQuery,
-    addExerciseResults,
+    addDrawerOpen,
     challengeAddOnLoading: challengeAddOnQuery.isFetching,
     challengeAddOnSuggestions,
     adjustedPreviewExercises,
@@ -537,6 +510,8 @@ export function useWorkoutPlanningController({
     effectiveRepAdjustmentsByExercise,
     exerciseAdditionsPayload,
     exerciseRemovalsPayload,
+    existingPlanningExerciseIds: Array.from(existingPlanningExerciseIds),
+    closeAddDrawer: () => setAddDrawerOpen(false),
     handleAddExerciseCandidate,
     handleAdjustExerciseReps,
     handleClearPreviewSwap,
@@ -566,9 +541,9 @@ export function useWorkoutPlanningController({
     recoveryLoopTierOverride,
     registerPreviewExerciseRow,
     repAdjustmentsPayload,
-    setAddExerciseQuery,
+    openAddDrawer: () => setAddDrawerOpen(true),
     setSwapDrawerExercise,
     splitOptions,
-    swapDrawerExercise,
+    swapDrawerExercise: resolvedSwapDrawerExercise,
   }
 }

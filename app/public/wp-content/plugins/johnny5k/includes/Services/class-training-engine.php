@@ -683,7 +683,7 @@ class TrainingEngine {
 			'order' => [],
 		];
 
-		if ( 'pull' !== $day_type || empty( $plan_exercises ) ) {
+		if ( empty( $plan_exercises ) || ! self::supports_day_variation( $day_type ) ) {
 			return $strategy;
 		}
 
@@ -692,10 +692,13 @@ class TrainingEngine {
 			return $strategy;
 		}
 
-		$strategy['swaps'] = self::build_pull_day_variation_swaps( $user_id, $day_type, $plan_exercises, $exercise_swaps, $last_session );
+		$last_session_id = (int) ( $last_session['session_id'] ?? 0 );
+		if ( self::should_apply_day_variation( $day_type, $last_session_id, 'swap' ) ) {
+			$strategy['swaps'] = self::build_day_variation_swaps( $user_id, $day_type, $plan_exercises, $exercise_swaps, $last_session );
+		}
 
-		if ( empty( $exercise_order ) ) {
-			$strategy['order'] = self::build_pull_day_variation_order( $plan_exercises, $last_session, $exercise_swaps, $strategy['swaps'] );
+		if ( empty( $exercise_order ) && self::should_apply_day_variation( $day_type, $last_session_id, 'order' ) ) {
+			$strategy['order'] = self::build_day_variation_order( $plan_exercises, $last_session, $exercise_swaps, $strategy['swaps'] );
 		}
 
 		return $strategy;
@@ -796,7 +799,7 @@ class TrainingEngine {
 		];
 	}
 
-	private static function build_pull_day_variation_swaps( int $user_id, string $day_type, array $plan_exercises, array $exercise_swaps, array $last_session ): array {
+	private static function build_day_variation_swaps( int $user_id, string $day_type, array $plan_exercises, array $exercise_swaps, array $last_session ): array {
 		$previous_exercise_ids = array_values( array_filter( array_map(
 			static fn( array $row ): int => (int) ( $row['exercise_id'] ?? 0 ),
 			(array) ( $last_session['exercises'] ?? [] )
@@ -812,7 +815,7 @@ class TrainingEngine {
 			$resolved_current_ids[] = (int) ( $exercise_swaps[ $plan_exercise_id ] ?? $exercise->exercise_id ?? 0 );
 		}
 
-		$candidate_slots = [ 'accessory', 'secondary', 'shoulders' ];
+		$candidate_slots = self::variation_candidate_slots_for_day( $day_type );
 
 		foreach ( $candidate_slots as $slot_type ) {
 			foreach ( $plan_exercises as $exercise ) {
@@ -826,7 +829,7 @@ class TrainingEngine {
 					$resolved_current_ids
 				) ) ) );
 
-				$alternative_id = self::find_pull_day_variation_exercise_id( $user_id, $day_type, $exercise, $excluded_ids );
+				$alternative_id = self::find_day_variation_exercise_id( $user_id, $day_type, $exercise, $excluded_ids );
 				if ( $alternative_id > 0 ) {
 					return [ $plan_exercise_id => $alternative_id ];
 				}
@@ -836,7 +839,7 @@ class TrainingEngine {
 		return [];
 	}
 
-	private static function find_pull_day_variation_exercise_id( int $user_id, string $day_type, object $plan_exercise, array $excluded_ids ): int {
+	private static function find_day_variation_exercise_id( int $user_id, string $day_type, object $plan_exercise, array $excluded_ids ): int {
 		global $wpdb;
 		$p = $wpdb->prefix;
 
@@ -882,7 +885,7 @@ class TrainingEngine {
 		return $alternative_id ? (int) $alternative_id : 0;
 	}
 
-	private static function build_pull_day_variation_order( array $plan_exercises, array $last_session, array $manual_swaps, array $auto_swaps ): array {
+	private static function build_day_variation_order( array $plan_exercises, array $last_session, array $manual_swaps, array $auto_swaps ): array {
 		if ( count( $plan_exercises ) < 3 ) {
 			return [];
 		}
@@ -926,6 +929,39 @@ class TrainingEngine {
 		}
 
 		return [];
+	}
+
+	private static function supports_day_variation( string $day_type ): bool {
+		return ! in_array( $day_type, [ 'rest', 'cardio' ], true );
+	}
+
+	private static function should_apply_day_variation( string $day_type, int $last_session_id, string $kind ): bool {
+		if ( $last_session_id <= 0 ) {
+			return false;
+		}
+
+		$threshold = 'swap' === $kind ? 2 : 1;
+		$seed = abs( crc32( sprintf( '%s:%s:%d', $day_type, $kind, $last_session_id ) ) );
+
+		return ( $seed % 10 ) < $threshold;
+	}
+
+	private static function variation_candidate_slots_for_day( string $day_type ): array {
+		switch ( $day_type ) {
+			case 'push':
+				return [ 'secondary', 'accessory', 'shoulders' ];
+			case 'pull':
+				return [ 'secondary', 'accessory', 'shoulders' ];
+			case 'legs':
+			case 'lower':
+				return [ 'secondary', 'accessory', 'challenge' ];
+			case 'upper':
+			case 'full_body':
+			case 'fullbody':
+				return [ 'secondary', 'accessory', 'shoulders', 'challenge' ];
+			default:
+				return [ 'secondary', 'accessory', 'shoulders' ];
+		}
 	}
 
 	public static function get_user_exercise_avoidance_terms( int $user_id ): array {

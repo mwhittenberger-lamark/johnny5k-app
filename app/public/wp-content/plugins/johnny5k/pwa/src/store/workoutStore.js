@@ -4,7 +4,7 @@ import { mutateOfflineWriteQueueEntry, removeOfflineWriteQueueEntry } from '../a
 import { workoutApi } from '../api/modules/workout'
 import { cacheWorkoutSessionSnapshot, clearCachedWorkoutSessionSnapshot, readCachedWorkoutSessionSnapshot } from '../lib/workoutOffline'
 
-/** Active session state — persisted in sessionStorage so a page refresh doesn't lose the workout. */
+/** Workout state — persisted in localStorage so planning and active sessions survive app/tab churn. */
 export const useWorkoutStore = create(persist((set, get) => ({
   session: null,        // { session, exercises: [{ ...ex, sets: [] }] }
   sessionId: null,
@@ -725,7 +725,7 @@ export const useWorkoutStore = create(persist((set, get) => ({
   clear: () => get().clearSessionState(),
 }), {
   name: 'jf-workout-session',
-  storage: createJSONStorage(() => sessionStorage),
+  storage: createJSONStorage(() => localStorage),
   partialize: (state) => ({
     sessionId: state.sessionId,
     timeTier: state.timeTier,
@@ -754,8 +754,6 @@ function setResolvedSessionState(set, get, sessionData, selectedTimeTier, select
     readinessScore: sessionData?.session?.readiness_score ?? selectedReadiness,
     sessionMode: sessionData.session_mode || (Number(sessionData?.session?.readiness_score ?? 0) <= 3 ? 'maintenance' : 'normal'),
     undoToast: null,
-    previewDayType: '',
-    previewDrafts: {},
   })
 }
 
