@@ -126,6 +126,13 @@ export default function LiveWorkoutMode({
   const defaultLiveWorkoutFrames = useMemo(() => getDefaultLiveWorkoutFrames(appImages), [appImages])
   const voiceTestBusy = premiumVoiceTest.status === 'running' || instantVoiceTest.status === 'running'
   const scrollBehavior = getAccessibleScrollBehavior()
+  const applyVoicePrefs = useCallback((updater) => {
+    setVoicePrefs(current => {
+      const nextPrefs = typeof updater === 'function' ? updater(current) : updater
+      writeLiveWorkoutVoicePrefs(nextPrefs)
+      return nextPrefs
+    })
+  }, [])
   const scrollPanelToSection = useCallback((targetRef) => {
     const panelNode = panelRef.current
     const targetNode = targetRef?.current
@@ -271,7 +278,7 @@ export default function LiveWorkoutMode({
               label: 'Switch to Auto',
               tone: 'primary',
               onClick: () => {
-                setVoicePrefs(current => ({ ...current, liveModeVoiceMode: 'auto' }))
+                applyVoicePrefs(current => ({ ...current, liveModeVoiceMode: 'auto' }))
                 setVoiceTestingOpen(true)
                 scrollPanelToSection(voiceTestingCardRef)
               },
@@ -279,7 +286,7 @@ export default function LiveWorkoutMode({
             {
               label: 'Switch to Instant',
               onClick: () => {
-                setVoicePrefs(current => ({ ...current, liveModeVoiceMode: 'instant' }))
+                applyVoicePrefs(current => ({ ...current, liveModeVoiceMode: 'instant' }))
                 setVoiceTestingOpen(true)
                 scrollPanelToSection(voiceTestingCardRef)
               },
@@ -320,6 +327,7 @@ export default function LiveWorkoutMode({
           message: toastMessage,
           details: toastDetails,
           tone: 'error',
+          persistent: shouldSuggestVoiceModeChange,
           kind: shouldSuggestVoiceModeChange ? 'live-workout-premium-fallback-hint' : failureNotice.kind,
           actions: toastActions,
         },
@@ -337,7 +345,7 @@ export default function LiveWorkoutMode({
         kind: 'live-workout-auto-instant-voice',
       })
     }
-  }, [instantVoiceSupported, scrollPanelToSection])
+  }, [applyVoicePrefs, instantVoiceSupported, scrollPanelToSection])
 
   useEffect(() => {
     if (!isOpen) {
@@ -875,7 +883,7 @@ export default function LiveWorkoutMode({
   }
 
   function updateVoicePref(field, value) {
-    setVoicePrefs(current => ({
+    applyVoicePrefs(current => ({
       ...current,
       [field]: value,
     }))
@@ -1072,7 +1080,7 @@ export default function LiveWorkoutMode({
                 <button
                   type="button"
                   className="btn-outline"
-                  onClick={() => setVoicePrefs(current => ({ ...current, liveModeVoiceMode: cycleLiveWorkoutVoiceMode(current.liveModeVoiceMode) }))}
+                  onClick={() => applyVoicePrefs(current => ({ ...current, liveModeVoiceMode: cycleLiveWorkoutVoiceMode(current.liveModeVoiceMode) }))}
                   aria-label={`Voice mode ${voiceModeLabel}. Tap to cycle Premium, Instant, Auto, and Mute.`}
                   title="Tap to cycle Premium, Instant, Auto, and Mute."
                 >
@@ -2065,7 +2073,7 @@ async function playPremiumSpeech({
   }
 }
 
-function playInstantSpeech({
+async function playInstantSpeech({
   text,
   messageKey,
   createdAt,
@@ -2079,39 +2087,48 @@ function playInstantSpeech({
   fallbackFromPremium = false,
 }) {
   if (typeof window === 'undefined' || typeof window.speechSynthesis === 'undefined' || typeof window.SpeechSynthesisUtterance === 'undefined') {
-    return Promise.resolve(false)
+    return false
+  }
+
+  if (!isJobCurrent(jobId) || !isVoiceMessageFresh(createdAt)) {
+    onAttemptEvent?.({
+      type: 'voice_skipped',
+      requestStartedAt,
+      elapsedMs: Date.now() - requestStartedAt,
+      reason: 'stale',
+      message: 'Voice reply was delayed too long and was skipped.',
+    })
+    return false
+  }
+
+  const { availableVoices, selectedVoice } = await waitForInstantVoiceSelection(instantVoiceURI)
+  if (!isJobCurrent(jobId) || !isVoiceMessageFresh(createdAt)) {
+    onAttemptEvent?.({
+      type: 'voice_skipped',
+      requestStartedAt,
+      elapsedMs: Date.now() - requestStartedAt,
+      reason: 'stale',
+      message: 'Voice reply was delayed too long and was skipped.',
+    })
+    return false
+  }
+
+  if (!availableVoices.length || !selectedVoice) {
+    onAttemptEvent?.({
+      type: 'instant_failed',
+      requestStartedAt,
+      elapsedMs: Date.now() - requestStartedAt,
+      reason: 'no_instant_voice_loaded',
+      voiceLabel: '',
+      fallbackFromPremium,
+      message: 'Device voice is available but no voices are ready yet.',
+    })
+    return false
   }
 
   return new Promise(resolve => {
-    if (!isJobCurrent(jobId) || !isVoiceMessageFresh(createdAt)) {
-      onAttemptEvent?.({
-        type: 'voice_skipped',
-        requestStartedAt,
-        elapsedMs: Date.now() - requestStartedAt,
-        reason: 'stale',
-        message: 'Voice reply was delayed too long and was skipped.',
-      })
-      resolve(false)
-      return
-    }
-
     let settled = false
     const utterance = new window.SpeechSynthesisUtterance(text)
-    const availableVoices = window.speechSynthesis.getVoices()
-    const selectedVoice = getPreferredInstantVoice(availableVoices, instantVoiceURI)
-    if (!availableVoices.length || !selectedVoice) {
-      onAttemptEvent?.({
-        type: 'instant_failed',
-        requestStartedAt,
-        elapsedMs: Date.now() - requestStartedAt,
-        reason: 'no_instant_voice_loaded',
-        voiceLabel: '',
-        fallbackFromPremium,
-        message: 'Device voice is available but no voices are ready yet.',
-      })
-      resolve(false)
-      return
-    }
     utterance.rate = getLiveWorkoutInstantVoiceRate(rate)
     utterance.voice = selectedVoice || null
     utterance.lang = selectedVoice?.lang || (typeof navigator !== 'undefined' ? navigator.language : 'en-US')
@@ -2155,6 +2172,7 @@ function playInstantSpeech({
         elapsedMs: Date.now() - requestStartedAt,
         reason: 'speech_error',
         voiceLabel: formatInstantVoiceLabel(selectedVoice),
+        fallbackFromPremium,
         message: 'Instant voice could not start.',
       })
       if (!settled) {
@@ -2171,6 +2189,56 @@ function playInstantSpeech({
 
     window.speechSynthesis.cancel()
     window.speechSynthesis.speak(utterance)
+  })
+}
+
+function waitForInstantVoiceSelection(instantVoiceURI, timeoutMs = 1500) {
+  if (typeof window === 'undefined' || typeof window.speechSynthesis === 'undefined') {
+    return Promise.resolve({ availableVoices: [], selectedVoice: null })
+  }
+
+  const resolveSelection = () => {
+    const availableVoices = window.speechSynthesis.getVoices()
+    return {
+      availableVoices,
+      selectedVoice: getPreferredInstantVoice(availableVoices, instantVoiceURI),
+    }
+  }
+
+  const initialSelection = resolveSelection()
+  if (initialSelection.availableVoices.length && initialSelection.selectedVoice) {
+    return Promise.resolve(initialSelection)
+  }
+
+  return new Promise(resolve => {
+    let settled = false
+    let timeoutId = null
+    let pollId = null
+
+    const finish = (selection = resolveSelection()) => {
+      if (settled) return
+      settled = true
+      if (timeoutId != null) {
+        window.clearTimeout(timeoutId)
+      }
+      if (pollId != null) {
+        window.clearInterval(pollId)
+      }
+      window.speechSynthesis.removeEventListener?.('voiceschanged', handleVoicesChanged)
+      resolve(selection)
+    }
+
+    const handleVoicesChanged = () => {
+      const nextSelection = resolveSelection()
+      if (nextSelection.availableVoices.length && nextSelection.selectedVoice) {
+        finish(nextSelection)
+      }
+    }
+
+    window.speechSynthesis.addEventListener?.('voiceschanged', handleVoicesChanged)
+    pollId = window.setInterval(handleVoicesChanged, 100)
+    timeoutId = window.setTimeout(() => finish(), timeoutMs)
+    handleVoicesChanged()
   })
 }
 

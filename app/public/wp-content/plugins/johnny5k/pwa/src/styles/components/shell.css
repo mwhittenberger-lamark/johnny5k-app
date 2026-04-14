@@ -626,9 +626,23 @@
   max-width: 620px;
   padding: 24px;
 }
+.app-loading-screen.copy-inline {
+  gap: 16px;
+  padding: 20px;
+  border-radius: 24px;
+}
+.app-loading-screen.copy-hidden {
+  width: 100%;
+  max-width: none;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
 .app-loading-scene {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(12, minmax(0, 1fr));
   gap: 14px;
 }
 .app-loading-card {
@@ -658,16 +672,48 @@
   grid-column: 1 / -1;
   min-height: 172px;
 }
+.app-loading-card-banner {
+  grid-column: 1 / -1;
+  min-height: 136px;
+}
 .app-loading-card-stat {
+  grid-column: span 6;
   min-height: 104px;
+}
+.app-loading-card-metric {
+  grid-column: span 4;
+  min-height: 96px;
 }
 .app-loading-card-detail {
   grid-column: 1 / -1;
   min-height: 128px;
 }
+.app-loading-card-wide {
+  grid-column: span 8;
+  min-height: 148px;
+}
+.app-loading-card-panel {
+  grid-column: span 4;
+  min-height: 148px;
+}
+.app-loading-card-list {
+  grid-column: 1 / -1;
+  min-height: 74px;
+}
+.app-loading-card-tile {
+  grid-column: span 6;
+  min-height: 152px;
+}
+.app-loading-card-thumb {
+  grid-column: 1 / -1;
+  min-height: 152px;
+}
 .app-loading-copy {
   display: grid;
   gap: 10px;
+}
+.app-loading-screen.copy-inline .app-loading-copy {
+  gap: 6px;
 }
 .app-loading-eyebrow {
   font-size: 0.78rem;
@@ -682,11 +728,25 @@
   line-height: 1.04;
   color: #081533;
 }
+.app-loading-screen.copy-inline .app-loading-copy h2 {
+  font-size: 1.05rem;
+  line-height: 1.18;
+}
 .app-loading-copy p {
   margin: 0;
   max-width: 54ch;
   color: rgba(8, 21, 51, 0.7);
   line-height: 1.5;
+}
+.app-loading-screen.copy-inline .app-loading-copy p {
+  max-width: none;
+  font-size: 0.92rem;
+}
+.app-loading-screen.copy-hidden .app-loading-scene {
+  gap: 10px;
+}
+.app-loading-screen.copy-hidden .app-loading-card {
+  border-radius: 18px;
 }
 .app-loading-dots {
   display: inline-flex;
@@ -730,12 +790,24 @@
     border-radius: 24px;
   }
 
+  .app-loading-screen.copy-inline {
+    padding: 16px;
+  }
+
   .app-loading-scene {
     grid-template-columns: 1fr;
   }
 
+  .app-loading-card-stat,
+  .app-loading-card-metric,
+  .app-loading-card-wide,
+  .app-loading-card-panel,
+  .app-loading-card-tile,
+  .app-loading-card-thumb,
   .app-loading-card-hero,
-  .app-loading-card-detail {
+  .app-loading-card-banner,
+  .app-loading-card-detail,
+  .app-loading-card-list {
     grid-column: auto;
   }
 }

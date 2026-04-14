@@ -24,7 +24,7 @@ class ExerciseCalorieServiceTest extends ServiceTestCase {
 
 		$result = ExerciseCalorieService::get_daily_exercise_calories( 7, '2026-04-11' );
 
-		$this->assertGreaterThan( 0, $result['workout_calories'] );
+		$this->assertSame( 220, $result['workout_calories'] );
 		$this->assertSame( 120, $result['cardio_calories'] );
 		$this->assertSame( $result['workout_calories'] + 120, $result['total_calories'] );
 	}

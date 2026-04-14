@@ -70,6 +70,7 @@ export function useNutritionPlanningViewState({
   const [showMicros, setShowMicros] = useState(false)
   const [recipeMealFilter, setRecipeMealFilter] = useState(() => storedRecipeFilters.mealFilter)
   const [recipeCollectionFilter, setRecipeCollectionFilter] = useState(() => storedRecipeFilters.collectionFilter)
+  const [recipeDietaryFilter, setRecipeDietaryFilter] = useState(() => storedRecipeFilters.dietaryFilter)
   const [recipeSearchQuery, setRecipeSearchQuery] = useState(() => storedRecipeFilters.searchQuery)
   const [recipeFiltersOpen, setRecipeFiltersOpen] = useState(() => storedRecipeFilters.filtersOpen)
   const [planningAccordions, setPlanningAccordions] = useState({
@@ -99,10 +100,11 @@ export function useNutritionPlanningViewState({
     persistRecipeFilterState({
       mealFilter: recipeMealFilter,
       collectionFilter: recipeCollectionFilter,
+      dietaryFilter: recipeDietaryFilter,
       searchQuery: recipeSearchQuery,
       filtersOpen: recipeFiltersOpen,
     })
-  }, [persistRecipeFilterState, recipeCollectionFilter, recipeFiltersOpen, recipeMealFilter, recipeSearchQuery])
+  }, [persistRecipeFilterState, recipeCollectionFilter, recipeDietaryFilter, recipeFiltersOpen, recipeMealFilter, recipeSearchQuery])
 
   return {
     activeView,
@@ -114,6 +116,7 @@ export function useNutritionPlanningViewState({
     pantrySortMode,
     planningAccordions,
     recipeCollectionFilter,
+    recipeDietaryFilter,
     recipeFiltersOpen,
     recipeMealFilter,
     recipeSearchQuery,
@@ -126,6 +129,7 @@ export function useNutritionPlanningViewState({
     setPantrySortMode,
     setPlanningAccordions,
     setRecipeCollectionFilter,
+    setRecipeDietaryFilter,
     setRecipeFiltersOpen,
     setRecipeMealFilter,
     setRecipeSearchQuery,

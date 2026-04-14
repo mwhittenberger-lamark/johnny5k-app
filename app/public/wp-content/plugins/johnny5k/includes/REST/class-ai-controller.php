@@ -200,6 +200,7 @@ abstract class AbstractNutritionController extends RestController {
 		$date    = sanitize_text_field( $req->get_param( 'date' ) ?: UserTime::today( $user_id ) );
 
 		self::backfill_missing_meal_item_micros_for_date( $user_id, $date );
+		\Johnny5k\Services\CalorieEngine::refresh_active_goal_targets( $user_id );
 
 		$totals = $wpdb->get_row( $wpdb->prepare(
 			"SELECT SUM(mi.calories)  AS calories,
@@ -726,6 +727,11 @@ abstract class AbstractNutritionController extends RestController {
 
 		$serving_multiplier = max( 0.1, (float) ( $req->get_param( 'serving_multiplier' ) ?: 1 ) );
 		$items = self::decode_json_list( $row->items_json );
+
+		if ( empty( $items ) ) {
+			return self::message( 'Saved meal has no items. Edit or delete it first.', 400 );
+		}
+
 		$items = array_values( array_map( static function( $item ) use ( $serving_multiplier, $meal_id ) {
 			$item = is_array( $item ) ? $item : [];
 			$item['serving_amount'] = round( (float) ( $item['serving_amount'] ?? 1 ) * $serving_multiplier, 2 );
@@ -746,6 +752,7 @@ abstract class AbstractNutritionController extends RestController {
 			return $item;
 		}, $items ) );
 
+		$req->set_param( 'meal_datetime', sanitize_text_field( (string) ( $req->get_param( 'meal_datetime' ) ?: UserTime::mysql( $user_id ) ) ) );
 		$req->set_param( 'meal_type', $row->meal_type );
 		$req->set_param( 'source', 'saved_meal' );
 		$req->set_param( 'items', $items );

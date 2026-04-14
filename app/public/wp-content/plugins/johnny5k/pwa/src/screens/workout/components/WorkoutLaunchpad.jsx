@@ -1,8 +1,10 @@
 import CoachingSummaryPanel from '../../../components/ui/CoachingSummaryPanel'
 import ErrorState from '../../../components/ui/ErrorState'
+import AppLoadingScreen from '../../../components/ui/AppLoadingScreen'
 import PlanOverviewAddDrawer from '../../../components/workout/PlanOverviewAddDrawer'
 import SupportIconButton from '../../../components/ui/SupportIconButton'
 import PlanOverviewSwapDrawer from '../../../components/workout/PlanOverviewSwapDrawer'
+import WorkoutSessionConfirmModal from './WorkoutSessionConfirmModal'
 import { formatDayType, formatPreviewSetRepLabel, formatRemoveButtonLabel, getReadinessRepDelta } from '../workoutScreenUtils'
 
 const READINESS_OPTIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
@@ -35,11 +37,15 @@ export default function WorkoutLaunchpad({
   onOpenWorkoutSupport,
   planning,
   sessionController,
+  resumedSession,
+  onResumeSession,
 }) {
   const isMaintenanceMode = readinessScore <= 3
   const readinessRepDelta = getReadinessRepDelta(readinessScore)
   const absQuickPick = planning.absAddOnSuggestions[0] ?? null
   const challengeQuickPick = planning.challengeAddOnSuggestions[0] ?? null
+  const hasResumedSession = Boolean(resumedSession?.session?.id)
+  const confirmBusy = sessionController.exiting || sessionController.restarting
 
   return (
     <div className="screen workout-start workout-launchpad">
@@ -51,6 +57,28 @@ export default function WorkoutLaunchpad({
         {offlineStatus}
         {statusNotice ? <p className="settings-subtitle">{statusNotice}</p> : null}
         {statusError ? <ErrorState className="workout-inline-error" eyebrow="Workout status" message={statusError} title="Could not load today’s workout status" /> : null}
+        {hasResumedSession ? (
+          <div className="workout-launchpad-section">
+            <div className="dashboard-card-head">
+              <span className="dashboard-chip coach">Pre-workout screen restored</span>
+              <span className="dashboard-chip subtle">Session ready</span>
+            </div>
+            <p className="settings-subtitle workout-launchpad-helper">
+              Johnny found an in-progress workout and kept this pre-workout screen visible so you can review today before jumping back in.
+            </p>
+            <div className="settings-actions">
+              <button type="button" className="btn-primary" onClick={onResumeSession}>
+                Continue current workout
+              </button>
+              <button type="button" className="btn-secondary" onClick={sessionController.requestRestartSession} disabled={sessionController.restarting}>
+                {sessionController.restarting ? 'Restarting...' : 'Start over / rebuild'}
+              </button>
+              <button type="button" className="btn-outline" onClick={sessionController.requestExitSession} disabled={sessionController.exiting}>
+                {sessionController.exiting ? 'Exiting...' : 'Exit and discard'}
+              </button>
+            </div>
+          </div>
+        ) : null}
 
         {!planning.isRestSelection ? (
           <div className="workout-launchpad-section">
@@ -179,7 +207,18 @@ export default function WorkoutLaunchpad({
 
         {error ? <ErrorState className="workout-inline-error" eyebrow="Workout session" message={error} title="Could not start this workout" /> : null}
         <div className="settings-actions">
-          {planning.isCardioSelection ? (
+          {hasResumedSession ? (
+            <>
+              <button className="btn-primary" onClick={onResumeSession}>
+                Continue current workout
+              </button>
+              <button className="btn-secondary" onClick={() => navigate('/activity-log')}>Activity Log</button>
+              <button className="btn-secondary" onClick={() => navigate('/workout/library')}>My exercise library</button>
+              <button className="btn-outline" onClick={sessionController.requestRestartSession} disabled={sessionController.restarting}>
+                {sessionController.restarting ? 'Restarting...' : 'Start over / change split'}
+              </button>
+            </>
+          ) : planning.isCardioSelection ? (
             <>
               <button className="btn-primary" onClick={sessionController.handleLogCardio}>
                 Log Cardio in Progress
@@ -224,7 +263,16 @@ export default function WorkoutLaunchpad({
           <span className="dashboard-chip workout">Plan overview</span>
           {plan?.plan?.name ? <span className="dashboard-chip subtle">{plan.plan.name}</span> : null}
         </div>
-        {planLoading ? <p>Loading plan...</p> : null}
+        {planLoading ? (
+          <AppLoadingScreen
+            eyebrow="Workout"
+            title="Loading your plan overview"
+            message="Johnny is building the exercise cards, order, and swap options for this session."
+            compact
+            variant="workout"
+            copyStyle="inline"
+          />
+        ) : null}
         {!planLoading && planError ? <ErrorState className="workout-inline-error" eyebrow="Training plan" message={planError} title="Could not load your plan overview" /> : null}
         {!planLoading && !planError && planning.previewSession ? (
           <>
@@ -325,6 +373,11 @@ export default function WorkoutLaunchpad({
                 <div className="settings-actions">
                   <button type="button" className="btn-outline" onClick={planning.openAddDrawer}>
                     Browse and add exercise
+                  </button>
+                </div>
+                <div className="settings-actions">
+                  <button type="button" className="btn-secondary" onClick={planning.handleSwitchItUp} disabled={!planning.adjustedPreviewExercises.length || planning.previewLoading}>
+                    Switch it up
                   </button>
                 </div>
               </div>
@@ -440,6 +493,8 @@ export default function WorkoutLaunchpad({
               ) : null}
             </div>
           </>
+        ) : !planLoading && !planError && planning.previewError ? (
+          <ErrorState className="workout-inline-error" eyebrow="Workout preview" message={planning.previewError} title="Could not build today’s workout preview" />
         ) : null}
       </div>
 
@@ -457,6 +512,14 @@ export default function WorkoutLaunchpad({
         existingExerciseIds={planning.existingPlanningExerciseIds}
         onClose={planning.closeAddDrawer}
         onAdd={planning.handleAddExerciseCandidate}
+      />
+      <WorkoutSessionConfirmModal
+        action={hasResumedSession ? sessionController.pendingSessionAction : null}
+        busy={confirmBusy}
+        onCancel={sessionController.closePendingSessionAction}
+        onConfirm={() => {
+          void sessionController.confirmPendingSessionAction()
+        }}
       />
     </div>
   )

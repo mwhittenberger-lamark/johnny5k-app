@@ -185,6 +185,7 @@ class AwardEngine {
 
 	private static function check_protein_streak( int $uid ): void {
 		global $wpdb;
+		CalorieEngine::refresh_active_goal_targets( $uid );
 
 		$goal_protein = (int) $wpdb->get_var( $wpdb->prepare(
 			"SELECT target_protein_g FROM {$wpdb->prefix}fit_user_goals
@@ -387,6 +388,7 @@ class AwardEngine {
 
 	private static function check_calorie_target_week( int $uid ): void {
 		global $wpdb;
+		CalorieEngine::refresh_active_goal_targets( $uid );
 
 		$target = (int) $wpdb->get_var( $wpdb->prepare(
 			"SELECT target_calories FROM {$wpdb->prefix}fit_user_goals
@@ -567,6 +569,7 @@ class AwardEngine {
 
 	private static function has_protein_streak( int $uid, int $days ): bool {
 		global $wpdb;
+		CalorieEngine::refresh_active_goal_targets( $uid );
 		$goal_protein = (int) $wpdb->get_var( $wpdb->prepare(
 			"SELECT target_protein_g FROM {$wpdb->prefix}fit_user_goals WHERE user_id = %d AND active = 1 ORDER BY created_at DESC LIMIT 1",
 			$uid
@@ -694,6 +697,7 @@ class AwardEngine {
 
 	private static function calorie_target_days_in_last_week( int $uid ): int {
 		global $wpdb;
+		CalorieEngine::refresh_active_goal_targets( $uid );
 		$target = (int) $wpdb->get_var( $wpdb->prepare(
 			"SELECT target_calories FROM {$wpdb->prefix}fit_user_goals WHERE user_id = %d AND active = 1 ORDER BY created_at DESC LIMIT 1",
 			$uid

@@ -3,6 +3,7 @@ import { adminApi } from '../../api/modules/admin'
 import { mediaApi } from '../../api/modules/media'
 import AppDrawer from '../../components/ui/AppDrawer'
 import AppIcon from '../../components/ui/AppIcon'
+import AppLoadingScreen from '../../components/ui/AppLoadingScreen'
 import EmptyState from '../../components/ui/EmptyState'
 import ErrorState from '../../components/ui/ErrorState'
 import Field from '../../components/ui/Field'
@@ -17,6 +18,16 @@ const TABS = ['invites', 'costs', 'persona', 'users', 'exercises', 'awards', 're
 const AWARD_ICON_OPTIONS = ['award', 'trophy', 'star', 'flame', 'bolt']
 const COLOR_FIELDS = ['bg', 'bg2', 'bg3', 'border', 'text', 'textMuted', 'accent', 'accent2', 'accent3', 'danger', 'success', 'yellow']
 const QA_ONLY_TABS = ['label-tests']
+const RECIPE_DIETARY_TAG_OPTIONS = [
+  { value: 'vegan', label: 'Vegan' },
+  { value: 'vegetarian', label: 'Vegetarian' },
+  { value: 'high_protein', label: 'High Protein' },
+  { value: 'mediterranean', label: 'Mediterranean' },
+  { value: 'keto', label: 'Keto' },
+  { value: 'paleo', label: 'Paleo' },
+  { value: 'dash', label: 'DASH' },
+  { value: 'whole30', label: 'Whole30' },
+]
 
 function tabLabel(id) {
   if (id === 'label-tests') {
@@ -74,6 +85,33 @@ function createEmptyLiveWorkoutFrame(index = 0) {
     label: `Live frame ${index + 1}`,
     note: '',
   }
+}
+
+function createEmptyRecipeForm(mealType = 'lunch') {
+  return {
+    id: null,
+    recipe_name: '',
+    meal_type: mealType,
+    ingredients: '',
+    instructions: '',
+    estimated_calories: 0,
+    estimated_protein_g: 0,
+    estimated_carbs_g: 0,
+    estimated_fat_g: 0,
+    why_this_works: '',
+    source_url: '',
+    source_title: '',
+    source_type: 'manual',
+    dietary_tags: [],
+    image_url: '',
+  }
+}
+
+function normalizeRecipeTagList(tags) {
+  const allowed = new Set(RECIPE_DIETARY_TAG_OPTIONS.map(option => option.value))
+  return Array.from(new Set((Array.isArray(tags) ? tags : [])
+    .map(tag => String(tag || '').trim())
+    .filter(tag => allowed.has(tag))))
 }
 
 function reorderItems(items, fromIndex, toIndex) {
@@ -264,7 +302,16 @@ function CostTab() {
   if (!data) {
     return (
       <div className="admin-tab">
-        {msg ? <ErrorState className="admin-inline-error" message={msg} title="Could not load cost analytics" /> : <p>Loading…</p>}
+        {msg ? <ErrorState className="admin-inline-error" message={msg} title="Could not load cost analytics" /> : (
+          <AppLoadingScreen
+            eyebrow="Admin"
+            title="Loading cost analytics"
+            message="Johnny is pulling usage and spend data for this month."
+            compact
+            variant="panel"
+            copyStyle="inline"
+          />
+        )}
       </div>
     )
   }
@@ -788,23 +835,12 @@ function AwardsTab() {
 
 function RecipesTab() {
   const [recipes, setRecipes] = useState([])
-  const [form, setForm] = useState({
-    recipe_name: '',
-    meal_type: 'lunch',
-    ingredients: '',
-    instructions: '',
-    estimated_calories: 0,
-    estimated_protein_g: 0,
-    estimated_carbs_g: 0,
-    estimated_fat_g: 0,
-    why_this_works: '',
-    source_url: '',
-    source_title: '',
-    source_type: 'manual',
-  })
+  const [form, setForm] = useState(() => createEmptyRecipeForm())
   const [finder, setFinder] = useState({ query: '', meal_type: 'lunch', count: 5 })
   const [discoveries, setDiscoveries] = useState([])
   const [discovering, setDiscovering] = useState(false)
+  const [bulkTagging, setBulkTagging] = useState(false)
+  const [generatingImageId, setGeneratingImageId] = useState(null)
   const [msg, setMsg] = useState('')
 
   useEffect(() => {
@@ -821,30 +857,58 @@ function RecipesTab() {
     })
   }, [])
 
+  function updateForm(patch) {
+    setForm(current => ({ ...current, ...patch }))
+  }
+
+  function resetForm(nextMealType = form.meal_type || 'lunch') {
+    setForm(createEmptyRecipeForm(nextMealType))
+  }
+
+  function toggleTag(tag) {
+    updateForm({
+      dietary_tags: form.dietary_tags.includes(tag)
+        ? form.dietary_tags.filter(item => item !== tag)
+        : [...form.dietary_tags, tag],
+    })
+  }
+
+  function startEdit(recipe) {
+    setForm({
+      id: recipe.id || null,
+      recipe_name: recipe.recipe_name || '',
+      meal_type: recipe.meal_type || 'lunch',
+      ingredients: Array.isArray(recipe.ingredients) ? recipe.ingredients.join(', ') : '',
+      instructions: Array.isArray(recipe.instructions) ? recipe.instructions.join('\n') : '',
+      estimated_calories: Number(recipe.estimated_calories || 0),
+      estimated_protein_g: Number(recipe.estimated_protein_g || 0),
+      estimated_carbs_g: Number(recipe.estimated_carbs_g || 0),
+      estimated_fat_g: Number(recipe.estimated_fat_g || 0),
+      why_this_works: recipe.why_this_works || '',
+      source_url: recipe.source_url || '',
+      source_title: recipe.source_title || '',
+      source_type: recipe.source_type || 'manual',
+      dietary_tags: normalizeRecipeTagList(recipe.dietary_tags),
+      image_url: recipe.image_url || '',
+    })
+  }
+
   async function save(event) {
     event.preventDefault()
-    await adminApi.saveRecipe({
+    const payload = {
       ...form,
+      id: form.id || undefined,
       meal_type: form.meal_type,
       ingredients: form.ingredients.split(',').map(item => item.trim()).filter(Boolean),
       instructions: form.instructions.split('\n').map(item => item.trim()).filter(Boolean),
-    })
-    setForm({
-      recipe_name: '',
-      meal_type: form.meal_type,
-      ingredients: '',
-      instructions: '',
-      estimated_calories: 0,
-      estimated_protein_g: 0,
-      estimated_carbs_g: 0,
-      estimated_fat_g: 0,
-      why_this_works: '',
-      source_url: '',
-      source_title: '',
-      source_type: 'manual',
-    })
+      dietary_tags: normalizeRecipeTagList(form.dietary_tags),
+      image_url: String(form.image_url || '').trim(),
+    }
+
+    await adminApi.saveRecipe(payload)
     setRecipes(await adminApi.recipes())
-    setMsg('Recipe saved.')
+    setMsg(form.id ? 'Recipe updated.' : 'Recipe saved.')
+    resetForm(form.meal_type)
   }
 
   async function discover(event) {
@@ -869,30 +933,89 @@ function RecipesTab() {
     setMsg(`Saved ${recipe.recipe_name}.`)
   }
 
+  async function handleRetagRecipes() {
+    setBulkTagging(true)
+    setMsg('')
+    try {
+      const result = await adminApi.retagRecipes()
+      const nextRecipes = Array.isArray(result?.recipes) ? result.recipes : await adminApi.recipes()
+      setRecipes(nextRecipes)
+      if (form.id) {
+        const refreshed = nextRecipes.find(item => item.id === form.id)
+        if (refreshed) {
+          startEdit(refreshed)
+        }
+      }
+      setMsg(`AI retagged ${Number(result?.updated || 0)} recipes.`)
+    } catch (err) {
+      setMsg(`Error: ${err.message}`)
+    } finally {
+      setBulkTagging(false)
+    }
+  }
+
+  async function handleGenerateImage(recipe) {
+    const recipeId = Number(recipe?.id || form.id || 0)
+    if (!recipeId) {
+      setMsg('Save the recipe before generating an image.')
+      return
+    }
+
+    setGeneratingImageId(recipeId)
+    setMsg('')
+    try {
+      const result = await adminApi.generateRecipeImage(recipeId)
+      const nextRecipe = result?.recipe || null
+      const nextRecipes = recipes.map(item => item.id === recipeId ? { ...item, ...nextRecipe } : item)
+      setRecipes(nextRecipes)
+      if (form.id === recipeId && nextRecipe) {
+        startEdit(nextRecipe)
+      }
+      setMsg(`Generated image for ${nextRecipe?.recipe_name || recipe?.recipe_name || 'recipe'}.`)
+    } catch (err) {
+      setMsg(`Error: ${err.message}`)
+    } finally {
+      setGeneratingImageId(null)
+    }
+  }
+
   return (
     <div className="admin-tab admin-grid-two">
       <form className="admin-stack-form" onSubmit={save}>
-        <h3>Recipe library</h3>
+        <h3>{form.id ? 'Edit recipe' : 'Recipe library'}</h3>
         {msg ? <p className="success-msg">{msg}</p> : null}
-        <input placeholder="Recipe name" value={form.recipe_name} onChange={e => setForm(current => ({ ...current, recipe_name: e.target.value }))} required />
-        <select value={form.meal_type} onChange={e => setForm(current => ({ ...current, meal_type: e.target.value }))}>
+        <input placeholder="Recipe name" value={form.recipe_name} onChange={e => updateForm({ recipe_name: e.target.value })} required />
+        <select value={form.meal_type} onChange={e => updateForm({ meal_type: e.target.value })}>
           <option value="breakfast">Breakfast</option>
           <option value="lunch">Lunch</option>
           <option value="dinner">Dinner</option>
           <option value="snack">Snack</option>
         </select>
-        <textarea placeholder="Ingredients, comma separated" value={form.ingredients} onChange={e => setForm(current => ({ ...current, ingredients: e.target.value }))} rows={3} />
-        <textarea placeholder="Instructions, one per line" value={form.instructions} onChange={e => setForm(current => ({ ...current, instructions: e.target.value }))} rows={4} />
+        <textarea placeholder="Ingredients, comma separated" value={form.ingredients} onChange={e => updateForm({ ingredients: e.target.value })} rows={3} />
+        <textarea placeholder="Instructions, one per line" value={form.instructions} onChange={e => updateForm({ instructions: e.target.value })} rows={4} />
         <div className="macro-inputs">
-          <input type="number" placeholder="Calories" value={form.estimated_calories} onChange={e => setForm(current => ({ ...current, estimated_calories: Number(e.target.value) }))} />
-          <input type="number" placeholder="Protein" value={form.estimated_protein_g} onChange={e => setForm(current => ({ ...current, estimated_protein_g: Number(e.target.value) }))} />
-          <input type="number" placeholder="Carbs" value={form.estimated_carbs_g} onChange={e => setForm(current => ({ ...current, estimated_carbs_g: Number(e.target.value) }))} />
-          <input type="number" placeholder="Fat" value={form.estimated_fat_g} onChange={e => setForm(current => ({ ...current, estimated_fat_g: Number(e.target.value) }))} />
+          <input type="number" placeholder="Calories" value={form.estimated_calories} onChange={e => updateForm({ estimated_calories: Number(e.target.value) })} />
+          <input type="number" placeholder="Protein" value={form.estimated_protein_g} onChange={e => updateForm({ estimated_protein_g: Number(e.target.value) })} />
+          <input type="number" placeholder="Carbs" value={form.estimated_carbs_g} onChange={e => updateForm({ estimated_carbs_g: Number(e.target.value) })} />
+          <input type="number" placeholder="Fat" value={form.estimated_fat_g} onChange={e => updateForm({ estimated_fat_g: Number(e.target.value) })} />
         </div>
-        <textarea placeholder="Why this works" value={form.why_this_works} onChange={e => setForm(current => ({ ...current, why_this_works: e.target.value }))} rows={2} />
-        <input placeholder="Source title" value={form.source_title} onChange={e => setForm(current => ({ ...current, source_title: e.target.value }))} />
-        <input placeholder="Source URL" value={form.source_url} onChange={e => setForm(current => ({ ...current, source_url: e.target.value }))} />
-        <button className="btn-primary" type="submit">Save recipe</button>
+        <div className="nutrition-gap-list nutrition-quick-picks">
+          {RECIPE_DIETARY_TAG_OPTIONS.map(option => (
+            <button key={option.value} type="button" className={`onboarding-chip${form.dietary_tags.includes(option.value) ? ' active' : ''}`} onClick={() => toggleTag(option.value)}>
+              {option.label}
+            </button>
+          ))}
+        </div>
+        <textarea placeholder="Why this works" value={form.why_this_works} onChange={e => updateForm({ why_this_works: e.target.value })} rows={2} />
+        <input placeholder="Source title" value={form.source_title} onChange={e => updateForm({ source_title: e.target.value })} />
+        <input placeholder="Source URL" value={form.source_url} onChange={e => updateForm({ source_url: e.target.value })} />
+        <input placeholder="Recipe image URL" value={form.image_url} onChange={e => updateForm({ image_url: e.target.value })} />
+        {form.image_url ? <img src={form.image_url} alt="" style={{ width: '100%', borderRadius: 12, objectFit: 'cover', maxHeight: 220 }} /> : null}
+        <div className="nutrition-card-actions">
+          <button className="btn-primary" type="submit">{form.id ? 'Update recipe' : 'Save recipe'}</button>
+          {form.id ? <button className="btn-secondary" type="button" onClick={() => handleGenerateImage(form)} disabled={generatingImageId === form.id}>{generatingImageId === form.id ? 'Generating…' : 'Generate image'}</button> : null}
+          {form.id ? <button className="btn-ghost" type="button" onClick={() => resetForm(form.meal_type)}>Cancel edit</button> : null}
+        </div>
       </form>
       <div className="admin-list">
         <form className="admin-stack-form" onSubmit={discover}>
@@ -915,7 +1038,10 @@ function RecipesTab() {
             value={finder.count}
             onChange={e => setFinder(current => ({ ...current, count: Number(e.target.value) || 5 }))}
           />
-          <button className="btn-primary" type="submit" disabled={discovering}>{discovering ? 'Searching…' : 'Find recipes'}</button>
+          <div className="nutrition-card-actions">
+            <button className="btn-primary" type="submit" disabled={discovering}>{discovering ? 'Searching…' : 'Find recipes'}</button>
+            <button className="btn-secondary" type="button" disabled={bulkTagging || !recipes.length} onClick={handleRetagRecipes}>{bulkTagging ? 'Retagging…' : 'AI retag existing'}</button>
+          </div>
         </form>
         {discoveries.length ? (
           <div className="admin-list">
@@ -924,6 +1050,7 @@ function RecipesTab() {
                 <div>
                   <strong>{item.recipe_name}</strong>
                   <p>{item.meal_type} · {Math.round(item.estimated_calories || 0)} Calories · {Math.round(item.estimated_protein_g || 0)}g protein</p>
+                  {Array.isArray(item.dietary_tags) && item.dietary_tags.length ? <p>{item.dietary_tags.join(' · ')}</p> : null}
                   <p>{(item.ingredients ?? []).join(', ')}</p>
                   {item.why_this_works ? <p>{item.why_this_works}</p> : null}
                   {item.source_url ? <a href={item.source_url} target="_blank" rel="noreferrer">{item.source_title || item.source_url}</a> : null}
@@ -938,10 +1065,16 @@ function RecipesTab() {
             <div>
               <strong>{item.recipe_name}</strong>
               <p>{item.meal_type} · {(item.ingredients ?? []).join(', ')}</p>
+              {Array.isArray(item.dietary_tags) && item.dietary_tags.length ? <p>{item.dietary_tags.join(' · ')}</p> : null}
               {item.why_this_works ? <p>{item.why_this_works}</p> : null}
+              {item.image_url ? <img src={item.image_url} alt="" style={{ width: '100%', maxWidth: 240, borderRadius: 12, objectFit: 'cover', marginTop: 8 }} /> : null}
               {item.source_url ? <a href={item.source_url} target="_blank" rel="noreferrer">{item.source_title || item.source_url}</a> : null}
             </div>
-            <button className="btn-danger small" onClick={async () => { await adminApi.deleteRecipe(item.id); setRecipes(await adminApi.recipes()) }}>Delete</button>
+            <div className="nutrition-card-actions">
+              <button className="btn-secondary small" onClick={() => startEdit(item)}>Edit</button>
+              <button className="btn-secondary small" onClick={() => handleGenerateImage(item)} disabled={generatingImageId === item.id}>{generatingImageId === item.id ? 'Generating…' : 'Image'}</button>
+              <button className="btn-danger small" onClick={async () => { await adminApi.deleteRecipe(item.id); setRecipes(await adminApi.recipes()); if (form.id === item.id) resetForm(form.meal_type) }}>Delete</button>
+            </div>
           </div>
         ))}
       </div>
@@ -1090,7 +1223,16 @@ function DiagnosticsTab() {
         </button>
       </div>
       {msg ? <ErrorState className="admin-inline-error" message={msg} title="Could not load diagnostics" /> : null}
-      {loading ? <p>Loading…</p> : null}
+      {loading ? (
+        <AppLoadingScreen
+          eyebrow="Diagnostics"
+          title="Loading client diagnostics"
+          message="Johnny is pulling recent frontend failures and bootstrap regressions."
+          compact
+          variant="list"
+          copyStyle="inline"
+        />
+      ) : null}
       {!loading && !entries.length ? <p className="settings-subtitle">No client diagnostics logged yet.</p> : null}
       {!loading ? (
         <div className="admin-list">
@@ -1614,7 +1756,16 @@ function MediaLibraryPicker({ isOpen, onClose, onSelect, selectionKey }) {
         </div>
         {error ? <ErrorState className="admin-media-picker-state" message={error} title="Could not load media library" /> : null}
         <div className="admin-media-picker-grid">
-          {loading ? <p className="settings-subtitle">Loading media…</p> : null}
+          {loading ? (
+            <AppLoadingScreen
+              eyebrow="Media"
+              title="Loading media library"
+              message="Johnny is pulling image tiles and upload-ready selections for live workout scenes."
+              compact
+              variant="media"
+              copyStyle="inline"
+            />
+          ) : null}
           {!loading && !error && !items.length ? <EmptyState className="admin-media-picker-state" message="No images found for this search." title="No media matches" /> : null}
           {items.map(item => {
             const preview = item?.media_details?.sizes?.medium?.source_url || item?.media_details?.sizes?.thumbnail?.source_url || item?.source_url

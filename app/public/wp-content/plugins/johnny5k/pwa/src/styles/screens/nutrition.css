@@ -1040,6 +1040,50 @@
 .nutrition-composer-form {
   gap: var(--space-3);
 }
+.nutrition-add-method-picker {
+  display: grid;
+  gap: var(--space-3);
+}
+.nutrition-add-method-copy h3 {
+  margin-bottom: var(--space-1);
+}
+.nutrition-add-method-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+.nutrition-add-method-card {
+  display: grid;
+  gap: var(--space-1);
+  min-height: 112px;
+  padding: var(--space-3);
+  border-radius: 18px;
+  border: 1px solid rgba(88, 120, 160, 0.18);
+  background: rgba(255, 255, 255, 0.92);
+  color: #18344f;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  box-shadow: 0 10px 20px rgba(8, 21, 51, 0.06);
+}
+.nutrition-add-method-card strong {
+  color: #081533;
+  font-size: 1rem;
+}
+.nutrition-add-method-card span {
+  color: rgba(11, 29, 73, 0.68);
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+.nutrition-add-method-card:hover,
+.nutrition-add-method-card:focus-visible {
+  border-color: rgba(0, 188, 222, 0.42);
+  background: linear-gradient(180deg, rgba(240, 252, 255, 0.98), rgba(255, 255, 255, 0.98));
+  box-shadow: 0 12px 26px rgba(0, 188, 222, 0.12);
+}
+.nutrition-add-method-actions {
+  justify-content: flex-end;
+}
 .nutrition-composer-modes {
   display: flex;
   flex-wrap: wrap;
@@ -2026,6 +2070,9 @@ label.field-label.nutrition-saved-food-field {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .nutrition-composer-head {
+    grid-template-columns: 1fr;
+  }
+  .nutrition-add-method-grid {
     grid-template-columns: 1fr;
   }
   .nutrition-composer-status-band,

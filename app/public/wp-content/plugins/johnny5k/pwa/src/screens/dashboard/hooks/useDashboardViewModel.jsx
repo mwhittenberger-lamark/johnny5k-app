@@ -56,6 +56,7 @@ import {
   routeRecoveryAction,
 } from '../dashboardRecommendationHelpers'
 import {
+  BeginnerEducationCard,
   CoachingSummaryCard,
   GroceryGapSpotlightCard,
   JohnnyImageGalleryCard,
@@ -100,6 +101,7 @@ export function useDashboardViewModel() {
   const location = useLocation()
   const openDrawer = useJohnnyAssistantStore(state => state.openDrawer)
   const email = useAuthStore(state => state.email)
+  const preferenceMeta = useAuthStore(state => state.preferenceMeta)
   const isOnline = useOnlineStatus()
   const targetsUpdated = location.state?.targetsUpdated
   const johnnyActionNotice = location.state?.johnnyActionNotice
@@ -108,6 +110,11 @@ export function useDashboardViewModel() {
   const [weekRhythmOpen, setWeekRhythmOpen] = useState(false)
   const [thoughtWindowKey, setThoughtWindowKey] = useState(() => getInspirationalThoughtWindow().key)
   const [storyIndex, setStoryIndex] = useState(0)
+  const showBeginnerEducationCard = String(preferenceMeta?.workout_confidence || '').trim().toLowerCase() === 'building'
+  const defaultLayoutOptions = useMemo(() => ({
+    defaultVisibleCardIds: showBeginnerEducationCard ? ['beginner_education'] : [],
+    prependCardOrder: showBeginnerEducationCard ? ['beginner_education'] : [],
+  }), [showBeginnerEducationCard])
   const {
     coachPromptsOpen,
     customizeOpen,
@@ -116,7 +123,7 @@ export function useDashboardViewModel() {
     setCoachPromptsOpen,
     setCustomizeOpen,
     setDashboardLayout,
-  } = useDashboardPreferences({ email, cardDefs: DASHBOARD_CARD_DEFS })
+  } = useDashboardPreferences({ email, cardDefs: DASHBOARD_CARD_DEFS, defaultLayoutOptions })
   const {
     groceryGap,
     generatedImageGallery,
@@ -305,7 +312,26 @@ export function useDashboardViewModel() {
     }))
   }
 
+  function handleBeginnerEducationAction(action) {
+    if (!action) return
+
+    if (action.kind === 'ask' && action.prompt) {
+      openDrawer(action.prompt)
+      return
+    }
+
+    if (action.kind === 'route' && action.href) {
+      navigate(action.href, action.state ? { state: action.state } : undefined)
+      return
+    }
+
+    if (action.kind === 'external' && action.href && typeof window !== 'undefined') {
+      window.open(action.href, '_blank', 'noopener,noreferrer')
+    }
+  }
+
   const dashboardCards = [
+    makeDashboardCard('beginner_education', <BeginnerEducationCard onAction={handleBeginnerEducationAction} />),
     makeDashboardCard('coaching_summary', (
       <CoachingSummaryCard
         summary={coachingSummary}

@@ -130,14 +130,12 @@ export default function ProgressPhotosScreen() {
     return ANGLES.map(currentAngle => {
       const items = grouped[currentAngle] ?? []
       const latest = items[0] ?? null
-      const previous = items[1] ?? null
       const baselineId = Number(baselines[currentAngle] ?? 0)
       const baseline = items.find(photo => Number(photo.id) === baselineId) ?? null
 
       return {
         angle: currentAngle,
         latest,
-        previous,
         baseline,
         count: items.length,
       }
@@ -356,13 +354,6 @@ export default function ProgressPhotosScreen() {
                   onClick={() => runCompare(group.baseline, group.latest, `${titleCase(group.angle)} baseline vs latest`)}
                 >
                   Compare baseline vs latest
-                </button>
-                <button
-                  className="btn-secondary"
-                  disabled={comparing || !group.latest || !group.previous}
-                  onClick={() => runCompare(group.previous, group.latest, `${titleCase(group.angle)} previous vs latest`)}
-                >
-                  Compare previous vs latest
                 </button>
               </div>
               {!group.baseline ? <p className="progress-angle-tip">Set a baseline in Timeline first.</p> : null}

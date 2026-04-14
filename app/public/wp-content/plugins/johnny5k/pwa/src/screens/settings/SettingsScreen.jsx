@@ -6,6 +6,7 @@ import { bodyApi } from '../../api/modules/body'
 import { onboardingApi } from '../../api/modules/onboarding'
 import { pushApi } from '../../api/modules/push'
 import AppDialog from '../../components/ui/AppDialog'
+import AppLoadingScreen from '../../components/ui/AppLoadingScreen'
 import ClearableInput from '../../components/ui/ClearableInput'
 import ErrorState from '../../components/ui/ErrorState'
 import Field from '../../components/ui/Field'
@@ -997,7 +998,16 @@ export default function SettingsScreen() {
     })
   }
 
-  if (loading) return <div className="screen-loading">Loading…</div>
+  if (loading) {
+    return (
+      <AppLoadingScreen
+        eyebrow="Profile"
+        title="Loading your settings"
+        message="Johnny is pulling your profile, reminders, targets, and coaching defaults so the sections open fully populated."
+        variant="panel"
+      />
+    )
+  }
 
   return (
     <div className="screen settings-screen">
@@ -1423,7 +1433,16 @@ export default function SettingsScreen() {
                   <button type="button" className="btn-outline small" onClick={() => openDrawer('Show me my scheduled SMS reminders and help me manage them.')}>Ask Johnny</button>
                 </div>
 
-                {smsReminderLoading ? <p className="settings-subtitle">Loading scheduled reminders…</p> : null}
+                {smsReminderLoading ? (
+                  <AppLoadingScreen
+                    eyebrow="Reminders"
+                    title="Loading scheduled reminders"
+                    message="Johnny is checking upcoming SMS sends and recent reminder history."
+                    compact
+                    variant="list"
+                    copyStyle="inline"
+                  />
+                ) : null}
                 {smsReminderError ? <ErrorState className="settings-inline-error" message={smsReminderError} title="Could not load scheduled reminders" /> : null}
                 {smsReminderMessage ? <p className="success-message">{smsReminderMessage}</p> : null}
 
@@ -1895,7 +1914,7 @@ export default function SettingsScreen() {
                 </Field>
                 <div className="settings-inline-panel settings-field-span-2">
                   <strong>Generate Johnny scenes</strong>
-                  <p className="settings-subtitle">Pick 1 or 2 images per run. Hearts add images into Live Workout coach rotation.</p>
+                  <p className="settings-subtitle">Pick 1 or 2 images per run, with a max of 2 generated images per day. Hearts add images into Live Workout coach rotation.</p>
                   <div className="settings-grid settings-grid-compact">
                     <Field className="settings-field" label="How many to generate">
                       <select value={generationCount} onChange={event => setGenerationCount(Number(event.target.value))} disabled={generatingImages}>
@@ -1930,7 +1949,9 @@ export default function SettingsScreen() {
                         <button type="button" className="settings-generated-image-trigger" onClick={() => { setZoomedImageId(image.id); setZoomScale(1) }}>
                           <img src={generatedImageSrcs[image.id]} alt={image.scenario || 'Generated workout scene'} />
                         </button>
-                      ) : <div className="settings-generated-loading">Loading…</div>}
+                      ) : (
+                      <AppLoadingScreen compact variant="tile" copyStyle="hidden" />
+                      )}
                       <div className="settings-generated-copy">
                         <strong>{image.scenario || 'Generated scene'}</strong>
                         <span>{image.created_at ? formatUsShortDate(image.created_at, image.created_at) : 'Just now'}</span>

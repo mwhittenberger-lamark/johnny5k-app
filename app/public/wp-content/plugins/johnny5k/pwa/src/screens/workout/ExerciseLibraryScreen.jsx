@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { trainingApi } from '../../api/modules/training'
+import AppLoadingScreen from '../../components/ui/AppLoadingScreen'
 import ClearableInput from '../../components/ui/ClearableInput'
 import EmptyState from '../../components/ui/EmptyState'
 import ErrorState from '../../components/ui/ErrorState'
@@ -363,6 +364,18 @@ export default function ExerciseLibraryScreen() {
     }
   }
 
+  if (loading && !exercises.length && !error) {
+    return (
+      <AppLoadingScreen
+        eyebrow="Library"
+        title="Loading your saved exercises"
+        message="Johnny is pulling your personal exercise library and shaping the first cards so search feels immediate."
+        compact
+        variant="list"
+      />
+    )
+  }
+
   return (
     <div className="screen workout-library-screen">
       <header className="screen-header workout-session-header">
@@ -529,7 +542,18 @@ export default function ExerciseLibraryScreen() {
         </section>
       ) : null}
 
-      {loading ? <div className="dash-card"><p>Loading your saved exercises...</p></div> : null}
+      {loading ? (
+        <div className="dash-card">
+          <AppLoadingScreen
+            eyebrow="Library"
+            title="Refreshing your exercise list"
+            message="Johnny is updating your matches and keeping the card layout warm while results come back."
+            compact
+            variant="list"
+            copyStyle="inline"
+          />
+        </div>
+      ) : null}
       {!loading && !groupedExercises.length ? (
         <EmptyState
           className="workout-library-empty-state"

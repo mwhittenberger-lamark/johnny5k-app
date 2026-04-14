@@ -97,6 +97,8 @@ class AiToolHandlerService {
 		global $wpdb;
 		$p = $wpdb->prefix;
 
+		CalorieEngine::refresh_active_goal_targets( $user_id );
+
 		$goal = $wpdb->get_row( $wpdb->prepare(
 			"SELECT target_calories, target_protein_g, target_carbs_g, target_fat_g, target_steps, target_sleep_hours, goal_type
 			 FROM {$p}fit_user_goals WHERE user_id = %d AND active = 1 ORDER BY created_at DESC LIMIT 1",

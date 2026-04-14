@@ -2,6 +2,7 @@ import { useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { formatUsFriendlyDate } from '../../lib/dateFormat'
 import AppIcon from '../../components/ui/AppIcon'
+import AppLoadingScreen from '../../components/ui/AppLoadingScreen'
 import { normalizeAppIconName } from '../../components/ui/AppIcon.utils'
 import EmptyState from '../../components/ui/EmptyState'
 import { useDashboardStore } from '../../store/dashboardStore'
@@ -29,7 +30,14 @@ export default function RewardsScreen() {
   const bestStreak = Math.max(streaks.logging_days ?? 0, streaks.training_days ?? 0, streaks.sleep_days ?? 0, streaks.cardio_days ?? 0)
 
   if (loading && !snapshot && !awards) {
-    return <div className="screen-loading">Loading…</div>
+    return (
+      <AppLoadingScreen
+        eyebrow="Rewards"
+        title="Loading your momentum board"
+        message="Johnny is counting earned awards, weekly rhythm, and streak signals so this page opens with real context."
+        variant="rewards"
+      />
+    )
   }
 
   return (

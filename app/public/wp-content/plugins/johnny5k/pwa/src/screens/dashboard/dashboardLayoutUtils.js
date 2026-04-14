@@ -1,27 +1,38 @@
-export function getDefaultDashboardLayout(cardDefs) {
+export function getDefaultDashboardLayout(cardDefs, options = {}) {
+  const defaultVisibleCardIds = new Set(Array.isArray(options.defaultVisibleCardIds) ? options.defaultVisibleCardIds : [])
+  const prependCardOrder = Array.isArray(options.prependCardOrder) ? options.prependCardOrder : []
   const hidden = {}
 
   for (const card of cardDefs) {
-    hidden[card.id] = Boolean(card.optional)
+    hidden[card.id] = Boolean(card.optional && !defaultVisibleCardIds.has(card.id))
   }
 
+  const orderedIds = cardDefs.map(card => card.id)
+  const prependedIds = prependCardOrder.filter(id => orderedIds.includes(id))
+
   return {
-    order: cardDefs.map(card => card.id),
+    order: [...prependedIds, ...orderedIds.filter(id => !prependedIds.includes(id))],
     hidden,
     bucketOverrides: {},
   }
 }
 
-export function normalizeDashboardLayoutPreference(value, cardDefs) {
-  const defaults = getDefaultDashboardLayout(cardDefs)
+export function normalizeDashboardLayoutPreference(value, cardDefs, options = {}) {
+  const defaults = getDefaultDashboardLayout(cardDefs, options)
   const next = value && typeof value === 'object' ? value : {}
   const validIds = new Set(cardDefs.map(card => card.id))
   const validBuckets = new Set(cardDefs.map(card => card.bucket))
   const defaultBucketsById = new Map(cardDefs.map(card => [card.id, card.bucket]))
+  const prependCardOrder = Array.isArray(options.prependCardOrder) ? options.prependCardOrder.filter(id => validIds.has(id)) : []
   const nextOrder = Array.isArray(next.order)
     ? next.order.filter(id => validIds.has(id))
     : []
-  const mergedOrder = [...nextOrder, ...defaults.order.filter(id => !nextOrder.includes(id))]
+  const prependMissingIds = prependCardOrder.filter(id => !nextOrder.includes(id))
+  const mergedOrder = [
+    ...prependMissingIds,
+    ...nextOrder,
+    ...defaults.order.filter(id => !nextOrder.includes(id) && !prependMissingIds.includes(id)),
+  ]
   const nextHidden = {}
   const nextBucketOverrides = {}
 
@@ -45,25 +56,25 @@ export function normalizeDashboardLayoutPreference(value, cardDefs) {
   }
 }
 
-export function readDashboardLayoutPreference(storageKey, email, cardDefs) {
-  if (typeof window === 'undefined') return getDefaultDashboardLayout(cardDefs)
+export function readDashboardLayoutPreference(storageKey, email, cardDefs, options = {}) {
+  if (typeof window === 'undefined') return getDefaultDashboardLayout(cardDefs, options)
 
   try {
     const raw = window.localStorage.getItem(`${storageKey}.${email || 'guest'}`)
-    if (!raw) return getDefaultDashboardLayout(cardDefs)
-    return normalizeDashboardLayoutPreference(JSON.parse(raw), cardDefs)
+    if (!raw) return getDefaultDashboardLayout(cardDefs, options)
+    return normalizeDashboardLayoutPreference(JSON.parse(raw), cardDefs, options)
   } catch {
-    return getDefaultDashboardLayout(cardDefs)
+    return getDefaultDashboardLayout(cardDefs, options)
   }
 }
 
-export function writeDashboardLayoutPreference(storageKey, email, value, cardDefs) {
+export function writeDashboardLayoutPreference(storageKey, email, value, cardDefs, options = {}) {
   if (typeof window === 'undefined') return
 
   try {
     window.localStorage.setItem(
       `${storageKey}.${email || 'guest'}`,
-      JSON.stringify(normalizeDashboardLayoutPreference(value, cardDefs)),
+      JSON.stringify(normalizeDashboardLayoutPreference(value, cardDefs, options)),
     )
   } catch {
     // noop

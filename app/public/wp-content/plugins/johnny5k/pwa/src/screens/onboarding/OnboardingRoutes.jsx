@@ -2,6 +2,7 @@ import { startTransition, useEffect, useMemo, useState } from 'react'
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { dashboardApi } from '../../api/modules/dashboard'
 import { onboardingApi } from '../../api/modules/onboarding'
+import AppLoadingScreen from '../../components/ui/AppLoadingScreen'
 import ClearableInput from '../../components/ui/ClearableInput'
 import ErrorState from '../../components/ui/ErrorState'
 import { useAuthStore } from '../../store/authStore'
@@ -119,6 +120,18 @@ function StepLayout({ stepKey, title, subtitle, why, children }) {
   )
 }
 
+function renderOnboardingLoading(title) {
+  return (
+    <AppLoadingScreen
+      eyebrow="Onboarding"
+      title={title}
+      message="Johnny is pulling your saved answers and preparing the next setup cards so you are not staring at a blank step."
+      compact
+      variant="panel"
+    />
+  )
+}
+
 function StepUnlock({ text }) {
   if (!text) return null
 
@@ -214,7 +227,7 @@ function ProfileStep() {
     }
   }
 
-  if (loading) return <div className="screen-loading">Loading…</div>
+  if (loading) return renderOnboardingLoading('Loading body basics')
 
   return (
     <StepLayout
@@ -311,7 +324,7 @@ function BodyStep() {
     }
   }
 
-  if (loading) return <div className="screen-loading">Loading…</div>
+  if (loading) return renderOnboardingLoading('Loading your goal setup')
 
   return (
     <StepLayout
@@ -409,7 +422,7 @@ function TrainingStep() {
     }
   }
 
-  if (loading) return <div className="screen-loading">Loading…</div>
+  if (loading) return renderOnboardingLoading('Loading training background')
 
   return (
     <StepLayout
@@ -562,7 +575,7 @@ function InjuriesStep() {
     }
   }
 
-  if (loading) return <div className="screen-loading">Loading…</div>
+  if (loading) return renderOnboardingLoading('Loading limits and injuries')
 
   return (
     <StepLayout
@@ -689,7 +702,7 @@ function EquipmentStep() {
     }
   }
 
-  if (loading) return <div className="screen-loading">Loading…</div>
+  if (loading) return renderOnboardingLoading('Loading equipment choices')
 
   return (
     <StepLayout
@@ -752,7 +765,7 @@ function FoodStep() {
     }
   }
 
-  if (loading) return <div className="screen-loading">Loading…</div>
+  if (loading) return renderOnboardingLoading('Loading food habits')
 
   return (
     <StepLayout
@@ -830,7 +843,7 @@ function HabitsStep() {
     }
   }
 
-  if (loading) return <div className="screen-loading">Loading…</div>
+  if (loading) return renderOnboardingLoading('Loading baseline habits')
 
   return (
     <StepLayout
@@ -952,7 +965,7 @@ function PhotosStep() {
     }
   }
 
-  if (loading) return <div className="screen-loading">Loading…</div>
+  if (loading) return renderOnboardingLoading('Loading progress photo setup')
 
   return (
     <StepLayout
@@ -1000,7 +1013,7 @@ function CompleteStep() {
     }
   }
 
-  if (loading) return <div className="screen-loading">Loading…</div>
+  if (loading) return renderOnboardingLoading('Loading your review step')
 
   if (result) {
     const targets = normalizeTargets(result)

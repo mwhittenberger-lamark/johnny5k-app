@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { aiApi } from '../../api/modules/ai'
 import { nutritionApi } from '../../api/modules/nutrition'
@@ -48,6 +48,17 @@ import {
 
 const MEAL_TYPES = ['breakfast', 'lunch', 'dinner', 'snack', 'beverage']
 const RECIPE_CARD_VISIBLE_LIMIT = 5
+const RECIPE_DIETARY_FILTERS = [
+  { value: 'all', label: 'All tags' },
+  { value: 'vegan', label: 'Vegan' },
+  { value: 'vegetarian', label: 'Vegetarian' },
+  { value: 'high_protein', label: 'High Protein' },
+  { value: 'mediterranean', label: 'Mediterranean' },
+  { value: 'keto', label: 'Keto' },
+  { value: 'paleo', label: 'Paleo' },
+  { value: 'dash', label: 'DASH' },
+  { value: 'whole30', label: 'Whole30' },
+]
 const PANTRY_CATEGORY_CONFIG = [
   { key: 'proteins', label: 'Proteins', keywords: ['chicken', 'beef', 'turkey', 'salmon', 'tuna', 'shrimp', 'tofu', 'tempeh', 'protein', 'sausage', 'bacon', 'pork', 'ham'] },
   { key: 'produce', label: 'Produce', keywords: ['apple', 'banana', 'berry', 'berries', 'orange', 'lemon', 'lime', 'avocado', 'spinach', 'lettuce', 'kale', 'broccoli', 'carrot', 'pepper', 'onion', 'garlic', 'tomato', 'cucumber', 'zucchini', 'potato', 'sweet potato', 'fruit', 'vegetable'] },
@@ -162,6 +173,8 @@ export default function NutritionScreen() {
     pantrySortMode,
     planningAccordions,
     recipeCollectionFilter,
+    recipeDietaryFilter,
+    recipeDietaryFilterOptions: RECIPE_DIETARY_FILTERS,
     recipeFiltersOpen,
     recipeMealFilter,
     recipeSearchQuery,
@@ -174,6 +187,7 @@ export default function NutritionScreen() {
     setPantrySortMode,
     setPlanningAccordions,
     setRecipeCollectionFilter,
+    setRecipeDietaryFilter,
     setRecipeFiltersOpen,
     setRecipeMealFilter,
     setRecipeSearchQuery,
@@ -194,7 +208,9 @@ export default function NutritionScreen() {
   const [pantry, setPantry] = useState([])
   const [recipes, setRecipes] = useState([])
   const [groceryGap, setGroceryGap] = useState(null)
+  const [showAddMethodPicker, setShowAddMethodPicker] = useState(false)
   const [showAddForm, setShowAddForm] = useState(false)
+  const [addMealInitialMode, setAddMealInitialMode] = useState('manual')
   const [showMealPhotoPrompt, setShowMealPhotoPrompt] = useState(false)
   const [showLabelScanPrompt, setShowLabelScanPrompt] = useState(false)
   const [labelScanContext, setLabelScanContext] = useState('today')
@@ -230,7 +246,7 @@ export default function NutritionScreen() {
   const recentFoodsSectionRef = useRef(null)
   const savedFoodsSectionRef = useRef(null)
   const planningSectionRef = useRef(null)
-  const addMealFormRef = useAutoScrollWhenActive(showAddForm)
+  const addMealFormRef = useAutoScrollWhenActive(showAddMethodPicker || showAddForm)
   const labelScanPromptRef = useAutoScrollWhenActive(showLabelScanPrompt)
   const savedFoodFormRef = useAutoScrollWhenActive(showSavedFoodForm)
   const savedMealFormRef = useAutoScrollWhenActive(showSavedMealForm)
@@ -338,10 +354,11 @@ export default function NutritionScreen() {
       recipes,
       cookbookRecipes,
       collectionFilter: recipeCollectionFilter,
+      dietaryFilter: recipeDietaryFilter,
       mealFilter: recipeMealFilter,
       searchQuery: recipeSearchQuery,
     }),
-    [cookbookRecipes, recipeCollectionFilter, recipeMealFilter, recipeSearchQuery, recipes],
+    [cookbookRecipes, recipeCollectionFilter, recipeDietaryFilter, recipeMealFilter, recipeSearchQuery, recipes],
   )
   const visibleRecipes = useMemo(
     () => getVisibleItems(filteredRecipes, expandedSections.recipes, RECIPE_CARD_VISIBLE_LIMIT),
@@ -619,6 +636,8 @@ export default function NutritionScreen() {
     const file = event.target.files?.[0]
     if (!file) return
     setActiveView('today')
+    setShowAddMethodPicker(false)
+    setShowAddForm(false)
     setAnalyzing(true)
     setAiMealDraft(null)
     setLabelReview(null)
@@ -659,6 +678,8 @@ export default function NutritionScreen() {
     const nextContext = context === 'saved-foods' ? 'saved-foods' : 'today'
     setLabelScanContext(nextContext)
     setActiveView(nextContext === 'saved-foods' ? 'library' : 'today')
+    setShowAddMethodPicker(false)
+    setShowAddForm(false)
     setAiMealDraft(null)
     setShowMealPhotoPrompt(false)
     setLabelReview(null)
@@ -831,6 +852,7 @@ export default function NutritionScreen() {
         onSuccess: async () => {
           invalidate()
           await loadData()
+          changeActiveView('today', mealsSectionRef)
         },
       },
     )
@@ -1171,8 +1193,46 @@ export default function NutritionScreen() {
     navigate('/nutrition/pantry')
   }
 
+  function closeAddMealFlow() {
+    setShowAddMethodPicker(false)
+    setShowAddForm(false)
+  }
+
+  function toggleAddMealFlow() {
+    startTransition(() => {
+      setActiveView('today')
+    })
+
+    setShowLabelScanPrompt(false)
+    setShowMealPhotoPrompt(false)
+    setAiMealDraft(null)
+    setLabelReview(null)
+
+    if (showAddMethodPicker || showAddForm) {
+      closeAddMealFlow()
+      return
+    }
+
+    setAddMealInitialMode('manual')
+    setShowAddMethodPicker(true)
+  }
+
+  function handleAddMealMethodSelect(mode) {
+    if (mode === 'photo') {
+      closeAddMealFlow()
+      setShowLabelScanPrompt(false)
+      setShowMealPhotoPrompt(true)
+      return
+    }
+
+    setAddMealInitialMode(mode === 'saved' || mode === 'voice' ? mode : 'manual')
+    setShowAddMethodPicker(false)
+    setShowAddForm(true)
+  }
+
   function openBeverageBoard() {
     setActiveView('today')
+    closeAddMealFlow()
     setShowLabelScanPrompt(false)
     setShowMealPhotoPrompt(false)
     setTodayAccordions(current => ({ ...current, beverageBoard: true }))
@@ -1203,6 +1263,7 @@ export default function NutritionScreen() {
 
   const featureViewDeps = {
     AddMealForm,
+    AddMealMethodPicker,
     AiMealReviewCard,
     AppToast,
     BeverageBoard,
@@ -1364,6 +1425,7 @@ export default function NutritionScreen() {
     recentFoods,
     recentFoodsSectionAnchor: recentFoodsSectionRef,
     recipeCollectionFilter,
+    recipeDietaryFilter,
     recipeFiltersOpen,
     recipeMealFilter,
     recipeSearchQuery,
@@ -1386,9 +1448,11 @@ export default function NutritionScreen() {
     setPantrySearchQuery,
     setPantrySortMode,
     setRecipeCollectionFilter,
+    setRecipeDietaryFilter,
     setRecipeFiltersOpen,
     setRecipeMealFilter,
     setRecipeSearchQuery,
+    setShowAddMethodPicker,
     setShowAddForm,
     setShowGroceryGapForm,
     setShowGroceryGapVoice,
@@ -1399,6 +1463,7 @@ export default function NutritionScreen() {
     setShowMealPhotoPrompt,
     setShowSavedFoodForm,
     setShowSavedMealForm,
+    showAddMethodPicker,
     showGlobalLabelReview: Boolean(labelReview) && labelScanContext !== 'saved-foods',
     showGlobalLabelScanPrompt: showLabelScanPrompt && labelScanContext !== 'saved-foods',
     showAddForm,
@@ -1415,6 +1480,10 @@ export default function NutritionScreen() {
     showSavedMealForm,
     showToast,
     summary,
+    toggleAddMealFlow,
+    handleAddMealMethodSelect,
+    closeAddMealFlow,
+    addMealInitialMode,
     todayAccordions,
     today,
     toggleTodayAccordion: key => {
@@ -1470,14 +1539,14 @@ export default function NutritionScreen() {
         </div>
         <div className="header-actions nutrition-header-actions">
           <button className="btn-primary header-action-button nutrition-primary-header-action" title="Add manually" onClick={() => {
-            setActiveView('today')
-            setShowAddForm(current => !current)
+            toggleAddMealFlow()
           }} type="button">
             <AppIcon name="plus" />
-            <span>{showAddForm ? 'Close add meal' : 'Add meal'}</span>
+            <span>{showAddMethodPicker || showAddForm ? 'Close add meal' : 'Add meal'}</span>
           </button>
           <button className="btn-secondary header-action-button" title="Snap meal photo" onClick={() => {
             setActiveView('today')
+            closeAddMealFlow()
             setShowLabelScanPrompt(false)
             setShowMealPhotoPrompt(current => !current)
           }} type="button">
@@ -1860,6 +1929,7 @@ function RecipeIdeaCard({ recipe, selected, onToggle }) {
   const onHand = dedupeIngredientList(recipe?.on_hand_ingredients)
   const missing = dedupeIngredientList(recipe?.missing_ingredients)
   const ingredients = dedupeIngredientList(recipe?.ingredients)
+  const dietaryTags = Array.isArray(recipe?.dietary_tags) ? recipe.dietary_tags : []
   const sourceLabel = recipe?.source === 'admin_library'
     ? 'Admin recipe'
     : recipe?.source === 'ai_discovery'
@@ -1868,6 +1938,7 @@ function RecipeIdeaCard({ recipe, selected, onToggle }) {
 
   return (
     <div className={`nutrition-recipe-card nutrition-recipe-idea${selected ? ' selected' : ''}`}>
+      {recipe?.image_url ? <img src={recipe.image_url} alt="" style={{ width: '100%', borderRadius: 16, aspectRatio: '1 / 1', objectFit: 'cover', marginBottom: 12 }} /> : null}
       <div className="nutrition-recipe-head">
         <div>
           <strong>{recipe.recipe_name}</strong>
@@ -1881,6 +1952,7 @@ function RecipeIdeaCard({ recipe, selected, onToggle }) {
         <span className="nutrition-inline-badge pantry-category">{sourceLabel}</span>
         <span className="nutrition-inline-badge on-hand">{onHand.length} on hand</span>
         <span className="nutrition-inline-badge missing">{missing.length} need pickup</span>
+        {dietaryTags.map(tag => <span key={tag} className="nutrition-inline-badge">{formatRecipeDietaryTagLabel(tag)}</span>)}
       </div>
       {recipe?.source_title ? (
         <p className="nutrition-recipe-source">
@@ -1999,7 +2071,53 @@ function AiMealReviewCard({ draft, caloriesRemaining, onChange, onConfirm, onCan
   )
 }
 
-function AddMealForm({ savedFoods, onSave, onSaveAsTemplate, onCancel, onError, onToast, onOpenPhoto }) {
+function AddMealMethodPicker({ onSelectMethod, onCancel }) {
+  const options = [
+    {
+      key: 'manual',
+      title: 'Manual',
+      description: 'Type foods in yourself and build the draft one item at a time.',
+    },
+    {
+      key: 'saved',
+      title: 'Saved food',
+      description: 'Start with foods already in your library so logging stays fast.',
+    },
+    {
+      key: 'voice',
+      title: 'Voice',
+      description: 'Say the meal out loud and let Johnny turn it into a draft.',
+    },
+    {
+      key: 'photo',
+      title: 'Photo',
+      description: 'Use a meal photo when typing is slower than snapping it.',
+    },
+  ]
+
+  return (
+    <section className="add-meal-form nutrition-add-method-picker">
+      <div className="nutrition-add-method-copy">
+        <span className="nutrition-composer-status-eyebrow">Add meal</span>
+        <h3>Choose how you want to start</h3>
+        <p className="settings-subtitle">Pick the fastest input method first. You can still switch after the draft opens.</p>
+      </div>
+      <div className="nutrition-add-method-grid">
+        {options.map(option => (
+          <button key={option.key} type="button" className="nutrition-add-method-card" onClick={() => onSelectMethod(option.key)}>
+            <strong>{option.title}</strong>
+            <span>{option.description}</span>
+          </button>
+        ))}
+      </div>
+      <div className="nutrition-row-actions nutrition-row-actions-full-width nutrition-add-method-actions">
+        <button type="button" className="btn-ghost" onClick={onCancel}>Cancel</button>
+      </div>
+    </section>
+  )
+}
+
+function AddMealForm({ savedFoods, onSave, onSaveAsTemplate, onCancel, onError, onToast, onOpenPhoto, initialEntryMode = 'manual' }) {
   return (
     <MealComposerForm
       title="Log meal"
@@ -2007,6 +2125,7 @@ function AddMealForm({ savedFoods, onSave, onSaveAsTemplate, onCancel, onError, 
       savedFoods={savedFoods}
       includeMealDateTime
       allowQuickEntryModes
+      initialEntryMode={initialEntryMode}
       onError={onError}
       onToast={onToast}
       onOpenPhoto={onOpenPhoto}
@@ -3210,7 +3329,7 @@ function PantryCategorySection({ category, collapsed = false, onToggle, onSaveIt
   )
 }
 
-function MealComposerForm({ title, savedFoods, requireName = false, submitLabel, secondaryLabel = '', initialValues = null, includeMealDateTime = false, allowEmptyItems = false, onSubmit, onSecondaryAction, onCancel, onError, onToast, allowQuickEntryModes = false, onOpenPhoto = null }) {
+function MealComposerForm({ title, savedFoods, requireName = false, submitLabel, secondaryLabel = '', initialValues = null, includeMealDateTime = false, allowEmptyItems = false, onSubmit, onSecondaryAction, onCancel, onError, onToast, allowQuickEntryModes = false, onOpenPhoto = null, initialEntryMode = 'manual' }) {
   const [mealType, setMealType] = useState(() => initialValues?.meal_type || getDefaultMealTypeForCurrentTime())
   const [name, setName] = useState(initialValues?.name || '')
   const [mealDate, setMealDate] = useState(() => getMealDateInputValue(initialValues?.meal_datetime))
@@ -3234,8 +3353,8 @@ function MealComposerForm({ title, savedFoods, requireName = false, submitLabel,
   })
   const [submitAction, setSubmitAction] = useState('')
   const [error, setError] = useState('')
-  const [showMealVoice, setShowMealVoice] = useState(false)
-  const [entryMode, setEntryMode] = useState('manual')
+  const [showMealVoice, setShowMealVoice] = useState(() => initialEntryMode === 'voice')
+  const [entryMode, setEntryMode] = useState(() => initialEntryMode)
   const formRef = useAutoScrollWhenActive(true)
   const mealVoiceRef = useRef(null)
   const savedFoodFieldRef = useRef(null)
@@ -3243,13 +3362,14 @@ function MealComposerForm({ title, savedFoods, requireName = false, submitLabel,
   const firstFoodInputRef = useRef(null)
   const itemAccordionRefs = useRef([])
   const previousOpenItemIndexRef = useRef(openItemIndex)
+  const shouldShowSavedFoodPicker = entryMode === 'saved' || Boolean(savedFoodQuery.trim()) || Boolean(selectedSavedFoodKey)
   const savedFoodOptions = useMemo(
-    () => (Array.isArray(savedFoods) ? savedFoods.map(food => ({
+    () => (Array.isArray(savedFoods) && shouldShowSavedFoodPicker ? savedFoods.map(food => ({
       key: food?.id != null ? `saved-food-${food.id}` : buildSavedFoodOptionLabel(food),
       label: buildSavedFoodOptionLabel(food),
       food,
     })) : []),
-    [savedFoods],
+    [savedFoods, shouldShowSavedFoodPicker],
   )
   const filteredSavedFoodOptions = useMemo(() => {
     const query = normaliseFoodMatchText(savedFoodQuery)
@@ -3291,6 +3411,10 @@ function MealComposerForm({ title, savedFoods, requireName = false, submitLabel,
       mealVoiceRef.current?.scrollIntoView({ behavior: SCROLL_BEHAVIOR, block: 'start' })
     })
   }, [showMealVoice])
+
+  useEffect(() => {
+    setShowMealVoice(entryMode === 'voice')
+  }, [entryMode])
 
   useEffect(() => {
     if (!items.length) {
@@ -3390,11 +3514,9 @@ function MealComposerForm({ title, savedFoods, requireName = false, submitLabel,
 
     setEntryMode(mode)
     if (mode === 'voice') {
-      setShowMealVoice(true)
       return
     }
 
-    setShowMealVoice(false)
     if (mode === 'manual') {
       window.requestAnimationFrame(() => {
         firstFoodInputRef.current?.focus()
@@ -3644,7 +3766,7 @@ function MealComposerForm({ title, savedFoods, requireName = false, submitLabel,
         </FieldLabel>
       )}
 
-      {savedFoods?.length ? (
+      {savedFoods?.length && shouldShowSavedFoodPicker ? (
         <div ref={savedFoodFieldRef}>
           <FieldLabel label="Saved foods" className={`nutrition-saved-food-field${entryMode === 'saved' ? ' active' : ''}`}>
             <div className="nutrition-gap-list nutrition-quick-picks nutrition-saved-food-picker">
@@ -3697,23 +3819,6 @@ function MealComposerForm({ title, savedFoods, requireName = false, submitLabel,
         </div>
       ) : null}
 
-      <div className="nutrition-row-actions nutrition-row-actions-full-width">
-        <button
-          type="button"
-          className="btn-secondary nutrition-voice-trigger-btn"
-          onClick={() => {
-            const next = !showMealVoice
-            setShowMealVoice(next)
-            setEntryMode(next ? 'voice' : 'manual')
-          }}
-          disabled={Boolean(submitAction)}
-          aria-expanded={showMealVoice}
-        >
-          {showMealVoice ? 'Close voice meal entry' : 'Record your meal by voice'}
-        </button>
-        {allowQuickEntryModes && onOpenPhoto ? <button type="button" className="btn-secondary" onClick={onOpenPhoto} disabled={Boolean(submitAction)}>Switch to photo</button> : null}
-      </div>
-
       {showMealVoice ? (
         <div ref={mealVoiceRef}>
           <MealVoiceCapture
@@ -3734,7 +3839,7 @@ function MealComposerForm({ title, savedFoods, requireName = false, submitLabel,
                 ],
               })
             }}
-            onCancel={() => handleFormCancel(() => setShowMealVoice(false))}
+            onCancel={() => handleFormCancel(() => setEntryMode('manual'))}
             onError={onError}
             onToast={onToast}
           />
@@ -4935,6 +5040,7 @@ function loadStoredRecipeFilterState() {
   const fallback = {
     mealFilter: 'all',
     collectionFilter: 'all',
+    dietaryFilter: 'all',
     searchQuery: '',
     filtersOpen: false,
   }
@@ -4948,10 +5054,12 @@ function loadStoredRecipeFilterState() {
     const parsed = rawValue ? JSON.parse(rawValue) : {}
     const mealFilter = String(parsed?.mealFilter || '').trim()
     const collectionFilter = String(parsed?.collectionFilter || '').trim()
+    const dietaryFilter = String(parsed?.dietaryFilter || '').trim()
 
     return {
       mealFilter: ['all', ...MEAL_TYPES].includes(mealFilter) ? mealFilter : fallback.mealFilter,
       collectionFilter: ['all', 'cookbook'].includes(collectionFilter) ? collectionFilter : fallback.collectionFilter,
+      dietaryFilter: RECIPE_DIETARY_FILTERS.some(option => option.value === dietaryFilter) ? dietaryFilter : fallback.dietaryFilter,
       searchQuery: String(parsed?.searchQuery || '').trim(),
       filtersOpen: Boolean(parsed?.filtersOpen),
     }
@@ -4969,6 +5077,7 @@ function persistRecipeFilterState(state) {
     window.localStorage.setItem(RECIPE_FILTER_STATE_STORAGE_KEY, JSON.stringify({
       mealFilter: ['all', ...MEAL_TYPES].includes(String(state?.mealFilter || '').trim()) ? String(state.mealFilter).trim() : 'all',
       collectionFilter: ['all', 'cookbook'].includes(String(state?.collectionFilter || '').trim()) ? String(state.collectionFilter).trim() : 'all',
+      dietaryFilter: RECIPE_DIETARY_FILTERS.some(option => option.value === String(state?.dietaryFilter || '').trim()) ? String(state.dietaryFilter).trim() : 'all',
       searchQuery: String(state?.searchQuery || '').trim(),
       filtersOpen: Boolean(state?.filtersOpen),
     }))
@@ -5031,8 +5140,10 @@ export function normaliseCookbookRecipe(recipe) {
     estimated_protein_g: Number(recipe?.estimated_protein_g ?? 0),
     estimated_carbs_g: Number(recipe?.estimated_carbs_g ?? 0),
     estimated_fat_g: Number(recipe?.estimated_fat_g ?? 0),
+    dietary_tags: Array.from(new Set((Array.isArray(recipe?.dietary_tags) ? recipe.dietary_tags : []).map(tag => String(tag || '').trim()).filter(Boolean))),
     why_this_works: String(recipe?.why_this_works || '').trim(),
     source: String(recipe?.source || '').trim(),
+    image_url: String(recipe?.image_url || '').trim(),
     on_hand_ingredients: dedupeIngredientList(recipe?.on_hand_ingredients),
     missing_ingredients: dedupeIngredientList(recipe?.missing_ingredients),
   }
@@ -5043,6 +5154,7 @@ export function filterRecipesByPlanningState({
   recipes,
   cookbookRecipes,
   collectionFilter = 'all',
+  dietaryFilter = 'all',
   mealFilter = 'all',
   searchQuery = '',
 }) {
@@ -5050,16 +5162,20 @@ export function filterRecipesByPlanningState({
   const mealFilteredRecipes = mealFilter === 'all'
     ? sourceRecipes
     : (Array.isArray(sourceRecipes) ? sourceRecipes : []).filter(recipe => String(recipe?.meal_type || '').trim() === mealFilter)
+  const dietaryFilteredRecipes = dietaryFilter === 'all'
+    ? mealFilteredRecipes
+    : (Array.isArray(mealFilteredRecipes) ? mealFilteredRecipes : []).filter(recipe => (Array.isArray(recipe?.dietary_tags) ? recipe.dietary_tags : []).includes(dietaryFilter))
 
   const normalizedRecipeQuery = normalisePantryMatchText(searchQuery)
   if (!normalizedRecipeQuery) {
-    return mealFilteredRecipes
+    return dietaryFilteredRecipes
   }
 
-  return mealFilteredRecipes.filter(recipe => {
+  return dietaryFilteredRecipes.filter(recipe => {
     const haystack = normalisePantryMatchText([
       recipe?.recipe_name,
       ...(Array.isArray(recipe?.ingredients) ? recipe.ingredients : []),
+      ...(Array.isArray(recipe?.dietary_tags) ? recipe.dietary_tags : []),
       recipe?.why_this_works,
       recipe?.meal_type,
     ].filter(Boolean).join(' '))
@@ -5072,6 +5188,11 @@ function formatMealTypeLabel(mealType) {
   const value = String(mealType || '').trim()
   if (!value) return 'Meal'
   return value.charAt(0).toUpperCase() + value.slice(1).replace(/_/g, ' ')
+}
+
+function formatRecipeDietaryTagLabel(tag) {
+  const option = RECIPE_DIETARY_FILTERS.find(entry => entry.value === tag)
+  return option?.label || formatMealTypeLabel(tag)
 }
 
 function getMealNutritionTotals(items) {

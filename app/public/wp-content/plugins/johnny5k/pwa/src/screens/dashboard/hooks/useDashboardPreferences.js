@@ -8,40 +8,43 @@ import {
 const COACH_PROMPTS_STORAGE_KEY = 'johnny5k.dashboard.coachPromptsOpen'
 const DASHBOARD_LAYOUT_STORAGE_KEY = 'johnny5k.dashboard.layout.v2'
 
-export function useDashboardPreferences({ email, cardDefs }) {
+export function useDashboardPreferences({ email, cardDefs, defaultLayoutOptions = {} }) {
   const layoutOwner = email || 'guest'
+  const defaultLayoutKey = JSON.stringify(defaultLayoutOptions || {})
   const [coachPromptsOpen, setCoachPromptsOpen] = useState(() => readCoachPromptsPreference())
   const [customizeOpen, setCustomizeOpen] = useState(false)
   const [dashboardLayoutState, setDashboardLayoutState] = useState(() => ({
     owner: layoutOwner,
-    value: readDashboardLayoutPreference(DASHBOARD_LAYOUT_STORAGE_KEY, email, cardDefs),
+    defaultsKey: defaultLayoutKey,
+    value: readDashboardLayoutPreference(DASHBOARD_LAYOUT_STORAGE_KEY, email, cardDefs, defaultLayoutOptions),
   }))
 
-  const dashboardLayout = dashboardLayoutState.owner === layoutOwner
+  const dashboardLayout = dashboardLayoutState.owner === layoutOwner && dashboardLayoutState.defaultsKey === defaultLayoutKey
     ? dashboardLayoutState.value
-    : readDashboardLayoutPreference(DASHBOARD_LAYOUT_STORAGE_KEY, email, cardDefs)
+    : readDashboardLayoutPreference(DASHBOARD_LAYOUT_STORAGE_KEY, email, cardDefs, defaultLayoutOptions)
 
   const setDashboardLayout = useCallback(updater => {
     setDashboardLayoutState(current => {
       const currentValue = current.owner === layoutOwner
         ? current.value
-        : readDashboardLayoutPreference(DASHBOARD_LAYOUT_STORAGE_KEY, email, cardDefs)
+        : readDashboardLayoutPreference(DASHBOARD_LAYOUT_STORAGE_KEY, email, cardDefs, defaultLayoutOptions)
       const nextValue = typeof updater === 'function' ? updater(currentValue) : updater
 
       return {
         owner: layoutOwner,
+        defaultsKey: defaultLayoutKey,
         value: nextValue,
       }
     })
-  }, [cardDefs, email, layoutOwner])
+  }, [cardDefs, defaultLayoutKey, defaultLayoutOptions, email, layoutOwner])
 
   useEffect(() => {
     writeCoachPromptsPreference(coachPromptsOpen)
   }, [coachPromptsOpen])
 
   useEffect(() => {
-    writeDashboardLayoutPreference(DASHBOARD_LAYOUT_STORAGE_KEY, email, dashboardLayout, cardDefs)
-  }, [cardDefs, dashboardLayout, email])
+    writeDashboardLayoutPreference(DASHBOARD_LAYOUT_STORAGE_KEY, email, dashboardLayout, cardDefs, defaultLayoutOptions)
+  }, [cardDefs, dashboardLayout, defaultLayoutOptions, email])
 
   useEffect(() => {
     if (!customizeOpen) return undefined
@@ -60,8 +63,8 @@ export function useDashboardPreferences({ email, cardDefs }) {
   }, [customizeOpen])
 
   const resetDashboardLayout = useCallback(() => {
-    setDashboardLayout(getDefaultDashboardLayout(cardDefs))
-  }, [cardDefs, setDashboardLayout])
+    setDashboardLayout(getDefaultDashboardLayout(cardDefs, defaultLayoutOptions))
+  }, [cardDefs, defaultLayoutOptions, setDashboardLayout])
 
   return {
     coachPromptsOpen,

@@ -4,6 +4,8 @@ namespace Johnny5k\Services;
 defined( 'ABSPATH' ) || exit;
 
 class ExerciseCalorieService {
+	private const EXERCISE_CALORIE_MULTIPLIER = 0.6;
+
 	public static function estimate_workout_session_calories( int $user_id, int $duration_minutes, string $day_type = 'push', string $time_tier = 'medium' ): int {
 		$duration_minutes = max( 0, min( 600, $duration_minutes ) );
 		if ( $duration_minutes <= 0 ) {
@@ -17,7 +19,7 @@ class ExerciseCalorieService {
 
 		$weight_kg = $weight_lb * 0.45359237;
 		$met = self::get_workout_met( $day_type, $time_tier );
-		$calories = $met * $weight_kg * ( $duration_minutes / 60 );
+		$calories = $met * $weight_kg * ( $duration_minutes / 60 ) * self::EXERCISE_CALORIE_MULTIPLIER;
 
 		return max( 0, (int) round( $calories ) );
 	}

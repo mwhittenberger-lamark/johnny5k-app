@@ -35,6 +35,8 @@ class NutritionRecipeControllerTest extends ServiceTestCase {
 				'meal_type' => 'dinner',
 				'ingredients' => [ 'Chicken', 'Rice' ],
 				'missing_ingredients' => [ 'Chicken', 'Rice' ],
+				'dietary_tags' => [ 'high_protein', 'dash', 'high_protein' ],
+				'image_url' => 'https://example.com/chicken-rice-bowl.png',
 			],
 		] );
 
@@ -45,6 +47,8 @@ class NutritionRecipeControllerTest extends ServiceTestCase {
 		self::assertSame( 200, $response->get_status() );
 		self::assertTrue( $data['updated'] );
 		self::assertSame( 'dinner-bowl', $data['recipes'][0]['key'] );
+		self::assertSame( [ 'high_protein', 'dash' ], $data['recipes'][0]['dietary_tags'] );
+		self::assertSame( 'https://example.com/chicken-rice-bowl.png', $data['recipes'][0]['image_url'] );
 		self::assertSame(
 			[ 'Greek Yogurt', 'Rice' ],
 			array_map(

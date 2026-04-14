@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { bodyApi } from '../../api/modules/body'
 import { workoutApi } from '../../api/modules/workout'
+import AppLoadingScreen from '../../components/ui/AppLoadingScreen'
 import ErrorState from '../../components/ui/ErrorState'
 import { formatUsFriendlyDate, formatUsShortDate } from '../../lib/dateFormat'
 
@@ -98,6 +99,18 @@ export default function ActivityLogScreen() {
     return groups
   }, [entries])
 
+  if (loading && !entries.length && !error) {
+    return (
+      <AppLoadingScreen
+        eyebrow="Activity"
+        title="Building your activity log"
+        message="Johnny is stitching together recent workouts and cardio sessions into one timeline."
+        compact
+        variant="list"
+      />
+    )
+  }
+
   return (
     <div className="screen activity-log-screen">
       <header className="screen-header body-screen-header">
@@ -132,7 +145,14 @@ export default function ActivityLogScreen() {
 
       {loading ? (
         <section className="dash-card">
-          <p>Loading activity log...</p>
+          <AppLoadingScreen
+            eyebrow="Activity"
+            title="Refreshing your timeline"
+            message="Johnny is pulling the latest workout and cardio details without dropping the layout."
+            compact
+            variant="list"
+            copyStyle="inline"
+          />
         </section>
       ) : null}
 

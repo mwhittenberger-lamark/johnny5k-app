@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { flushOfflineWriteQueue, getOfflineWriteQueueSnapshot, subscribeOfflineWriteQueue } from '../../api/client'
+import AppLoadingScreen from '../../components/ui/AppLoadingScreen'
 import OfflineState from '../../components/ui/OfflineState'
 import { trainingApi } from '../../api/modules/training'
 import { openSupportGuide } from '../../lib/supportHelp'
@@ -49,6 +50,7 @@ export default function WorkoutScreen() {
     setPreviewExerciseRemovals,
     setPreviewExerciseAdditions,
     syncPreviewExerciseOrder,
+    setPreviewExerciseSwaps,
     applyPreviewSwap,
     clearPreviewSwap,
     dismissUndoToast,
@@ -71,6 +73,7 @@ export default function WorkoutScreen() {
   } = useWorkoutStore()
   const [statusNotice, setStatusNotice] = useState('')
   const [statusError, setStatusError] = useState('')
+  const [showPreWorkoutScreen, setShowPreWorkoutScreen] = useState(true)
   const [cachedPlanSnapshot, setCachedPlanSnapshot] = useState(() => readCachedWorkoutPlanSnapshot())
   const [workoutQueueState, setWorkoutQueueState] = useState(() => {
     const snapshot = getOfflineWriteQueueSnapshot()
@@ -119,6 +122,7 @@ export default function WorkoutScreen() {
     setPreviewExerciseRemovals,
     setPreviewExerciseAdditions,
     syncPreviewExerciseOrder,
+    setPreviewExerciseSwaps,
     applyPreviewSwap,
     clearPreviewSwap,
     clearCustomWorkoutDraft,
@@ -228,6 +232,20 @@ export default function WorkoutScreen() {
     void loadDashboardSnapshot()
   }, [loadDashboardSnapshot])
 
+  useEffect(() => {
+    if (!session) {
+      setShowPreWorkoutScreen(true)
+      return
+    }
+
+    if (wasResumed) {
+      setShowPreWorkoutScreen(true)
+      return
+    }
+
+    setShowPreWorkoutScreen(false)
+  }, [session, wasResumed])
+
   useEffect(() => subscribeOfflineWriteQueue((snapshot) => {
     setWorkoutQueueState({
       count: countQueuedWorkoutSetEntries(snapshot.entries),
@@ -328,7 +346,16 @@ export default function WorkoutScreen() {
     })
   }
 
-  if (!bootstrapped || loading) return <div className="screen-loading">Loading workout...</div>
+  if (!bootstrapped || loading) {
+    return (
+      <AppLoadingScreen
+        eyebrow="Workout"
+        title="Loading today\'s session"
+        message="Johnny is checking your active workout, today\'s split, and any offline recovery state before the training cards open."
+        variant="workout"
+      />
+    )
+  }
 
   if (!session && !plan && !planLoading && !isOnline) {
     return (
@@ -364,7 +391,7 @@ export default function WorkoutScreen() {
     )
   }
 
-  if (!session) {
+  if (!session || showPreWorkoutScreen) {
     return (
       <WorkoutLaunchpad
         error={error}
@@ -397,6 +424,8 @@ export default function WorkoutScreen() {
         onOpenWorkoutSupport={handleOpenWorkoutSupport}
         planning={planning}
         sessionController={sessionController}
+        resumedSession={session}
+        onResumeSession={() => setShowPreWorkoutScreen(false)}
       />
     )
   }

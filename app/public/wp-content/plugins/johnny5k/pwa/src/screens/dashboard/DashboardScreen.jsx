@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import AppIcon from '../../components/ui/AppIcon'
+import AppLoadingScreen from '../../components/ui/AppLoadingScreen'
 import OfflineState from '../../components/ui/OfflineState'
 import { groupDashboardCardsByBucket } from './dashboardLayoutUtils'
 import { DashboardIconBadge, WeekRhythmDrawer } from './components/DashboardCards'
@@ -59,7 +60,16 @@ export default function DashboardScreen() {
     )
   }
 
-  if (loading && !snapshot) return <div className="screen-loading">Loading…</div>
+  if (loading && !snapshot) {
+    return (
+      <AppLoadingScreen
+        eyebrow="Dashboard"
+        title="Building today\'s board"
+        message="Johnny is pulling your snapshot, arranging your cards, and getting the day ready to scan fast."
+        variant="dashboard"
+      />
+    )
+  }
 
   function renderDashboardCardSlot(card, visibleBucketIds = []) {
     if (card.sectionControl) return null

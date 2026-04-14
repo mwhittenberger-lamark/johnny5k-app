@@ -42,6 +42,31 @@ describe('NutritionScreen recipe planning helpers', () => {
     ])
   })
 
+  it('filters recipes by dietary tag and preserves recipe tags/images during normalization', () => {
+    const recipe = normaliseCookbookRecipe({
+      key: 'dinner-salmon-bowl',
+      recipe_name: 'Salmon Bowl',
+      meal_type: 'dinner',
+      ingredients: ['Salmon', 'Rice', 'Cucumber'],
+      dietary_tags: ['mediterranean', 'high_protein', 'mediterranean'],
+      image_url: 'https://example.com/salmon-bowl.png',
+    })
+
+    expect(recipe.dietary_tags).toEqual(['mediterranean', 'high_protein'])
+    expect(recipe.image_url).toBe('https://example.com/salmon-bowl.png')
+
+    const filtered = filterRecipesByPlanningState({
+      recipes: [recipe],
+      cookbookRecipes: [],
+      collectionFilter: 'all',
+      dietaryFilter: 'mediterranean',
+      mealFilter: 'all',
+      searchQuery: '',
+    })
+
+    expect(filtered.map(item => getRecipeKey(item))).toEqual(['dinner-salmon-bowl'])
+  })
+
   it('keeps cookbook-derived shopping items visible after selection is cleared until user action removes them', () => {
     const result = buildRecipeAwareGroceryGap(
       {

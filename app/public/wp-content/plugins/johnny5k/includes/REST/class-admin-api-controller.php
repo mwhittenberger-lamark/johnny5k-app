@@ -6,6 +6,7 @@ defined( 'ABSPATH' ) || exit;
 use Johnny5k\Auth\InviteCodes;
 use Johnny5k\Services\AiService;
 use Johnny5k\Services\CostTracker;
+use Johnny5k\Services\GeminiImageService;
 use Johnny5k\Services\InternalDiagnosticsLogger;
 use Johnny5k\Services\PushService;
 use Johnny5k\Services\SupportGuideService;
@@ -28,6 +29,16 @@ use Johnny5k\Services\UserTime;
  * POST /fit/v1/admin/sms/test         — send a test SMS reminder to a user
  */
 class AdminApiController {
+	private const RECIPE_DIETARY_TAG_OPTIONS = [
+		'vegan',
+		'vegetarian',
+		'high_protein',
+		'mediterranean',
+		'keto',
+		'paleo',
+		'dash',
+		'whole30',
+	];
 
 	public static function default_color_schemes(): array {
 		return [
@@ -320,9 +331,21 @@ class AdminApiController {
 			'permission_callback' => $admin,
 		] );
 
+		register_rest_route( $ns, '/admin/recipes/retag', [
+			'methods'             => 'POST',
+			'callback'            => [ __CLASS__, 'retag_recipe_library_items' ],
+			'permission_callback' => $admin,
+		] );
+
 		register_rest_route( $ns, '/admin/recipes/(?P<id>\d+)', [
 			'methods'             => 'DELETE',
 			'callback'            => [ __CLASS__, 'delete_recipe_library_item' ],
+			'permission_callback' => $admin,
+		] );
+
+		register_rest_route( $ns, '/admin/recipes/(?P<id>\d+)/generate-image', [
+			'methods'             => 'POST',
+			'callback'            => [ __CLASS__, 'generate_recipe_library_item_image' ],
 			'permission_callback' => $admin,
 		] );
 
@@ -592,6 +615,13 @@ class AdminApiController {
 		$id      = (int) ( $req->get_param( 'id' ) ?: time() );
 		$item    = self::build_recipe_library_item_from_request( $req, $id );
 
+		if ( empty( $item['dietary_tags'] ) ) {
+			$tagging = AiService::auto_tag_recipe_library_items( get_current_user_id(), [ $item ] );
+			if ( ! is_wp_error( $tagging ) && ! empty( $tagging[0]['tags'] ) ) {
+				$item['dietary_tags'] = self::sanitize_recipe_dietary_tags( $tagging[0]['tags'] );
+			}
+		}
+
 		$updated = false;
 		foreach ( $recipes as $index => $recipe ) {
 			if ( (int) ( $recipe['id'] ?? 0 ) === $id ) {
@@ -629,6 +659,54 @@ class AdminApiController {
 		return new \WP_REST_Response( $result );
 	}
 
+	public static function retag_recipe_library_items( \WP_REST_Request $req ): \WP_REST_Response {
+		$recipes = get_option( 'jf_recipe_library', [] );
+		$recipes = is_array( $recipes ) ? array_values( array_map( [ __CLASS__, 'normalise_recipe_library_item' ], $recipes ) ) : [];
+
+		if ( empty( $recipes ) ) {
+			return new \WP_REST_Response( [
+				'updated' => 0,
+				'recipes' => [],
+			] );
+		}
+
+		$tagging = AiService::auto_tag_recipe_library_items( get_current_user_id(), $recipes );
+		if ( is_wp_error( $tagging ) ) {
+			return new \WP_REST_Response( [ 'message' => $tagging->get_error_message() ], 500 );
+		}
+
+		$tags_by_index = [];
+		foreach ( (array) $tagging as $row ) {
+			if ( ! is_array( $row ) ) {
+				continue;
+			}
+
+			$index = isset( $row['index'] ) ? (int) $row['index'] : -1;
+			if ( $index < 0 ) {
+				continue;
+			}
+
+			$tags_by_index[ $index ] = self::sanitize_recipe_dietary_tags( $row['tags'] ?? [] );
+		}
+
+		$updated = 0;
+		foreach ( $recipes as $index => $recipe ) {
+			if ( ! isset( $tags_by_index[ $index ] ) ) {
+				continue;
+			}
+
+			$recipes[ $index ]['dietary_tags'] = $tags_by_index[ $index ];
+			$updated++;
+		}
+
+		update_option( 'jf_recipe_library', $recipes, false );
+
+		return new \WP_REST_Response( [
+			'updated' => $updated,
+			'recipes' => array_values( array_map( [ __CLASS__, 'normalise_recipe_library_item' ], $recipes ) ),
+		] );
+	}
+
 	public static function delete_recipe_library_item( \WP_REST_Request $req ): \WP_REST_Response {
 		$id = (int) $req->get_param( 'id' );
 		$recipes = get_option( 'jf_recipe_library', [] );
@@ -636,6 +714,35 @@ class AdminApiController {
 		update_option( 'jf_recipe_library', $recipes, false );
 
 		return new \WP_REST_Response( [ 'deleted' => true ] );
+	}
+
+	public static function generate_recipe_library_item_image( \WP_REST_Request $req ): \WP_REST_Response {
+		$id      = (int) $req->get_param( 'id' );
+		$recipes = get_option( 'jf_recipe_library', [] );
+		$recipes = is_array( $recipes ) ? array_values( $recipes ) : [];
+
+		foreach ( $recipes as $index => $recipe ) {
+			if ( (int) ( $recipe['id'] ?? 0 ) !== $id ) {
+				continue;
+			}
+
+			$recipe = self::normalise_recipe_library_item( (array) $recipe );
+			$image  = self::generate_recipe_image_file( get_current_user_id(), $recipe );
+			if ( is_wp_error( $image ) ) {
+				return new \WP_REST_Response( [ 'message' => $image->get_error_message() ], 500 );
+			}
+
+			$recipe['image_url'] = (string) ( $image['image_url'] ?? '' );
+			$recipes[ $index ]   = $recipe;
+			update_option( 'jf_recipe_library', $recipes, false );
+
+			return new \WP_REST_Response( [
+				'saved'  => true,
+				'recipe' => $recipe,
+			] );
+		}
+
+		return new \WP_REST_Response( [ 'message' => 'Recipe not found.' ], 404 );
 	}
 
 	public static function get_settings( \WP_REST_Request $req ): \WP_REST_Response {
@@ -1087,6 +1194,8 @@ class AdminApiController {
 			'source_url'          => $req->get_param( 'source_url' ),
 			'source_title'        => $req->get_param( 'source_title' ),
 			'source_type'         => $req->get_param( 'source_type' ),
+			'dietary_tags'        => $req->get_param( 'dietary_tags' ),
+			'image_url'           => $req->get_param( 'image_url' ),
 		] );
 	}
 
@@ -1105,6 +1214,82 @@ class AdminApiController {
 			'source_url'          => esc_url_raw( (string) ( $recipe['source_url'] ?? '' ) ),
 			'source_title'        => sanitize_text_field( (string) ( $recipe['source_title'] ?? '' ) ),
 			'source_type'         => sanitize_key( (string) ( $recipe['source_type'] ?? 'manual' ) ) ?: 'manual',
+			'dietary_tags'        => self::sanitize_recipe_dietary_tags( $recipe['dietary_tags'] ?? [] ),
+			'image_url'           => esc_url_raw( (string) ( $recipe['image_url'] ?? '' ) ),
+		];
+	}
+
+	private static function sanitize_recipe_dietary_tags( $tags ): array {
+		return array_values( array_unique( array_filter( array_map(
+			static function( $tag ): string {
+				$key = sanitize_key( (string) $tag );
+				return in_array( $key, self::RECIPE_DIETARY_TAG_OPTIONS, true ) ? $key : '';
+			},
+			(array) $tags
+		) ) ) );
+	}
+
+	private static function build_recipe_image_prompt( array $recipe ): string {
+		$meal_type = sanitize_text_field( (string) ( $recipe['meal_type'] ?? 'meal' ) );
+		$name      = sanitize_text_field( (string) ( $recipe['recipe_name'] ?? 'Recipe' ) );
+		$ingredients = array_slice( array_values( array_filter( array_map( 'sanitize_text_field', (array) ( $recipe['ingredients'] ?? [] ) ) ) ), 0, 8 );
+		$tags = self::sanitize_recipe_dietary_tags( $recipe['dietary_tags'] ?? [] );
+
+		$parts = [
+			sprintf( 'Create a polished square food photo of %s.', $name ),
+			sprintf( 'Show it as a %s recipe plated attractively with realistic food texture and natural lighting.', $meal_type ),
+			$ingredients ? 'Key visible ingredients: ' . implode( ', ', $ingredients ) . '.' : '',
+			$tags ? 'The meal should visually fit these dietary tags when possible: ' . implode( ', ', $tags ) . '.' : '',
+			'Avoid text overlays, labels, watermarks, hands, or packaging. Keep it appetizing, clean, and suitable for a fitness recipe library.',
+		];
+
+		return trim( implode( ' ', array_filter( $parts ) ) );
+	}
+
+	private static function generate_recipe_image_file( int $user_id, array $recipe ): array|\WP_Error {
+		$result = GeminiImageService::generate_image( $user_id, self::build_recipe_image_prompt( $recipe ), [], [
+			'aspect_ratio' => '1:1',
+			'image_size'   => '2K',
+		] );
+
+		if ( is_wp_error( $result ) ) {
+			return $result;
+		}
+
+		if ( ! function_exists( 'wp_upload_dir' ) ) {
+			return new \WP_Error( 'recipe_image_upload_unavailable', 'The uploads directory is unavailable.' );
+		}
+
+		$upload_dir = wp_upload_dir();
+		$base_dir   = (string) ( $upload_dir['basedir'] ?? '' );
+		$base_url   = (string) ( $upload_dir['baseurl'] ?? '' );
+		if ( '' === $base_dir || '' === $base_url ) {
+			return new \WP_Error( 'recipe_image_upload_unavailable', 'The uploads directory is unavailable.' );
+		}
+
+		$target_dir = trailingslashit( $base_dir ) . 'johnny5k-recipe-images';
+		if ( ! file_exists( $target_dir ) && ! wp_mkdir_p( $target_dir ) ) {
+			return new \WP_Error( 'recipe_image_upload_failed', 'The recipe image directory could not be created.' );
+		}
+
+		$extension = 'png';
+		$mime_type = (string) ( $result['mime_type'] ?? 'image/png' );
+		if ( 'image/jpeg' === $mime_type ) {
+			$extension = 'jpg';
+		} elseif ( 'image/webp' === $mime_type ) {
+			$extension = 'webp';
+		}
+
+		$filename = sanitize_file_name(
+			sanitize_title( (string) ( $recipe['recipe_name'] ?? 'recipe' ) ) . '-' . time() . '.' . $extension
+		);
+		$target_path = trailingslashit( $target_dir ) . $filename;
+		if ( false === file_put_contents( $target_path, (string) ( $result['data'] ?? '' ) ) ) {
+			return new \WP_Error( 'recipe_image_upload_failed', 'The generated recipe image could not be saved.' );
+		}
+
+		return [
+			'image_url' => trailingslashit( $base_url ) . 'johnny5k-recipe-images/' . $filename,
 		];
 	}
 

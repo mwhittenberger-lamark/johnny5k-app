@@ -91,6 +91,19 @@ export const useWorkoutStore = create(persist((set, get) => ({
       },
     },
   })),
+  setPreviewExerciseSwaps: (dayType, exerciseSwaps) => set((state) => ({
+    previewDrafts: {
+      ...state.previewDrafts,
+      [dayType]: {
+        ...getPreviewDraft(state.previewDrafts, dayType),
+        exerciseSwaps: Object.fromEntries(
+          Object.entries(exerciseSwaps && typeof exerciseSwaps === 'object' ? exerciseSwaps : {})
+            .map(([planExerciseId, exerciseId]) => [Number(planExerciseId), Number(exerciseId)])
+            .filter(([, exerciseId]) => exerciseId > 0),
+        ),
+      },
+    },
+  })),
   clearPreviewSwap: (dayType, planExerciseId) => set((state) => {
     const currentDraft = getPreviewDraft(state.previewDrafts, dayType)
     const nextSwaps = { ...currentDraft.exerciseSwaps }

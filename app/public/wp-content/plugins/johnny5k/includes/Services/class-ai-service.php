@@ -863,7 +863,7 @@ class AiService {
 			[
 				'role'    => 'user',
 				'content' => sprintf(
-					'Find %1$d strong recipe candidates for a fitness recipe library. Search theme: "%2$s". Meal type focus: %3$s. Return only valid JSON in this exact shape: {recipes:[{recipe_name, meal_type, ingredients:[string], instructions:[string], estimated_calories, estimated_protein_g, estimated_carbs_g, estimated_fat_g, why_this_works, source_url, source_title}], notes}. Keep ingredients and steps concise summaries, not verbatim copies. Use meal_type values only from breakfast, lunch, dinner, snack. If calories or macros are not explicitly available, estimate them conservatively. why_this_works should be one sentence aimed at a fitness user. Prefer recipes with accessible ingredients and clear prep structure.',
+					'Find %1$d strong recipe candidates for a fitness recipe library. Search theme: "%2$s". Meal type focus: %3$s. Return only valid JSON in this exact shape: {recipes:[{recipe_name, meal_type, ingredients:[string], instructions:[string], estimated_calories, estimated_protein_g, estimated_carbs_g, estimated_fat_g, dietary_tags:[string], why_this_works, source_url, source_title}], notes}. Allowed dietary_tags values: vegan, vegetarian, high_protein, mediterranean, keto, paleo, dash, whole30. Only include tags that genuinely fit the recipe. Keep ingredients and steps concise summaries, not verbatim copies. Use meal_type values only from breakfast, lunch, dinner, snack. If calories or macros are not explicitly available, estimate them conservatively. why_this_works should be one sentence aimed at a fitness user. Prefer recipes with accessible ingredients and clear prep structure.',
 					$count,
 					$query ?: 'high-protein meal ideas',
 					$meal_label
@@ -904,6 +904,7 @@ class AiService {
 				'estimated_protein_g' => (float) ( $recipe['estimated_protein_g'] ?? 0 ),
 				'estimated_carbs_g'   => (float) ( $recipe['estimated_carbs_g'] ?? 0 ),
 				'estimated_fat_g'     => (float) ( $recipe['estimated_fat_g'] ?? 0 ),
+				'dietary_tags'        => self::sanitize_recipe_dietary_tags( $recipe['dietary_tags'] ?? [] ),
 				'why_this_works'      => sanitize_text_field( (string) ( $recipe['why_this_works'] ?? '' ) ),
 				'source_url'          => esc_url_raw( (string) ( $recipe['source_url'] ?? ( $source['url'] ?? '' ) ) ),
 				'source_title'        => sanitize_text_field( (string) ( $recipe['source_title'] ?? ( $source['title'] ?? '' ) ) ),
@@ -921,6 +922,100 @@ class AiService {
 			'sources'         => $result['sources'],
 			'used_web_search' => $result['used_web_search'],
 		];
+	}
+
+	/**
+	 * Auto-tag recipe library items with diet tags.
+	 *
+	 * @param int                $user_id
+	 * @param array<int,array>   $recipes
+	 * @return array<int,array<string,mixed>>|\WP_Error
+	 */
+	public static function auto_tag_recipe_library_items( int $user_id, array $recipes ) {
+		$prepared = [];
+
+		foreach ( array_values( $recipes ) as $index => $recipe ) {
+			if ( ! is_array( $recipe ) ) {
+				continue;
+			}
+
+			$prepared[] = [
+				'index'               => $index,
+				'recipe_name'         => sanitize_text_field( (string) ( $recipe['recipe_name'] ?? '' ) ),
+				'meal_type'           => sanitize_key( (string) ( $recipe['meal_type'] ?? 'lunch' ) ) ?: 'lunch',
+				'ingredients'         => array_values( array_filter( array_map( 'sanitize_text_field', (array) ( $recipe['ingredients'] ?? [] ) ) ) ),
+				'instructions'        => array_values( array_filter( array_map( 'sanitize_text_field', (array) ( $recipe['instructions'] ?? [] ) ) ) ),
+				'estimated_calories'  => (int) ( $recipe['estimated_calories'] ?? 0 ),
+				'estimated_protein_g' => (float) ( $recipe['estimated_protein_g'] ?? 0 ),
+				'estimated_carbs_g'   => (float) ( $recipe['estimated_carbs_g'] ?? 0 ),
+				'estimated_fat_g'     => (float) ( $recipe['estimated_fat_g'] ?? 0 ),
+			];
+		}
+
+		if ( empty( $prepared ) ) {
+			return [];
+		}
+
+		$fallback = [];
+		foreach ( $prepared as $recipe ) {
+			$fallback[] = [
+				'index' => (int) $recipe['index'],
+				'tags'  => self::infer_recipe_dietary_tags( $recipe ),
+			];
+		}
+
+		$messages = [
+			[
+				'role'    => 'system',
+				'content' => 'You classify fitness recipes into diet tags. Return valid JSON only. Be conservative and only apply tags when the recipe clearly fits.',
+			],
+			[
+				'role'    => 'user',
+				'content' => 'Classify these recipes. Allowed tags are vegan, vegetarian, high_protein, mediterranean, keto, paleo, dash, whole30. Return JSON exactly like {recipes:[{index:number,tags:[string]}],notes}. Definitions: vegetarian excludes meat and fish; vegan also excludes eggs, dairy, and honey; high_protein fits clearly protein-forward meals, usually around 25g+ protein per serving; mediterranean emphasizes fish, olive oil, legumes, vegetables, herbs, and whole foods; keto is very low carb/high fat; paleo excludes grains, legumes, dairy, and soy; dash favors produce, lean proteins, beans, whole grains, and lower sodium; whole30 excludes grains, legumes, dairy, alcohol, and added sugars. Recipes: ' . wp_json_encode( $prepared ),
+			],
+		];
+
+		$result = self::call_openai( $messages, 'gpt-4o-mini' );
+		if ( is_wp_error( $result ) ) {
+			return $fallback;
+		}
+
+		CostTracker::log_openai( $user_id, 'gpt-4o-mini', '/v1/responses', $result['tokens_in'], $result['tokens_out'], [
+			'context'      => 'recipe_auto_tagging',
+			'recipe_count' => count( $prepared ),
+		] );
+
+		$parsed = self::decode_json_reply( (string) ( $result['reply'] ?? '' ) );
+		if ( ! is_array( $parsed ) ) {
+			return $fallback;
+		}
+
+		$tags_by_index = [];
+		foreach ( (array) ( $parsed['recipes'] ?? [] ) as $row ) {
+			if ( ! is_array( $row ) ) {
+				continue;
+			}
+
+			$index = isset( $row['index'] ) ? (int) $row['index'] : -1;
+			if ( $index < 0 ) {
+				continue;
+			}
+
+			$tags_by_index[ $index ] = self::sanitize_recipe_dietary_tags( $row['tags'] ?? [] );
+		}
+
+		$merged = [];
+		foreach ( $fallback as $row ) {
+			$index = (int) ( $row['index'] ?? -1 );
+			$ai_tags = $tags_by_index[ $index ] ?? [];
+			$heuristic_tags = self::sanitize_recipe_dietary_tags( $row['tags'] ?? [] );
+			$merged[] = [
+				'index' => $index,
+				'tags'  => self::sanitize_recipe_dietary_tags( array_merge( $heuristic_tags, $ai_tags ) ),
+			];
+		}
+
+		return $merged;
 	}
 
 	/**
@@ -1768,6 +1863,8 @@ PROMPT;
 	private static function get_user_context( int $user_id, array $context_overrides = [] ): array {
 		global $wpdb;
 		$p = $wpdb->prefix;
+
+		CalorieEngine::refresh_active_goal_targets( $user_id );
 
 		// ── Profile & goal ────────────────────────────────────────────────────
 		$profile = $wpdb->get_row( $wpdb->prepare(
@@ -3206,6 +3303,8 @@ PROMPT;
 	private static function get_active_goal_targets( int $user_id ): array {
 		global $wpdb;
 		$p = $wpdb->prefix;
+
+		CalorieEngine::refresh_active_goal_targets( $user_id );
 
 		$goal = $wpdb->get_row( $wpdb->prepare(
 			"SELECT target_calories, target_protein_g, target_steps, target_sleep_hours
@@ -4700,6 +4799,100 @@ PROMPT;
 			'day_types'                => $day_types,
 			'slot_types'               => $slot_types ?: [ 'accessory' ],
 		];
+	}
+
+	private static function sanitize_recipe_dietary_tags( $tags ): array {
+		$allowed = [
+			'vegan',
+			'vegetarian',
+			'high_protein',
+			'mediterranean',
+			'keto',
+			'paleo',
+			'dash',
+			'whole30',
+		];
+
+		return array_values( array_unique( array_filter( array_map(
+			static function( $tag ) use ( $allowed ): string {
+				$key = sanitize_key( (string) $tag );
+				return in_array( $key, $allowed, true ) ? $key : '';
+			},
+			(array) $tags
+		) ) ) );
+	}
+
+	private static function infer_recipe_dietary_tags( array $recipe ): array {
+		$ingredients = array_values( array_filter( array_map( 'strtolower', array_map( 'trim', (array) ( $recipe['ingredients'] ?? [] ) ) ) ) );
+		$text = strtolower(
+			implode( ' ', $ingredients ) . ' ' .
+			implode( ' ', array_map( 'trim', (array) ( $recipe['instructions'] ?? [] ) ) ) . ' ' .
+			(string) ( $recipe['recipe_name'] ?? '' )
+		);
+
+		$tags = [];
+		$protein = (float) ( $recipe['estimated_protein_g'] ?? 0 );
+		$carbs = (float) ( $recipe['estimated_carbs_g'] ?? 0 );
+		$fat = (float) ( $recipe['estimated_fat_g'] ?? 0 );
+		$calories = (float) ( $recipe['estimated_calories'] ?? 0 );
+
+		$meat_terms = [ 'beef', 'steak', 'chicken', 'turkey', 'pork', 'ham', 'bacon', 'sausage', 'salmon', 'tuna', 'shrimp', 'fish', 'anchovy', 'gelatin' ];
+		$animal_terms = array_merge( $meat_terms, [ 'egg', 'eggs', 'milk', 'cheese', 'yogurt', 'yoghurt', 'butter', 'cream', 'whey', 'casein', 'honey' ] );
+		$grain_terms = [ 'rice', 'oats', 'oatmeal', 'bread', 'pasta', 'quinoa', 'tortilla', 'wrap', 'bun', 'bagel', 'flour', 'wheat', 'barley', 'corn' ];
+		$legume_terms = [ 'beans', 'bean', 'lentils', 'lentil', 'peas', 'pea', 'peanut', 'peanuts', 'chickpea', 'chickpeas', 'soy', 'tofu', 'tempeh', 'edamame' ];
+		$sugar_terms = [ 'sugar', 'maple', 'honey', 'syrup', 'agave', 'sweetener' ];
+
+		if ( $protein >= 25 || ( $protein >= 20 && $calories > 0 && ( $protein * 4 ) / $calories >= 0.25 ) ) {
+			$tags[] = 'high_protein';
+		}
+
+		if ( ! self::recipe_text_contains_any( $text, $meat_terms ) ) {
+			$tags[] = 'vegetarian';
+		}
+
+		if ( ! self::recipe_text_contains_any( $text, $animal_terms ) ) {
+			$tags[] = 'vegan';
+		}
+
+		if ( $carbs <= 18 && ( $fat >= 12 || self::recipe_text_contains_any( $text, [ 'cauliflower rice', 'avocado', 'almond flour', 'zucchini noodles' ] ) ) ) {
+			$tags[] = 'keto';
+		}
+
+		$is_paleo = ! self::recipe_text_contains_any( $text, array_merge( $grain_terms, $legume_terms, [ 'milk', 'cheese', 'yogurt', 'butter', 'cream' ] ) );
+		if ( $is_paleo ) {
+			$tags[] = 'paleo';
+		}
+
+		if ( $is_paleo && ! self::recipe_text_contains_any( $text, $sugar_terms ) ) {
+			$tags[] = 'whole30';
+		}
+
+		if (
+			self::recipe_text_contains_any( $text, [ 'olive oil', 'salmon', 'tuna', 'sardine', 'chickpea', 'lentil', 'cucumber', 'tomato', 'herb', 'feta' ] ) &&
+			! self::recipe_text_contains_any( $text, [ 'bacon', 'sausage', 'deep fried' ] )
+		) {
+			$tags[] = 'mediterranean';
+		}
+
+		if (
+			self::recipe_text_contains_any( $text, [ 'fruit', 'berries', 'apple', 'banana', 'spinach', 'broccoli', 'salmon', 'chicken', 'beans', 'lentils', 'oats', 'brown rice', 'quinoa' ] ) &&
+			! self::recipe_text_contains_any( $text, [ 'bacon', 'sausage', 'heavy cream', 'fried' ] )
+		) {
+			$tags[] = 'dash';
+		}
+
+		return self::sanitize_recipe_dietary_tags( $tags );
+	}
+
+	private static function recipe_text_contains_any( string $text, array $needles ): bool {
+		foreach ( $needles as $needle ) {
+			$value = strtolower( trim( (string) $needle ) );
+			if ( '' !== $value && str_contains( $text, $value ) ) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	private static function build_fallback_exercise_description( array $exercise ): string {

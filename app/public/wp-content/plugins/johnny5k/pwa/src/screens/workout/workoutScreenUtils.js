@@ -95,6 +95,89 @@ export function orderPreviewExercises(exercises, previewExerciseOrder) {
   })
 }
 
+export function shuffleItems(items, random = Math.random) {
+  const source = Array.isArray(items) ? [...items] : []
+  if (source.length < 2) return source
+
+  for (let index = source.length - 1; index > 0; index -= 1) {
+    const nextRandom = typeof random === 'function' ? Number(random()) : Math.random()
+    const clampedRandom = Number.isFinite(nextRandom) ? Math.min(0.999999, Math.max(0, nextRandom)) : Math.random()
+    const swapIndex = Math.floor(clampedRandom * (index + 1))
+    ;[source[index], source[swapIndex]] = [source[swapIndex], source[index]]
+  }
+
+  return source
+}
+
+export function createSeededRandom(seedValue = Date.now()) {
+  let state = Math.abs(Math.floor(Number(seedValue) || 1)) % 2147483647
+  if (state === 0) {
+    state = 1
+  }
+
+  return () => {
+    state = (state * 16807) % 2147483647
+    return (state - 1) / 2147483646
+  }
+}
+
+export function buildSwitchItUpPlan(exercises, random = Math.random) {
+  const previewExercises = Array.isArray(exercises) ? exercises.filter(Boolean) : []
+  const currentOrder = previewExercises
+    .map(exercise => Number(exercise?.plan_exercise_id || 0))
+    .filter(Boolean)
+
+  if (!currentOrder.length) {
+    return {
+      exerciseOrder: [],
+      exerciseSwaps: {},
+      swapCount: 0,
+      orderChanged: false,
+    }
+  }
+
+  let exerciseOrder = shuffleItems(currentOrder, random)
+  if (exerciseOrder.length > 1 && exerciseOrder.every((id, index) => id === currentOrder[index])) {
+    exerciseOrder = [...currentOrder.slice(1), currentOrder[0]]
+  }
+
+  const currentExerciseIds = new Set(
+    previewExercises
+      .map(exercise => Number(exercise?.exercise_id || 0))
+      .filter(Boolean),
+  )
+  const selectedReplacementIds = new Set()
+  const exerciseSwaps = {}
+  const swappableExercises = shuffleItems(
+    previewExercises.filter(exercise => Array.isArray(exercise?.swap_options) && exercise.swap_options.length),
+    random,
+  )
+
+  swappableExercises.forEach((exercise) => {
+    if (Object.keys(exerciseSwaps).length >= 2) return
+
+    const nextOption = shuffleItems(exercise.swap_options, random).find(option => {
+      const optionId = Number(option?.id || 0)
+      return optionId > 0
+        && optionId !== Number(exercise?.exercise_id || 0)
+        && !currentExerciseIds.has(optionId)
+        && !selectedReplacementIds.has(optionId)
+    })
+
+    if (!nextOption) return
+
+    exerciseSwaps[Number(exercise.plan_exercise_id)] = Number(nextOption.id)
+    selectedReplacementIds.add(Number(nextOption.id))
+  })
+
+  return {
+    exerciseOrder,
+    exerciseSwaps,
+    swapCount: Object.keys(exerciseSwaps).length,
+    orderChanged: exerciseOrder.some((id, index) => id !== currentOrder[index]),
+  }
+}
+
 export function reorderPreviewExerciseOrder(currentOrder, draggedPlanExerciseId, targetPlanExerciseId, exercises) {
   const baseOrder = syncPreviewExerciseOrder(
     currentOrder,

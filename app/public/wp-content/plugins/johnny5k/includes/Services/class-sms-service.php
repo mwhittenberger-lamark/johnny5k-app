@@ -865,6 +865,8 @@ class SmsService {
 	private static function active_goal( int $user_id ): ?\stdClass {
 		global $wpdb;
 
+		CalorieEngine::refresh_active_goal_targets( $user_id );
+
 		return $wpdb->get_row( $wpdb->prepare(
 			"SELECT * FROM {$wpdb->prefix}fit_user_goals WHERE user_id = %d AND active = 1 ORDER BY created_at DESC LIMIT 1",
 			$user_id

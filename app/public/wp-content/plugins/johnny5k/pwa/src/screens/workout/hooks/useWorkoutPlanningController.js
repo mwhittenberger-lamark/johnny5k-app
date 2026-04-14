@@ -7,6 +7,8 @@ import {
   ADDED_EXERCISE_PLAN_ID_OFFSET,
   EMPTY_PREVIEW_DRAFT,
   applyRepAdjustmentsToPreviewExercises,
+  buildSwitchItUpPlan,
+  createSeededRandom,
   buildEffectiveRepAdjustments,
   buildJohnnyReview,
   buildPreviewExerciseSwapPayload,
@@ -17,6 +19,7 @@ import {
   normalizeWorkoutTimeTier,
   orderPreviewExercises,
   reorderPreviewExerciseOrder,
+  shuffleItems,
   summarizePlannedRepTotals,
 } from '../workoutScreenUtils'
 
@@ -35,6 +38,7 @@ export function useWorkoutPlanningController({
   setPreviewExerciseRemovals,
   setPreviewExerciseAdditions,
   syncPreviewExerciseOrder,
+  setPreviewExerciseSwaps,
   applyPreviewSwap,
   clearPreviewSwap,
   clearCustomWorkoutDraft,
@@ -51,6 +55,7 @@ export function useWorkoutPlanningController({
   const [addDrawerOpen, setAddDrawerOpen] = useState(false)
   const [draggedPlanExerciseId, setDraggedPlanExerciseId] = useState(0)
   const [recoveryLoopTierOverride, setRecoveryLoopTierOverride] = useState(null)
+  const [addOnShuffleSeed] = useState(() => Date.now())
   const previewExerciseRowRefs = useRef(new Map())
   const pendingPreviewScrollRequestRef = useRef(null)
 
@@ -260,16 +265,22 @@ export function useWorkoutPlanningController({
   })
 
   const absAddOnSuggestions = useMemo(
-    () => (Array.isArray(absAddOnQuery.data) ? absAddOnQuery.data : [])
-      .map(item => normalizeExerciseCandidate({ ...item, slot_type: 'abs' }))
-      .filter(item => item.id > 0 && !existingPlanningExerciseIds.has(item.id)),
-    [absAddOnQuery.data, existingPlanningExerciseIds],
+    () => shuffleItems(
+      (Array.isArray(absAddOnQuery.data) ? absAddOnQuery.data : [])
+        .map(item => normalizeExerciseCandidate({ ...item, slot_type: 'abs' }))
+        .filter(item => item.id > 0 && !existingPlanningExerciseIds.has(item.id)),
+      createSeededRandom(addOnShuffleSeed + 11),
+    ),
+    [absAddOnQuery.data, addOnShuffleSeed, existingPlanningExerciseIds],
   )
   const challengeAddOnSuggestions = useMemo(
-    () => (Array.isArray(challengeAddOnQuery.data) ? challengeAddOnQuery.data : [])
-      .map(item => normalizeExerciseCandidate({ ...item, slot_type: 'challenge' }))
-      .filter(item => item.id > 0 && !existingPlanningExerciseIds.has(item.id)),
-    [challengeAddOnQuery.data, existingPlanningExerciseIds],
+    () => shuffleItems(
+      (Array.isArray(challengeAddOnQuery.data) ? challengeAddOnQuery.data : [])
+        .map(item => normalizeExerciseCandidate({ ...item, slot_type: 'challenge' }))
+        .filter(item => item.id > 0 && !existingPlanningExerciseIds.has(item.id)),
+      createSeededRandom(addOnShuffleSeed + 29),
+    ),
+    [addOnShuffleSeed, challengeAddOnQuery.data, existingPlanningExerciseIds],
   )
 
   useEffect(() => {
@@ -497,6 +508,29 @@ export function useWorkoutPlanningController({
     setPreviewExerciseOrder(planningDraftKey, movePreviewExerciseOrder(previewExerciseOrder, planExerciseId, direction, previewExercises))
   }
 
+  function handleSwitchItUp() {
+    if (!planningDraftKey || isCardioSelection || isRestSelection || !previewExercises.length) return
+
+    const nextPlan = buildSwitchItUpPlan(previewExercises, Math.random)
+    if (nextPlan.exerciseOrder.length) {
+      setPreviewExerciseOrder(planningDraftKey, nextPlan.exerciseOrder)
+    }
+    if (Object.keys(nextPlan.exerciseSwaps).length) {
+      setPreviewExerciseSwaps(planningDraftKey, {
+        ...previewExerciseSwaps,
+        ...nextPlan.exerciseSwaps,
+      })
+    }
+
+    const changeSummary = [
+      nextPlan.swapCount > 0 ? `swapped ${nextPlan.swapCount} exercise${nextPlan.swapCount === 1 ? '' : 's'}` : '',
+      nextPlan.orderChanged ? 'remixed the order' : '',
+    ].filter(Boolean).join(' and ')
+
+    setStatusNotice(changeSummary ? `Johnny ${changeSummary} for a different feel today.` : 'Johnny looked for a safe remix, but this plan does not have enough swap options yet.')
+    setStatusError('')
+  }
+
   return {
     absAddOnLoading: absAddOnQuery.isFetching,
     absAddOnSuggestions,
@@ -521,6 +555,7 @@ export function useWorkoutPlanningController({
     handlePreviewMove,
     handlePreviewSwap,
     handleSelectTimeTier,
+    handleSwitchItUp,
     handleToggleExerciseRemoval,
     handleUseScheduledSplit,
     hasCustomWorkoutDraft,

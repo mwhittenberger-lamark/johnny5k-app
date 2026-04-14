@@ -8,6 +8,50 @@ use Johnny5k\Services\AiToolHandlerService;
 use Johnny5k\Tests\Support\ServiceTestCase;
 
 class AiToolHandlerServiceTest extends ServiceTestCase {
+	public function test_get_daily_targets_refreshes_weight_based_goal_targets_before_returning(): void {
+		$db = $this->wpdb();
+
+		$db->expectGetRow( 'SELECT * FROM wp_fit_user_profiles WHERE user_id = 42', (object) [
+			'user_id' => 42,
+			'date_of_birth' => '',
+			'starting_weight_lb' => 200,
+			'height_cm' => 180,
+			'sex' => 'male',
+			'activity_level' => 'moderate',
+		] );
+		$db->expectGetRow( 'SELECT * FROM wp_fit_user_goals WHERE user_id = 42 AND active = 1', (object) [
+			'id' => 9,
+			'user_id' => 42,
+			'goal_type' => 'cut',
+			'goal_rate' => 'moderate',
+			'target_calories' => 2175,
+			'target_protein_g' => 200,
+			'target_carbs_g' => 138,
+			'target_fat_g' => 92,
+			'target_steps' => 8000,
+			'target_sleep_hours' => 8.0,
+		] );
+		$db->expectGetVar( 'SELECT weight_lb FROM wp_fit_body_metrics', 190.0 );
+		$db->expectGetRow( 'SELECT target_calories, target_protein_g, target_carbs_g, target_fat_g, target_steps, target_sleep_hours, goal_type', (object) [
+			'target_calories' => 2105,
+			'target_protein_g' => 190,
+			'target_carbs_g' => 135,
+			'target_fat_g' => 90,
+			'target_steps' => 8000,
+			'target_sleep_hours' => 8.0,
+			'goal_type' => 'cut',
+		] );
+
+		$result = AiToolHandlerService::execute( 42, 'get_daily_targets' );
+
+		$this->assertSame( 2105, $result['target_calories'] );
+		$this->assertSame( 190, $result['target_protein_g'] );
+		$this->assertSame( 135, $result['target_carbs_g'] );
+		$this->assertSame( 90, $result['target_fat_g'] );
+		$this->assertCount( 1, $db->updated );
+		$this->assertSame( 'wp_fit_user_goals', $db->updated[0]['table'] );
+	}
+
 	public function test_log_food_from_description_uses_nutrition_controller_path(): void {
 		$GLOBALS['johnny5k_test_current_user_id'] = 7;
 		$captured_request = null;

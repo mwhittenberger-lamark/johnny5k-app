@@ -23,6 +23,8 @@ use Johnny5k\Support\TrainingDayTypes;
 class OnboardingController {
 	private const HEADSHOT_META_KEY = 'jf_user_headshot_attachment_id';
 	private const GENERATED_IMAGES_META_KEY = 'jf_user_gemini_generated_images';
+	private const GENERATED_IMAGES_DAILY_USAGE_META_KEY = 'jf_user_gemini_generated_images_daily_usage';
+	private const GENERATED_IMAGES_DAILY_LIMIT = 2;
 
 	public static function register_routes(): void {
 		$ns = JF_REST_NAMESPACE;
@@ -147,6 +149,8 @@ class OnboardingController {
 	public static function get_state( \WP_REST_Request $req ): \WP_REST_Response {
 		$user_id = get_current_user_id();
 		global $wpdb;
+
+		\Johnny5k\Services\CalorieEngine::refresh_active_goal_targets( $user_id );
 
 		$profile = $wpdb->get_row( $wpdb->prepare(
 			"SELECT * FROM {$wpdb->prefix}fit_user_profiles WHERE user_id = %d",
@@ -293,6 +297,13 @@ class OnboardingController {
 		$custom_prompt = sanitize_textarea_field( (string) ( $req->get_param( 'prompt' ) ?: '' ) );
 		$requested_count = (int) ( $req->get_param( 'count' ) ?? 2 );
 		$generation_count = max( 1, min( 2, $requested_count ) );
+		$remaining_generation_count = self::get_remaining_generated_images_today( $user_id );
+		if ( $remaining_generation_count <= 0 ) {
+			return new \WP_REST_Response( [ 'message' => sprintf( 'You have reached the daily limit of %d generated images. Try again tomorrow.', self::GENERATED_IMAGES_DAILY_LIMIT ) ], 429 );
+		}
+		if ( $generation_count > $remaining_generation_count ) {
+			return new \WP_REST_Response( [ 'message' => sprintf( 'You can generate %d more image%s today. Lower this run to %d.', $remaining_generation_count, 1 === $remaining_generation_count ? '' : 's', $remaining_generation_count ) ], 400 );
+		}
 		$scenarios = self::get_generation_scenarios();
 		$scenarios = array_slice( $scenarios, 0, $generation_count );
 		$progress_photo_data_urls = self::get_latest_progress_photo_data_urls( $user_id, 3 );
@@ -339,6 +350,7 @@ class OnboardingController {
 		$existing_items = is_array( $existing_items ) ? $existing_items : [];
 		$merged_items = array_slice( array_merge( $created_items, $existing_items ), 0, 24 );
 		update_user_meta( $user_id, self::GENERATED_IMAGES_META_KEY, $merged_items );
+		self::increment_generated_images_daily_usage( $user_id, count( $created_items ) );
 
 		return new \WP_REST_Response( [
 			'generated_images' => self::get_generated_images_payload( $user_id ),
@@ -778,6 +790,50 @@ class OnboardingController {
 			}
 
 		return $payload;
+	}
+
+	private static function get_remaining_generated_images_today( int $user_id ): int {
+		$usage = self::get_generated_images_daily_usage( $user_id );
+		$today_key = current_time( 'Y-m-d' );
+		$used_today = (int) ( $usage[ $today_key ] ?? 0 );
+		return max( 0, self::GENERATED_IMAGES_DAILY_LIMIT - $used_today );
+	}
+
+	private static function increment_generated_images_daily_usage( int $user_id, int $count ): void {
+		if ( $count <= 0 ) {
+			return;
+		}
+
+		$usage = self::get_generated_images_daily_usage( $user_id );
+		$today_key = current_time( 'Y-m-d' );
+		$usage[ $today_key ] = max( 0, (int) ( $usage[ $today_key ] ?? 0 ) ) + $count;
+		update_user_meta( $user_id, self::GENERATED_IMAGES_DAILY_USAGE_META_KEY, $usage );
+	}
+
+	private static function get_generated_images_daily_usage( int $user_id ): array {
+		$stored_usage = get_user_meta( $user_id, self::GENERATED_IMAGES_DAILY_USAGE_META_KEY, true );
+		$stored_usage = is_array( $stored_usage ) ? $stored_usage : [];
+		$today_ts = strtotime( current_time( 'Y-m-d' ) ?: 'now' );
+		$cutoff_ts = strtotime( '-7 days', false !== $today_ts ? $today_ts : time() );
+		$normalized = [];
+
+		foreach ( $stored_usage as $date_key => $count ) {
+			$normalized_date = sanitize_text_field( (string) $date_key );
+			if ( ! preg_match( '/^\d{4}-\d{2}-\d{2}$/', $normalized_date ) ) {
+				continue;
+			}
+			$date_ts = strtotime( $normalized_date );
+			if ( false === $date_ts || $date_ts < $cutoff_ts ) {
+				continue;
+			}
+			$normalized[ $normalized_date ] = max( 0, (int) $count );
+		}
+
+		if ( $normalized !== $stored_usage ) {
+			update_user_meta( $user_id, self::GENERATED_IMAGES_DAILY_USAGE_META_KEY, $normalized );
+		}
+
+		return $normalized;
 	}
 
 	private static function get_generation_scenarios(): array {

@@ -1805,7 +1805,7 @@ class WorkoutController {
 
 	public static function validate_time_tier( $value ): bool {
 		$time_tier = sanitize_text_field( (string) $value );
-		return '' === $time_tier || in_array( $time_tier, [ 'short', 'medium', 'long' ], true );
+		return '' === $time_tier || in_array( $time_tier, [ 'short', 'medium', 'full' ], true );
 	}
 
 	public static function validate_day_type( $value ): bool {

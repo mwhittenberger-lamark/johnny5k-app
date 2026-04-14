@@ -9,6 +9,7 @@ class NutritionRecipeController extends RestController {
 	private const GROCERY_GAP_ITEMS_META_KEY = 'jf_nutrition_grocery_gap_items';
 	private const GROCERY_GAP_HIDDEN_ITEMS_META_KEY = 'jf_nutrition_grocery_gap_hidden_items';
 	private const RECIPE_COOKBOOK_META_KEY = 'johnny5k_recipe_cookbook';
+	private const RECIPE_DIETARY_TAG_OPTIONS = [ 'vegan', 'vegetarian', 'high_protein', 'mediterranean', 'keto', 'paleo', 'dash', 'whole30' ];
 
 	public static function register_routes(): void {
 		$ns   = JF_REST_NAMESPACE;
@@ -281,6 +282,91 @@ class NutritionRecipeController extends RestController {
 		return array_values( $merged );
 	}
 
+	private static function sanitize_recipe_dietary_tags( $tags ): array {
+		return array_values( array_unique( array_filter( array_map(
+			static function( $tag ): string {
+				$key = sanitize_key( (string) $tag );
+				return in_array( $key, self::RECIPE_DIETARY_TAG_OPTIONS, true ) ? $key : '';
+			},
+			(array) $tags
+		) ) ) );
+	}
+
+	private static function recipe_tags_for_suggestion( array $recipe ): array {
+		$manual_tags = self::sanitize_recipe_dietary_tags( $recipe['dietary_tags'] ?? [] );
+		if ( ! empty( $manual_tags ) ) {
+			return $manual_tags;
+		}
+
+		return self::infer_recipe_dietary_tags( $recipe );
+	}
+
+	private static function infer_recipe_dietary_tags( array $recipe ): array {
+		$ingredients = array_values( array_filter( array_map( 'strtolower', array_map( 'trim', (array) ( $recipe['ingredients'] ?? [] ) ) ) ) );
+		$text = strtolower(
+			implode( ' ', $ingredients ) . ' ' .
+			implode( ' ', array_map( 'trim', (array) ( $recipe['instructions'] ?? [] ) ) ) . ' ' .
+			(string) ( $recipe['recipe_name'] ?? '' )
+		);
+		$protein = (float) ( $recipe['estimated_protein_g'] ?? 0 );
+		$carbs = (float) ( $recipe['estimated_carbs_g'] ?? 0 );
+		$fat = (float) ( $recipe['estimated_fat_g'] ?? 0 );
+		$calories = (float) ( $recipe['estimated_calories'] ?? 0 );
+		$tags = [];
+
+		$meat_terms = [ 'beef', 'steak', 'chicken', 'turkey', 'pork', 'ham', 'bacon', 'sausage', 'salmon', 'tuna', 'shrimp', 'fish', 'anchovy', 'gelatin' ];
+		$animal_terms = array_merge( $meat_terms, [ 'egg', 'eggs', 'milk', 'cheese', 'yogurt', 'yoghurt', 'butter', 'cream', 'whey', 'casein', 'honey' ] );
+		$grain_terms = [ 'rice', 'oats', 'oatmeal', 'bread', 'pasta', 'quinoa', 'tortilla', 'wrap', 'bun', 'bagel', 'flour', 'wheat', 'barley', 'corn' ];
+		$legume_terms = [ 'beans', 'bean', 'lentils', 'lentil', 'peas', 'pea', 'peanut', 'peanuts', 'chickpea', 'chickpeas', 'soy', 'tofu', 'tempeh', 'edamame' ];
+		$sugar_terms = [ 'sugar', 'maple', 'honey', 'syrup', 'agave', 'sweetener' ];
+
+		if ( $protein >= 25 || ( $protein >= 20 && $calories > 0 && ( $protein * 4 ) / $calories >= 0.25 ) ) {
+			$tags[] = 'high_protein';
+		}
+		if ( ! self::recipe_text_contains_any( $text, $meat_terms ) ) {
+			$tags[] = 'vegetarian';
+		}
+		if ( ! self::recipe_text_contains_any( $text, $animal_terms ) ) {
+			$tags[] = 'vegan';
+		}
+		if ( $carbs <= 18 && ( $fat >= 12 || self::recipe_text_contains_any( $text, [ 'cauliflower rice', 'avocado', 'almond flour', 'zucchini noodles' ] ) ) ) {
+			$tags[] = 'keto';
+		}
+
+		$is_paleo = ! self::recipe_text_contains_any( $text, array_merge( $grain_terms, $legume_terms, [ 'milk', 'cheese', 'yogurt', 'butter', 'cream' ] ) );
+		if ( $is_paleo ) {
+			$tags[] = 'paleo';
+		}
+		if ( $is_paleo && ! self::recipe_text_contains_any( $text, $sugar_terms ) ) {
+			$tags[] = 'whole30';
+		}
+		if (
+			self::recipe_text_contains_any( $text, [ 'olive oil', 'salmon', 'tuna', 'sardine', 'chickpea', 'lentil', 'cucumber', 'tomato', 'herb', 'feta' ] ) &&
+			! self::recipe_text_contains_any( $text, [ 'bacon', 'sausage', 'deep fried' ] )
+		) {
+			$tags[] = 'mediterranean';
+		}
+		if (
+			self::recipe_text_contains_any( $text, [ 'fruit', 'berries', 'apple', 'banana', 'spinach', 'broccoli', 'salmon', 'chicken', 'beans', 'lentils', 'oats', 'brown rice', 'quinoa' ] ) &&
+			! self::recipe_text_contains_any( $text, [ 'bacon', 'sausage', 'heavy cream', 'fried' ] )
+		) {
+			$tags[] = 'dash';
+		}
+
+		return self::sanitize_recipe_dietary_tags( $tags );
+	}
+
+	private static function recipe_text_contains_any( string $text, array $needles ): bool {
+		foreach ( $needles as $needle ) {
+			$value = strtolower( trim( (string) $needle ) );
+			if ( '' !== $value && str_contains( $text, $value ) ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
 	private static function decode_json_list( $value ): array {
 		if ( ! $value ) {
 			return [];
@@ -334,7 +420,9 @@ class NutritionRecipeController extends RestController {
 					'estimated_protein_g'  => (float) ( $recipe['estimated_protein_g'] ?? 0 ),
 					'estimated_carbs_g'    => (float) ( $recipe['estimated_carbs_g'] ?? 0 ),
 					'estimated_fat_g'      => (float) ( $recipe['estimated_fat_g'] ?? 0 ),
+					'dietary_tags'         => self::sanitize_recipe_dietary_tags( $recipe['dietary_tags'] ?? [] ),
 					'why_this_works'       => sanitize_text_field( (string) ( $recipe['why_this_works'] ?? 'Added from your recipe library.' ) ),
+					'image_url'            => esc_url_raw( (string) ( $recipe['image_url'] ?? '' ) ),
 				];
 			}
 		}
@@ -379,6 +467,8 @@ class NutritionRecipeController extends RestController {
 			$suggestion['pantry_match_count']    = count( $suggestion['on_hand_ingredients'] );
 			$suggestion['pantry_missing_count']  = count( $suggestion['missing_ingredients'] );
 			$suggestion['preferred_match_count'] = $preferred_matches;
+			$suggestion['dietary_tags']          = self::recipe_tags_for_suggestion( $suggestion );
+			$suggestion['image_url']             = esc_url_raw( (string) ( $suggestion['image_url'] ?? '' ) );
 			return $suggestion;
 		}, $suggestions );
 
@@ -700,7 +790,7 @@ class NutritionRecipeController extends RestController {
 		$table = $wpdb->prefix . 'fit_recipe_suggestions';
 		$rows  = $wpdb->get_results( $wpdb->prepare(
 			"SELECT recipe_key, meal_type, recipe_name, ingredients_json, instructions_json, estimated_calories,
-			        estimated_protein_g, estimated_carbs_g, estimated_fat_g, why_this_works, source
+			        estimated_protein_g, estimated_carbs_g, estimated_fat_g, dietary_tags_json, why_this_works, source, image_url
 			 FROM {$table}
 			 WHERE user_id = %d AND is_cookbook = 1
 			 ORDER BY updated_at DESC, id DESC",
@@ -857,8 +947,10 @@ class NutritionRecipeController extends RestController {
 				'estimated_protein_g' => round( (float) ( $recipe['estimated_protein_g'] ?? 0 ), 2 ),
 				'estimated_carbs_g'   => round( (float) ( $recipe['estimated_carbs_g'] ?? 0 ), 2 ),
 				'estimated_fat_g'     => round( (float) ( $recipe['estimated_fat_g'] ?? 0 ), 2 ),
+				'dietary_tags'        => self::recipe_tags_for_suggestion( $recipe ),
 				'why_this_works'      => sanitize_text_field( (string) ( $recipe['why_this_works'] ?? '' ) ),
 				'source'              => sanitize_key( (string) ( $recipe['source'] ?? '' ) ) ?: 'generated',
+				'image_url'           => esc_url_raw( (string) ( $recipe['image_url'] ?? '' ) ),
 				'on_hand_ingredients' => self::unique_recipe_ingredients( (array) ( $recipe['on_hand_ingredients'] ?? [] ) ),
 				'missing_ingredients' => self::unique_recipe_ingredients( (array) ( $recipe['missing_ingredients'] ?? [] ) ),
 			];
@@ -882,15 +974,17 @@ class NutritionRecipeController extends RestController {
 			'estimated_protein_g' => (float) ( $recipe['estimated_protein_g'] ?? 0 ),
 			'estimated_carbs_g'   => (float) ( $recipe['estimated_carbs_g'] ?? 0 ),
 			'estimated_fat_g'     => (float) ( $recipe['estimated_fat_g'] ?? 0 ),
+			'dietary_tags_json'   => wp_json_encode( (array) ( $recipe['dietary_tags'] ?? [] ) ),
 			'why_this_works'      => (string) ( $recipe['why_this_works'] ?? '' ),
 			'source'              => (string) ( $recipe['source'] ?? 'generated' ),
+			'image_url'           => (string) ( $recipe['image_url'] ?? '' ),
 			'is_cookbook'         => $is_cookbook ? 1 : 0,
 			'fits_goal'           => 1,
 		];
 	}
 
 	private static function map_recipe_suggestion_row( array $row ): array {
-		return [
+		$recipe = [
 			'key'                 => sanitize_title( (string) ( $row['recipe_key'] ?? '' ) ),
 			'recipe_name'         => sanitize_text_field( (string) ( $row['recipe_name'] ?? '' ) ),
 			'meal_type'           => sanitize_key( (string) ( $row['meal_type'] ?? 'lunch' ) ) ?: 'lunch',
@@ -900,9 +994,14 @@ class NutritionRecipeController extends RestController {
 			'estimated_protein_g' => round( (float) ( $row['estimated_protein_g'] ?? 0 ), 2 ),
 			'estimated_carbs_g'   => round( (float) ( $row['estimated_carbs_g'] ?? 0 ), 2 ),
 			'estimated_fat_g'     => round( (float) ( $row['estimated_fat_g'] ?? 0 ), 2 ),
+			'dietary_tags'        => self::sanitize_recipe_dietary_tags( (array) json_decode( (string) ( $row['dietary_tags_json'] ?? '[]' ), true ) ),
 			'why_this_works'      => sanitize_text_field( (string) ( $row['why_this_works'] ?? '' ) ),
 			'source'              => sanitize_key( (string) ( $row['source'] ?? '' ) ) ?: 'generated',
+			'image_url'           => esc_url_raw( (string) ( $row['image_url'] ?? '' ) ),
 		];
+
+		$recipe['dietary_tags'] = self::recipe_tags_for_suggestion( $recipe );
+		return $recipe;
 	}
 
 	private static function merge_grocery_gap_items( array $items ): array {
