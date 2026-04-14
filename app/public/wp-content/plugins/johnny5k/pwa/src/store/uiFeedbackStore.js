@@ -15,6 +15,27 @@ function normalizeToast(input = {}) {
     details: Array.isArray(input.details)
       ? input.details.map(detail => String(detail || '').trim()).filter(Boolean)
       : [],
+    actions: Array.isArray(input.actions)
+      ? input.actions
+        .map((action) => {
+          if (!action || typeof action !== 'object') {
+            return null
+          }
+
+          const label = String(action.label || '').trim()
+          if (!label) {
+            return null
+          }
+
+          return {
+            label,
+            onClick: typeof action.onClick === 'function' ? action.onClick : null,
+            dismissOnClick: action.dismissOnClick !== false,
+            tone: action.tone === 'primary' ? 'primary' : 'secondary',
+          }
+        })
+        .filter(Boolean)
+      : [],
     persistent: Boolean(input.persistent),
     kind: String(input.kind || '').trim(),
   }

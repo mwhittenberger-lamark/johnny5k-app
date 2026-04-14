@@ -64,6 +64,36 @@
   opacity: 0.92;
 }
 
+.app-toast-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.app-toast-action {
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  background: rgba(255, 255, 255, 0.08);
+  color: inherit;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.app-toast-action.primary {
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.38);
+}
+
+.app-toast-action:hover,
+.app-toast-action:focus-visible {
+  background: rgba(255, 255, 255, 0.16);
+  outline: none;
+}
+
 .app-toast-dismiss {
   border: 0;
   background: transparent;

@@ -31,6 +31,80 @@ class CalorieEngineTest extends ServiceTestCase {
 		$this->assertSame( 2925, $result['tdee'] );
 	}
 
+	public function test_calculate_initial_uses_weight_override_for_weight_based_targets(): void {
+		$profile = (object) [
+			'date_of_birth' => '',
+			'starting_weight_lb' => 200,
+			'height_cm' => 180,
+			'sex' => 'male',
+			'activity_level' => 'moderate',
+		];
+		$goal = (object) [
+			'goal_type' => 'cut',
+			'goal_rate' => 'moderate',
+		];
+
+		$result = CalorieEngine::calculate_initial( $profile, $goal, 190.0 );
+
+		$this->assertSame( 2105, $result['calories'] );
+		$this->assertSame( 190, $result['protein_g'] );
+		$this->assertSame( 135, $result['carbs_g'] );
+		$this->assertSame( 90, $result['fat_g'] );
+		$this->assertSame( 1842, $result['bmr'] );
+		$this->assertSame( 2855, $result['tdee'] );
+	}
+
+	public function test_refresh_active_goal_targets_updates_active_goal_from_latest_logged_weight(): void {
+		$db = $this->wpdb();
+
+		$db->expectGetRow( 'SELECT * FROM wp_fit_user_profiles', (object) [
+			'user_id' => 42,
+			'date_of_birth' => '',
+			'starting_weight_lb' => 200,
+			'height_cm' => 180,
+			'sex' => 'male',
+			'activity_level' => 'moderate',
+		] );
+		$db->expectGetRow( 'SELECT * FROM wp_fit_user_goals', (object) [
+			'id' => 9,
+			'user_id' => 42,
+			'goal_type' => 'cut',
+			'goal_rate' => 'moderate',
+			'target_calories' => 2175,
+			'target_protein_g' => 200,
+			'target_carbs_g' => 138,
+			'target_fat_g' => 92,
+		] );
+		$db->expectGetVar( 'SELECT weight_lb FROM wp_fit_body_metrics', 190.0 );
+
+		$result = CalorieEngine::refresh_active_goal_targets( 42 );
+
+		$this->assertIsArray( $result );
+		$this->assertSame( 190.0, $result['weight_lb'] );
+		$this->assertSame( 2105, $result['targets']['calories'] );
+		$this->assertSame( 190, $result['targets']['protein_g'] );
+		$this->assertSame( 135, $result['targets']['carbs_g'] );
+		$this->assertSame( 90, $result['targets']['fat_g'] );
+		$this->assertCount( 1, $db->updated );
+		$this->assertSame( 'wp_fit_user_goals', $db->updated[0]['table'] );
+		$this->assertSame(
+			[
+				'target_calories' => 2105,
+				'target_protein_g' => 190,
+				'target_carbs_g' => 135,
+				'target_fat_g' => 90,
+			],
+			$db->updated[0]['data']
+		);
+		$this->assertSame(
+			[
+				'id' => 9,
+				'user_id' => 42,
+			],
+			$db->updated[0]['where']
+		);
+	}
+
 	public function test_calculate_weekly_adjustment_uses_conservative_decrease_when_cut_is_stalled_and_recovery_is_poor(): void {
 		$db = $this->wpdb();
 
@@ -50,6 +124,7 @@ class CalorieEngineTest extends ServiceTestCase {
 		$db->expectGetVar( 'AVG(steps) FROM wp_fit_step_logs', 7600 );
 		$db->expectGetVar( 'SUM(duration_minutes), 0) FROM wp_fit_cardio_logs', 30 );
 		$db->expectGetVar( 'COUNT(*) FROM wp_fit_user_health_flags', 0 );
+		$db->expectGetVar( 'SELECT weight_lb FROM wp_fit_body_metrics', 200.0 );
 		$db->expectGetRow( 'SELECT * FROM wp_fit_user_profiles WHERE user_id = 7', (object) [
 			'starting_weight_lb' => 200,
 		] );
@@ -96,6 +171,7 @@ class CalorieEngineTest extends ServiceTestCase {
 		$db->expectGetVar( 'AVG(steps) FROM wp_fit_step_logs', 7400 );
 		$db->expectGetVar( 'SUM(duration_minutes), 0) FROM wp_fit_cardio_logs', 45 );
 		$db->expectGetVar( 'COUNT(*) FROM wp_fit_user_health_flags', 0 );
+		$db->expectGetVar( 'SELECT weight_lb FROM wp_fit_body_metrics', 180.0 );
 		$db->expectGetRow( 'SELECT * FROM wp_fit_user_profiles WHERE user_id = 8', (object) [
 			'starting_weight_lb' => 180,
 		] );

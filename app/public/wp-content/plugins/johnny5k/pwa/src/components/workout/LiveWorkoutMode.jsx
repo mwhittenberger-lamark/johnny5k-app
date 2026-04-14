@@ -12,6 +12,8 @@ import {
   formatOpenAiVoiceLabel,
   getPreferredInstantVoice,
   getLiveWorkoutInstantVoiceRate,
+  LIVE_WORKOUT_DEFAULT_INSTANT_VOICE,
+  LIVE_WORKOUT_VOICE_RATE_OPTIONS,
   normalizeInstantVoiceOptions,
   readLiveWorkoutVoicePrefs,
   writeLiveWorkoutVoicePrefs,
@@ -25,8 +27,6 @@ const DEFAULT_REST_TIMING = {
   exerciseMinSeconds: 60,
   exerciseMaxSeconds: 120,
 }
-const LIVE_WORKOUT_INTRO_SKIP_KEY = 'johnny5k.liveWorkoutIntroSkipsRemaining'
-const LIVE_WORKOUT_INTRO_REPEAT_AFTER_SKIPS = 2
 const OPENAI_TTS_TIMEOUT_MS = 4000
 const MAX_VOICE_MESSAGE_AGE_MS = 8000
 const PREMIUM_VOICE_TEST_TEXT = 'Premium voice check. Keep the pace tight and make the next set clean.'
@@ -94,13 +94,18 @@ export default function LiveWorkoutMode({
   const currentLiftRef = useRef(null)
   const johnnyCardRef = useRef(null)
   const coachLogRef = useRef(null)
+  const voiceTestingCardRef = useRef(null)
   const latestAssistantMessageKeyRef = useRef('')
   const restToastTimerRef = useRef(null)
+  const restGuidanceMessageKeyRef = useRef('')
   const voiceSupported = typeof window !== 'undefined' && (window.SpeechRecognition || window.webkitSpeechRecognition)
   const playbackSupported = typeof window !== 'undefined' && typeof window.Audio !== 'undefined'
   const instantVoiceSupported = typeof window !== 'undefined' && typeof window.speechSynthesis !== 'undefined' && typeof window.SpeechSynthesisUtterance !== 'undefined'
   const voicePlaybackSupported = playbackSupported || instantVoiceSupported
   const workoutSessionId = Number(session?.session?.id || 0)
+  const preferredInstantVoiceURI = voicePrefs.instantVoiceURI === LIVE_WORKOUT_DEFAULT_INSTANT_VOICE
+    ? ''
+    : voicePrefs.instantVoiceURI
   const activeExercise = exercises?.[activeExerciseIdx] ?? null
   const totalExerciseCount = Array.isArray(exercises) ? exercises.length : 0
   const totalSetCount = getLiveTotalSetCount(activeExercise)
@@ -113,6 +118,11 @@ export default function LiveWorkoutMode({
   const restGuidance = useMemo(() => buildRestGuidance(lastTransition?.kind, restElapsedSeconds, restTiming), [lastTransition?.kind, restElapsedSeconds, restTiming])
   const liveVoiceMode = String(voicePrefs.liveModeVoiceMode || 'premium').trim().toLowerCase()
   const voiceLabel = formatOpenAiVoiceLabel(voicePrefs.openAiVoice)
+  const selectedInstantVoice = useMemo(
+    () => getPreferredInstantVoice(instantVoiceOptions, voicePrefs.instantVoiceURI),
+    [instantVoiceOptions, voicePrefs.instantVoiceURI],
+  )
+  const selectedInstantVoiceLabel = formatInstantVoiceLabel(selectedInstantVoice)
   const defaultLiveWorkoutFrames = useMemo(() => getDefaultLiveWorkoutFrames(appImages), [appImages])
   const voiceTestBusy = premiumVoiceTest.status === 'running' || instantVoiceTest.status === 'running'
   const scrollBehavior = getAccessibleScrollBehavior()
@@ -138,7 +148,6 @@ export default function LiveWorkoutMode({
   const currentFrame = coachFrames[frameIndex % coachFrames.length]
   const dismissIntroModal = useCallback(() => {
     setShowIntroModal(false)
-    writeLiveWorkoutIntroSkips(LIVE_WORKOUT_INTRO_REPEAT_AFTER_SKIPS)
   }, [])
 
   useEffect(() => {
@@ -303,7 +312,7 @@ export default function LiveWorkoutMode({
   }, [activeExercise?.id, activeExercise?.sets, currentSet, currentSetIdx, currentSetKey, isOpen])
 
   const enqueueCoachEvent = useCallback((event) => {
-    queueRef.current.push(event)
+    queueRef.current = coalesceQueuedCoachEvents(queueRef.current, event)
     void pumpCoachQueueRef.current?.()
   }, [])
 
@@ -322,12 +331,19 @@ export default function LiveWorkoutMode({
     setInstantVoiceTest(buildVoiceTestState())
     setLatestVoiceIssue(null)
     setLastTransition({ kind: 'exercise', at: Date.now(), summary: 'Workout live mode opened.' })
-    enqueueCoachEvent({
-      type: 'session_opened',
-      summary: `The user opened Live Workout Mode for a ${formatToken(displayDayType || session?.session?.planned_day_type || 'workout').toLowerCase()} session.`,
-      manual: false,
+    appendCoachMessage({
+      role: 'assistant',
+      text: buildSessionOpenedCoachMessage({
+        activeExercise,
+        displayDayType,
+        totalExerciseCount,
+      }),
+      eventType: 'session_opened',
+      createdAt: Date.now(),
+      actions: [],
     })
-  }, [displayDayType, enqueueCoachEvent, isOpen, session?.session?.planned_day_type, workoutSessionId])
+    setCoachStatus('Johnny set the opening cue for live mode.')
+  }, [activeExercise, displayDayType, isOpen, totalExerciseCount, workoutSessionId])
 
   useEffect(() => {
     if (!isOpen || coachMessages[coachMessages.length - 1]?.role !== 'assistant') return
@@ -379,6 +395,7 @@ export default function LiveWorkoutMode({
       useInstantVoice,
       openAiVoice: voicePrefs.openAiVoice,
       rate: voicePrefs.rate,
+      instantVoiceURI: preferredInstantVoiceURI,
       stopPlayback: stopTtsPlayback,
       audioSupported: playbackSupported,
       instantSupported: instantVoiceSupported,
@@ -403,7 +420,7 @@ export default function LiveWorkoutMode({
         })
       },
     })
-  }, [coachMessages, instantVoiceSupported, isOpen, liveVoiceMode, playbackSupported, stopTtsPlayback, voicePlaybackSupported, voicePrefs.openAiVoice, voicePrefs.rate, voiceTestingOpen, voiceLabel, workoutSessionId])
+  }, [coachMessages, instantVoiceSupported, isOpen, liveVoiceMode, playbackSupported, preferredInstantVoiceURI, stopTtsPlayback, voicePlaybackSupported, voicePrefs.openAiVoice, voicePrefs.rate, voiceTestingOpen, voiceLabel, workoutSessionId])
 
   useEffect(() => {
     if (!isOpen || !lastTransition?.summary) return
@@ -423,6 +440,29 @@ export default function LiveWorkoutMode({
       setRestToast(current => (current?.key === `${lastTransition.kind}-${lastTransition.at}` ? null : current))
     }, 10000)
   }, [isOpen, lastTransition, restTiming])
+
+  useEffect(() => {
+    if (!isOpen || !workoutSessionId || voiceTestingOpen) return
+    if (!lastTransition?.at || !activeExercise?.exercise_name) return
+    if (!['sweet', 'drift'].includes(restGuidance.tone)) return
+
+    const nextKey = `${workoutSessionId}:${lastTransition.at}:${restGuidance.tone}`
+    if (restGuidanceMessageKeyRef.current === nextKey) return
+
+    restGuidanceMessageKeyRef.current = nextKey
+    appendCoachMessage({
+      role: 'assistant',
+      text: buildRestCoachMessage({
+        exerciseName: activeExercise.exercise_name,
+        kind: lastTransition.kind,
+        restGuidance,
+      }),
+      eventType: `rest_${restGuidance.tone}`,
+      createdAt: Date.now(),
+      actions: [],
+    })
+    setCoachStatus('Johnny updated the live rest cue.')
+  }, [activeExercise?.exercise_name, isOpen, lastTransition, restGuidance, voiceTestingOpen, workoutSessionId])
 
   useEffect(() => {
     if (!isOpen) return undefined
@@ -447,14 +487,6 @@ export default function LiveWorkoutMode({
 
   useEffect(() => {
     if (!isOpen || !workoutSessionId) return
-
-    const skipsRemaining = readLiveWorkoutIntroSkips()
-    if (skipsRemaining > 0) {
-      writeLiveWorkoutIntroSkips(skipsRemaining - 1)
-      setShowIntroModal(false)
-      return
-    }
-
     setShowIntroModal(true)
   }, [isOpen, workoutSessionId])
 
@@ -499,6 +531,9 @@ export default function LiveWorkoutMode({
         `live-workout-${workoutSessionId}`,
         'live_workout',
         {
+          chatOptions: nextEvent?.manual
+            ? { thread_history: 'full' }
+            : { thread_history: 'short' },
           context: buildLiveWorkoutContext({
             session,
             exercises,
@@ -554,6 +589,7 @@ export default function LiveWorkoutMode({
       summary: `The user moved to exercise ${nextIndex + 1} of ${totalExerciseCount}: ${nextExercise?.exercise_name || 'next exercise'}.`,
       exerciseContext: buildLiveExerciseSnapshot(nextExercise),
     })
+    setCoachStatus('Johnny is updating for the next exercise.')
   }
 
   function moveSet(direction) {
@@ -567,10 +603,19 @@ export default function LiveWorkoutMode({
       at: Date.now(),
       summary: `Moved to set ${nextSetNumber} for ${activeExercise.exercise_name}.`,
     })
-    enqueueCoachEvent({
-      type: 'set_changed',
-      summary: `The user moved to set ${nextSetNumber} for ${activeExercise.exercise_name}.`,
+    appendCoachMessage({
+      role: 'assistant',
+      text: buildSetNavigationCoachMessage({
+        exercise: activeExercise,
+        setNumber: nextSetNumber,
+        totalSetCount,
+        restGuidance,
+      }),
+      eventType: 'set_changed',
+      createdAt: Date.now(),
+      actions: [],
     })
+    setCoachStatus('Johnny updated the next-set cue.')
   }
 
   async function handleSaveSet() {
@@ -733,7 +778,21 @@ export default function LiveWorkoutMode({
   }
 
   function handleVoiceTestingToggle(event) {
-    setVoiceTestingOpen(event.currentTarget.open)
+    const nextOpen = event.currentTarget.open
+    setVoiceTestingOpen(nextOpen)
+
+    if (!nextOpen) return
+
+    window.requestAnimationFrame(() => {
+      scrollPanelToSection(voiceTestingCardRef)
+    })
+  }
+
+  function updateVoicePref(field, value) {
+    setVoicePrefs(current => ({
+      ...current,
+      [field]: value,
+    }))
   }
 
   function updateVoiceTestProgress(setter, event, fallbackLabel) {
@@ -799,6 +858,7 @@ export default function LiveWorkoutMode({
       useInstantVoice: false,
       openAiVoice: voicePrefs.openAiVoice,
       rate: voicePrefs.rate,
+      instantVoiceURI: preferredInstantVoiceURI,
       stopPlayback: stopTtsPlayback,
       audioSupported: playbackSupported,
       instantSupported: instantVoiceSupported,
@@ -852,7 +912,7 @@ export default function LiveWorkoutMode({
       stopPlayback: stopTtsPlayback,
       audioSupported: playbackSupported,
       instantSupported: instantVoiceSupported,
-      instantVoiceURI: voiceURI,
+      instantVoiceURI: voiceURI || preferredInstantVoiceURI,
       isJobCurrent: candidateJobId => candidateJobId === speechJobRef.current && isOpenRef.current,
       markSpoken: () => {},
       registerAudio: audio => {
@@ -935,7 +995,7 @@ export default function LiveWorkoutMode({
   const stickyMeta = (
     <div ref={stickyMetaRef} className="live-workout-sticky-meta">
       <div className="live-workout-sticky-meta-copy">
-        {workoutTimerLabel ? <span className="dashboard-chip subtle workout-session-timer">Workout {workoutTimerLabel}</span> : null}
+        {workoutTimerLabel ? <span className="dashboard-chip workout-session-timer">Workout {workoutTimerLabel}</span> : null}
         <span className={`dashboard-chip subtle live-workout-rest-chip ${restGuidance.tone}`}>{restGuidance.label}</span>
       </div>
       <nav className="live-workout-sticky-nav" aria-label="Live workout shortcuts">
@@ -1177,11 +1237,11 @@ export default function LiveWorkoutMode({
           </aside>
         </div>
 
-        <section className="dash-card live-workout-voice-test-card">
+        <section ref={voiceTestingCardRef} className="dash-card live-workout-voice-test-card">
           <details open={voiceTestingOpen} onToggle={handleVoiceTestingToggle}>
             <summary className="live-workout-voice-test-summary">
               <div>
-                <span className="dashboard-chip subtle">Hidden tools</span>
+                <span className="dashboard-chip subtle">Voice settings</span>
                 <strong>Live Voice Testing</strong>
                 <span>{voiceTestingOpen ? 'Workout timers are paused while this panel is open.' : 'Open to test premium and instant voice on this device.'}</span>
               </div>
@@ -1202,28 +1262,38 @@ export default function LiveWorkoutMode({
               <article className="live-workout-voice-test-block">
                 <div className="live-workout-voice-test-copy">
                   <strong>Computer / instant voice</strong>
-                  <p className="settings-subtitle">Live mode always uses the default voice from this device when instant voice is active.</p>
-                  <button type="button" className="btn-outline small" onClick={() => runInstantVoiceTest()} disabled={!instantVoiceSupported || voiceTestBusy}>
-                    {instantVoiceTest.status === 'running' ? 'Testing instant...' : 'Test default instant voice'}
+                  <p className="settings-subtitle">Pick which device voice live coach uses when instant voice is active, plus the playback speed.</p>
+                  <label>
+                    <span>Computer voice</span>
+                    <select
+                      value={voicePrefs.instantVoiceURI || LIVE_WORKOUT_DEFAULT_INSTANT_VOICE}
+                      onChange={event => updateVoicePref('instantVoiceURI', event.target.value)}
+                      disabled={!instantVoiceSupported || !instantVoiceOptions.length}
+                    >
+                      <option value={LIVE_WORKOUT_DEFAULT_INSTANT_VOICE}>Default device voice</option>
+                      {instantVoiceOptions.map(voice => (
+                        <option key={voice.id} value={voice.voiceURI}>{formatInstantVoiceLabel(voice)}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    <span>Playback speed</span>
+                    <select
+                      value={String(voicePrefs.rate)}
+                      onChange={event => updateVoicePref('rate', Number(event.target.value))}
+                    >
+                      {LIVE_WORKOUT_VOICE_RATE_OPTIONS.map(rate => (
+                        <option key={rate} value={rate}>{rate.toFixed(rate % 1 === 0 ? 0 : 2)}x</option>
+                      ))}
+                    </select>
+                  </label>
+                  <p className="settings-subtitle">Current device voice: {selectedInstantVoiceLabel}. Instant playback runs at {getLiveWorkoutInstantVoiceRate(voicePrefs.rate, false).toFixed(voicePrefs.rate % 1 === 0 ? 0 : 2)}x before any browser-level acceleration.</p>
+                  <button type="button" className="btn-outline small" onClick={() => runInstantVoiceTest(preferredInstantVoiceURI)} disabled={!instantVoiceSupported || voiceTestBusy}>
+                    {instantVoiceTest.status === 'running' ? 'Testing instant...' : 'Test selected instant voice'}
                   </button>
                   {!instantVoiceSupported ? <p className="error live-workout-inline-error">This browser does not expose the computer voice APIs.</p> : null}
                 </div>
                 <VoiceTestResultCard result={instantVoiceTest} idleMessage="No instant voice test has run yet." />
-                {instantVoiceOptions.length > 1 ? (
-                  <div className="live-workout-voice-option-list">
-                    {instantVoiceOptions.map(voice => (
-                      <button
-                        key={voice.id}
-                        type="button"
-                        className={`btn-ghost small ${voice.default ? 'active' : ''}`}
-                        onClick={() => runInstantVoiceTest(voice.voiceURI)}
-                        disabled={voiceTestBusy}
-                      >
-                        {formatInstantVoiceLabel(voice)}
-                      </button>
-                    ))}
-                  </div>
-                ) : null}
                 {latestVoiceIssue ? (
                   <div className="live-workout-voice-test-diagnostic">
                     <strong>Most recent voice issue</strong>
@@ -1286,17 +1356,49 @@ function buildCoachPrompt(event, activeExercise) {
   const userText = String(event?.userText || '').trim()
   const exerciseContext = event?.exerciseContext || buildLiveExerciseSnapshot(activeExercise)
   const exerciseName = exerciseContext?.exercise_name || activeExercise?.exercise_name || 'the current exercise'
+  const coachingCueGuidance = buildCoachingCuePromptFragment(exerciseContext)
 
   if (event?.manual && userText) {
-    return `You are Johnny coaching a user live during their workout inside Johnny5k. Current exercise: ${exerciseName}. Answer the user's question directly in no more than 3 short sentences. Give one concrete coaching cue when possible. You can give form and setup advice, but you cannot see the user, so do not claim visual confirmation with lines like "great form" or "that looked clean" unless the user said that first. If the question is about form, setup, or how to perform the movement, prefer returning an open_exercise_demo action for the current exercise. User question: ${userText}`
+    return `You are Johnny coaching a user live during their workout inside Johnny5k. Current exercise: ${exerciseName}. Answer the user's question directly in no more than 3 short sentences. Give one concrete coaching cue when possible. ${coachingCueGuidance} You can give form and setup advice, but you cannot see the user, so do not claim visual confirmation with lines like "great form" or "that looked clean" unless the user said that first. If the question is about form, setup, or how to perform the movement, prefer returning an open_exercise_demo action for the current exercise. User question: ${userText}`
   }
 
   if (event?.type === 'exercise_changed') {
     const loadGuidance = buildLoadGuidancePromptFragment(exerciseContext)
-    return `You are Johnny coaching a user live during their workout inside Johnny5k. The user just moved to a new exercise. Respond with 1 to 2 short sentences only. ${loadGuidance} Give a direct setup cue or execution reminder for the first working set. Do not repeat the whole workout plan. Event: ${eventSummary}`
+    return `You are Johnny coaching a user live during their workout inside Johnny5k. The user just moved to a new exercise. Respond with 1 to 2 short sentences only. ${loadGuidance} Give a direct setup cue or execution reminder for the first working set. ${coachingCueGuidance} Do not repeat the whole workout plan. Event: ${eventSummary}`
   }
 
-  return `You are Johnny coaching a user live during their workout inside Johnny5k. The app is sending you a workout-state update. Respond with 1 to 2 short sentences only. Give live encouragement, one useful cue, or rest-timing guidance based on the current state. Do not repeat the entire workout plan. Event: ${eventSummary}`
+  return `You are Johnny coaching a user live during their workout inside Johnny5k. The app is sending you a workout-state update. Respond with 1 to 2 short sentences only. Give live encouragement, one useful cue, or rest-timing guidance based on the current state. ${coachingCueGuidance} Do not repeat the entire workout plan. Event: ${eventSummary}`
+}
+
+function buildSessionOpenedCoachMessage({ activeExercise, displayDayType, totalExerciseCount }) {
+  const workoutLabel = formatToken(displayDayType || 'workout').toLowerCase()
+  const exerciseName = activeExercise?.exercise_name || 'your first exercise'
+  const repRange = formatRepRange(activeExercise)
+  const queueLabel = totalExerciseCount > 1 ? `${totalExerciseCount} exercises are queued.` : 'You are on the only exercise in the session.'
+
+  return `Live mode is on for this ${workoutLabel} session. Open with ${exerciseName} for ${repRange}, and get moving early so the pace stays tight. ${queueLabel}`
+}
+
+function buildSetNavigationCoachMessage({ exercise, setNumber, totalSetCount, restGuidance }) {
+  const exerciseName = exercise?.exercise_name || 'the current exercise'
+  const repRange = formatRepRange(exercise)
+  const totalSetsLabel = totalSetCount > 0 ? `Set ${setNumber} of ${totalSetCount}` : `Set ${setNumber}`
+
+  return `${totalSetsLabel} is up for ${exerciseName}. Stay inside ${repRange} and keep rest in the ${restGuidance.windowLabel} range so the next set does not go stale.`
+}
+
+function buildRestCoachMessage({ exerciseName, kind, restGuidance }) {
+  const movementLabel = exerciseName || 'the current lift'
+
+  if (restGuidance.tone === 'sweet') {
+    return kind === 'exercise'
+      ? `Transition timing is in the sweet spot. Roll straight into ${movementLabel} while you are still inside the ${restGuidance.windowLabel} target.`
+      : `Rest is in the sweet spot for ${movementLabel}. Take the next set now while you are still inside the ${restGuidance.windowLabel} target.`
+  }
+
+  return kind === 'exercise'
+    ? `Transition time is drifting long. Get ${movementLabel} started now so the session stays sharp.`
+    : `Rest is drifting long on ${movementLabel}. Start the next set now unless you need a little more time for safety.`
 }
 
 function buildLiveWorkoutContext({
@@ -1327,6 +1429,7 @@ function buildLiveWorkoutContext({
     active_equipment: activeExercise?.equipment || '',
     active_target_reps: formatRepRange(activeExercise),
     active_recommended_weight: Number(activeExercise?.recommended_weight || 0) || null,
+    active_coaching_cues: normalizeLiveWorkoutCoachingCues(activeExercise?.coaching_cues ?? activeExercise?.coaching_cues_json),
     active_recent_history: normalizeLiveWorkoutHistory(activeExercise?.recent_history),
     active_planned_sets: Number(activeExercise?.planned_sets || 0),
     completed_sets_for_exercise: activeExercise?.sets?.filter(set => set.completed).length || 0,
@@ -1371,8 +1474,29 @@ function buildLiveExerciseSnapshot(exercise) {
     equipment: exercise.equipment || '',
     planned_rep_range: formatRepRange(exercise),
     recommended_weight: Number(exercise.recommended_weight || 0) || null,
+    coaching_cues: normalizeLiveWorkoutCoachingCues(exercise.coaching_cues ?? exercise.coaching_cues_json),
     recent_history: normalizeLiveWorkoutHistory(exercise.recent_history),
   }
+}
+
+function normalizeLiveWorkoutCoachingCues(value) {
+  if (!value) return []
+
+  const list = Array.isArray(value)
+    ? value
+    : (() => {
+        try {
+          const parsed = JSON.parse(value)
+          return Array.isArray(parsed) ? parsed : []
+        } catch {
+          return []
+        }
+      })()
+
+  return list
+    .map(entry => String(entry || '').trim())
+    .filter(Boolean)
+    .slice(0, 4)
 }
 
 function normalizeLiveWorkoutHistory(history) {
@@ -1410,6 +1534,18 @@ function buildLoadGuidancePromptFragment(exerciseContext) {
   }
 
   return 'If no prior loading data exists, say that clearly and give a practical first-set feel target instead of inventing a number.'
+}
+
+function buildCoachingCuePromptFragment(exerciseContext) {
+  const coachingCues = Array.isArray(exerciseContext?.coaching_cues)
+    ? exerciseContext.coaching_cues.filter(Boolean).slice(0, 3)
+    : []
+
+  if (!coachingCues.length) {
+    return 'If you give a form cue, keep it practical and specific to the lift.'
+  }
+
+  return `Use these known coaching cues when relevant: ${coachingCues.join('; ')}.`
 }
 
 function formatLiveWorkoutWeight(value, equipment = '') {
@@ -1490,6 +1626,20 @@ function buildSavedSetSummary(exercise, currentSetIdx, payload) {
   return `${parts.join(' • ')}.`
 }
 
+function coalesceQueuedCoachEvents(queue, nextEvent) {
+  const normalizedQueue = Array.isArray(queue) ? queue.filter(Boolean) : []
+  if (!nextEvent || typeof nextEvent !== 'object') return normalizedQueue
+
+  if (nextEvent.manual) {
+    return [...normalizedQueue, nextEvent]
+  }
+
+  return [
+    ...normalizedQueue.filter(candidate => candidate?.manual),
+    nextEvent,
+  ]
+}
+
 function formatRepRange(exercise) {
   const min = Number(exercise?.planned_rep_min || 0)
   const max = Number(exercise?.planned_rep_max || 0)
@@ -1550,20 +1700,6 @@ function formatDurationLabel(seconds) {
 
   const minutes = normalized / 60
   return `${Number.isInteger(minutes) ? minutes : minutes.toFixed(1)} min`
-}
-
-function readLiveWorkoutIntroSkips() {
-  if (typeof window === 'undefined') return 0
-
-  const rawValue = window.localStorage.getItem(LIVE_WORKOUT_INTRO_SKIP_KEY)
-  const parsed = Number.parseInt(rawValue || '0', 10)
-  if (Number.isNaN(parsed) || parsed < 0) return 0
-  return parsed
-}
-
-function writeLiveWorkoutIntroSkips(value) {
-  if (typeof window === 'undefined') return
-  window.localStorage.setItem(LIVE_WORKOUT_INTRO_SKIP_KEY, String(Math.max(0, Number(value || 0))))
 }
 
 function buildVoiceTestState() {

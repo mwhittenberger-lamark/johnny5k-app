@@ -21,6 +21,8 @@ class AiService {
 	private const DEFAULT_MODEL    = 'gpt-4o-mini';
 	private const RESPONSES_ENDPOINT = 'https://api.openai.com/v1/responses';
 	private const AUDIO_SPEECH_ENDPOINT = 'https://api.openai.com/v1/audio/speech';
+	private const DEFAULT_CHAT_HISTORY_LIMIT = 18;
+	private const SHORT_CHAT_HISTORY_LIMIT = 2;
 	private const SUPPORTED_ACTION_SCREENS = [ 'nutrition', 'saved_meals', 'recipes', 'grocery_gap', 'pantry', 'steps', 'sleep', 'weight', 'workouts', 'cardio', 'workout', 'body', 'dashboard', 'settings' ];
 	private const SUPPORTED_WORKFLOWS = [ 'fix_macros', 'plan_next_meal', 'close_grocery_gap', 'review_recovery', 'build_tomorrow_plan' ];
 	private const MAX_TOOL_MEAL_ROWS = 12;
@@ -49,11 +51,13 @@ class AiService {
 	 * @param  int    $user_id
 	 * @param  string $thread_key  Unique identifier for this conversation thread.
 	 * @param  string $user_message
+	 * @param  array<string,mixed> $chat_options
 	 * @return array{reply:string, tokens_in:int, tokens_out:int, sources:array<int,array{url:string,title:string}>, used_web_search:bool, model:string, used_tools:array<int,string>, action_results:array<int,array<string,mixed>>}|WP_Error
 	 */
-	public static function chat( int $user_id, string $thread_key, string $user_message, string $mode = 'general', array $context_overrides = [] ) {
+	public static function chat( int $user_id, string $thread_key, string $user_message, string $mode = 'general', array $context_overrides = [], array $chat_options = [] ) {
 		global $wpdb;
 		$p = $wpdb->prefix;
+		$history_settings = self::resolve_chat_history_settings( $chat_options );
 
 		// Ensure thread row exists
 		$thread = $wpdb->get_row( $wpdb->prepare(
@@ -72,14 +76,17 @@ class AiService {
 			$thread_summary = (string) ( $thread->summary_text ?? '' );
 		}
 
-		// Load conversation history — query only the last 18 rows at DB level
-		$history = $wpdb->get_results( $wpdb->prepare(
-			"SELECT role, message_text FROM {$p}fit_ai_messages
-			 WHERE thread_id = %d AND role IN ('user','assistant')
-			 ORDER BY id DESC LIMIT 18",
-			$thread_id
-		) );
-		$history = array_reverse( $history );
+		$history = [];
+		if ( $history_settings['history_limit'] > 0 ) {
+			$history = $wpdb->get_results( $wpdb->prepare(
+				"SELECT role, message_text FROM {$p}fit_ai_messages
+				 WHERE thread_id = %d AND role IN ('user','assistant')
+				 ORDER BY id DESC LIMIT %d",
+				$thread_id,
+				$history_settings['history_limit']
+			) );
+			$history = array_reverse( $history );
+		}
 
 		$messages = [];
 
@@ -90,7 +97,7 @@ class AiService {
 		];
 
 		// Thread memory block — prepend summary so long-term context is never lost
-		if ( $thread_summary ) {
+		if ( $thread_summary && $history_settings['include_thread_summary'] ) {
 			$messages[] = [
 				'role'    => 'system',
 				'content' => "Coaching memory for this thread:\n" . $thread_summary,
@@ -176,7 +183,9 @@ class AiService {
 		$wpdb->insert( $p . 'fit_ai_messages', $assistant_row );
 
 		// ── Refresh thread summary every 5 assistant turns ────────────────────
-		self::maybe_refresh_thread_summary( $thread_id, $user_id );
+		if ( $history_settings['refresh_thread_summary'] ) {
+			self::maybe_refresh_thread_summary( $thread_id, $user_id );
+		}
 
 		// ── Log cost ─────────────────────────────────────────────────────────
 		CostTracker::log_openai(
@@ -206,6 +215,49 @@ class AiService {
 			'why'             => $why,
 			'context_used'    => $context_used,
 			'confidence'      => $confidence,
+		];
+	}
+
+	/**
+	 * @param array<string,mixed> $chat_options
+	 * @return array{history_limit:int, include_thread_summary:bool, refresh_thread_summary:bool}
+	 */
+	private static function resolve_chat_history_settings( array $chat_options ): array {
+		$thread_history = sanitize_key( (string) ( $chat_options['thread_history'] ?? 'full' ) );
+		$history_limit = self::DEFAULT_CHAT_HISTORY_LIMIT;
+		$include_thread_summary = true;
+		$refresh_thread_summary = true;
+
+		if ( 'short' === $thread_history ) {
+			$history_limit = self::SHORT_CHAT_HISTORY_LIMIT;
+			$include_thread_summary = false;
+			$refresh_thread_summary = false;
+		} elseif ( 'none' === $thread_history ) {
+			$history_limit = 0;
+			$include_thread_summary = false;
+			$refresh_thread_summary = false;
+		}
+
+		if ( array_key_exists( 'history_limit', $chat_options ) ) {
+			$history_limit = max( 0, min( self::DEFAULT_CHAT_HISTORY_LIMIT, (int) $chat_options['history_limit'] ) );
+		}
+
+		if ( array_key_exists( 'include_thread_summary', $chat_options ) ) {
+			$include_thread_summary = (bool) $chat_options['include_thread_summary'];
+		}
+
+		if ( array_key_exists( 'refresh_thread_summary', $chat_options ) ) {
+			$refresh_thread_summary = (bool) $chat_options['refresh_thread_summary'];
+		}
+
+		if ( 0 === $history_limit ) {
+			$include_thread_summary = false;
+		}
+
+		return [
+			'history_limit' => $history_limit,
+			'include_thread_summary' => $include_thread_summary,
+			'refresh_thread_summary' => $refresh_thread_summary,
 		];
 	}
 

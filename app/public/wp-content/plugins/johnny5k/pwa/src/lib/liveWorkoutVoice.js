@@ -11,6 +11,7 @@ const DEFAULT_LIVE_WORKOUT_VOICE_PREFS = {
   assistantAutoSpeak: false,
   liveModeVoiceMode: 'premium',
   openAiVoice: 'alloy',
+  instantVoiceURI: LIVE_WORKOUT_DEFAULT_INSTANT_VOICE,
   rate: 1,
 }
 
@@ -24,6 +25,7 @@ export function normalizeLiveWorkoutVoicePrefs(value) {
   const openAiVoice = String(next.openAiVoice || '').trim().toLowerCase()
   const legacyVoiceUri = String(next.voiceURI || '').trim().toLowerCase()
   const liveModeVoiceMode = String(next.liveModeVoiceMode || '').trim().toLowerCase()
+  const instantVoiceURI = String(next.instantVoiceURI || next.voiceURI || '').trim()
   const resolvedVoice = OPENAI_TTS_VOICE_OPTIONS.includes(openAiVoice)
     ? openAiVoice
     : OPENAI_TTS_VOICE_OPTIONS.includes(legacyVoiceUri)
@@ -40,6 +42,7 @@ export function normalizeLiveWorkoutVoicePrefs(value) {
     assistantAutoSpeak: typeof next.assistantAutoSpeak === 'boolean' ? next.assistantAutoSpeak : DEFAULT_LIVE_WORKOUT_VOICE_PREFS.assistantAutoSpeak,
     liveModeVoiceMode: resolvedMode,
     openAiVoice: resolvedVoice,
+    instantVoiceURI: instantVoiceURI || DEFAULT_LIVE_WORKOUT_VOICE_PREFS.instantVoiceURI,
     rate: LIVE_WORKOUT_VOICE_RATE_OPTIONS.includes(rate) ? rate : DEFAULT_LIVE_WORKOUT_VOICE_PREFS.rate,
   }
 }

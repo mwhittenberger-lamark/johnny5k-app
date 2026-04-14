@@ -99,13 +99,14 @@ class AiChatController extends RestController {
 		$thread_key = sanitize_text_field( $req->get_param( 'thread_key' ) ?: 'main' );
 		$mode       = sanitize_text_field( $req->get_param( 'mode' ) ?: 'general' );
 		$context    = self::sanitize_ai_context_overrides( $req->get_param( 'context' ) );
+		$chat_options = self::sanitize_ai_chat_options( $req->get_param( 'chat_options' ) );
 
 		if ( ! $message ) {
 			return self::message( 'No message provided.', 400 );
 		}
 
 		$thread_key = 'u' . $user_id . '_' . $thread_key;
-		$result     = AiService::chat( $user_id, $thread_key, $message, $mode, $context );
+		$result     = AiService::chat( $user_id, $thread_key, $message, $mode, $context, $chat_options );
 
 		if ( is_wp_error( $result ) ) {
 			return new \WP_REST_Response( [ 'message' => $result->get_error_message() ], 500 );
@@ -389,14 +390,87 @@ class AiChatController extends RestController {
 				continue;
 			}
 
-			if ( is_array( $value ) ) {
-				$clean[ $sanitized_key ] = array_values( array_filter( array_map( static fn( $item ) => sanitize_text_field( (string) $item ), $value ) ) );
+			$sanitized_value = self::sanitize_ai_context_value( $value );
+			if ( null === $sanitized_value ) {
 				continue;
 			}
 
-			$clean[ $sanitized_key ] = sanitize_text_field( (string) $value );
+			$clean[ $sanitized_key ] = $sanitized_value;
 		}
 
 		return $clean;
+	}
+
+	private static function sanitize_ai_chat_options( $options ): array {
+		if ( ! is_array( $options ) ) {
+			return [];
+		}
+
+		$clean = [];
+		$thread_history = sanitize_key( (string) ( $options['thread_history'] ?? '' ) );
+		if ( in_array( $thread_history, [ 'full', 'short', 'none' ], true ) ) {
+			$clean['thread_history'] = $thread_history;
+		}
+
+		if ( isset( $options['history_limit'] ) ) {
+			$clean['history_limit'] = max( 0, min( 18, (int) $options['history_limit'] ) );
+		}
+
+		if ( array_key_exists( 'include_thread_summary', $options ) ) {
+			$clean['include_thread_summary'] = rest_sanitize_boolean( $options['include_thread_summary'] );
+		}
+
+		if ( array_key_exists( 'refresh_thread_summary', $options ) ) {
+			$clean['refresh_thread_summary'] = rest_sanitize_boolean( $options['refresh_thread_summary'] );
+		}
+
+		return $clean;
+	}
+
+	private static function sanitize_ai_context_value( $value ) {
+		if ( null === $value ) {
+			return null;
+		}
+
+		if ( is_bool( $value ) ) {
+			return $value;
+		}
+
+		if ( is_int( $value ) || is_float( $value ) ) {
+			return $value;
+		}
+
+		if ( is_object( $value ) ) {
+			$value = get_object_vars( $value );
+		}
+
+		if ( is_array( $value ) ) {
+			$is_list = array_is_list( $value );
+			$clean   = [];
+
+			foreach ( $value as $key => $item ) {
+				$sanitized_item = self::sanitize_ai_context_value( $item );
+				if ( null === $sanitized_item ) {
+					continue;
+				}
+
+				if ( $is_list ) {
+					$clean[] = $sanitized_item;
+					continue;
+				}
+
+				$sanitized_key = sanitize_key( (string) $key );
+				if ( '' === $sanitized_key ) {
+					continue;
+				}
+
+				$clean[ $sanitized_key ] = $sanitized_item;
+			}
+
+			return $clean;
+		}
+
+		$clean = sanitize_text_field( (string) $value );
+		return '' === $clean ? null : $clean;
 	}
 }

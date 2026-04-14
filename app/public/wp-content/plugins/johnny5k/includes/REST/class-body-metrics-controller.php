@@ -154,6 +154,7 @@ class BodyMetricsController {
 			'notes'        => $notes ?: null,
 		], fn( $v ) => $v !== null ) );
 
+		\Johnny5k\Services\CalorieEngine::refresh_active_goal_targets( $user_id );
 		self::sync_user_awards( $user_id );
 
 		return new \WP_REST_Response( [ 'id' => $wpdb->insert_id, 'weight_lb' => $weight_lb, 'date' => $date ], 201 );
@@ -195,13 +196,19 @@ class BodyMetricsController {
 			return new \WP_REST_Response( [ 'message' => 'Could not update weight log.' ], 500 );
 		}
 
+		\Johnny5k\Services\CalorieEngine::refresh_active_goal_targets( $user_id );
 		self::sync_user_awards( $user_id );
 
 		return new \WP_REST_Response( [ 'id' => $id, 'weight_lb' => $weight_lb, 'date' => $date, 'updated' => true ] );
 	}
 
 	public static function delete_weight( \WP_REST_Request $req ): \WP_REST_Response {
-		return self::delete_owned_row( 'fit_body_metrics', (int) $req['id'] );
+		$response = self::delete_owned_row( 'fit_body_metrics', (int) $req['id'] );
+		if ( 204 === $response->get_status() ) {
+			\Johnny5k\Services\CalorieEngine::refresh_active_goal_targets( get_current_user_id() );
+		}
+
+		return $response;
 	}
 
 	// ── Sleep ─────────────────────────────────────────────────────────────────
@@ -595,11 +602,12 @@ class BodyMetricsController {
 			'moderate' => 1.0,
 			'hard'     => 1.15,
 		];
+		$cardio_to_steps_adjustment = 0.92;
 
 		$steps_per_minute = (float) ( $base_steps_per_minute[ $type ] ?? $base_steps_per_minute['other'] );
 		$multiplier = (float) ( $intensity_multiplier[ $normalized_intensity ] ?? $intensity_multiplier['moderate'] );
 
-		return (int) round( $duration_minutes * $steps_per_minute * $multiplier );
+		return (int) round( $duration_minutes * $steps_per_minute * $multiplier * $cardio_to_steps_adjustment );
 	}
 
 	private static function build_movement_series( array $steps_rows, array $cardio_rows ): array {

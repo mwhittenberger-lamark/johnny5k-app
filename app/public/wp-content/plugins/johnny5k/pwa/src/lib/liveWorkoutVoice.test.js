@@ -5,6 +5,7 @@ import {
   getLiveWorkoutInstantVoiceRate,
   getPreferredInstantVoice,
   LIVE_WORKOUT_INSTANT_RATE_MULTIPLIER,
+  normalizeLiveWorkoutVoicePrefs,
   normalizeInstantVoiceOptions,
 } from './liveWorkoutVoice'
 
@@ -52,5 +53,17 @@ describe('liveWorkoutVoice', () => {
 
   it('can skip the boost when instant playback acceleration is disabled', () => {
     expect(getLiveWorkoutInstantVoiceRate(1.2, false)).toBe(1.2)
+  })
+
+  it('preserves a saved native voice preference when voice prefs are normalized', () => {
+    expect(normalizeLiveWorkoutVoicePrefs({
+      liveModeVoiceMode: 'instant',
+      instantVoiceURI: 'com.apple.voice.enhanced',
+      rate: 1.1,
+    })).toMatchObject({
+      liveModeVoiceMode: 'instant',
+      instantVoiceURI: 'com.apple.voice.enhanced',
+      rate: 1.1,
+    })
   })
 })

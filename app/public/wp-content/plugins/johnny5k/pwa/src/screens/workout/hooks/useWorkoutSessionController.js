@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useLatest } from './useLatest'
 import { buildWorkoutCompletionReview, formatDayType, formatWorkoutElapsedTime, getPausedTimerNowValue } from '../workoutScreenUtils'
@@ -431,6 +431,14 @@ export function useWorkoutSessionController({
     setTimerNow(resumedAt)
   }
 
+  const openLiveMode = useCallback(() => {
+    setLiveModeOpen(true)
+  }, [])
+
+  const closeLiveMode = useCallback(() => {
+    setLiveModeOpen(false)
+  }, [])
+
   return {
     addingSlot,
     activeSessionTimerLabel,
@@ -454,8 +462,8 @@ export function useWorkoutSessionController({
     handleUndoAction,
     handleUpdateSet,
     liveModeOpen,
-    openLiveMode: () => setLiveModeOpen(true),
-    closeLiveMode: () => setLiveModeOpen(false),
+    openLiveMode,
+    closeLiveMode,
     pauseSessionTimer,
     pendingSessionAction,
     restarting,

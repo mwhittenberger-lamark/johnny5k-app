@@ -1429,6 +1429,27 @@
 .live-workout-voice-test-copy strong {
   color: #081533;
 }
+.live-workout-voice-test-copy label {
+  display: grid;
+  gap: var(--space-1);
+}
+.live-workout-voice-test-copy label span {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(8, 21, 51, 0.68);
+}
+.live-workout-voice-test-copy select {
+  width: 100%;
+  min-height: 42px;
+  border-radius: 14px;
+  border: 1px solid rgba(8, 21, 51, 0.14);
+  background: rgba(255, 255, 255, 0.96);
+  color: #081533;
+  padding: 0.7rem 0.85rem;
+}
 .live-workout-voice-diagnostic {
   margin: var(--space-2) 0 0;
 }

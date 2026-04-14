@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { aiApi } from '../../api/modules/ai'
 import { nutritionApi } from '../../api/modules/nutrition'
@@ -211,6 +211,7 @@ export default function NutritionScreen() {
   const [labelScanImages, setLabelScanImages] = useState({ front: '', back: '' })
   const [labelReview, setLabelReview] = useState(null)
   const [labelReviewAction, setLabelReviewAction] = useState('')
+  const [loadingMeals, setLoadingMeals] = useState(true)
   const [loadingExtras, setLoadingExtras] = useState(false)
   const [syncingGapToPantry, setSyncingGapToPantry] = useState(false)
   const [error, setError] = useState('')
@@ -410,6 +411,7 @@ export default function NutritionScreen() {
 
   const loadData = useCallback(async () => {
     setError('')
+    setLoadingMeals(true)
     try {
       const [mealRows, summaryRow, recentFoodRows, savedMealRows, savedFoodRows, pantryRows, recipeRows, groceryGapRow, cookbookRows, beverageBoardRow] = await Promise.all([
         nutritionApi.getMeals(today),
@@ -440,6 +442,8 @@ export default function NutritionScreen() {
     } catch (err) {
       setError(err.message)
       showErrorToast(err, 'Could not load nutrition data.')
+    } finally {
+      setLoadingMeals(false)
     }
   }, [loadWeeklyCaloriesReview, showErrorToast, today])
 
@@ -1328,6 +1332,7 @@ export default function NutritionScreen() {
     latestMealLabel,
     libraryItemCount,
     loadData,
+    loadingMeals,
     loadingExtras,
     location,
     meals,
@@ -1391,6 +1396,7 @@ export default function NutritionScreen() {
     setShowMicros,
     setShowPantryForm,
     setShowPantryVoice,
+    setShowMealPhotoPrompt,
     setShowSavedFoodForm,
     setShowSavedMealForm,
     showGlobalLabelReview: Boolean(labelReview) && labelScanContext !== 'saved-foods',
@@ -1491,9 +1497,9 @@ export default function NutritionScreen() {
         </div>
       </header>
 
-      <input ref={mealInputRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={handlePhotoAnalyse} />
-      <input ref={labelFrontInputRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={(event) => { void handleLabelImageSelected('front', event) }} />
-      <input ref={labelBackInputRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={(event) => { void handleLabelImageSelected('back', event) }} />
+      <input ref={mealInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handlePhotoAnalyse} />
+      <input ref={labelFrontInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={(event) => { void handleLabelImageSelected('front', event) }} />
+      <input ref={labelBackInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={(event) => { void handleLabelImageSelected('back', event) }} />
 
       {showMealPhotoPrompt ? (
         <MealPhotoPromptPanel
@@ -1724,6 +1730,7 @@ function SectionClampToggle({ count, expanded, limit, label, onToggle }) {
 
 function MealCard({ meal, savedFoods, onSave, onDelete, onError }) {
   const [editing, setEditing] = useState(false)
+  const [open, setOpen] = useState(false)
   const [openItemIndex, setOpenItemIndex] = useState(() => (meal.items?.length ? 0 : null))
   const editRef = useAutoScrollWhenActive(editing)
   const cardRef = useRef(null)
@@ -1731,6 +1738,7 @@ function MealCard({ meal, savedFoods, onSave, onDelete, onError }) {
   const mealCount = meal.items?.length ?? 0
   const entryCount = Array.isArray(meal.meal_ids) ? meal.meal_ids.length : 1
   const itemLabel = meal?.meal_type === 'beverage' ? 'drink' : 'item'
+  const mealTimeLabel = formatMealTimeLabel(meal.meal_datetime)
 
   if (editing) {
     return (
@@ -1759,73 +1767,91 @@ function MealCard({ meal, savedFoods, onSave, onDelete, onError }) {
   }
 
   return (
-    <div ref={cardRef} className="meal-card">
-      <div className="meal-card-header">
-        <div className="meal-card-header-main">
-          <div className="meal-card-title-group">
-            <span className="meal-type">{formatMealTypeLabel(meal.meal_type)}</span>
-            <span className="meal-cals">{Math.round(totals.calories)} Calories</span>
+    <section ref={cardRef} className={`meal-card nutrition-meal-accordion meal-card-accordion${open ? ' open' : ''}`}>
+      <button
+        type="button"
+        className="nutrition-meal-accordion-trigger meal-card-trigger"
+        onClick={() => setOpen(current => !current)}
+        aria-expanded={open}
+      >
+        <div className="nutrition-meal-accordion-copy meal-card-trigger-copy">
+          <div className="meal-card-header-main">
+            <div className="meal-card-title-group">
+              <span className="meal-type">{formatMealTypeLabel(meal.meal_type)}</span>
+              <span className="meal-cals">{Math.round(totals.calories)} Calories</span>
+            </div>
+            <span className="meal-card-time">{mealTimeLabel}</span>
           </div>
-          <span className="meal-card-time">{formatMealTimeLabel(meal.meal_datetime)}</span>
+          <p>
+            {entryCount > 1 ? `${entryCount} entries merged • ` : ''}
+            {mealCount} {itemLabel}{mealCount === 1 ? '' : 's'} logged • {formatMealMacroValue(totals.protein_g)}g protein • {formatMealMacroValue(totals.carbs_g)}g carbs • {formatMealMacroValue(totals.fat_g)}g fat
+          </p>
         </div>
-        <div className="meal-card-header-actions">
-          <button className="btn-secondary small" onClick={() => setEditing(true)}>Edit</button>
-          <button className="btn-danger small nutrition-delete-button nutrition-delete-button-compact" onClick={onDelete} title="Delete" type="button">
-            <AppIcon name="trash" />
-            <span>Delete</span>
-          </button>
+        <span className="nutrition-meal-accordion-icon" aria-hidden="true">{open ? '−' : '+'}</span>
+      </button>
+      {open ? (
+        <div className="nutrition-meal-accordion-body meal-card-body">
+          <div className="meal-card-body-head">
+            <p className="meal-card-meta">{entryCount > 1 ? `${entryCount} entries merged • ` : ''}{mealCount} {itemLabel}{mealCount === 1 ? '' : 's'} logged</p>
+            <div className="meal-card-header-actions">
+              <button className="btn-secondary small" type="button" onClick={() => setEditing(true)}>Edit</button>
+              <button className="btn-danger small nutrition-delete-button nutrition-delete-button-compact" onClick={onDelete} title="Delete" type="button">
+                <AppIcon name="trash" />
+                <span>Delete</span>
+              </button>
+            </div>
+          </div>
+          <div className="meal-card-totals" aria-label="Meal nutrition totals">
+            <div className="meal-total-stat meal-total-stat-calories">
+              <span className="meal-total-label">Calories</span>
+              <strong>{Math.round(totals.calories)}</strong>
+            </div>
+            <div className="meal-total-stat meal-total-stat-protein">
+              <span className="meal-total-label">Protein</span>
+              <strong>{formatMealMacroValue(totals.protein_g)}g</strong>
+            </div>
+            <div className="meal-total-stat meal-total-stat-carbs">
+              <span className="meal-total-label">Carbs</span>
+              <strong>{formatMealMacroValue(totals.carbs_g)}g</strong>
+            </div>
+            <div className="meal-total-stat meal-total-stat-fat">
+              <span className="meal-total-label">Fat</span>
+              <strong>{formatMealMacroValue(totals.fat_g)}g</strong>
+            </div>
+          </div>
+          <div className="meal-item-list">
+            {(meal.items || []).map((item, index) => (
+              <section key={`${item.food_name || 'food'}-${index}`} className={`nutrition-meal-accordion meal-card-item-accordion${openItemIndex === index ? ' open' : ''}`}>
+                <button
+                  type="button"
+                  className="nutrition-meal-accordion-trigger meal-card-item-trigger"
+                  onClick={() => setOpenItemIndex(current => current === index ? null : index)}
+                  aria-expanded={openItemIndex === index}
+                >
+                  <div className="nutrition-meal-accordion-copy meal-card-item-copy">
+                    <span className="nutrition-meal-accordion-label">{meal?.meal_type === 'beverage' ? 'Drink' : 'Food'} {index + 1}</span>
+                    <strong className="meal-item-name">{item.food_name || 'Food item'}</strong>
+                    <p>{formatMealServing(item.serving_amount, item.serving_unit)} · {Math.round(Number(item.calories) || 0)} Calories · {formatMealMacroValue(item.protein_g)}g protein</p>
+                  </div>
+                  <span className="nutrition-meal-accordion-icon" aria-hidden="true">{openItemIndex === index ? '−' : '+'}</span>
+                </button>
+                {openItemIndex === index ? (
+                  <div className="nutrition-meal-accordion-body meal-card-item-body">
+                    <div className="meal-item-macros" aria-label={`${item.food_name || 'Food item'} macros`}>
+                      <span className="meal-item-macro meal-item-macro-protein">P {formatMealMacroValue(item.protein_g)}g</span>
+                      <span className="meal-item-macro meal-item-macro-carbs">C {formatMealMacroValue(item.carbs_g)}g</span>
+                      <span className="meal-item-macro meal-item-macro-fat">F {formatMealMacroValue(item.fat_g)}g</span>
+                    </div>
+                    {item.portion_description ? <p className="meal-card-item-note">{item.portion_description}</p> : null}
+                    {item.estimated_grams ? <p className="meal-card-item-note">Estimated weight: {Math.round(Number(item.estimated_grams) || 0)}g</p> : null}
+                  </div>
+                ) : null}
+              </section>
+            ))}
+          </div>
         </div>
-      </div>
-      <p className="meal-card-meta">{entryCount > 1 ? `${entryCount} entries merged • ` : ''}{mealCount} {itemLabel}{mealCount === 1 ? '' : 's'} logged</p>
-      <div className="meal-card-totals" aria-label="Meal nutrition totals">
-        <div className="meal-total-stat meal-total-stat-calories">
-          <span className="meal-total-label">Calories</span>
-          <strong>{Math.round(totals.calories)}</strong>
-        </div>
-        <div className="meal-total-stat meal-total-stat-protein">
-          <span className="meal-total-label">Protein</span>
-          <strong>{formatMealMacroValue(totals.protein_g)}g</strong>
-        </div>
-        <div className="meal-total-stat meal-total-stat-carbs">
-          <span className="meal-total-label">Carbs</span>
-          <strong>{formatMealMacroValue(totals.carbs_g)}g</strong>
-        </div>
-        <div className="meal-total-stat meal-total-stat-fat">
-          <span className="meal-total-label">Fat</span>
-          <strong>{formatMealMacroValue(totals.fat_g)}g</strong>
-        </div>
-      </div>
-      <div className="meal-item-list">
-        {(meal.items || []).map((item, index) => (
-          <section key={`${item.food_name || 'food'}-${index}`} className={`nutrition-meal-accordion meal-card-item-accordion${openItemIndex === index ? ' open' : ''}`}>
-            <button
-              type="button"
-              className="nutrition-meal-accordion-trigger meal-card-item-trigger"
-              onClick={() => setOpenItemIndex(current => current === index ? null : index)}
-              aria-expanded={openItemIndex === index}
-            >
-              <div className="nutrition-meal-accordion-copy meal-card-item-copy">
-                <span className="nutrition-meal-accordion-label">{meal?.meal_type === 'beverage' ? 'Drink' : 'Food'} {index + 1}</span>
-                <strong className="meal-item-name">{item.food_name || 'Food item'}</strong>
-                <p>{formatMealServing(item.serving_amount, item.serving_unit)} · {Math.round(Number(item.calories) || 0)} Calories · {formatMealMacroValue(item.protein_g)}g protein</p>
-              </div>
-              <span className="nutrition-meal-accordion-icon" aria-hidden="true">{openItemIndex === index ? '−' : '+'}</span>
-            </button>
-            {openItemIndex === index ? (
-              <div className="nutrition-meal-accordion-body meal-card-item-body">
-                <div className="meal-item-macros" aria-label={`${item.food_name || 'Food item'} macros`}>
-                  <span className="meal-item-macro meal-item-macro-protein">P {formatMealMacroValue(item.protein_g)}g</span>
-                  <span className="meal-item-macro meal-item-macro-carbs">C {formatMealMacroValue(item.carbs_g)}g</span>
-                  <span className="meal-item-macro meal-item-macro-fat">F {formatMealMacroValue(item.fat_g)}g</span>
-                </div>
-                {item.portion_description ? <p className="meal-card-item-note">{item.portion_description}</p> : null}
-                {item.estimated_grams ? <p className="meal-card-item-note">Estimated weight: {Math.round(Number(item.estimated_grams) || 0)}g</p> : null}
-              </div>
-            ) : null}
-          </section>
-        ))}
-      </div>
-    </div>
+      ) : null}
+    </section>
   )
 }
 
@@ -1937,15 +1963,17 @@ function AiMealReviewCard({ draft, caloriesRemaining, onChange, onConfirm, onCan
           <div key={index} className="nutrition-item-row editing">
             <div className="macro-inputs nutrition-item-editor">
               <FieldLabel label="Food name" className="field-label-food-name"><ClearableInput value={item.food_name} onChange={event => updateItem(index, 'food_name', event.target.value)} /></FieldLabel>
-              <FieldLabel label="Portion count"><input type="number" min="0" step="0.25" value={item.serving_amount} onChange={event => updateItem(index, 'serving_amount', event.target.value)} placeholder="1" /></FieldLabel>
+              <FieldLabel label="Portion count"><input type="number" min="0" step="0.01" inputMode="decimal" value={item.serving_amount} onChange={event => updateItem(index, 'serving_amount', event.target.value)} placeholder="1" /></FieldLabel>
               <FieldLabel label="Unit / size"><ClearableInput value={item.serving_unit} onChange={event => updateItem(index, 'serving_unit', event.target.value)} placeholder="bowl" /></FieldLabel>
-              <FieldLabel label="Estimated grams"><input type="number" min="0" step="1" value={item.estimated_grams} onChange={event => updateItem(index, 'estimated_grams', event.target.value)} placeholder="0" /></FieldLabel>
+              <FieldLabel label="Estimated grams"><input type="number" min="0" step="0.01" inputMode="decimal" value={item.estimated_grams} onChange={event => updateItem(index, 'estimated_grams', event.target.value)} placeholder="0" /></FieldLabel>
+              <FieldLabel label="Ounces"><input type="number" min="0" step="0.01" inputMode="decimal" value={formatOuncesInputValue(item.estimated_grams)} onChange={event => updateItem(index, 'estimated_grams', convertOuncesInputToGrams(event.target.value))} placeholder="0" /></FieldLabel>
               <FieldLabel label="Calories"><input type="number" value={item.calories} onChange={event => updateItem(index, 'calories', event.target.value)} placeholder="0" /></FieldLabel>
               <FieldLabel label="Protein"><input type="number" min="0" step="0.01" inputMode="decimal" value={item.protein_g} onChange={event => updateItem(index, 'protein_g', event.target.value)} placeholder="0" /></FieldLabel>
               <FieldLabel label="Carbs"><input type="number" min="0" step="0.01" inputMode="decimal" value={item.carbs_g} onChange={event => updateItem(index, 'carbs_g', event.target.value)} placeholder="0" /></FieldLabel>
               <FieldLabel label="Fat"><input type="number" min="0" step="0.01" inputMode="decimal" value={item.fat_g} onChange={event => updateItem(index, 'fat_g', event.target.value)} placeholder="0" /></FieldLabel>
             </div>
             <div className="nutrition-item-meta">
+              {Number(item.estimated_grams) > 0 ? <p className="settings-subtitle">Weight: {formatWeightHelperText(item.estimated_grams)}</p> : null}
               {item.portion_description ? <p className="settings-subtitle">{item.portion_description}</p> : null}
               {item.source?.provider === 'usda' ? (
                 <p className="settings-subtitle">
@@ -1971,18 +1999,20 @@ function AiMealReviewCard({ draft, caloriesRemaining, onChange, onConfirm, onCan
   )
 }
 
-function AddMealForm({ savedFoods, onSave, onSaveAsTemplate, onCancel, onError, onToast }) {
+function AddMealForm({ savedFoods, onSave, onSaveAsTemplate, onCancel, onError, onToast, onOpenPhoto }) {
   return (
     <MealComposerForm
       title="Log meal"
       submitLabel="Log meal"
       savedFoods={savedFoods}
       includeMealDateTime
+      allowQuickEntryModes
       onError={onError}
       onToast={onToast}
+      onOpenPhoto={onOpenPhoto}
       onSubmit={payload => onSave({ meal_datetime: payload.meal_datetime, meal_type: payload.meal_type, source: 'manual', items: payload.items })}
       onSecondaryAction={payload => onSaveAsTemplate(payload)}
-      secondaryLabel="Save as template"
+      secondaryLabel="Save this draft as a template"
       onCancel={onCancel}
     />
   )
@@ -2129,8 +2159,20 @@ function SavedFoodForm({ initialValues = null, savedFoods = [], submitLabel = 'S
         <ClearableInput placeholder="1 bowl" value={form.serving_size} onChange={event => update('serving_size', event.target.value)} />
       </FieldLabel>
       <FieldLabel label="Serving grams">
-        <input type="number" min="0" step="1" placeholder="170" value={form.serving_grams ?? ''} onChange={event => update('serving_grams', event.target.value)} />
+        <input type="number" min="0" step="0.01" inputMode="decimal" placeholder="170" value={form.serving_grams ?? ''} onChange={event => update('serving_grams', event.target.value)} />
       </FieldLabel>
+      <FieldLabel label="Serving ounces">
+        <input
+          type="number"
+          min="0"
+          step="0.01"
+          inputMode="decimal"
+          placeholder="6"
+          value={formatOuncesInputValue(form.serving_grams)}
+          onChange={event => update('serving_grams', convertOuncesInputToGrams(event.target.value))}
+        />
+      </FieldLabel>
+      {Number(form.serving_grams) > 0 ? <p className="settings-subtitle">Weight: {formatWeightHelperText(form.serving_grams)}</p> : null}
       <div className="macro-inputs">
         <FieldLabel label="Calories"><input type="number" placeholder="0" value={form.calories} onChange={event => update('calories', event.target.value)} /></FieldLabel>
         <FieldLabel label="Protein"><input type="number" min="0" step="0.01" inputMode="decimal" placeholder="0" value={form.protein_g} onChange={event => update('protein_g', event.target.value)} /></FieldLabel>
@@ -2340,7 +2382,7 @@ function SavedMealRow({ meal, savedFoods, onLog, onSave, onDelete, onError }) {
       <div className="nutrition-row-actions saved-meal-controls">
         <label className="saved-meal-servings">
           <span>Servings</span>
-          <input type="number" min="0.1" step="0.25" value={servingMultiplier} onChange={event => setServingMultiplier(event.target.value)} aria-label="Saved meal servings" />
+          <input type="number" min="0.1" step="0.01" inputMode="decimal" value={servingMultiplier} onChange={event => setServingMultiplier(event.target.value)} aria-label="Saved meal servings" />
         </label>
         <button className="btn-secondary small" onClick={() => onLog(meal.id, multiplier)}>Log</button>
         <button className="btn-secondary small" onClick={() => setEditing(true)}>Edit</button>
@@ -3168,12 +3210,13 @@ function PantryCategorySection({ category, collapsed = false, onToggle, onSaveIt
   )
 }
 
-function MealComposerForm({ title, savedFoods, requireName = false, submitLabel, secondaryLabel = '', initialValues = null, includeMealDateTime = false, allowEmptyItems = false, onSubmit, onSecondaryAction, onCancel, onError, onToast }) {
+function MealComposerForm({ title, savedFoods, requireName = false, submitLabel, secondaryLabel = '', initialValues = null, includeMealDateTime = false, allowEmptyItems = false, onSubmit, onSecondaryAction, onCancel, onError, onToast, allowQuickEntryModes = false, onOpenPhoto = null }) {
   const [mealType, setMealType] = useState(() => initialValues?.meal_type || getDefaultMealTypeForCurrentTime())
   const [name, setName] = useState(initialValues?.name || '')
   const [mealDate, setMealDate] = useState(() => getMealDateInputValue(initialValues?.meal_datetime))
   const [mealTime, setMealTime] = useState(() => getMealTimeInputValue(initialValues?.meal_datetime))
   const [savedFoodQuery, setSavedFoodQuery] = useState('')
+  const [selectedSavedFoodKey, setSelectedSavedFoodKey] = useState('')
   const [items, setItems] = useState(() => {
     if (initialValues?.items?.length) {
       return normaliseMealItems(initialValues.items)
@@ -3192,11 +3235,14 @@ function MealComposerForm({ title, savedFoods, requireName = false, submitLabel,
   const [submitAction, setSubmitAction] = useState('')
   const [error, setError] = useState('')
   const [showMealVoice, setShowMealVoice] = useState(false)
+  const [entryMode, setEntryMode] = useState('manual')
   const formRef = useAutoScrollWhenActive(true)
   const mealVoiceRef = useRef(null)
+  const savedFoodFieldRef = useRef(null)
+  const savedFoodInputRef = useRef(null)
+  const firstFoodInputRef = useRef(null)
   const itemAccordionRefs = useRef([])
   const previousOpenItemIndexRef = useRef(openItemIndex)
-  const savedFoodListId = useId()
   const savedFoodOptions = useMemo(
     () => (Array.isArray(savedFoods) ? savedFoods.map(food => ({
       key: food?.id != null ? `saved-food-${food.id}` : buildSavedFoodOptionLabel(food),
@@ -3205,15 +3251,20 @@ function MealComposerForm({ title, savedFoods, requireName = false, submitLabel,
     })) : []),
     [savedFoods],
   )
-  const selectedSavedFood = useMemo(() => {
-    const query = savedFoodQuery.trim().toLowerCase()
+  const filteredSavedFoodOptions = useMemo(() => {
+    const query = normaliseFoodMatchText(savedFoodQuery)
     if (!query) {
-      return null
+      return savedFoodOptions.slice(0, 6)
     }
 
-    const match = savedFoodOptions.find(option => option.label.toLowerCase() === query)
-    return match?.food ?? null
+    return savedFoodOptions
+      .filter(option => normaliseFoodMatchText(option.label).includes(query))
+      .slice(0, 6)
   }, [savedFoodOptions, savedFoodQuery])
+  const selectedSavedFood = useMemo(
+    () => savedFoodOptions.find(option => option.key === selectedSavedFoodKey)?.food ?? null,
+    [savedFoodOptions, selectedSavedFoodKey],
+  )
 
   const totals = useMemo(() => items.reduce((carry, item) => ({
     calories: carry.calories + (Number(item.calories) || 0),
@@ -3221,6 +3272,15 @@ function MealComposerForm({ title, savedFoods, requireName = false, submitLabel,
     carbs_g: carry.carbs_g + (Number(item.carbs_g) || 0),
     fat_g: carry.fat_g + (Number(item.fat_g) || 0),
   }), { calories: 0, protein_g: 0, carbs_g: 0, fat_g: 0 }), [items])
+  const namedItemsCount = useMemo(
+    () => items.filter(item => String(item?.food_name || '').trim()).length,
+    [items],
+  )
+  const unresolvedItemsCount = useMemo(
+    () => items.filter(item => String(item?.food_name || '').trim() && !hasMealItemNutritionData(item)).length,
+    [items],
+  )
+  const hasDraft = items.some(item => String(item?.food_name || '').trim() || hasMealItemNutritionData(item))
 
   useEffect(() => {
     if (!showMealVoice) {
@@ -3262,6 +3322,35 @@ function MealComposerForm({ title, savedFoods, requireName = false, submitLabel,
     return () => window.cancelAnimationFrame(frameId)
   }, [openItemIndex])
 
+  useEffect(() => {
+    if (!selectedSavedFoodKey) {
+      return
+    }
+
+    if (!savedFoodOptions.some(option => option.key === selectedSavedFoodKey)) {
+      setSelectedSavedFoodKey('')
+    }
+  }, [savedFoodOptions, selectedSavedFoodKey])
+
+  useEffect(() => {
+    if (entryMode !== 'saved') {
+      return
+    }
+
+    window.requestAnimationFrame(() => {
+      savedFoodFieldRef.current?.scrollIntoView({ behavior: SCROLL_BEHAVIOR, block: 'start' })
+      savedFoodInputRef.current?.focus()
+    })
+  }, [entryMode])
+
+  function focusItem(index) {
+    setOpenItemIndex(index)
+    window.requestAnimationFrame(() => {
+      itemAccordionRefs.current[index]?.scrollIntoView({ behavior: SCROLL_BEHAVIOR, block: 'start' })
+      itemAccordionRefs.current[index]?.querySelector('input, textarea, select')?.focus()
+    })
+  }
+
   function updateItem(index, patch) {
     setItems(current => current.map((item, itemIndex) => {
       if (itemIndex !== index) {
@@ -3275,28 +3364,89 @@ function MealComposerForm({ title, savedFoods, requireName = false, submitLabel,
     }))
   }
 
-  function addItem(prefill = null) {
+  function addItem(prefill = null, options = {}) {
+    const nextIndex = items.length
+
     setItems(current => {
       const nextItem = prefill ? applyFoodSuggestion(createEmptyMealItem(), prefill) : createEmptyMealItem()
       return [...current, recomputeMealDraftItem(null, nextItem, '')]
     })
-    setOpenItemIndex(items.length)
+    setOpenItemIndex(nextIndex)
+
+    if (options.selectMode) {
+      setEntryMode(options.selectMode)
+    }
+
+    if (typeof options.buildToast === 'function') {
+      onToast?.(options.buildToast(nextIndex))
+    }
+  }
+
+  function handleEntryModeSelect(mode) {
+    if (mode === 'photo') {
+      onOpenPhoto?.()
+      return
+    }
+
+    setEntryMode(mode)
+    if (mode === 'voice') {
+      setShowMealVoice(true)
+      return
+    }
+
+    setShowMealVoice(false)
+    if (mode === 'manual') {
+      window.requestAnimationFrame(() => {
+        firstFoodInputRef.current?.focus()
+      })
+    }
+  }
+
+  function handleSavedFoodQueryChange(value) {
+    setSavedFoodQuery(value)
+    setSelectedSavedFoodKey('')
+  }
+
+  function handleSelectSavedFood(option) {
+    setSavedFoodQuery(option.label)
+    setSelectedSavedFoodKey(option.key)
+    setError('')
   }
 
   function addSavedFoodSelection() {
     if (!selectedSavedFood) {
-      setError('Choose a saved food from the list first.')
-      onError?.('Choose a saved food from the list first.')
+      const message = filteredSavedFoodOptions.length
+        ? 'Pick one saved food result before adding it to the meal.'
+        : 'Search for a saved food first, then select one result.'
+      setError(message)
+      onError?.(message)
       return
     }
 
     setError('')
-    addItem(selectedSavedFood)
+    addItem(selectedSavedFood, {
+      selectMode: 'manual',
+      buildToast: nextIndex => ({
+        title: 'Food Added',
+        message: `${formatFoodDisplayName(selectedSavedFood)} added to the meal draft.`,
+        tone: 'success',
+        actions: [
+          {
+            label: 'Edit',
+            tone: 'primary',
+            onClick: () => focusItem(nextIndex),
+          },
+        ],
+      }),
+    })
     setSavedFoodQuery('')
-    onToast?.(`${formatFoodDisplayName(selectedSavedFood)} added to the meal.`)
+    setSelectedSavedFoodKey('')
   }
 
   function removeItem(index) {
+    const removedItem = items[index]
+    const removedLabel = removedItem?.food_name?.trim() || `Food ${index + 1}`
+
     setOpenItemIndex(current => {
       if (items.length <= 1) {
         return allowEmptyItems ? null : 0
@@ -3319,6 +3469,28 @@ function MealComposerForm({ title, savedFoods, requireName = false, submitLabel,
 
       return allowEmptyItems ? [] : [createEmptyMealItem()]
     })
+
+    if (items.length > 1) {
+      onToast?.({
+        title: 'Food Removed',
+        message: `${removedLabel} was removed from the meal draft.`,
+        tone: 'info',
+        actions: [
+          {
+            label: 'Undo',
+            tone: 'primary',
+            onClick: () => {
+              setItems(current => {
+                const next = [...current]
+                next.splice(index, 0, removedItem)
+                return next
+              })
+              focusItem(index)
+            },
+          },
+        ],
+      })
+    }
   }
 
   async function autofillItem(index) {
@@ -3334,13 +3506,39 @@ function MealComposerForm({ title, savedFoods, requireName = false, submitLabel,
     try {
       const result = await aiApi.analyseFoodText(query)
       updateItem(index, applyFoodSuggestion(items[index], result))
-      onToast?.(buildAiFoodValidationToast(query, result, 'meal-item'))
+      onToast?.({
+        ...buildAiFoodValidationToast(query, result, 'meal-item'),
+        title: result?.source?.provider === 'usda' ? 'Nutrition Filled' : 'AI Estimate Ready',
+        actions: [
+          {
+            label: 'Review',
+            tone: 'primary',
+            onClick: () => focusItem(index),
+          },
+        ],
+      })
     } catch (err) {
       setError(err.message)
       onError?.(err)
     } finally {
       setBusyIndex(null)
     }
+  }
+
+  function handleSelectSuggestion(index, suggestion) {
+    updateItem(index, applyFoodSuggestion(items[index], suggestion))
+    onToast?.({
+      title: suggestion.match_type === 'saved_food' ? 'Saved Food Applied' : 'Recent Match Applied',
+      message: `${formatFoodDisplayName(suggestion)} filled this row.`,
+      tone: 'success',
+      actions: [
+        {
+          label: 'Review',
+          tone: 'primary',
+          onClick: () => focusItem(index),
+        },
+      ],
+    })
   }
 
   function buildPayload() {
@@ -3403,7 +3601,25 @@ function MealComposerForm({ title, savedFoods, requireName = false, submitLabel,
   return (
     <form ref={formRef} className="add-meal-form nutrition-composer-form" onSubmit={handleSubmit}>
       <h3>{title}</h3>
-      <p className="settings-subtitle">Type a food, pick a saved or recent match, or let AI fill the nutrition for you.</p>
+      {allowQuickEntryModes ? (
+        <div className="nutrition-composer-modes" aria-label="Meal entry modes">
+          <button type="button" className={`nutrition-composer-mode${entryMode === 'manual' ? ' active' : ''}`} onClick={() => handleEntryModeSelect('manual')}>Manual</button>
+          <button type="button" className={`nutrition-composer-mode${entryMode === 'saved' ? ' active' : ''}`} onClick={() => handleEntryModeSelect('saved')}>Saved food</button>
+          <button type="button" className={`nutrition-composer-mode${entryMode === 'voice' ? ' active' : ''}`} onClick={() => handleEntryModeSelect('voice')}>Voice</button>
+          <button type="button" className="nutrition-composer-mode" onClick={() => handleEntryModeSelect('photo')}>Photo</button>
+        </div>
+      ) : null}
+      <div className="nutrition-composer-status-band">
+        <div>
+          <span className="nutrition-composer-status-eyebrow">Meal draft</span>
+          <strong>{namedItemsCount} food{namedItemsCount === 1 ? '' : 's'} added</strong>
+        </div>
+        <div className="nutrition-composer-status-copy">
+          <span>{hasDraft ? 'Not logged yet' : 'Start with one food'}</span>
+          {unresolvedItemsCount ? <span>{unresolvedItemsCount} still need nutrition</span> : <span>Totals update as you edit</span>}
+        </div>
+      </div>
+      <p className="settings-subtitle">Build the meal draft first, then log it once it looks right. Saved foods, voice, and AI fill all feed the same draft.</p>
       {error ? <ErrorState className="nutrition-inline-state" message={error} title="Could not save this meal" /> : null}
       {requireName ? (
         <FieldLabel label="Meal name">
@@ -3429,41 +3645,73 @@ function MealComposerForm({ title, savedFoods, requireName = false, submitLabel,
       )}
 
       {savedFoods?.length ? (
-        <FieldLabel label="Saved Foods" className="nutrition-saved-food-field">
-          <div className="nutrition-gap-list nutrition-quick-picks nutrition-saved-food-picker">
-            <ClearableInput
-              type="search"
-              list={savedFoodListId}
-              placeholder="Select or start typing a saved food"
-              value={savedFoodQuery}
-              onChange={event => setSavedFoodQuery(event.target.value)}
-              onKeyDown={event => {
-                if (event.key === 'Enter' && selectedSavedFood) {
-                  event.preventDefault()
-                  addSavedFoodSelection()
-                }
-              }}
-            />
-            <datalist id={savedFoodListId}>
-              {savedFoodOptions.map(option => <option key={option.key} value={option.label} />)}
-            </datalist>
-	            <button type="button" className="btn-secondary" onClick={addSavedFoodSelection} disabled={!selectedSavedFood}>
-	              Add Saved Food
-	            </button>
-          </div>
-        </FieldLabel>
+        <div ref={savedFoodFieldRef}>
+          <FieldLabel label="Saved foods" className={`nutrition-saved-food-field${entryMode === 'saved' ? ' active' : ''}`}>
+            <div className="nutrition-gap-list nutrition-quick-picks nutrition-saved-food-picker">
+              <ClearableInput
+                ref={savedFoodInputRef}
+                type="search"
+                placeholder="Search your saved foods"
+                value={savedFoodQuery}
+                onChange={event => handleSavedFoodQueryChange(event.target.value)}
+                onFocus={() => setEntryMode('saved')}
+                onKeyDown={event => {
+                  if (event.key === 'Enter' && selectedSavedFood) {
+                    event.preventDefault()
+                    addSavedFoodSelection()
+                  }
+                }}
+              />
+              <button type="button" className="btn-secondary" onClick={addSavedFoodSelection} disabled={!selectedSavedFood}>
+                Add to meal
+              </button>
+            </div>
+            {selectedSavedFood ? <p className="nutrition-picker-selection">Selected: <strong>{buildSavedFoodOptionLabel(selectedSavedFood)}</strong></p> : null}
+            {filteredSavedFoodOptions.length ? (
+              <div className="nutrition-saved-food-results" role="listbox" aria-label="Saved food matches">
+                {filteredSavedFoodOptions.map(option => {
+                  const isSelected = option.key === selectedSavedFoodKey
+
+                  return (
+                    <button
+                      key={option.key}
+                      type="button"
+                      className={`nutrition-item-row nutrition-suggestion-row${isSelected ? ' active' : ''}`}
+                      role="option"
+                      aria-selected={isSelected}
+                      onClick={() => handleSelectSavedFood(option)}
+                    >
+                      <div>
+                        <strong>{option.label}</strong>
+                        <p>{option.food?.serving_size || option.food?.serving_unit || '1 serving'} · {Math.round(Number(option.food?.calories) || 0)} Calories</p>
+                      </div>
+                      {isSelected ? <span className="nutrition-inline-badge active">Selected</span> : null}
+                    </button>
+                  )
+                })}
+              </div>
+            ) : savedFoodQuery.trim() ? (
+              <p className="settings-subtitle">No saved food matches that search yet.</p>
+            ) : null}
+          </FieldLabel>
+        </div>
       ) : null}
 
       <div className="nutrition-row-actions nutrition-row-actions-full-width">
         <button
           type="button"
           className="btn-secondary nutrition-voice-trigger-btn"
-          onClick={() => setShowMealVoice(current => !current)}
+          onClick={() => {
+            const next = !showMealVoice
+            setShowMealVoice(next)
+            setEntryMode(next ? 'voice' : 'manual')
+          }}
           disabled={Boolean(submitAction)}
           aria-expanded={showMealVoice}
         >
-          {showMealVoice ? 'Close voice meal entry' : 'Voice Record Your Meal'}
+          {showMealVoice ? 'Close voice meal entry' : 'Record your meal by voice'}
         </button>
+        {allowQuickEntryModes && onOpenPhoto ? <button type="button" className="btn-secondary" onClick={onOpenPhoto} disabled={Boolean(submitAction)}>Switch to photo</button> : null}
       </div>
 
       {showMealVoice ? (
@@ -3472,7 +3720,19 @@ function MealComposerForm({ title, savedFoods, requireName = false, submitLabel,
             onApplyItems={async nextItems => {
               setItems(nextItems.length ? nextItems : [createEmptyMealItem()])
               setShowMealVoice(false)
-              onToast?.(`Added ${nextItems.length} item${nextItems.length === 1 ? '' : 's'} from voice.`)
+              setEntryMode('manual')
+              onToast?.({
+                title: 'Voice Items Added',
+                message: `Added ${nextItems.length} item${nextItems.length === 1 ? '' : 's'} from voice to the meal draft.`,
+                tone: 'success',
+                actions: [
+                  {
+                    label: 'Review',
+                    tone: 'primary',
+                    onClick: () => focusItem(0),
+                  },
+                ],
+              })
             }}
             onCancel={() => handleFormCancel(() => setShowMealVoice(false))}
             onError={onError}
@@ -3483,68 +3743,105 @@ function MealComposerForm({ title, savedFoods, requireName = false, submitLabel,
 
       {items.length ? (
         <div className="nutrition-stack-list">
-          {items.map((item, index) => (
-            <section
-              key={index}
-              ref={node => { itemAccordionRefs.current[index] = node }}
-              className={`nutrition-meal-accordion${openItemIndex === index ? ' open' : ''}`}
-            >
-              <button
-                type="button"
-                className="nutrition-meal-accordion-trigger"
-                onClick={() => setOpenItemIndex(current => current === index ? null : index)}
-                aria-expanded={openItemIndex === index}
+          {items.map((item, index) => {
+            const sourceBadge = buildMealDraftSourceBadge(item)
+
+            return (
+              <section
+                key={index}
+                ref={node => { itemAccordionRefs.current[index] = node }}
+                className={`nutrition-meal-accordion${openItemIndex === index ? ' open' : ''}`}
               >
-                <div className="nutrition-meal-accordion-copy">
-                  <span className="nutrition-meal-accordion-label">Food {index + 1}</span>
-                  <strong>{item.food_name?.trim() || `Food ${index + 1}`}</strong>
-                  <p>{formatMealServing(item.serving_amount, item.serving_unit)} · {Math.round(Number(item.calories) || 0)} Calories · {formatMealMacroValue(item.protein_g)}g protein</p>
-                </div>
-                <span className="nutrition-meal-accordion-icon" aria-hidden="true">{openItemIndex === index ? '−' : '+'}</span>
-              </button>
-              {openItemIndex === index ? (
-                <div className="nutrition-meal-accordion-body">
-                  <MealComposerItemRow
-                    item={item}
-                    busy={busyIndex === index}
-                    onChange={patch => updateItem(index, patch)}
-                    onSelectSuggestion={suggestion => updateItem(index, applyFoodSuggestion(item, suggestion))}
-                    onAutofill={() => autofillItem(index)}
-                    onRemove={() => removeItem(index)}
-                  />
-                </div>
-              ) : null}
-            </section>
-          ))}
+                <button
+                  type="button"
+                  className="nutrition-meal-accordion-trigger"
+                  onClick={() => setOpenItemIndex(current => current === index ? null : index)}
+                  aria-expanded={openItemIndex === index}
+                >
+                  <div className="nutrition-meal-accordion-copy">
+                    <span className="nutrition-meal-accordion-label">Food {index + 1}</span>
+                    <strong>{item.food_name?.trim() || `Food ${index + 1}`}</strong>
+                    <p>{formatMealServing(item.serving_amount, item.serving_unit)} · {Math.round(Number(item.calories) || 0)} Calories · {formatMealMacroValue(item.protein_g)}g protein</p>
+                    {sourceBadge ? <span className={`nutrition-inline-badge ${sourceBadge.tone}`}>{sourceBadge.label}</span> : null}
+                  </div>
+                  <span className="nutrition-meal-accordion-icon" aria-hidden="true">{openItemIndex === index ? '−' : '+'}</span>
+                </button>
+                {openItemIndex === index ? (
+                  <div className="nutrition-meal-accordion-body">
+                    <MealComposerItemRow
+                      item={item}
+                      busy={busyIndex === index}
+                      focusRef={index === 0 ? firstFoodInputRef : null}
+                      onChange={patch => updateItem(index, patch)}
+                      onSelectSuggestion={suggestion => handleSelectSuggestion(index, suggestion)}
+                      onAutofill={() => autofillItem(index)}
+                      onRemove={() => removeItem(index)}
+                    />
+                  </div>
+                ) : null}
+              </section>
+            )
+          })}
         </div>
       ) : (
         <EmptyState className="nutrition-inline-state" message="Save changes to delete this logged meal, or add a food to keep editing it." title="All foods removed" />
       )}
 
-      <div className="nutrition-item-row nutrition-composer-totals">
-        <div>
-          <strong>{Math.round(totals.calories)} Calories</strong>
-          <p>{Math.round(totals.protein_g)}g protein · {Math.round(totals.carbs_g)}g carbs · {Math.round(totals.fat_g)}g fat</p>
+      {secondaryLabel ? (
+        <div className="nutrition-composer-secondary-action">
+          <button type="button" className="btn-ghost small" onClick={handleSecondaryAction} disabled={Boolean(submitAction)}>
+            {submitAction === 'secondary' ? 'Saving…' : secondaryLabel}
+          </button>
+          <span>Use this when the draft should become a reusable saved meal instead of only today&apos;s log.</span>
         </div>
-      </div>
+      ) : null}
 
-      {submitAction ? <p className="settings-subtitle">Saving changes…</p> : null}
+      <div className="nutrition-composer-footer">
+        <div className="nutrition-item-row nutrition-composer-totals">
+          <div>
+            <strong>{Math.round(totals.calories)} Calories</strong>
+            <p>{Math.round(totals.protein_g)}g protein · {Math.round(totals.carbs_g)}g carbs · {Math.round(totals.fat_g)}g fat</p>
+          </div>
+          {submitAction ? <span className="nutrition-inline-badge active">Saving changes…</span> : <span className="nutrition-inline-badge">Draft only</span>}
+        </div>
 
-      <div className="form-actions">
-        <button type="button" className="btn-secondary" onClick={() => addItem()} disabled={Boolean(submitAction)}>Add food</button>
-        <button type="submit" className="btn-primary" disabled={Boolean(submitAction)}>{submitAction === 'primary' ? 'Saving…' : submitLabel}</button>
-        {secondaryLabel ? <button type="button" className="btn-secondary" onClick={handleSecondaryAction} disabled={Boolean(submitAction)}>{submitAction === 'secondary' ? 'Saving…' : secondaryLabel}</button> : null}
-        <button type="button" className="btn-secondary" onClick={onCancel} disabled={Boolean(submitAction)}>Cancel</button>
+        <div className="form-actions">
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={() => addItem(null, {
+              selectMode: 'manual',
+              buildToast: nextIndex => ({
+                title: 'New Food Ready',
+                message: 'A blank food row was added to the meal draft.',
+                tone: 'info',
+                actions: [
+                  {
+                    label: 'Edit',
+                    tone: 'primary',
+                    onClick: () => focusItem(nextIndex),
+                  },
+                ],
+              }),
+            })}
+            disabled={Boolean(submitAction)}
+          >
+            Add food
+          </button>
+          <button type="submit" className="btn-primary" disabled={Boolean(submitAction)}>{submitAction === 'primary' ? 'Saving…' : submitLabel}</button>
+          <button type="button" className="btn-secondary" onClick={onCancel} disabled={Boolean(submitAction)}>Cancel</button>
+        </div>
       </div>
     </form>
   )
 }
 
-function MealComposerItemRow({ item, busy, onChange, onSelectSuggestion, onAutofill, onRemove }) {
+function MealComposerItemRow({ item, busy, focusRef = null, onChange, onSelectSuggestion, onAutofill, onRemove }) {
   const [suggestions, setSuggestions] = useState([])
   const [loadingSuggestions, setLoadingSuggestions] = useState(false)
   const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(-1)
   const rowIdRef = useRef(`nutrition-row-${Math.random().toString(36).slice(2, 9)}`)
+  const sourceBadge = buildMealDraftSourceBadge(item)
 
   useEffect(() => {
     setActiveSuggestionIndex(-1)
@@ -3566,7 +3863,7 @@ function MealComposerItemRow({ item, busy, onChange, onSelectSuggestion, onAutof
     const timeoutId = window.setTimeout(async () => {
       setLoadingSuggestions(true)
       try {
-        const results = await nutritionApi.searchFoods(query)
+        const results = dedupeFoodSearchSuggestions(await nutritionApi.searchFoods(query))
         if (!cancelled) {
           FOOD_SEARCH_CACHE.set(query.toLowerCase(), results)
           setSuggestions(results)
@@ -3594,6 +3891,7 @@ function MealComposerItemRow({ item, busy, onChange, onSelectSuggestion, onAutof
         <div className="nutrition-composer-head">
           <FieldLabel label="Food name" className="field-label-compact field-label-food-name">
             <ClearableInput
+              ref={focusRef}
               aria-activedescendant={activeSuggestionIndex >= 0 ? `${rowIdRef.current}-suggestion-${activeSuggestionIndex}` : undefined}
               aria-autocomplete="list"
               aria-controls={suggestions.length ? `${rowIdRef.current}-suggestions` : undefined}
@@ -3634,6 +3932,12 @@ function MealComposerItemRow({ item, busy, onChange, onSelectSuggestion, onAutof
           </div>
         </div>
         {loadingSuggestions ? <p className="settings-subtitle">Finding saved and recent matches…</p> : null}
+        {sourceBadge ? (
+          <div className="nutrition-composer-row-status">
+            <span className={`nutrition-inline-badge ${sourceBadge.tone}`}>{sourceBadge.label}</span>
+            {sourceBadge.note ? <p>{sourceBadge.note}</p> : null}
+          </div>
+        ) : null}
         {suggestions.length ? (
           <div id={`${rowIdRef.current}-suggestions`} className="nutrition-stack-list nutrition-item-suggestions" role="listbox">
             {suggestions.slice(0, 4).map((suggestion, index) => (
@@ -3683,7 +3987,7 @@ function MealComposerItemRow({ item, busy, onChange, onSelectSuggestion, onAutof
           </div>
         ) : null}
         <div className="macro-inputs nutrition-item-editor nutrition-item-editor-primary">
-          <FieldLabel label="Servings"><input type="number" min="0" step="0.25" placeholder="1" value={item.serving_amount} onChange={event => onChange({ serving_amount: event.target.value })} /></FieldLabel>
+          <FieldLabel label="Servings"><input type="number" min="0" step="0.01" inputMode="decimal" placeholder="1" value={item.serving_amount} onChange={event => onChange({ serving_amount: event.target.value })} /></FieldLabel>
           <FieldLabel label="Serving unit"><ClearableInput placeholder="bowl" value={item.serving_unit} onChange={event => onChange({ serving_unit: event.target.value })} /></FieldLabel>
           <FieldLabel label="Calories"><input type="number" min="0" placeholder="0" value={item.calories} onChange={event => onChange({ calories: event.target.value })} /></FieldLabel>
           <FieldLabel label="Protein"><input type="number" min="0" step="0.01" inputMode="decimal" placeholder="0" value={item.protein_g} onChange={event => onChange({ protein_g: event.target.value })} /></FieldLabel>
@@ -3691,10 +3995,13 @@ function MealComposerItemRow({ item, busy, onChange, onSelectSuggestion, onAutof
           <FieldLabel label="Fat"><input type="number" min="0" step="0.01" inputMode="decimal" placeholder="0" value={item.fat_g} onChange={event => onChange({ fat_g: event.target.value })} /></FieldLabel>
         </div>
         <div className="macro-inputs nutrition-item-editor nutrition-item-editor-secondary">
+          <FieldLabel label="Estimated grams"><input type="number" min="0" step="0.01" inputMode="decimal" placeholder="0" value={item.estimated_grams} onChange={event => onChange({ estimated_grams: event.target.value })} /></FieldLabel>
+          <FieldLabel label="Ounces"><input type="number" min="0" step="0.01" inputMode="decimal" placeholder="0" value={formatOuncesInputValue(item.estimated_grams)} onChange={event => onChange({ estimated_grams: convertOuncesInputToGrams(event.target.value) })} /></FieldLabel>
           <FieldLabel label="Fiber"><input type="number" min="0" step="0.01" inputMode="decimal" placeholder="0" value={item.fiber_g} onChange={event => onChange({ fiber_g: event.target.value })} /></FieldLabel>
           <FieldLabel label="Sugar"><input type="number" min="0" step="0.01" inputMode="decimal" placeholder="0" value={item.sugar_g} onChange={event => onChange({ sugar_g: event.target.value })} /></FieldLabel>
           <FieldLabel label="Sodium mg"><input type="number" min="0" step="0.01" inputMode="decimal" placeholder="0" value={item.sodium_mg} onChange={event => onChange({ sodium_mg: event.target.value })} /></FieldLabel>
         </div>
+        {Number(item.estimated_grams) > 0 ? <p className="settings-subtitle">Weight: {formatWeightHelperText(item.estimated_grams)}</p> : null}
         {item.micros?.length ? <p className="settings-subtitle">{formatMicroList(item.micros, 4)}</p> : null}
         {item.notes ? <p className="settings-subtitle">{item.notes}</p> : null}
       </div>
@@ -4000,6 +4307,54 @@ function applyFoodSuggestion(currentItem, suggestion) {
   }
 }
 
+function buildMealDraftSourceBadge(item) {
+  const source = item?.source || null
+  const type = String(source?.type || '').trim().toLowerCase()
+  const provider = String(source?.provider || '').trim().toLowerCase()
+
+  if (provider === 'usda') {
+    return {
+      label: 'USDA filled',
+      tone: 'success',
+      note: 'Structured nutrition match. Adjust servings if the portion looks off.',
+    }
+  }
+
+  if (provider === 'web_search') {
+    return {
+      label: 'Web estimate',
+      tone: 'info',
+      note: 'Review this one before logging. The data came from a web fallback.',
+    }
+  }
+
+  if (type === 'saved_food') {
+    return {
+      label: 'Saved food',
+      tone: 'success',
+      note: 'Pulled from your saved food library.',
+    }
+  }
+
+  if (type === 'recent_item') {
+    return {
+      label: 'Recent match',
+      tone: 'info',
+      note: 'Reused from a recent food you already logged.',
+    }
+  }
+
+  if (hasMealItemNutritionData(item)) {
+    return {
+      label: 'Custom entry',
+      tone: 'active',
+      note: 'You can still adjust servings or macros before logging.',
+    }
+  }
+
+  return null
+}
+
 function hasMealItemNutritionData(item) {
   return (
     Number(item?.estimated_grams ?? 0) > 0 ||
@@ -4168,6 +4523,54 @@ function recomputeMealDraftItem(previousItem, nextItem = previousItem, changedFi
 function roundTo(value, digits = 0) {
   const multiplier = 10 ** digits
   return Math.round((Number(value) || 0) * multiplier) / multiplier
+}
+
+const GRAMS_PER_OUNCE = 28.349523125
+
+function gramsToOunces(value) {
+  const grams = Number(value)
+  if (!Number.isFinite(grams) || grams <= 0) {
+    return 0
+  }
+
+  return grams / GRAMS_PER_OUNCE
+}
+
+function ouncesToGrams(value) {
+  const ounces = Number(value)
+  if (!Number.isFinite(ounces) || ounces <= 0) {
+    return 0
+  }
+
+  return ounces * GRAMS_PER_OUNCE
+}
+
+function formatOuncesInputValue(value) {
+  const ounces = gramsToOunces(value)
+  if (ounces <= 0) {
+    return ''
+  }
+
+  return String(roundTo(ounces, 2))
+}
+
+function convertOuncesInputToGrams(value) {
+  const trimmed = String(value ?? '').trim()
+  if (!trimmed) {
+    return ''
+  }
+
+  return String(roundTo(ouncesToGrams(trimmed), 2))
+}
+
+function formatWeightHelperText(value) {
+  const grams = roundTo(Number(value) || 0, 2)
+  const ounces = roundTo(gramsToOunces(value), 2)
+  if (grams <= 0) {
+    return ''
+  }
+
+  return `${grams} g · ${ounces} oz`
 }
 
 function buildAiMealValidationToast(result) {
@@ -5488,6 +5891,54 @@ function findSavedFoodDuplicates(savedFoods, draft) {
 
     return !draftBrand && closeName && Math.abs(Number(food?.calories ?? 0) - Number(draft?.calories ?? 0)) <= 40
   })
+}
+
+function dedupeFoodSearchSuggestions(results) {
+  const deduped = []
+  const seen = new Map()
+
+  for (const suggestion of Array.isArray(results) ? results : []) {
+    const dedupeKey = buildFoodSuggestionDedupeKey(suggestion)
+    if (!dedupeKey) {
+      deduped.push(suggestion)
+      continue
+    }
+
+    const existingIndex = seen.get(dedupeKey)
+    if (existingIndex == null) {
+      seen.set(dedupeKey, deduped.length)
+      deduped.push(suggestion)
+      continue
+    }
+
+    if (compareFoodSuggestionPriority(suggestion, deduped[existingIndex]) < 0) {
+      deduped[existingIndex] = suggestion
+    }
+  }
+
+  return deduped
+}
+
+function buildFoodSuggestionDedupeKey(suggestion) {
+  const name = normaliseFoodMatchText(suggestion?.canonical_name || suggestion?.food_name || '')
+  const brand = normaliseFoodMatchText(suggestion?.brand || '')
+
+  if (!name) {
+    return ''
+  }
+
+  return `${name}|${brand}`
+}
+
+function compareFoodSuggestionPriority(left, right) {
+  return getFoodSuggestionPriority(left) - getFoodSuggestionPriority(right)
+}
+
+function getFoodSuggestionPriority(suggestion) {
+  const matchType = String(suggestion?.match_type || '').trim().toLowerCase()
+  if (matchType === 'saved_food') return 0
+  if (matchType === 'recent_item') return 1
+  return 2
 }
 
 function normaliseFoodMatchText(value) {

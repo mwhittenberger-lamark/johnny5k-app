@@ -6,6 +6,7 @@ export const aiApi = {
     thread_key: threadKey,
     mode,
     context: options.context ?? {},
+    chat_options: options.chatOptions ?? {},
   }),
   analyseMeal: (base64, mealNote = '') => api.post('/ai/analyse/meal', { image_base64: base64, meal_note: mealNote }),
   analyseLabel: ({ frontImageBase64, backImageBase64, labelNote = '' } = {}) => api.post('/ai/analyse/label', {

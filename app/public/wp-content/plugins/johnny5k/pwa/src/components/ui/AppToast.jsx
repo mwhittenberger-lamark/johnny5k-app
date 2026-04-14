@@ -13,6 +13,25 @@ export default function AppToast({ toast, onDismiss }) {
             {toast.details.map((detail, index) => <p key={`${toast.id || 'toast'}-${index}`}>{detail}</p>)}
           </div>
         ) : null}
+        {toast.actions?.length ? (
+          <div className="app-toast-actions">
+            {toast.actions.map((action, index) => (
+              <button
+                key={`${toast.id || 'toast'}-action-${index}`}
+                type="button"
+                className={`app-toast-action ${action.tone || 'secondary'}`}
+                onClick={() => {
+                  action.onClick?.()
+                  if (action.dismissOnClick !== false) {
+                    onDismiss?.()
+                  }
+                }}
+              >
+                {action.label}
+              </button>
+            ))}
+          </div>
+        ) : null}
       </div>
       <button type="button" className="app-toast-dismiss" onClick={onDismiss} aria-label="Dismiss toast">×</button>
     </div>

@@ -15,6 +15,7 @@ export function useNutritionToastQueue() {
         title: payload.title || '',
         message: payload.message || '',
         details: Array.isArray(payload.details) ? payload.details.filter(Boolean) : [],
+        actions: Array.isArray(payload.actions) ? payload.actions.filter(action => action?.label) : [],
         tone: payload.tone || tone,
         persistent: Boolean(payload.persistent),
         kind: payload.kind || '',
@@ -44,7 +45,7 @@ export function useNutritionToastQueue() {
 
     const timeoutId = window.setTimeout(() => {
       dismissToast(activeToast.id)
-    }, 2800)
+    }, 3600)
 
     return () => window.clearTimeout(timeoutId)
   }, [activeToast, dismissToast])

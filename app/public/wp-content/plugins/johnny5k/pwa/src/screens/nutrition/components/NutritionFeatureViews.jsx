@@ -343,6 +343,31 @@ export function LabelReviewCard({ screen, showQuickLog = true }) {
   )
 }
 
+function MealListLoadingSkeleton() {
+  return (
+    <div className="meals-list meal-list-loading" aria-hidden="true">
+      {Array.from({ length: 3 }).map((_, index) => (
+        <div key={index} className="meal-card meal-card-skeleton">
+          <div className="meal-card-skeleton-head">
+            <div className="meal-card-skeleton-block meal-card-skeleton-kicker" />
+            <div className="meal-card-skeleton-block meal-card-skeleton-time" />
+          </div>
+          <div className="meal-card-skeleton-block meal-card-skeleton-title" />
+          <div className="meal-card-skeleton-block meal-card-skeleton-copy" />
+          <div className="meal-card-skeleton-totals">
+            {Array.from({ length: 4 }).map((__, statIndex) => (
+              <div key={statIndex} className="meal-card-skeleton-total">
+                <div className="meal-card-skeleton-block meal-card-skeleton-stat-label" />
+                <div className="meal-card-skeleton-block meal-card-skeleton-stat-value" />
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 export function TodayNutritionView({ screen, deps }) {
   const {
     AddMealForm,
@@ -450,32 +475,94 @@ export function TodayNutritionView({ screen, deps }) {
       </div>
 
       <div className="dash-card nutrition-planning-card nutrition-meals-card">
-        <div className="dashboard-card-head"><span className="dashboard-chip nutrition">Logged meals</span><button className="btn-secondary small" onClick={() => screen.setShowAddForm(current => !current)}>{screen.showAddForm ? 'Close' : 'Add meal'}</button></div>
+        <div className="dashboard-card-head">
+          <span className="dashboard-chip nutrition">Logged meals</span>
+          {screen.showAddForm ? <span className="dashboard-chip subtle">Draft open</span> : null}
+        </div>
         <h3>What you logged today</h3>
         <p>Your latest meals stay at the top so edits and confirmations are easier to find.</p>
-        {screen.showAddForm ? <div ref={screen.addMealFormAnchor}><AddMealForm savedFoods={screen.savedFoods} onError={screen.showErrorToast} onToast={screen.showToast} onSave={async data => {
-          await screen.runAction(() => nutritionApi.logMeal(data), 'Meal logged.', { onSuccess: async () => { screen.invalidate(); screen.setShowAddForm(false); await screen.loadData(); scrollNodeIntoView(screen.mealsSectionAnchor.current) } })
+        {screen.showAddForm ? <div ref={screen.addMealFormAnchor}><AddMealForm savedFoods={screen.savedFoods} onError={screen.showErrorToast} onToast={screen.showToast} onOpenPhoto={() => {
+          screen.setShowAddForm(false)
+          screen.setShowLabelScanPrompt(false)
+          screen.setShowMealPhotoPrompt(true)
+        }} onSave={async data => {
+          const result = await screen.runAction(() => nutritionApi.logMeal(data), '', { onSuccess: async () => { screen.invalidate(); screen.setShowAddForm(false); await screen.loadData(); scrollNodeIntoView(screen.mealsSectionAnchor.current) } })
+          if (result) {
+            const itemCount = data.items.length
+            const merged = Boolean(result?.merged)
+            const mealId = Number(result?.meal_id || 0)
+
+            screen.showToast({
+              kind: 'nutrition-meal-log',
+              title: merged ? 'Meal Updated' : 'Meal Logged',
+              message: merged
+                ? `Added ${itemCount} food${itemCount === 1 ? '' : 's'} to ${data.meal_type}.`
+                : `${data.meal_type} logged with ${itemCount} food${itemCount === 1 ? '' : 's'}.`,
+              details: [
+                merged ? 'Johnny merged this into the meal already logged for that slot.' : 'The meal draft is now part of today’s log.',
+              ],
+              tone: 'success',
+              actions: [
+                {
+                  label: 'View',
+                  tone: 'primary',
+                  onClick: () => scrollNodeIntoView(screen.mealsSectionAnchor.current),
+                },
+                ...(!merged && mealId > 0 ? [{
+                  label: 'Undo',
+                  onClick: async () => {
+                    const undone = await screen.runAction(() => nutritionApi.deleteMeal(mealId), '', { onSuccess: async () => { screen.invalidate(); await screen.loadData() } })
+                    if (undone) {
+                      screen.showToast('Logged meal removed.')
+                    }
+                  },
+                }] : []),
+              ],
+            })
+          }
         }} onSaveAsTemplate={async data => {
-          await screen.runAction(() => nutritionApi.createSavedMeal(data), 'Saved meal created.', { onSuccess: async () => { screen.setShowAddForm(false); await screen.refreshPlanning(); scrollNodeIntoView(screen.mealsSectionAnchor.current) } })
+          const result = await screen.runAction(() => nutritionApi.createSavedMeal(data), '', { onSuccess: async () => { screen.setShowAddForm(false); await screen.refreshPlanning(); scrollNodeIntoView(screen.savedMealsSectionAnchor.current) } })
+          if (result) {
+            screen.showToast({
+              kind: 'nutrition-meal-template',
+              title: 'Template Saved',
+              message: `${data.name || 'Meal draft'} is now in your saved meals.`,
+              tone: 'success',
+              actions: [
+                {
+                  label: 'View library',
+                  tone: 'primary',
+                  onClick: () => screen.changeActiveView('library', screen.savedMealsSectionAnchor),
+                },
+              ],
+            })
+          }
         }} onCancel={() => screen.handleFormCancel(() => screen.setShowAddForm(false))} /></div> : null}
-        <div className="meals-list">{screen.visibleMeals.map(meal => <MealCard key={meal.id} meal={meal} savedFoods={screen.savedFoods} onError={screen.showErrorToast} onSave={async data => {
-          const mealIds = Array.isArray(meal.meal_ids) && meal.meal_ids.length ? meal.meal_ids : [meal.id]
-          const primaryMealId = mealIds[0]
-          const duplicateMealIds = mealIds.slice(1)
-          await screen.runAction(async () => {
-            if (!data.items.length) {
-              await Promise.all(mealIds.map(id => nutritionApi.deleteMeal(id)))
-              return
-            }
-            await nutritionApi.updateMeal(primaryMealId, { meal_datetime: data.meal_datetime, meal_type: data.meal_type, source: meal.source, items: data.items })
-            if (duplicateMealIds.length) {
-              await Promise.all(duplicateMealIds.map(id => nutritionApi.deleteMeal(id)))
-            }
-          }, data.items.length ? 'Logged meal updated.' : 'Logged meal deleted.', { onSuccess: async () => { screen.invalidate(); await screen.loadData() } })
-        }} onDelete={async () => {
-          const mealIds = Array.isArray(meal.meal_ids) && meal.meal_ids.length ? meal.meal_ids : [meal.id]
-          await screen.runAction(() => Promise.all(mealIds.map(id => nutritionApi.deleteMeal(id))), 'Logged meal deleted.', { onSuccess: async () => { screen.invalidate(); await screen.loadData() } })
-        }} />)}{!screen.mergedMeals.length && !screen.showAddForm ? <EmptyState className="nutrition-inline-state" message="Scan one or add one manually." title="No meals logged yet today" /> : null}</div>
+        {screen.loadingMeals ? (
+          <MealListLoadingSkeleton />
+        ) : (
+          <div className="meals-list" aria-busy="false">
+            {screen.visibleMeals.map(meal => <MealCard key={meal.id} meal={meal} savedFoods={screen.savedFoods} onError={screen.showErrorToast} onSave={async data => {
+              const mealIds = Array.isArray(meal.meal_ids) && meal.meal_ids.length ? meal.meal_ids : [meal.id]
+              const primaryMealId = mealIds[0]
+              const duplicateMealIds = mealIds.slice(1)
+              await screen.runAction(async () => {
+                if (!data.items.length) {
+                  await Promise.all(mealIds.map(id => nutritionApi.deleteMeal(id)))
+                  return
+                }
+                await nutritionApi.updateMeal(primaryMealId, { meal_datetime: data.meal_datetime, meal_type: data.meal_type, source: meal.source, items: data.items })
+                if (duplicateMealIds.length) {
+                  await Promise.all(duplicateMealIds.map(id => nutritionApi.deleteMeal(id)))
+                }
+              }, data.items.length ? 'Logged meal updated.' : 'Logged meal deleted.', { onSuccess: async () => { screen.invalidate(); await screen.loadData() } })
+            }} onDelete={async () => {
+              const mealIds = Array.isArray(meal.meal_ids) && meal.meal_ids.length ? meal.meal_ids : [meal.id]
+              await screen.runAction(() => Promise.all(mealIds.map(id => nutritionApi.deleteMeal(id))), 'Logged meal deleted.', { onSuccess: async () => { screen.invalidate(); await screen.loadData() } })
+            }} />)}
+            {!screen.mergedMeals.length && !screen.showAddForm ? <EmptyState className="nutrition-inline-state" message="Scan one or add one manually." title="No meals logged yet today" /> : null}
+          </div>
+        )}
         <SectionClampToggle count={screen.meals.length} expanded={screen.expandedSections.meals} limit={4} label="meals" onToggle={() => screen.toggleSection('meals')} />
       </div>
     </section>

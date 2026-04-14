@@ -55,9 +55,9 @@ class CalorieEngine {
 	 *   tdee:      int,
 	 * }
 	 */
-	public static function calculate_initial( object $profile, object $goal ): array {
+	public static function calculate_initial( object $profile, object $goal, ?float $weight_lb_override = null ): array {
 		$age_years    = self::age_from_dob( $profile->date_of_birth ?? '' );
-		$bodyweight_lb = (float) ( $profile->starting_weight_lb ?? 0 );
+		$bodyweight_lb = self::resolve_bodyweight_lb( $profile, $weight_lb_override );
 		if ( $bodyweight_lb <= 0 ) {
 			$bodyweight_lb = 150.0;
 		}
@@ -98,6 +98,72 @@ class CalorieEngine {
 			'fat_g'     => $fat_g,
 			'bmr'       => (int) round( $bmr ),
 			'tdee'      => $tdee,
+		];
+	}
+
+	/**
+	 * Refresh the active goal row so calorie and macro targets reflect the latest logged bodyweight.
+	 *
+	 * @param int $user_id
+	 * @return array{weight_lb:float,targets:array}|null
+	 */
+	public static function refresh_active_goal_targets( int $user_id ): ?array {
+		global $wpdb;
+		$p = $wpdb->prefix;
+
+		$profile = $wpdb->get_row( $wpdb->prepare(
+			"SELECT * FROM {$p}fit_user_profiles WHERE user_id = %d",
+			$user_id
+		) );
+		if ( ! $profile ) {
+			return null;
+		}
+
+		$goal = $wpdb->get_row( $wpdb->prepare(
+			"SELECT * FROM {$p}fit_user_goals WHERE user_id = %d AND active = 1 ORDER BY created_at DESC LIMIT 1",
+			$user_id
+		) );
+		if ( ! $goal ) {
+			return null;
+		}
+
+		$weight_lb = self::get_latest_logged_weight_lb( $user_id );
+		if ( $weight_lb <= 0 ) {
+			$weight_lb = (float) ( $profile->starting_weight_lb ?? 0 );
+		}
+		if ( $weight_lb <= 0 ) {
+			return null;
+		}
+
+		$targets = self::calculate_initial( $profile, $goal, $weight_lb );
+		$next_values = [
+			'target_calories'  => $targets['calories'],
+			'target_protein_g' => $targets['protein_g'],
+			'target_carbs_g'   => $targets['carbs_g'],
+			'target_fat_g'     => $targets['fat_g'],
+		];
+
+		$current_values = [
+			'target_calories'  => (int) ( $goal->target_calories ?? 0 ),
+			'target_protein_g' => (int) ( $goal->target_protein_g ?? 0 ),
+			'target_carbs_g'   => (int) ( $goal->target_carbs_g ?? 0 ),
+			'target_fat_g'     => (int) ( $goal->target_fat_g ?? 0 ),
+		];
+
+		if ( $current_values !== $next_values ) {
+			$wpdb->update(
+				$wpdb->prefix . 'fit_user_goals',
+				$next_values,
+				[
+					'id' => (int) $goal->id,
+					'user_id' => $user_id,
+				]
+			);
+		}
+
+		return [
+			'weight_lb' => $weight_lb,
+			'targets'   => $targets,
 		];
 	}
 
@@ -266,7 +332,7 @@ class CalorieEngine {
 			"SELECT * FROM {$wpdb->prefix}fit_user_profiles WHERE user_id = %d",
 			$user_id
 		) );
-		$protein_g  = (int) round( (float) ( $profile->starting_weight_lb ?? 150 ) );
+		$protein_g  = (int) round( self::resolve_bodyweight_lb( $profile, self::get_latest_logged_weight_lb( $user_id ) ) ?: 150.0 );
 		$remaining  = max( 0, $new_target - ( $protein_g * 4 ) );
 		$carbs_g    = (int) round( ( $remaining * 0.40 ) / 4 );
 		$fat_g      = (int) round( ( $remaining * 0.60 ) / 9 );
@@ -341,5 +407,32 @@ class CalorieEngine {
 		} catch ( \Exception $e ) {
 			return 30;
 		}
+	}
+
+	private static function resolve_bodyweight_lb( object $profile, ?float $weight_lb_override = null ): float {
+		if ( null !== $weight_lb_override && $weight_lb_override > 0 ) {
+			return $weight_lb_override;
+		}
+
+		$current_weight_lb = (float) ( $profile->current_weight_lb ?? 0 );
+		if ( $current_weight_lb > 0 ) {
+			return $current_weight_lb;
+		}
+
+		return (float) ( $profile->starting_weight_lb ?? 0 );
+	}
+
+	private static function get_latest_logged_weight_lb( int $user_id ): float {
+		global $wpdb;
+
+		$weight_lb = $wpdb->get_var( $wpdb->prepare(
+			"SELECT weight_lb FROM {$wpdb->prefix}fit_body_metrics
+			 WHERE user_id = %d
+			 ORDER BY metric_date DESC, id DESC
+			 LIMIT 1",
+			$user_id
+		) );
+
+		return null !== $weight_lb && '' !== $weight_lb ? (float) $weight_lb : 0.0;
 	}
 }
