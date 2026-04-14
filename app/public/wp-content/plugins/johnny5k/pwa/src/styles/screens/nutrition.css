@@ -1214,6 +1214,86 @@ label.field-label.nutrition-saved-food-field {
   padding: 0 var(--space-3-5) var(--space-3-5);
   border-top: 1px solid rgba(88, 120, 160, 0.12);
 }
+.nutrition-recipe-filter-grid {
+  display: grid;
+  gap: var(--space-3);
+}
+.nutrition-recipe-filter-search {
+  margin: 0;
+}
+.nutrition-recipe-filter-scope {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1-5);
+}
+.nutrition-recipe-filter-select-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--space-2-5);
+}
+.nutrition-recipe-filter-field {
+  margin: 0;
+}
+.nutrition-recipe-filter-footer {
+  display: grid;
+  gap: var(--space-2);
+}
+.nutrition-recipe-filter-recommended {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-2-5);
+  border-radius: 16px;
+  border: 1px solid rgba(0, 188, 222, 0.18);
+  background: linear-gradient(180deg, rgba(240, 252, 255, 0.78), rgba(248, 253, 255, 0.92));
+}
+.nutrition-recipe-filter-recommended-copy {
+  display: grid;
+  gap: 2px;
+}
+.nutrition-recipe-filter-recommended-copy strong {
+  color: #09324d;
+}
+.nutrition-recipe-filter-recommended-copy span {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+.nutrition-recipe-filter-recommended-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1-5);
+}
+.nutrition-recipe-filter-hint,
+.nutrition-recipe-filter-status {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+.nutrition-recipe-filter-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1-5);
+}
+.nutrition-filter-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid rgba(0, 188, 222, 0.2);
+  border-radius: 999px;
+  background: rgba(0, 188, 222, 0.1);
+  color: #0b4f70;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+.nutrition-filter-pill strong {
+  font-size: 0.95rem;
+  line-height: 1;
+}
 .nutrition-plan-accordion-card {
   display: grid;
   gap: 0;

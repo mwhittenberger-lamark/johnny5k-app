@@ -9,6 +9,106 @@ import EmptyState from '../../../components/ui/EmptyState'
 import ErrorState from '../../../components/ui/ErrorState'
 import SupportIconButton from '../../../components/ui/SupportIconButton'
 
+function buildRecipeFilterSummary(screen, formatMealTypeLabel) {
+  const summary = []
+
+  if (screen.recipeSearchQuery) {
+    summary.push(`Search: ${screen.recipeSearchQuery}`)
+  }
+
+  if (screen.recipeCollectionFilter === 'cookbook') {
+    summary.push('My cook book')
+  }
+
+  if (screen.recipeMealFilter !== 'all') {
+    summary.push(formatMealTypeLabel(screen.recipeMealFilter))
+  }
+
+  if (screen.recipeDietaryFilter !== 'all') {
+    const option = (screen.recipeDietaryFilterOptions || []).find(item => item.value === screen.recipeDietaryFilter)
+    summary.push(option?.label || screen.recipeDietaryFilter)
+  }
+
+  if (!summary.length) {
+    return 'Browse all recipes'
+  }
+
+  return summary.join(' · ')
+}
+
+function buildRecipeFilterPills(screen, formatMealTypeLabel) {
+  const pills = []
+
+  if (screen.recipeSearchQuery) {
+    pills.push({
+      key: 'search',
+      label: `Search: ${screen.recipeSearchQuery}`,
+      onClear: () => screen.setRecipeSearchQuery(''),
+    })
+  }
+
+  if (screen.recipeCollectionFilter === 'cookbook') {
+    pills.push({
+      key: 'collection',
+      label: 'My cook book',
+      onClear: () => screen.setRecipeCollectionFilter('all'),
+    })
+  }
+
+  if (screen.recipeMealFilter !== 'all') {
+    pills.push({
+      key: 'meal',
+      label: formatMealTypeLabel(screen.recipeMealFilter),
+      onClear: () => screen.setRecipeMealFilter('all'),
+    })
+  }
+
+  if (screen.recipeDietaryFilter !== 'all') {
+    const option = (screen.recipeDietaryFilterOptions || []).find(item => item.value === screen.recipeDietaryFilter)
+    pills.push({
+      key: 'dietary',
+      label: option?.label || screen.recipeDietaryFilter,
+      onClear: () => screen.setRecipeDietaryFilter('all'),
+    })
+  }
+
+  return pills
+}
+
+function buildRecommendedDietaryOptions(recipePool, options = [], currentValue = 'all') {
+  const counts = options
+    .filter(option => option.value !== 'all')
+    .map(option => ({
+      ...option,
+      count: recipePool.filter(recipe => (Array.isArray(recipe?.dietary_tags) ? recipe.dietary_tags : []).includes(option.value)).length,
+    }))
+    .filter(option => option.count > 0)
+    .sort((left, right) => {
+      if (left.value === currentValue) {
+        return -1
+      }
+
+      if (right.value === currentValue) {
+        return 1
+      }
+
+      if (right.count !== left.count) {
+        return right.count - left.count
+      }
+
+      return left.label.localeCompare(right.label)
+    })
+
+  return counts.slice(0, 4)
+}
+
+function buildVisibleDietaryOptions(recipePool, options = []) {
+  const allOption = options.find(option => option.value === 'all') || { value: 'all', label: 'All tags' }
+  const scopedOptions = options.filter(option => option.value !== 'all').filter(option => recipePool.some(recipe => (Array.isArray(recipe?.dietary_tags) ? recipe.dietary_tags : []).includes(option.value)))
+
+  return [allOption, ...scopedOptions]
+}
+
 export function PantryPageContent({ screen, deps }) {
   const {
     AppToast,
@@ -654,6 +754,34 @@ export function PlanningNutritionView({ screen, deps }) {
     SectionClampToggle,
   } = deps
 
+  const recipePool = screen.recipeCollectionFilter === 'cookbook'
+    ? screen.recipes.filter(recipe => screen.selectedRecipeKeys.includes(getRecipeKey(recipe)))
+    : screen.recipes
+  const recipeFilterPills = buildRecipeFilterPills(screen, formatMealTypeLabel)
+  const recipeFilterSummary = buildRecipeFilterSummary(screen, formatMealTypeLabel)
+  const mealOptions = [
+    { value: 'all', label: `All meal types (${recipePool.length})` },
+    ...MEAL_TYPES.map(mealType => ({
+      value: mealType,
+      label: `${formatMealTypeLabel(mealType)} (${recipePool.filter(recipe => recipe?.meal_type === mealType).length})`,
+    })),
+  ]
+  const dietaryOptions = (screen.recipeDietaryFilterOptions || []).map(option => {
+    const count = option.value === 'all'
+      ? recipePool.length
+      : recipePool.filter(recipe => (Array.isArray(recipe?.dietary_tags) ? recipe.dietary_tags : []).includes(option.value)).length
+
+    return {
+      value: option.value,
+      label: `${option.label} (${count})`,
+    }
+  })
+  const visibleDietaryOptions = buildVisibleDietaryOptions(recipePool, screen.recipeDietaryFilterOptions)
+  const filteredDietaryOptions = dietaryOptions.filter(option => visibleDietaryOptions.some(visibleOption => visibleOption.value === option.value))
+  const recommendedDietaryOptions = screen.recipeMealFilter === 'all'
+    ? []
+    : buildRecommendedDietaryOptions(recipePool, screen.recipeDietaryFilterOptions, screen.recipeDietaryFilter)
+
   return (
     <section ref={screen.planningSectionAnchor} className="nutrition-section-shell nutrition-section-shell-plan">
       <div className="dash-card nutrition-planning-card nutrition-section-intro-card nutrition-section-intro-plan"><span className="dashboard-chip awards">Plan</span><h2>Recipes, pantry, and shopping</h2><p>Use this after logging to decide what to cook next, what you already have, and what still needs to be picked up.</p></div>
@@ -679,34 +807,73 @@ export function PlanningNutritionView({ screen, deps }) {
             <summary>
               <span>Search and filters</span>
               <span className="nutrition-filter-accordion-meta">
-                {screen.recipeSearchQuery
-                  ? `Search: ${screen.recipeSearchQuery}`
-                  : `${screen.recipeCollectionFilter === 'cookbook' ? 'My cook book' : 'All recipes'} · ${screen.recipeMealFilter === 'all' ? 'All meals' : formatMealTypeLabel(screen.recipeMealFilter)} · ${screen.recipeDietaryFilter === 'all' ? 'All tags' : ((screen.recipeDietaryFilterOptions || []).find(option => option.value === screen.recipeDietaryFilter)?.label || screen.recipeDietaryFilter)}`}
+                {`${recipeFilterSummary} · ${screen.filteredRecipes.length} match${screen.filteredRecipes.length === 1 ? '' : 'es'}`}
               </span>
             </summary>
             <div className="nutrition-filter-accordion-body">
-              <label className="field-label nutrition-pantry-search">
-                <span>Search recipes</span>
-                <ClearableInput type="search" placeholder="Search by recipe, ingredient, or tag" value={screen.recipeSearchQuery} onChange={event => screen.setRecipeSearchQuery(event.target.value)} />
-              </label>
-              <div className="nutrition-gap-list nutrition-quick-picks">
-                <button type="button" className={`onboarding-chip${screen.recipeCollectionFilter === 'all' ? ' active' : ''}`} onClick={() => screen.setRecipeCollectionFilter('all')}>All recipes</button>
-                <button type="button" className={`onboarding-chip${screen.recipeCollectionFilter === 'cookbook' ? ' active' : ''}`} onClick={() => screen.setRecipeCollectionFilter('cookbook')}>My cook book ({screen.selectedRecipeKeys.length})</button>
-              </div>
-              <div className="nutrition-gap-list nutrition-quick-picks">
-                <button type="button" className={`onboarding-chip${screen.recipeMealFilter === 'all' ? ' active' : ''}`} onClick={() => screen.setRecipeMealFilter('all')}>All ({screen.recipes.length})</button>
-                {MEAL_TYPES.map(mealType => {
-                  const count = screen.recipes.filter(recipe => recipe?.meal_type === mealType).length
-                  return <button key={mealType} type="button" className={`onboarding-chip${screen.recipeMealFilter === mealType ? ' active' : ''}`} onClick={() => screen.setRecipeMealFilter(mealType)}>{formatMealTypeLabel(mealType)} ({count})</button>
-                })}
-              </div>
-              <div className="nutrition-gap-list nutrition-quick-picks">
-                {(screen.recipeDietaryFilterOptions || []).map(option => {
-                  const count = option.value === 'all'
-                    ? screen.recipes.length
-                    : screen.recipes.filter(recipe => (Array.isArray(recipe?.dietary_tags) ? recipe.dietary_tags : []).includes(option.value)).length
-                  return <button key={option.value} type="button" className={`onboarding-chip${screen.recipeDietaryFilter === option.value ? ' active' : ''}`} onClick={() => screen.setRecipeDietaryFilter(option.value)}>{option.label} ({count})</button>
-                })}
+              <div className="nutrition-recipe-filter-grid">
+                <label className="field-label nutrition-pantry-search nutrition-recipe-filter-search">
+                  <span>Search recipes</span>
+                  <ClearableInput type="search" placeholder="Search by recipe, ingredient, or tag" value={screen.recipeSearchQuery} onChange={event => screen.setRecipeSearchQuery(event.target.value)} />
+                </label>
+                <div className="nutrition-recipe-filter-scope" aria-label="Recipe collection filter">
+                  <button type="button" className={`onboarding-chip${screen.recipeCollectionFilter === 'all' ? ' active' : ''}`} onClick={() => screen.setRecipeCollectionFilter('all')}>All recipes</button>
+                  <button type="button" className={`onboarding-chip${screen.recipeCollectionFilter === 'cookbook' ? ' active' : ''}`} onClick={() => screen.setRecipeCollectionFilter('cookbook')}>My cook book ({screen.selectedRecipeKeys.length})</button>
+                </div>
+                <div className="nutrition-recipe-filter-select-grid">
+                  <label className="field-label nutrition-recipe-filter-field">
+                    <span>Meal type</span>
+                    <select value={screen.recipeMealFilter} onChange={event => screen.setRecipeMealFilter(event.target.value)}>
+                      {mealOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                    </select>
+                  </label>
+                  <label className="field-label nutrition-recipe-filter-field">
+                    <span>Tag</span>
+                    <select value={screen.recipeDietaryFilter} onChange={event => screen.setRecipeDietaryFilter(event.target.value)}>
+                      {filteredDietaryOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                    </select>
+                  </label>
+                </div>
+                {recommendedDietaryOptions.length ? (
+                  <div className="nutrition-recipe-filter-recommended" aria-label="Suggested recipe tags">
+                    <div className="nutrition-recipe-filter-recommended-copy">
+                      <strong>Suggested tags for {formatMealTypeLabel(screen.recipeMealFilter).toLowerCase()}</strong>
+                      <span>Start here before opening the full tag list.</span>
+                    </div>
+                    <div className="nutrition-recipe-filter-recommended-chips">
+                      {recommendedDietaryOptions.map(option => (
+                        <button
+                          key={option.value}
+                          type="button"
+                          className={`onboarding-chip${screen.recipeDietaryFilter === option.value ? ' active' : ''}`}
+                          onClick={() => screen.setRecipeDietaryFilter(option.value)}
+                        >
+                          {option.label} ({option.count})
+                        </button>
+                      ))}
+                      {screen.recipeDietaryFilter !== 'all' ? (
+                        <button type="button" className="btn-ghost small" onClick={() => screen.setRecipeDietaryFilter('all')}>
+                          Clear tag
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : null}
+                <div className="nutrition-recipe-filter-footer">
+                  <p className="nutrition-recipe-filter-hint">Start with meal type, use a suggested tag if needed, and only then reach for the full tag picker. The tag list now only shows tags that exist for the current meal scope.</p>
+                  {recipeFilterPills.length ? (
+                    <div className="nutrition-recipe-filter-pills" aria-label="Active recipe filters">
+                      {recipeFilterPills.map(pill => (
+                        <button key={pill.key} type="button" className="nutrition-filter-pill" onClick={pill.onClear}>
+                          <span>{pill.label}</span>
+                          <strong aria-hidden="true">×</strong>
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="nutrition-recipe-filter-status">No filters active. You&apos;re browsing the full recipe list.</p>
+                  )}
+                </div>
               </div>
               {(screen.recipeSearchQuery || screen.recipeMealFilter !== 'all' || screen.recipeCollectionFilter !== 'all' || screen.recipeDietaryFilter !== 'all') ? (
                 <div className="nutrition-card-actions">

@@ -15,6 +15,13 @@ export function RecoveryLoopCard({
 }) {
   if (!recoverySummary) return null
 
+  const recommendedAction = recoverySummary?.recommended_action || null
+  const recommendedActionLabel = String(recommendedAction?.label || '').trim()
+  const recommendedActionTarget = String(recommendedAction?.target || '').trim().toLowerCase()
+  const quickActionDuplicatesRecovery = recommendedActionTarget === 'body' || recommendedActionLabel.toLowerCase() === 'open recovery'
+  const recoveryButtonHandler = quickActionDuplicatesRecovery && onQuickAction ? onQuickAction : onOpenRecovery
+  const showQuickAction = Boolean(onQuickAction) && !quickActionDuplicatesRecovery
+
   return (
     <section className="dash-card body-recovery-card dashboard-recovery-summary-card">
       <div className="body-card-header">
@@ -85,8 +92,10 @@ export function RecoveryLoopCard({
         </ul>
       </div>
       <div className="dashboard-recovery-action-row">
-        <button className="btn-outline small" type="button" onClick={onOpenRecovery}>Open recovery</button>
-        <button className="btn-secondary small" type="button" onClick={onQuickAction}>{recoverySummary?.recommended_action?.label || 'Take action'}</button>
+        <button className="btn-outline small" type="button" onClick={recoveryButtonHandler}>Open recovery</button>
+        {showQuickAction ? (
+          <button className="btn-secondary small" type="button" onClick={onQuickAction}>{recommendedActionLabel || 'Take action'}</button>
+        ) : null}
         <button className="btn-primary small" type="button" onClick={onOpenWorkout}>
           Open {recoverySummary.recommended_time_tier || 'medium'} workout
         </button>

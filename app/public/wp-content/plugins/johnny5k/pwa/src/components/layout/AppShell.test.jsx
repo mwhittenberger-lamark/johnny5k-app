@@ -11,6 +11,7 @@ const authState = vi.hoisted(() => ({
   canAccessPwaAdmin: false,
   clearAuth: vi.fn(),
   dailyCheckInEntry: null,
+  email: '',
   notificationPrefs: {
     pushPromptStatus: 'pending',
     pushSupported: false,
@@ -113,6 +114,7 @@ describe('AppShell', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     authState.canAccessPwaAdmin = false
+    authState.email = ''
     authState.clearAuth.mockReset()
     authState.setDailyCheckInEntry.mockReset()
     authState.setPreferenceMeta.mockReset()
@@ -192,5 +194,29 @@ describe('AppShell', () => {
 
     expect(johnnyState.openDrawer).toHaveBeenCalledTimes(1)
     expect(document.getElementById('app-shell-mobile-nav')).toBeNull()
+  })
+
+  it('hides the mobile admin link for mike@panempire.com while leaving the rest of the menu intact', async () => {
+    authState.canAccessPwaAdmin = true
+    authState.email = 'mike@panempire.com'
+
+    await renderComponent(
+      <MemoryRouter initialEntries={['/dashboard']}>
+        <AppShell>
+          <div>Screen content</div>
+        </AppShell>
+      </MemoryRouter>,
+    )
+
+    const menuButton = Array.from(document.querySelectorAll('button')).find(button => button.getAttribute('aria-label') === 'Open navigation menu')
+    await click(menuButton)
+    await flushFocusTimer()
+
+    const mobileNavText = document.getElementById('app-shell-mobile-nav')?.textContent || ''
+    const desktopNavText = document.querySelector('.app-shell-desktop-nav')?.textContent || ''
+
+    expect(mobileNavText).not.toContain('Admin')
+    expect(desktopNavText).toContain('Admin')
+    expect(mobileNavText).toContain('Ask Johnny')
   })
 })

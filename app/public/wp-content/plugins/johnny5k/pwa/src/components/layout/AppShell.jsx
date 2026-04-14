@@ -22,6 +22,7 @@ import AppIcon from '../ui/AppIcon'
 import AppDialog from '../ui/AppDialog'
 
 const JohnnyAssistantDrawer = lazy(() => import('../ai/JohnnyAssistantDrawer'))
+const MOBILE_ADMIN_LINK_HIDDEN_EMAILS = new Set(['mike@panempire.com'])
 
 const tabs = [
   { to: '/dashboard', icon: 'home', label: 'Home', note: 'Today and next move' },
@@ -34,7 +35,7 @@ const tabs = [
 export default function AppShell({ children }) {
   const location = useLocation()
   const navigate = useNavigate()
-  const { appImages, canAccessPwaAdmin, clearAuth, dailyCheckInEntry, notificationPrefs, preferenceMeta, setDailyCheckInEntry, setPreferenceMeta } = useAuthStore()
+  const { appImages, canAccessPwaAdmin, clearAuth, dailyCheckInEntry, email, notificationPrefs, preferenceMeta, setDailyCheckInEntry, setPreferenceMeta } = useAuthStore()
   const openDrawer = useJohnnyAssistantStore(state => state.openDrawer)
   const isDrawerOpen = useJohnnyAssistantStore(state => state.isOpen)
   const [loggingOut, setLoggingOut] = useState(false)
@@ -67,6 +68,7 @@ export default function AppShell({ children }) {
     && Boolean(installPromptEvent || isAppleInstallFlow)
     && !isInstallPromptSnoozed(preferenceMeta)
   const showConnectivityNotice = !isOnline || pendingOfflineWrites > 0
+  const hideMobileAdminLink = MOBILE_ADMIN_LINK_HIDDEN_EMAILS.has(String(email || '').trim().toLowerCase())
 
   useEffect(() => {
     preferenceMetaRef.current = preferenceMeta && typeof preferenceMeta === 'object' ? preferenceMeta : {}
@@ -623,7 +625,7 @@ export default function AppShell({ children }) {
                   </NavLink>
                 ))}
 
-                {canAccessPwaAdmin ? (
+                {canAccessPwaAdmin && !hideMobileAdminLink ? (
                   <NavLink to="/admin" className={({ isActive }) => `app-shell-mobile-link ${isActive ? 'active' : ''}`}>
                     <span className="app-shell-mobile-link-icon">
                       <AppIcon name="admin" />
