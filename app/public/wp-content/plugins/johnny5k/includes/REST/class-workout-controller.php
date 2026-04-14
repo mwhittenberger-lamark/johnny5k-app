@@ -204,7 +204,7 @@ class WorkoutController {
 
 	public static function start( \WP_REST_Request $req ): \WP_REST_Response {
 		$user_id   = get_current_user_id();
-		$time_tier = sanitize_text_field( $req->get_param( 'time_tier' ) ?: 'medium' );
+		$time_tier = self::normalize_time_tier( $req->get_param( 'time_tier' ) ) ?: 'medium';
 		$day_type  = self::normalize_day_type( $req->get_param( 'day_type' ) );
 		$custom_workout_draft_id = sanitize_text_field( (string) ( $req->get_param( 'custom_workout_draft_id' ) ?: '' ) );
 		$readiness = $req->get_param( 'readiness_score' ) !== null ? max( 1, min( 10, (int) $req->get_param( 'readiness_score' ) ) ) : null;
@@ -320,7 +320,7 @@ class WorkoutController {
 
 	public static function preview( \WP_REST_Request $req ): \WP_REST_Response {
 		$user_id   = get_current_user_id();
-		$time_tier = sanitize_text_field( $req->get_param( 'time_tier' ) ?: 'medium' );
+		$time_tier = self::normalize_time_tier( $req->get_param( 'time_tier' ) ) ?: 'medium';
 		$day_type  = self::normalize_day_type( $req->get_param( 'day_type' ) );
 		$custom_workout_draft_id = sanitize_text_field( (string) ( $req->get_param( 'custom_workout_draft_id' ) ?: '' ) );
 		$readiness = $req->get_param( 'readiness_score' ) !== null ? max( 1, min( 10, (int) $req->get_param( 'readiness_score' ) ) ) : null;
@@ -740,8 +740,8 @@ class WorkoutController {
 		}
 
 		if ( null !== $req->get_param( 'time_tier' ) ) {
-			$time_tier = sanitize_key( (string) $req->get_param( 'time_tier' ) );
-			if ( ! in_array( $time_tier, [ 'short', 'medium', 'full' ], true ) ) {
+			$time_tier = self::normalize_time_tier( $req->get_param( 'time_tier' ) );
+			if ( '' === $time_tier ) {
 				return new \WP_REST_Response( [ 'message' => 'Workout time tier is invalid.' ], 400 );
 			}
 			$update['time_tier'] = $time_tier;
@@ -1803,9 +1803,17 @@ class WorkoutController {
 		return TrainingDayTypes::normalize( $value );
 	}
 
+	private static function normalize_time_tier( $value ): string {
+		$time_tier = sanitize_key( (string) $value );
+		if ( 'long' === $time_tier ) {
+			$time_tier = 'full';
+		}
+
+		return in_array( $time_tier, [ 'short', 'medium', 'full' ], true ) ? $time_tier : '';
+	}
+
 	public static function validate_time_tier( $value ): bool {
-		$time_tier = sanitize_text_field( (string) $value );
-		return '' === $time_tier || in_array( $time_tier, [ 'short', 'medium', 'full' ], true );
+		return '' === (string) $value || '' !== self::normalize_time_tier( $value );
 	}
 
 	public static function validate_day_type( $value ): bool {

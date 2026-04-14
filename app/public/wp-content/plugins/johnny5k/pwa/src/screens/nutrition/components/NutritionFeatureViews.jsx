@@ -681,7 +681,7 @@ export function PlanningNutritionView({ screen, deps }) {
               <span className="nutrition-filter-accordion-meta">
                 {screen.recipeSearchQuery
                   ? `Search: ${screen.recipeSearchQuery}`
-                  : `${screen.recipeCollectionFilter === 'cookbook' ? 'My cook book' : 'All recipes'} · ${screen.recipeMealFilter === 'all' ? 'All meals' : formatMealTypeLabel(screen.recipeMealFilter)} · ${screen.recipeDietaryFilter === 'all' ? 'All tags' : (screen.recipeDietaryFilterOptions.find(option => option.value === screen.recipeDietaryFilter)?.label || screen.recipeDietaryFilter)}`}
+                  : `${screen.recipeCollectionFilter === 'cookbook' ? 'My cook book' : 'All recipes'} · ${screen.recipeMealFilter === 'all' ? 'All meals' : formatMealTypeLabel(screen.recipeMealFilter)} · ${screen.recipeDietaryFilter === 'all' ? 'All tags' : ((screen.recipeDietaryFilterOptions || []).find(option => option.value === screen.recipeDietaryFilter)?.label || screen.recipeDietaryFilter)}`}
               </span>
             </summary>
             <div className="nutrition-filter-accordion-body">
@@ -701,7 +701,7 @@ export function PlanningNutritionView({ screen, deps }) {
                 })}
               </div>
               <div className="nutrition-gap-list nutrition-quick-picks">
-                {screen.recipeDietaryFilterOptions.map(option => {
+                {(screen.recipeDietaryFilterOptions || []).map(option => {
                   const count = option.value === 'all'
                     ? screen.recipes.length
                     : screen.recipes.filter(recipe => (Array.isArray(recipe?.dietary_tags) ? recipe.dietary_tags : []).includes(option.value)).length

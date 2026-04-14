@@ -96,7 +96,7 @@
 
 .support-icon-anchor {
   position: relative;
-  padding-right: calc(48px + var(--space-4));
+  padding-right: var(--space-2);
 }
 
 @media (max-width: 720px) {
@@ -125,6 +125,6 @@
   }
 
   .support-icon-anchor {
-    padding-right: calc(48px + var(--space-3));
+    padding-right: var(--space-2);
   }
 }

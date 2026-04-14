@@ -10,7 +10,7 @@ use Johnny5k\Tests\Support\TestWorkoutController;
 class WorkoutApiIntegrationTest extends ApiIntegrationTestCase {
 	public function test_validate_time_tier_accepts_full(): void {
 		$this->assertTrue( TestWorkoutController::validate_time_tier( 'full' ) );
-		$this->assertFalse( TestWorkoutController::validate_time_tier( 'long' ) );
+		$this->assertTrue( TestWorkoutController::validate_time_tier( 'long' ) );
 	}
 
 	public function test_workout_start_creates_session_through_controller_flow(): void {
