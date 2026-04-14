@@ -134,4 +134,45 @@ class AiToolHandlerServiceTest extends ServiceTestCase {
 		$this->assertInstanceOf( \WP_REST_Request::class, $captured_request );
 		$this->assertSame( 'Bananas', $captured_request->get_param( 'items' )[0]['item_name'] ?? null );
 	}
+
+	public function test_clear_follow_ups_can_dismiss_all_pending_items(): void {
+		$result = AiToolHandlerService::execute( 7, 'clear_follow_ups', [
+			'clear_all' => true,
+		], [
+			'list_pending_follow_ups' => static fn( int $user_id ): array => [
+				[ 'id' => 'fu_1', 'prompt' => 'Log dinner.' ],
+				[ 'id' => 'fu_2', 'prompt' => 'Log sleep.' ],
+			],
+			'dismiss_follow_up' => static fn( int $user_id, string $follow_up_id ): bool => in_array( $follow_up_id, [ 'fu_1', 'fu_2' ], true ),
+		] );
+
+		$this->assertTrue( $result['ok'] ?? false );
+		$this->assertSame( 'clear_follow_ups', $result['action'] ?? '' );
+		$this->assertSame( [ 'fu_1', 'fu_2' ], $result['cleared_ids'] ?? [] );
+		$this->assertSame( 2, $result['cleared_count'] ?? null );
+		$this->assertSame( 0, $result['failed_count'] ?? null );
+	}
+
+	public function test_clear_sms_reminders_can_cancel_all_scheduled_items(): void {
+		$result = AiToolHandlerService::execute( 7, 'clear_sms_reminders', [
+			'clear_all' => true,
+		], [
+			'list_sms_reminders' => static fn( int $user_id ): array => [
+				'scheduled' => [
+					[ 'id' => 'sms_1', 'message' => 'Lift at 6.' ],
+					[ 'id' => 'sms_2', 'message' => 'Sleep by 10.' ],
+				],
+			],
+			'cancel_sms_reminder' => static fn( int $user_id, string $reminder_id ): array => [
+				'id' => $reminder_id,
+				'status' => 'canceled',
+			],
+		] );
+
+		$this->assertTrue( $result['ok'] ?? false );
+		$this->assertSame( 'clear_sms_reminders', $result['action'] ?? '' );
+		$this->assertSame( [ 'sms_1', 'sms_2' ], $result['canceled_ids'] ?? [] );
+		$this->assertSame( 2, $result['canceled_count'] ?? null );
+		$this->assertSame( 0, $result['failed_count'] ?? null );
+	}
 }

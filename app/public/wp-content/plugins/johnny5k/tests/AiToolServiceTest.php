@@ -15,4 +15,13 @@ class AiToolServiceTest extends ServiceTestCase {
 		$this->assertIsArray( $tool );
 		$this->assertSame( 'string', $tool['parameters']['properties']['time_tier']['type'] ?? null );
 	}
+
+	public function test_clear_tools_are_registered_for_johnny(): void {
+		$registry = AiToolService::tool_registry( 5, 5, 5 );
+
+		$this->assertArrayHasKey( 'clear_follow_ups', $registry );
+		$this->assertArrayHasKey( 'clear_sms_reminders', $registry );
+		$this->assertSame( 'boolean', $registry['clear_follow_ups']['parameters']['properties']['clear_all']['type'] ?? null );
+		$this->assertSame( 'boolean', $registry['clear_sms_reminders']['parameters']['properties']['clear_all']['type'] ?? null );
+	}
 }

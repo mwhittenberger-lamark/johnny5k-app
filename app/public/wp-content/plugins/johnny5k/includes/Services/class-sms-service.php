@@ -252,8 +252,8 @@ class SmsService {
 			}
 
 			$sleep_today = (int) $wpdb->get_var( $wpdb->prepare(
-				"SELECT COUNT(*) FROM {$wpdb->prefix}fit_body_metrics
-				 WHERE user_id = %d AND metric_date = %s AND sleep_hours IS NOT NULL",
+				"SELECT COUNT(*) FROM {$wpdb->prefix}fit_sleep_logs
+				 WHERE user_id = %d AND sleep_date = %s AND hours_sleep IS NOT NULL",
 				$uid,
 				$today
 			) );

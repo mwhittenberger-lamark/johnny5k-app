@@ -269,6 +269,40 @@ class AiToolService {
 					'additionalProperties' => false,
 				],
 			],
+			'clear_follow_ups' => [
+				'read_only'   => false,
+				'enabled'     => true,
+				'description' => 'Clear one or more pending Johnny follow-ups when the user explicitly asks to dismiss, remove, or clear them.',
+				'parameters'  => [
+					'type'                 => 'object',
+					'properties'           => [
+						'follow_up_ids' => [
+							'type'        => 'array',
+							'items'       => [ 'type' => 'string' ],
+							'description' => 'Optional list of follow-up ids to dismiss.',
+						],
+						'clear_all' => [ 'type' => 'boolean', 'description' => 'Set true only when the user clearly wants all pending follow-ups cleared.' ],
+					],
+					'additionalProperties' => false,
+				],
+			],
+			'clear_sms_reminders' => [
+				'read_only'   => false,
+				'enabled'     => true,
+				'description' => 'Cancel one or more scheduled SMS reminders when the user explicitly asks Johnny to clear or remove them.',
+				'parameters'  => [
+					'type'                 => 'object',
+					'properties'           => [
+						'reminder_ids' => [
+							'type'        => 'array',
+							'items'       => [ 'type' => 'string' ],
+							'description' => 'Optional list of scheduled SMS reminder ids to cancel.',
+						],
+						'clear_all' => [ 'type' => 'boolean', 'description' => 'Set true only when the user clearly wants all scheduled SMS reminders cleared.' ],
+					],
+					'additionalProperties' => false,
+				],
+			],
 		];
 	}
 
@@ -303,6 +337,8 @@ class AiToolService {
 				'create_custom_workout'    => 'Johnny queued a custom workout for you on the workout page.',
 				'create_personal_exercise' => 'Johnny added that exercise to your custom exercise library.',
 				'create_training_plan'     => 'Johnny created a new training plan.',
+				'clear_follow_ups'        => 'Johnny cleared the requested follow-ups.',
+				'clear_sms_reminders'     => 'Johnny canceled the requested SMS reminders.',
 				'swap_workout_exercise'    => 'Johnny updated the current workout.',
 				default                    => 'Johnny completed that action.',
 			};

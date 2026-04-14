@@ -28,6 +28,8 @@ const ACTION_TOOLS = new Set([
   'add_grocery_gap_items',
   'swap_workout_exercise',
   'schedule_sms_reminder',
+  'clear_follow_ups',
+  'clear_sms_reminders',
 ])
 
 const ACTION_DESTINATIONS = {
@@ -40,6 +42,8 @@ const ACTION_DESTINATIONS = {
   create_custom_workout: { path: '/workout', state: { johnnyActionNotice: 'Johnny queued a custom workout for you on the Workout screen.' }, label: 'Open workout' },
   create_personal_exercise: { path: '/workout/library', state: { johnnyActionNotice: 'Johnny added an exercise to your custom exercise library.' }, label: 'Open library' },
   swap_workout_exercise: { path: '/workout', label: 'Open workout' },
+  clear_follow_ups: { path: '/settings', state: { johnnyActionNotice: 'Johnny cleared the requested follow-ups.' }, label: 'Open settings' },
+  clear_sms_reminders: { path: '/settings', state: { johnnyActionNotice: 'Johnny canceled the requested SMS reminders.' }, label: 'Open settings' },
 }
 
 const SUPPORTED_MODEL_ACTIONS = new Set([
@@ -290,6 +294,15 @@ export default function JohnnyAssistantDrawer() {
       }
 
       if (actionTools.length) {
+        const clearedFollowUpIds = actionResults
+          .filter(result => getActionName(result) === 'clear_follow_ups')
+          .flatMap(result => Array.isArray(result?.cleared_ids) ? result.cleared_ids : [])
+
+        if (clearedFollowUpIds.length) {
+          const clearedSet = new Set(clearedFollowUpIds.map(id => String(id)))
+          setFollowUps(current => current.filter(item => !clearedSet.has(String(item?.id || ''))))
+        }
+
         invalidate()
         loadSnapshot(true)
         if (actionTools.includes('swap_workout_exercise')) {
@@ -899,6 +912,10 @@ function formatToolLabel(toolName) {
       return 'Workout updated'
     case 'schedule_sms_reminder':
       return 'SMS reminder scheduled'
+    case 'clear_follow_ups':
+      return 'Follow-ups cleared'
+    case 'clear_sms_reminders':
+      return 'SMS reminders cleared'
     default:
       return 'Action completed'
   }
@@ -1441,6 +1458,10 @@ function buildActionTitle(result) {
       return result.new_exercise || 'Workout swap complete'
     case 'schedule_sms_reminder':
       return 'SMS reminder scheduled'
+    case 'clear_follow_ups':
+      return result.cleared_count === 1 ? '1 follow-up cleared' : `${Number(result.cleared_count || 0).toLocaleString()} follow-ups cleared`
+    case 'clear_sms_reminders':
+      return result.canceled_count === 1 ? '1 SMS reminder canceled' : `${Number(result.canceled_count || 0).toLocaleString()} SMS reminders canceled`
     default:
       return formatToolLabel(actionName)
   }
@@ -1462,6 +1483,10 @@ function buildFallbackSummary(result) {
       return result.estimated ? 'Estimated food entry logged. Review if serving size was rough.' : 'Food logged.'
     case 'schedule_sms_reminder':
       return 'SMS reminder scheduled.'
+    case 'clear_follow_ups':
+      return 'Johnny cleared the requested follow-ups.'
+    case 'clear_sms_reminders':
+      return 'Johnny canceled the requested SMS reminders.'
     case 'create_custom_workout':
       return result.summary || 'Johnny queued a custom workout on the Workout screen.'
     case 'create_personal_exercise':
@@ -1522,6 +1547,16 @@ function buildActionMeta(result) {
       return [
         result.send_at_display ? `When: ${result.send_at_display}` : (result.send_at_local ? `When: ${result.send_at_local}` : ''),
         result.timezone_display ? `Timezone: ${result.timezone_display}` : (result.timezone ? `Timezone: ${result.timezone}` : ''),
+      ].filter(Boolean).join(' | ')
+    case 'clear_follow_ups':
+      return [
+        Number.isFinite(result.cleared_count) ? `${result.cleared_count} cleared` : '',
+        Number.isFinite(result.failed_count) && result.failed_count > 0 ? `${result.failed_count} failed` : '',
+      ].filter(Boolean).join(' | ')
+    case 'clear_sms_reminders':
+      return [
+        Number.isFinite(result.canceled_count) ? `${result.canceled_count} canceled` : '',
+        Number.isFinite(result.failed_count) && result.failed_count > 0 ? `${result.failed_count} failed` : '',
       ].filter(Boolean).join(' | ')
     default:
       return ''

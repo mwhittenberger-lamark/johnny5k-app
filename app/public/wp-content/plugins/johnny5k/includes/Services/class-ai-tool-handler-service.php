@@ -44,6 +44,8 @@ class AiToolHandlerService {
 			'add_grocery_gap_items'      => self::tool_add_grocery_gap_items( $user_id, $arguments, $deps ),
 			'swap_workout_exercise'      => self::tool_swap_workout_exercise( $user_id, $arguments, $deps ),
 			'schedule_sms_reminder'      => self::tool_schedule_sms_reminder( $user_id, $arguments, $deps ),
+			'clear_follow_ups'          => self::tool_clear_follow_ups( $user_id, $arguments, $deps ),
+			'clear_sms_reminders'       => self::tool_clear_sms_reminders( $user_id, $arguments, $deps ),
 			default                      => [ 'error' => 'Tool not available.' ],
 		};
 	}
@@ -832,6 +834,193 @@ class AiToolHandlerService {
 			'coach_note'       => sprintf( 'SMS reminder locked for %s.', $timing_phrase ),
 			'summary'          => sprintf( 'Scheduled an SMS reminder for %s.', $timing_phrase ),
 		];
+	}
+
+	/**
+	 * @param array<string,callable> $deps
+	 */
+	private static function tool_clear_follow_ups( int $user_id, array $arguments, array $deps ): array {
+		$clear_all = ! empty( $arguments['clear_all'] );
+		$follow_up_ids = self::sanitize_string_list( is_array( $arguments['follow_up_ids'] ?? null ) ? $arguments['follow_up_ids'] : [] );
+
+		if ( ! $clear_all && empty( $follow_up_ids ) ) {
+			return [ 'error' => 'Follow-up ids are required unless Johnny is clearing all pending follow-ups.' ];
+		}
+
+		$pending = self::list_pending_follow_ups( $user_id, $deps );
+		if ( $clear_all ) {
+			$follow_up_ids = array_values( array_filter( array_map(
+				static fn( array $item ): string => sanitize_text_field( (string) ( $item['id'] ?? '' ) ),
+				$pending
+			) ) );
+		}
+		$follow_up_ids = array_values( array_unique( $follow_up_ids ) );
+
+		if ( empty( $follow_up_ids ) ) {
+			return [
+				'ok'            => true,
+				'action'        => 'clear_follow_ups',
+				'cleared_ids'   => [],
+				'cleared_count' => 0,
+				'failed_count'  => 0,
+				'summary'       => 'No pending Johnny follow-ups were waiting to be cleared.',
+			];
+		}
+
+		$cleared_ids = [];
+		$failed_ids  = [];
+
+		foreach ( $follow_up_ids as $follow_up_id ) {
+			$dismissed = self::dismiss_follow_up( $user_id, $follow_up_id, $deps );
+			if ( $dismissed ) {
+				$cleared_ids[] = $follow_up_id;
+				continue;
+			}
+
+			$failed_ids[] = $follow_up_id;
+		}
+
+		$cleared_count = count( $cleared_ids );
+		$failed_count  = count( $failed_ids );
+		$summary = 0 === $cleared_count
+			? 'Johnny could not clear those follow-ups.'
+			: sprintf(
+				'Cleared %d Johnny follow-up%s%s.',
+				$cleared_count,
+				1 === $cleared_count ? '' : 's',
+				$failed_count > 0 ? sprintf( ' %d could not be cleared.', $failed_count ) : ''
+			);
+
+		return [
+			'ok'            => $cleared_count > 0,
+			'action'        => 'clear_follow_ups',
+			'cleared_ids'   => $cleared_ids,
+			'failed_ids'    => $failed_ids,
+			'cleared_count' => $cleared_count,
+			'failed_count'  => $failed_count,
+			'summary'       => $summary,
+		];
+	}
+
+	/**
+	 * @param array<string,callable> $deps
+	 */
+	private static function tool_clear_sms_reminders( int $user_id, array $arguments, array $deps ): array {
+		$clear_all    = ! empty( $arguments['clear_all'] );
+		$reminder_ids = self::sanitize_string_list( is_array( $arguments['reminder_ids'] ?? null ) ? $arguments['reminder_ids'] : [] );
+
+		if ( ! $clear_all && empty( $reminder_ids ) ) {
+			return [ 'error' => 'Reminder ids are required unless Johnny is clearing all scheduled SMS reminders.' ];
+		}
+
+		$reminders = self::list_sms_reminders( $user_id, $deps );
+		$scheduled = is_array( $reminders['scheduled'] ?? null ) ? $reminders['scheduled'] : [];
+
+		if ( $clear_all ) {
+			$reminder_ids = array_values( array_filter( array_map(
+				static fn( array $item ): string => sanitize_text_field( (string) ( $item['id'] ?? '' ) ),
+				$scheduled
+			) ) );
+		}
+		$reminder_ids = array_values( array_unique( $reminder_ids ) );
+
+		if ( empty( $reminder_ids ) ) {
+			return [
+				'ok'             => true,
+				'action'         => 'clear_sms_reminders',
+				'canceled_ids'   => [],
+				'canceled_count' => 0,
+				'failed_count'   => 0,
+				'summary'        => 'No scheduled SMS reminders were waiting to be cleared.',
+			];
+		}
+
+		$canceled_ids = [];
+		$failed_ids   = [];
+
+		foreach ( $reminder_ids as $reminder_id ) {
+			$result = self::cancel_sms_reminder( $user_id, $reminder_id, $deps );
+			if ( is_wp_error( $result ) ) {
+				$failed_ids[] = $reminder_id;
+				continue;
+			}
+
+			$canceled_ids[] = $reminder_id;
+		}
+
+		$canceled_count = count( $canceled_ids );
+		$failed_count   = count( $failed_ids );
+		$summary = 0 === $canceled_count
+			? 'Johnny could not cancel those SMS reminders.'
+			: sprintf(
+				'Canceled %d scheduled SMS reminder%s%s.',
+				$canceled_count,
+				1 === $canceled_count ? '' : 's',
+				$failed_count > 0 ? sprintf( ' %d could not be canceled.', $failed_count ) : ''
+			);
+
+		return [
+			'ok'             => $canceled_count > 0,
+			'action'         => 'clear_sms_reminders',
+			'canceled_ids'   => $canceled_ids,
+			'failed_ids'     => $failed_ids,
+			'canceled_count' => $canceled_count,
+			'failed_count'   => $failed_count,
+			'summary'        => $summary,
+		];
+	}
+
+	/**
+	 * @param array<string,callable> $deps
+	 * @return array<int,array<string,mixed>>
+	 */
+	private static function list_pending_follow_ups( int $user_id, array $deps ): array {
+		$callable = $deps['list_pending_follow_ups'] ?? null;
+		if ( is_callable( $callable ) ) {
+			$result = $callable( $user_id );
+			return is_array( $result ) ? $result : [];
+		}
+
+		return AiService::get_pending_follow_ups( $user_id );
+	}
+
+	/**
+	 * @param array<string,callable> $deps
+	 */
+	private static function dismiss_follow_up( int $user_id, string $follow_up_id, array $deps ): bool {
+		$callable = $deps['dismiss_follow_up'] ?? null;
+		if ( is_callable( $callable ) ) {
+			return (bool) $callable( $user_id, $follow_up_id );
+		}
+
+		return AiService::dismiss_follow_up( $user_id, $follow_up_id );
+	}
+
+	/**
+	 * @param array<string,callable> $deps
+	 * @return array<string,mixed>
+	 */
+	private static function list_sms_reminders( int $user_id, array $deps ): array {
+		$callable = $deps['list_sms_reminders'] ?? null;
+		if ( is_callable( $callable ) ) {
+			$result = $callable( $user_id );
+			return is_array( $result ) ? $result : [];
+		}
+
+		return SmsService::list_user_reminders( $user_id );
+	}
+
+	/**
+	 * @param array<string,callable> $deps
+	 */
+	private static function cancel_sms_reminder( int $user_id, string $reminder_id, array $deps ): array|\WP_Error {
+		$callable = $deps['cancel_sms_reminder'] ?? null;
+		if ( is_callable( $callable ) ) {
+			$result = $callable( $user_id, $reminder_id );
+			return is_array( $result ) || is_wp_error( $result ) ? $result : new \WP_Error( 'cancel_failed', 'Could not cancel reminder.' );
+		}
+
+		return SmsService::cancel_user_reminder( $user_id, $reminder_id );
 	}
 
 	/**
