@@ -19,7 +19,7 @@ import {
   writeLiveWorkoutVoicePrefs,
 } from '../../lib/liveWorkoutVoice'
 import { useAuthStore } from '../../store/authStore'
-import { formatWorkoutElapsedTime, getPausedTimerNowValue } from '../../screens/workout/workoutScreenUtils'
+import { getPausedTimerNowValue } from '../../screens/workout/workoutScreenUtils'
 
 const DEFAULT_REST_TIMING = {
   setMinSeconds: 30,
@@ -113,7 +113,7 @@ export default function LiveWorkoutMode({
   const currentSetKey = activeExercise?.id ? `${activeExercise.id}:${currentSetIdx}` : 'idle'
   const currentDraft = drafts[currentSetKey] ?? buildDraftFromSet(currentSet)
   const effectiveRestNow = getPausedTimerNowValue(now, restTimerPausedAt, restTimerPausedMs)
-  const workoutTimerLabel = formatWorkoutElapsedTime(session?.session?.started_at, effectiveRestNow) || timerLabel
+  const workoutTimerLabel = timerLabel || ''
   const restElapsedSeconds = Math.max(0, Math.floor((effectiveRestNow - Number(lastTransition?.at || effectiveRestNow)) / 1000))
   const restGuidance = useMemo(() => buildRestGuidance(lastTransition?.kind, restElapsedSeconds, restTiming), [lastTransition?.kind, restElapsedSeconds, restTiming])
   const liveVoiceMode = String(voicePrefs.liveModeVoiceMode || 'premium').trim().toLowerCase()
