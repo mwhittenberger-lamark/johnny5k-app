@@ -253,6 +253,92 @@ export default function LiveWorkoutMode({
     resumeSessionTimer?.()
   }, [restTimerPausedAt, resumeSessionTimer])
 
+  const handleSpeechAttemptEvent = useCallback((event, { liveVoiceMode: currentVoiceMode, messageText, voiceLabel: currentVoiceLabel, sessionId }) => {
+    if (!event) return
+
+    const failureNotice = buildLiveVoiceFailureNotice(event, {
+      liveVoiceMode: currentVoiceMode,
+      messageText,
+      voiceLabel: currentVoiceLabel,
+    })
+
+    if (failureNotice) {
+      const details = Array.isArray(failureNotice.details) ? failureNotice.details.filter(Boolean) : []
+      const shouldSuggestVoiceModeChange = currentVoiceMode === 'premium' && event.type === 'premium_failed'
+      const toastActions = shouldSuggestVoiceModeChange && instantVoiceSupported
+        ? [
+            {
+              label: 'Switch to Auto',
+              tone: 'primary',
+              onClick: () => {
+                setVoicePrefs(current => ({ ...current, liveModeVoiceMode: 'auto' }))
+                setVoiceTestingOpen(true)
+                scrollPanelToSection(voiceTestingCardRef)
+              },
+            },
+            {
+              label: 'Switch to Instant',
+              onClick: () => {
+                setVoicePrefs(current => ({ ...current, liveModeVoiceMode: 'instant' }))
+                setVoiceTestingOpen(true)
+                scrollPanelToSection(voiceTestingCardRef)
+              },
+            },
+          ]
+        : []
+      const toastMessage = shouldSuggestVoiceModeChange
+        ? 'Premium voice failed. Switch live coach to Instant or Auto so Johnny can keep speaking.'
+        : failureNotice.message
+      const toastDetails = shouldSuggestVoiceModeChange
+        ? [
+            ...details,
+            'Use the voice mode button in live coach if you want to change it manually.',
+          ]
+        : details
+      setLatestVoiceIssue({
+        title: failureNotice.title,
+        message: toastMessage,
+        details,
+      })
+
+      reportClientDiagnostic({
+        source: 'live_workout_voice',
+        message: failureNotice.diagnosticMessage,
+        context: {
+          live_mode_voice_mode: currentVoiceMode,
+          workout_session_id: sessionId,
+          openai_voice: currentVoiceLabel,
+          elapsed_ms: event.elapsedMs ?? null,
+          failure_reason: normalizeVoiceFailureReason(event.reason),
+          fallback_from_premium: Boolean(event.fallbackFromPremium),
+          message_preview: String(messageText || '').slice(0, 180),
+          voice_type: event.type,
+          voice_label: event.voiceLabel || '',
+        },
+        toast: {
+          title: failureNotice.title,
+          message: toastMessage,
+          details: toastDetails,
+          tone: 'error',
+          kind: shouldSuggestVoiceModeChange ? 'live-workout-premium-fallback-hint' : failureNotice.kind,
+          actions: toastActions,
+        },
+      })
+      return
+    }
+
+    if (event.type === 'instant_started' && event.fallbackFromPremium && currentVoiceMode === 'auto') {
+      showGlobalToast({
+        title: 'Switched to instant voice',
+        message: event.voiceLabel
+          ? `Johnny switched to ${event.voiceLabel}.`
+          : 'Johnny switched to the default device voice.',
+        tone: 'info',
+        kind: 'live-workout-auto-instant-voice',
+      })
+    }
+  }, [instantVoiceSupported, scrollPanelToSection])
+
   useEffect(() => {
     if (!isOpen) {
       if (voiceTestingOpen) {
@@ -420,7 +506,7 @@ export default function LiveWorkoutMode({
         })
       },
     })
-  }, [coachMessages, instantVoiceSupported, isOpen, liveVoiceMode, playbackSupported, preferredInstantVoiceURI, stopTtsPlayback, voicePlaybackSupported, voicePrefs.openAiVoice, voicePrefs.rate, voiceTestingOpen, voiceLabel, workoutSessionId])
+  }, [coachMessages, handleSpeechAttemptEvent, instantVoiceSupported, isOpen, liveVoiceMode, playbackSupported, preferredInstantVoiceURI, stopTtsPlayback, voicePlaybackSupported, voicePrefs.openAiVoice, voicePrefs.rate, voiceTestingOpen, voiceLabel, workoutSessionId])
 
   useEffect(() => {
     if (!isOpen || !lastTransition?.summary) return
@@ -927,60 +1013,6 @@ export default function LiveWorkoutMode({
         updateVoiceTestProgress(setInstantVoiceTest, event, 'Instant voice')
       },
     })
-  }
-
-  function handleSpeechAttemptEvent(event, { liveVoiceMode: currentVoiceMode, messageText, voiceLabel: currentVoiceLabel, sessionId }) {
-    if (!event) return
-
-    const failureNotice = buildLiveVoiceFailureNotice(event, {
-      liveVoiceMode: currentVoiceMode,
-      messageText,
-      voiceLabel: currentVoiceLabel,
-    })
-
-    if (failureNotice) {
-      const details = Array.isArray(failureNotice.details) ? failureNotice.details.filter(Boolean) : []
-      setLatestVoiceIssue({
-        title: failureNotice.title,
-        message: failureNotice.message,
-        details,
-      })
-
-      reportClientDiagnostic({
-        source: 'live_workout_voice',
-        message: failureNotice.diagnosticMessage,
-        context: {
-          live_mode_voice_mode: currentVoiceMode,
-          workout_session_id: sessionId,
-          openai_voice: currentVoiceLabel,
-          elapsed_ms: event.elapsedMs ?? null,
-          failure_reason: normalizeVoiceFailureReason(event.reason),
-          fallback_from_premium: Boolean(event.fallbackFromPremium),
-          message_preview: String(messageText || '').slice(0, 180),
-          voice_type: event.type,
-          voice_label: event.voiceLabel || '',
-        },
-        toast: {
-          title: failureNotice.title,
-          message: failureNotice.message,
-          details,
-          tone: 'error',
-          kind: failureNotice.kind,
-        },
-      })
-      return
-    }
-
-    if (event.type === 'instant_started' && event.fallbackFromPremium && currentVoiceMode === 'auto') {
-      showGlobalToast({
-        title: 'Switched to instant voice',
-        message: event.voiceLabel
-          ? `Johnny switched to ${event.voiceLabel}.`
-          : 'Johnny switched to the default device voice.',
-        tone: 'info',
-        kind: 'live-workout-auto-instant-voice',
-      })
-    }
   }
 
   const latestCoachMessage = [...coachMessages].reverse().find(message => message.role === 'assistant')
