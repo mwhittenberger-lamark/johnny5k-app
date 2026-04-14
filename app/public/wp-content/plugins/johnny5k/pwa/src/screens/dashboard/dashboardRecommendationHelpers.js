@@ -631,8 +631,8 @@ export function buildJohnnyDashboardReview(snapshot) {
   if (timing.lateNight) {
     title = 'Late-night decisions should get simpler.'
     message = trainingRecorded
-      ? 'Johnny sees the main work already on the board. At this hour the job is shutting the day down cleanly, not opening new loops.'
-      : 'Johnny sees it is late. This is not the time to open more tasks or keep chasing logs. The smart move is to close the day and get to bed.'
+      ? 'Johnny sees the main work already on the board. At this hour, the best move is to wrap up the day and get to bed.'
+      : 'Johnny sees it is late. This is not the time to pile on more tasks or keep chasing logs. The smart move is to call it a night and get to bed.'
     nextStep = trainingRecorded
       ? 'Keep any last food light, stop scrolling for extra ideas, and start your bedtime routine now.'
       : 'Skip new training or food cleanup unless something is truly unfinished, log only what matters, and go to bed.'
@@ -1159,8 +1159,8 @@ export function buildBestNextMove(snapshot) {
 
   if (timing.lateNight) {
     return {
-      title: 'Go to bed instead of opening new loops',
-      body: 'At this hour, sleep usually does more for tomorrow than one more forced log, meal idea, or training decision.',
+      title: 'Start winding down for bed',
+      body: 'At this hour, sleep will usually help tomorrow more than squeezing in one more log, meal idea, or training decision.',
       context: 'Late-night recovery is the highest-leverage move',
       actionLabel: 'Open sleep',
       href: '/body',

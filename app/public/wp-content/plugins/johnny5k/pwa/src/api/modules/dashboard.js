@@ -2,6 +2,7 @@ import { api, BASE } from '../core/restClient'
 
 export const dashboardApi = {
   snapshot: () => api.get('/dashboard'),
+  coachingContext: () => api.get('/dashboard/coaching-context'),
   awards: () => api.get('/dashboard/awards'),
   johnnyReview: (force = false) => api.get(`/dashboard/johnny-review${force ? '?force=1' : ''}`),
   realSuccessStory: (force = false) => api.get(`/dashboard/real-success-story${force ? '?force=1' : ''}`),

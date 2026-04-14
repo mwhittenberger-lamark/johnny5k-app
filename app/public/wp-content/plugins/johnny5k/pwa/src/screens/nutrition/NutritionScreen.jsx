@@ -1246,13 +1246,19 @@ export default function NutritionScreen() {
     navigate('/nutrition', { state: { focusSection: 'pantry' } })
   }
 
-  const coachingSummary = useMemo(() => buildCoachingSummary({
-    surface: 'nutrition',
-    snapshot: dashboardSnapshot,
-    nutritionSummary: summary,
-    weeklyCaloriesReview,
-    meals,
-  }), [dashboardSnapshot, meals, summary, weeklyCaloriesReview])
+  const coachingSummary = useMemo(() => {
+    if (!weeklyCaloriesReview?.isLoaded) {
+      return null
+    }
+
+    return buildCoachingSummary({
+      surface: 'nutrition',
+      snapshot: dashboardSnapshot,
+      nutritionSummary: summary,
+      weeklyCaloriesReview,
+      meals,
+    })
+  }, [dashboardSnapshot, meals, summary, weeklyCaloriesReview])
   const coachPrompts = useMemo(
     () => coachingSummary?.followUpPrompts?.length
       ? coachingSummary.followUpPrompts
@@ -4821,7 +4827,7 @@ function getVisibleItems(items, expanded, limit = 4) {
   return expanded ? list : list.slice(0, limit)
 }
 
-function mergeDailyMealsByType(meals) {
+export function mergeDailyMealsByType(meals) {
   const groupedMeals = new Map()
 
   ;(Array.isArray(meals) ? meals : []).forEach(meal => {
@@ -4836,6 +4842,18 @@ function mergeDailyMealsByType(meals) {
         meal_type: mealType,
         items: normalizedItems,
         meal_ids: mealId ? [mealId] : [],
+      })
+      return
+    }
+
+    if (mealId > 0 && Array.isArray(existingMeal.meal_ids) && existingMeal.meal_ids.includes(mealId)) {
+      const currentTimestamp = Date.parse(existingMeal.meal_datetime || '') || 0
+      const nextTimestamp = Date.parse(meal?.meal_datetime || '') || 0
+
+      groupedMeals.set(mealType, {
+        ...existingMeal,
+        meal_datetime: nextTimestamp > currentTimestamp ? meal.meal_datetime : existingMeal.meal_datetime,
+        source: nextTimestamp > currentTimestamp ? meal.source : existingMeal.source,
       })
       return
     }
@@ -5892,6 +5910,7 @@ function buildBeverageMealPayload(selection, multiplier, date) {
 
 function buildEmptyWeeklyCaloriesReview() {
   return {
+    isLoaded: false,
     totalCalories: 0,
     targetCalories: 0,
     loggedDays: 0,
@@ -5909,6 +5928,7 @@ function buildWeeklyCaloriesReview(rows, dateRange) {
   const periodLabel = formatDateRangeLabel(dateRange)
 
   return {
+    isLoaded: true,
     totalCalories,
     targetCalories,
     loggedDays,

@@ -923,11 +923,29 @@
   margin: 0;
   color: var(--text-muted);
 }
-.dashboard-beginner-education-grid {
+.dashboard-beginner-education-rotator {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-3);
   margin-top: var(--space-4);
+}
+.dashboard-beginner-education-rotator-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.dashboard-beginner-education-progress {
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #0f766e;
+}
+.dashboard-beginner-education-controls {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-2);
 }
 .dashboard-beginner-resource-card {
   display: grid;
@@ -950,6 +968,28 @@
   margin: 0;
   color: var(--text-muted);
   font-size: 0.92rem;
+}
+.dashboard-beginner-education-dots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.dashboard-beginner-education-dot {
+  width: 11px;
+  height: 11px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(15, 118, 110, 0.22);
+  transition: transform 160ms ease, background 160ms ease;
+}
+.dashboard-beginner-education-dot.active {
+  background: #0f766e;
+  transform: scale(1.08);
+}
+.dashboard-beginner-education-dot:focus-visible {
+  outline: 2px solid #0f766e;
+  outline-offset: 2px;
 }
 .dashboard-optional-stat-grid {
   display: grid;
@@ -1340,8 +1380,14 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .dashboard-beginner-education-grid {
-    grid-template-columns: 1fr;
+  .dashboard-beginner-education-rotator-top {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .dashboard-beginner-education-controls {
+    width: 100%;
+    justify-content: flex-start;
   }
 }
 

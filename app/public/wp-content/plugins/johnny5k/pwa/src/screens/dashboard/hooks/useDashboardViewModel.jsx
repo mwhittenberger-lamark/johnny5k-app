@@ -125,14 +125,21 @@ export function useDashboardViewModel() {
     setDashboardLayout,
   } = useDashboardPreferences({ email, cardDefs: DASHBOARD_CARD_DEFS, defaultLayoutOptions })
   const {
+    cardioLogs,
+    coachingDataAvailability,
     groceryGap,
     generatedImageGallery,
+    meals,
     realSuccessStoryData,
     realSuccessStoryError,
     realSuccessStoryLoading,
     refreshRealSuccessStory,
+    sleepLogs,
     smsReminders,
+    stepLogs,
+    weeklyCaloriesReview,
     weeklyWeights,
+    workoutHistory,
   } = useDashboardSupplementalData({ loadSnapshot, loadAwards })
 
   const reviewTrigger = useMemo(() => buildDashboardReviewTrigger(snapshot), [snapshot])
@@ -189,7 +196,18 @@ export function useDashboardViewModel() {
   const coachMetrics = useMemo(() => buildCoachMetricGrid(johnnyReview.metrics), [johnnyReview.metrics])
   const coachNextStepMeta = useMemo(() => buildCoachNextStepMeta(s, johnnyReview.nextStepMeta), [johnnyReview.nextStepMeta, s])
   const coachBackupStep = useMemo(() => buildCoachBackupStep(s, johnnyReview.backupStep), [johnnyReview.backupStep, s])
-  const coachingSummary = useMemo(() => buildCoachingSummary({ surface: 'dashboard', snapshot: s }), [s])
+  const coachingSummary = useMemo(() => buildCoachingSummary({
+    surface: 'dashboard',
+    snapshot: s,
+    cardioLogs,
+    dataAvailability: coachingDataAvailability,
+    meals,
+    sleepLogs,
+    stepLogs,
+    weeklyCaloriesReview: weeklyCaloriesReview?.isLoaded ? weeklyCaloriesReview : null,
+    weights: Array.isArray(weeklyWeights) ? [...weeklyWeights].reverse() : [],
+    workoutHistory,
+  }), [cardioLogs, coachingDataAvailability, meals, s, sleepLogs, stepLogs, weeklyCaloriesReview, weeklyWeights, workoutHistory])
   const coachBackupAction = useMemo(
     () => dedupeSecondaryDashboardAction(coachingSummary?.nextAction || null, buildCoachBackupAction(s, coachBackupStep)),
     [coachBackupStep, coachingSummary, s],
@@ -227,11 +245,20 @@ export function useDashboardViewModel() {
   const activeFlagLoad = Number(recoverySummary?.active_flag_load || 0)
   const recoveryActionPlan = buildRecoveryActionPlan(recoverySummary, recoveryFlagItems)
   const recoveryWindowLabel = buildRecoveryWindowLabel(recoverySummary)
+  const tomorrowScheduledTypeLabel = tomorrow?.planned_day_type
+    ? (tomorrow.planned_day_type === 'rest' ? 'Rest day' : `${formatDayType(tomorrow.planned_day_type)} workout`)
+    : 'Open day'
   const tomorrowTitle = `${tomorrow?.weekday_label || 'Tomorrow'}${tomorrow?.planned_day_type ? ` • ${formatDayType(tomorrow.planned_day_type)}` : ' • Recovery'}`
   const tomorrowBody = tomorrow?.planned_day_type
-    ? `Next up: ${formatDayType(tomorrow.planned_day_type).toLowerCase()} focus${tomorrow?.inferred ? ' based on your saved weekly split.' : '.'}`
+    ? tomorrow.planned_day_type === 'rest'
+      ? `Scheduled: rest day${tomorrow?.inferred ? ' based on your saved weekly split.' : '.'}`
+      : `Scheduled: ${formatDayType(tomorrow.planned_day_type).toLowerCase()} workout${tomorrow?.inferred ? ' based on your saved weekly split.' : '.'}`
     : 'No training preview is queued yet, so tomorrow is currently open.'
-  const tomorrowMetaPrimary = tomorrow?.time_tier ? `${tomorrow.time_tier} session` : 'medium session'
+  const tomorrowMetaPrimary = tomorrow?.planned_day_type === 'rest'
+    ? tomorrowScheduledTypeLabel
+    : tomorrow?.time_tier
+      ? `${tomorrowScheduledTypeLabel} • ${tomorrow.time_tier} session`
+      : tomorrowScheduledTypeLabel
   const tomorrowMetaSecondary = tomorrow?.date ? formatFriendlyDate(tomorrow.date) : 'Tomorrow'
 
   function handleDashboardAction(action, sourceSummary = null) {

@@ -287,8 +287,12 @@ export function summarizePlannedRepTotals(exercises) {
 }
 
 export function normalizeWorkoutTimeTier(value) {
-  const normalizedValue = String(value || '').trim().toLowerCase()
-  return ['short', 'medium', 'full'].includes(normalizedValue) ? normalizedValue : ''
+  const normalizedValue = String(value || '').trim().toLowerCase().replace(/[\s_]+/g, '-').replace(/-+/g, '-')
+  if (['short', 'medium', 'full'].includes(normalizedValue)) return normalizedValue
+  if (['long', 'full-length', 'full-length-workout', 'full-session', 'full-workout'].includes(normalizedValue)) return 'full'
+  if (['medium-length', 'medium-session', 'normal'].includes(normalizedValue)) return 'medium'
+  if (['short-length', 'short-session'].includes(normalizedValue)) return 'short'
+  return ''
 }
 
 export function normalizeExerciseCandidate(value) {

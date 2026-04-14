@@ -350,7 +350,7 @@ export default function WorkoutScreen() {
     return (
       <AppLoadingScreen
         eyebrow="Workout"
-        title="Loading today\'s session"
+        title="Loading today's session"
         message="Johnny is checking your active workout, today\'s split, and any offline recovery state before the training cards open."
         variant="workout"
       />

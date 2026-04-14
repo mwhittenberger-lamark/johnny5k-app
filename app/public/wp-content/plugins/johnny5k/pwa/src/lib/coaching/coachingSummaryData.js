@@ -300,6 +300,7 @@ function buildGeneratedFrom({
 export function normalizeCoachingInput({
   surface = 'dashboard',
   snapshot = null,
+  dataAvailability = null,
   weeklyCaloriesReview = null,
   weights = [],
   sleepLogs = [],
@@ -321,8 +322,17 @@ export function normalizeCoachingInput({
   const recommendedTimeTier = String(snapshot?.recovery_summary?.recommended_time_tier || '').trim()
   const skipCount30d = toNumber(snapshot?.skip_count_30d)
   const skipWarning = Boolean(snapshot?.skip_warning)
+  const availability = dataAvailability && typeof dataAvailability === 'object' ? dataAvailability : {}
+  const hasWeightHistory = availability.weightsLoaded ?? (Array.isArray(weights) && weights.length > 0)
+  const hasSleepHistory = availability.sleepLogsLoaded ?? (Array.isArray(sleepLogs) && sleepLogs.length > 0)
+  const hasStepHistory = availability.stepLogsLoaded ?? (Array.isArray(stepLogs) && stepLogs.length > 0)
+  const hasCardioHistory = availability.cardioLogsLoaded ?? (Array.isArray(cardioLogs) && cardioLogs.length > 0)
+  const hasWorkoutHistory = availability.workoutHistoryLoaded ?? (Array.isArray(workoutHistory) && workoutHistory.length > 0)
+  const hasMealHistory = availability.mealsLoaded ?? (Array.isArray(meals) && meals.length > 0)
   const proteinMetrics = getProteinMetrics(snapshot, nutritionSummary)
-  const loggedDays = Math.max(toNumber(weeklyCaloriesReview?.loggedDays), countDistinctDays(meals))
+  const mealLoggedDays = countDistinctDays(meals)
+  const hasNutritionLoggingWindow = availability.nutritionWindowLoaded ?? (Boolean(weeklyCaloriesReview) || mealLoggedDays > 0)
+  const loggedDays = Math.max(toNumber(weeklyCaloriesReview?.loggedDays), mealLoggedDays)
   const totalCalories = toNumber(weeklyCaloriesReview?.totalCalories)
   const targetCalories = toNumber(weeklyCaloriesReview?.targetCalories)
   const periodLabel = String(weeklyCaloriesReview?.periodLabel || 'Last 7 days').trim()
@@ -362,6 +372,13 @@ export function normalizeCoachingInput({
     skipCount30d,
     skipWarning,
     proteinMetrics,
+    hasWeightHistory,
+    hasSleepHistory,
+    hasStepHistory,
+    hasCardioHistory,
+    hasWorkoutHistory,
+    hasMealHistory,
+    hasNutritionLoggingWindow,
     loggedDays,
     totalCalories,
     targetCalories,

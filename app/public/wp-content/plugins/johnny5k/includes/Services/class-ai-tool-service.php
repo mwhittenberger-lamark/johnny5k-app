@@ -133,6 +133,7 @@ class AiToolService {
 					'properties'           => [
 						'name'           => [ 'type' => 'string', 'description' => 'The custom workout name Johnny wants the user to see.' ],
 						'day_type'       => [ 'type' => 'string', 'description' => 'Optional base day type: ' . TrainingDayTypes::ai_list() . '.' ],
+						'time_tier'      => [ 'type' => 'string', 'description' => 'Optional workout length: short, medium, or full.' ],
 						'exercise_names' => [
 							'type'        => 'array',
 							'items'       => [ 'type' => 'string' ],

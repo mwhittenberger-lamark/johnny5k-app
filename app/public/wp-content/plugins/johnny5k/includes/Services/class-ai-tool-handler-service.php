@@ -504,6 +504,7 @@ class AiToolHandlerService {
 	private static function tool_create_custom_workout( int $user_id, array $arguments = [] ): array {
 		$name           = sanitize_text_field( (string) ( $arguments['name'] ?? '' ) );
 		$exercise_names = array_values( array_filter( array_map( 'sanitize_text_field', (array) ( $arguments['exercise_names'] ?? [] ) ) ) );
+		$time_tier      = self::normalize_time_tier( (string) ( $arguments['time_tier'] ?? '' ) );
 
 		if ( '' === $name ) {
 			return [ 'error' => 'A custom workout name is required.' ];
@@ -519,6 +520,9 @@ class AiToolHandlerService {
 		}
 		$request->set_param( 'name', $name );
 		$request->set_param( 'day_type', $day_type );
+		if ( '' !== $time_tier ) {
+			$request->set_param( 'time_tier', $time_tier );
+		}
 		$request->set_param( 'coach_note', sanitize_textarea_field( (string) ( $arguments['coach_note'] ?? '' ) ) );
 		$request->set_param( 'exercises', array_map( static function( string $exercise_name ): array {
 			return [ 'exercise_name' => $exercise_name ];
@@ -542,11 +546,21 @@ class AiToolHandlerService {
 			'custom_workout_id' => sanitize_text_field( (string) ( $draft['id'] ?? '' ) ),
 			'name'              => (string) ( $draft['name'] ?? $name ),
 			'day_type'          => $day_type,
+			'time_tier'         => sanitize_key( (string) ( $draft['time_tier'] ?? '' ) ),
 			'exercise_count'    => $exercise_count,
 			'exercise_names'    => array_values( array_filter( array_map( static fn( array $item ): string => sanitize_text_field( (string) ( $item['exercise_name'] ?? '' ) ), is_array( $draft['exercises'] ?? null ) ? $draft['exercises'] : [] ) ) ),
 			'coach_note'        => sanitize_textarea_field( (string) ( $draft['coach_note'] ?? '' ) ),
 			'summary'           => sprintf( 'Queued %s as a custom %s workout with %d exercises on the workout page.', (string) ( $draft['name'] ?? $name ), str_replace( '_', ' ', $day_type ), $exercise_count ),
 		];
+	}
+
+	private static function normalize_time_tier( string $value ): string {
+		$time_tier = sanitize_key( $value );
+		if ( 'long' === $time_tier ) {
+			$time_tier = 'full';
+		}
+
+		return in_array( $time_tier, [ 'short', 'medium', 'full' ], true ) ? $time_tier : '';
 	}
 
 	private static function tool_create_personal_exercise( int $user_id, array $arguments = [] ): array {

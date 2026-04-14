@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from 'react'
-import { bodyApi } from '../../../api/modules/body'
 import { dashboardApi } from '../../../api/modules/dashboard'
 import { nutritionApi } from '../../../api/modules/nutrition'
 import { onboardingApi } from '../../../api/modules/onboarding'
@@ -7,6 +6,22 @@ import { reportClientDiagnostic } from '../../../lib/clientDiagnostics'
 
 export function useDashboardSupplementalData({ loadSnapshot, loadAwards }) {
   const [weeklyWeights, setWeeklyWeights] = useState([])
+  const [sleepLogs, setSleepLogs] = useState([])
+  const [stepLogs, setStepLogs] = useState([])
+  const [cardioLogs, setCardioLogs] = useState([])
+  const [workoutHistory, setWorkoutHistory] = useState([])
+  const [meals, setMeals] = useState([])
+  const [weeklyCaloriesReview, setWeeklyCaloriesReview] = useState(null)
+  const [coachingDataAvailability, setCoachingDataAvailability] = useState({
+    coachingContextLoaded: false,
+    weightsLoaded: false,
+    sleepLogsLoaded: false,
+    stepLogsLoaded: false,
+    cardioLogsLoaded: false,
+    workoutHistoryLoaded: false,
+    nutritionWindowLoaded: false,
+    mealsLoaded: false,
+  })
   const [groceryGap, setGroceryGap] = useState(null)
   const [smsReminders, setSmsReminders] = useState({ timezone: '', scheduled: [] })
   const [generatedImageGallery, setGeneratedImageGallery] = useState([])
@@ -21,20 +36,33 @@ export function useDashboardSupplementalData({ loadSnapshot, loadAwards }) {
     loadSnapshot()
     loadAwards()
 
-    bodyApi.getWeight(7)
-      .then(rows => {
+    dashboardApi.coachingContext()
+      .then(data => {
         if (!active) return
-        setWeeklyWeights(Array.isArray(rows) ? rows.slice(0, 7).reverse() : [])
+        setWeeklyWeights(Array.isArray(data?.weights) ? data.weights : [])
+        setSleepLogs(Array.isArray(data?.sleep_logs) ? data.sleep_logs : [])
+        setStepLogs(Array.isArray(data?.step_logs) ? data.step_logs : [])
+        setCardioLogs(Array.isArray(data?.cardio_logs) ? data.cardio_logs : [])
+        setWorkoutHistory(Array.isArray(data?.workout_history) ? data.workout_history : [])
+        setMeals(Array.isArray(data?.meals) ? data.meals : [])
+        setWeeklyCaloriesReview(data?.weekly_calories_review && typeof data.weekly_calories_review === 'object' ? data.weekly_calories_review : null)
+        setCoachingDataAvailability(normalizeCoachingDataAvailability(data?.data_availability))
       })
       .catch(error => {
         reportClientDiagnostic({
-          source: 'dashboard_weekly_weights_load',
-          message: 'Dashboard weekly weight history failed to load.',
+          source: 'dashboard_coaching_context_load',
+          message: 'Dashboard coaching context failed to load.',
           error,
           context: {
             surface: 'dashboard',
           },
         })
+        if (active) {
+          setCoachingDataAvailability(current => ({
+            ...current,
+            coachingContextLoaded: true,
+          }))
+        }
       })
 
     nutritionApi.getGroceryGap()
@@ -151,11 +179,33 @@ export function useDashboardSupplementalData({ loadSnapshot, loadAwards }) {
   return {
     generatedImageGallery,
     groceryGap,
+    coachingDataAvailability,
     realSuccessStoryData,
     realSuccessStoryError,
     realSuccessStoryLoading,
     refreshRealSuccessStory,
+    cardioLogs,
     smsReminders,
+    meals,
+    sleepLogs,
+    stepLogs,
+    weeklyCaloriesReview,
     weeklyWeights,
+    workoutHistory,
+  }
+}
+
+function normalizeCoachingDataAvailability(value) {
+  const data = value && typeof value === 'object' ? value : {}
+
+  return {
+    coachingContextLoaded: Boolean(data.coaching_context_loaded ?? data.coachingContextLoaded),
+    weightsLoaded: Boolean(data.weights_loaded ?? data.weightsLoaded),
+    sleepLogsLoaded: Boolean(data.sleep_logs_loaded ?? data.sleepLogsLoaded),
+    stepLogsLoaded: Boolean(data.step_logs_loaded ?? data.stepLogsLoaded),
+    cardioLogsLoaded: Boolean(data.cardio_logs_loaded ?? data.cardioLogsLoaded),
+    workoutHistoryLoaded: Boolean(data.workout_history_loaded ?? data.workoutHistoryLoaded),
+    nutritionWindowLoaded: Boolean(data.nutrition_window_loaded ?? data.nutritionWindowLoaded),
+    mealsLoaded: Boolean(data.meals_loaded ?? data.mealsLoaded),
   }
 }

@@ -64,6 +64,9 @@ class WorkoutController {
 				'methods'             => 'POST',
 				'callback'            => [ __CLASS__, 'save_custom_draft' ],
 				'permission_callback' => $auth,
+				'args'                => [
+					'time_tier' => [ 'required' => false, 'type' => 'string', 'sanitize_callback' => 'sanitize_text_field', 'validate_callback' => [ __CLASS__, 'validate_time_tier' ] ],
+				],
 			],
 			[
 				'methods'             => 'DELETE',
@@ -961,6 +964,7 @@ class WorkoutController {
 			'id'         => $id,
 			'name'       => $name,
 			'day_type'   => $day_type,
+			'time_tier'  => self::normalize_time_tier( $draft['time_tier'] ?? '' ) ?: 'medium',
 			'coach_note' => $coach_note,
 			'created_at' => $created_at,
 			'exercises'  => $items,
@@ -1003,6 +1007,7 @@ class WorkoutController {
 		return [
 			'id'         => sanitize_text_field( (string) ( $payload['id'] ?? 'custom_' . wp_generate_uuid4() ) ),
 			'day_type'   => $day_type,
+			'time_tier'  => self::normalize_time_tier( $payload['time_tier'] ?? '' ) ?: 'medium',
 			'coach_note' => $coach_note,
 			'created_at' => current_time( 'mysql', true ),
 			'exercises'  => $resolved_exercises,

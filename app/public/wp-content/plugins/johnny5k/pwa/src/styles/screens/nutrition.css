@@ -456,7 +456,7 @@
 .nutrition-screen .dashboard-chip.ai {
   background: rgba(0, 188, 222, 0.2);
   border-color: rgba(126, 244, 255, 0.28);
-  color: #eafcff;
+  color: #0b4960;
 }
 .nutrition-screen .dashboard-chip.nutrition,
 .nutrition-screen .dashboard-chip:not(.ai):not(.subtle):not(.workout):not(.awards):not(.success):not(.coach) {
@@ -1110,6 +1110,7 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--space-3);
+  margin: 20px 0;
   padding: var(--space-3);
   border-radius: 16px;
   border: 1px solid rgba(168, 212, 240, 0.82);

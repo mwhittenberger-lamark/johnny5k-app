@@ -4,6 +4,8 @@ import { mutateOfflineWriteQueueEntry, removeOfflineWriteQueueEntry } from '../a
 import { workoutApi } from '../api/modules/workout'
 import { cacheWorkoutSessionSnapshot, clearCachedWorkoutSessionSnapshot, readCachedWorkoutSessionSnapshot } from '../lib/workoutOffline'
 
+const VALID_TIME_TIERS = new Set(['short', 'medium', 'full'])
+
 /** Workout state — persisted in localStorage so planning and active sessions survive app/tab churn. */
 export const useWorkoutStore = create(persist((set, get) => ({
   session: null,        // { session, exercises: [{ ...ex, sets: [] }] }
@@ -23,7 +25,7 @@ export const useWorkoutStore = create(persist((set, get) => ({
   undoToast: null,
   discardedSessions: {},
 
-  setTimeTier: (tier) => set({ timeTier: tier }),
+  setTimeTier: (tier) => set({ timeTier: resolveWorkoutTimeTier(tier, get().timeTier) }),
   setReadinessScore: (score) => set({ readinessScore: score, sessionMode: score <= 3 ? 'maintenance' : 'normal' }),
   setActiveExerciseIdx: (index) => set({ activeExerciseIdx: Math.max(0, index) }),
   setPreviewDayType: (dayType) => set({ previewDayType: dayType || '' }),
@@ -199,7 +201,7 @@ export const useWorkoutStore = create(persist((set, get) => ({
                 bootstrapped: true,
                 wasResumed: true,
                 sessionMode: full.session_mode || (Number(full?.session?.readiness_score ?? 0) <= 3 ? 'maintenance' : 'normal'),
-                timeTier: full?.session?.time_tier || get().timeTier,
+                timeTier: resolveWorkoutTimeTier(full?.session?.time_tier, get().timeTier),
                 readinessScore: full?.session?.readiness_score ?? get().readinessScore,
               })
               return
@@ -219,7 +221,18 @@ export const useWorkoutStore = create(persist((set, get) => ({
       const current = await workoutApi.current()
       if (current?.session?.id) {
         if (isDiscardedSession(get().discardedSessions, current?.session)) {
-          set({ session: null, sessionId: null, customWorkoutDraft: current?.custom_workout_draft ?? null, offlineSessionSnapshot: false, loading: false, bootstrapped: true, wasResumed: false, activeExerciseIdx: 0, undoToast: null })
+          set({
+            session: null,
+            sessionId: null,
+            customWorkoutDraft: current?.custom_workout_draft ?? null,
+            timeTier: resolveWorkoutTimeTier(current?.custom_workout_draft?.time_tier, get().timeTier),
+            offlineSessionSnapshot: false,
+            loading: false,
+            bootstrapped: true,
+            wasResumed: false,
+            activeExerciseIdx: 0,
+            undoToast: null,
+          })
           return
         }
 
@@ -232,13 +245,24 @@ export const useWorkoutStore = create(persist((set, get) => ({
           bootstrapped: true,
           wasResumed: true,
           sessionMode: current.session_mode || (Number(current?.session?.readiness_score ?? 0) <= 3 ? 'maintenance' : 'normal'),
-          timeTier: current?.session?.time_tier || get().timeTier,
+          timeTier: resolveWorkoutTimeTier(current?.session?.time_tier, get().timeTier),
           readinessScore: current?.session?.readiness_score ?? get().readinessScore,
         })
         return
       }
 
-      set({ session: null, sessionId: null, customWorkoutDraft: current?.custom_workout_draft ?? null, offlineSessionSnapshot: false, loading: false, bootstrapped: true, wasResumed: false, activeExerciseIdx: 0, undoToast: null })
+      set({
+        session: null,
+        sessionId: null,
+        customWorkoutDraft: current?.custom_workout_draft ?? null,
+        timeTier: resolveWorkoutTimeTier(current?.custom_workout_draft?.time_tier, get().timeTier),
+        offlineSessionSnapshot: false,
+        loading: false,
+        bootstrapped: true,
+        wasResumed: false,
+        activeExerciseIdx: 0,
+        undoToast: null,
+      })
     } catch (err) {
       if (isOfflineLikeError(err)) {
         const cachedSessionSnapshot = readCachedWorkoutSessionSnapshot()
@@ -254,7 +278,7 @@ export const useWorkoutStore = create(persist((set, get) => ({
             bootstrapped: true,
             wasResumed: true,
             sessionMode: cachedSession.session_mode || (Number(cachedSession?.session?.readiness_score ?? 0) <= 3 ? 'maintenance' : 'normal'),
-            timeTier: cachedSession?.session?.time_tier || get().timeTier,
+            timeTier: resolveWorkoutTimeTier(cachedSession?.session?.time_tier, get().timeTier),
             readinessScore: cachedSession?.session?.readiness_score ?? get().readinessScore,
             error: null,
           })
@@ -268,7 +292,7 @@ export const useWorkoutStore = create(persist((set, get) => ({
 
   startSession: async (options = {}) => {
     const { timeTier, readinessScore, customWorkoutDraft } = get()
-    const selectedTimeTier = options.timeTier ?? timeTier
+    const selectedTimeTier = resolveWorkoutTimeTier(options.timeTier, timeTier)
     const selectedReadiness = options.readinessScore ?? readinessScore
     const selectedDayType = options.dayType ?? null
     const customWorkoutDraftId = options.customWorkoutDraftId ?? customWorkoutDraft?.id ?? ''
@@ -718,7 +742,7 @@ export const useWorkoutStore = create(persist((set, get) => ({
   takeRestDay: async () => {
     const { timeTier, readinessScore } = get()
     const startResult = await workoutApi.start({
-      time_tier: timeTier,
+      time_tier: resolveWorkoutTimeTier(timeTier, 'medium'),
       readiness_score: readinessScore,
       day_type: 'rest',
     })
@@ -739,9 +763,21 @@ export const useWorkoutStore = create(persist((set, get) => ({
 }), {
   name: 'jf-workout-session',
   storage: createJSONStorage(() => localStorage),
+  merge: (persistedState, currentState) => {
+    const persisted = persistedState && typeof persistedState === 'object' ? persistedState : {}
+    const merged = {
+      ...currentState,
+      ...persisted,
+    }
+
+    return {
+      ...merged,
+      timeTier: resolveWorkoutTimeTier(merged.timeTier, currentState.timeTier),
+    }
+  },
   partialize: (state) => ({
     sessionId: state.sessionId,
-    timeTier: state.timeTier,
+    timeTier: resolveWorkoutTimeTier(state.timeTier, 'medium'),
     readinessScore: state.readinessScore,
     sessionMode: state.sessionMode,
     offlineSessionSnapshot: state.offlineSessionSnapshot,
@@ -763,11 +799,25 @@ function setResolvedSessionState(set, get, sessionData, selectedTimeTier, select
     bootstrapped: true,
     wasResumed: false,
     activeExerciseIdx: 0,
-    timeTier: sessionData?.session?.time_tier || selectedTimeTier,
+    timeTier: resolveWorkoutTimeTier(sessionData?.session?.time_tier, selectedTimeTier),
     readinessScore: sessionData?.session?.readiness_score ?? selectedReadiness,
     sessionMode: sessionData.session_mode || (Number(sessionData?.session?.readiness_score ?? 0) <= 3 ? 'maintenance' : 'normal'),
     undoToast: null,
   })
+}
+
+function normalizeWorkoutTimeTierAlias(value) {
+  const normalizedValue = String(value || '').trim().toLowerCase().replace(/[\s_]+/g, '-').replace(/-+/g, '-')
+  if (!normalizedValue) return ''
+  if (VALID_TIME_TIERS.has(normalizedValue)) return normalizedValue
+  if (['long', 'full-length', 'full-length-workout', 'full-session', 'full-workout'].includes(normalizedValue)) return 'full'
+  if (['medium-length', 'medium-session', 'normal'].includes(normalizedValue)) return 'medium'
+  if (['short-length', 'short-session'].includes(normalizedValue)) return 'short'
+  return ''
+}
+
+function resolveWorkoutTimeTier(value, fallback = 'medium') {
+  return normalizeWorkoutTimeTierAlias(value) || normalizeWorkoutTimeTierAlias(fallback) || 'medium'
 }
 
 function isDiscardedSession(discardedSessions, sessionRecord) {

@@ -4,6 +4,7 @@ namespace Johnny5k\Admin;
 defined( 'ABSPATH' ) || exit;
 
 use Johnny5k\Services\AiService;
+use Johnny5k\Services\GeminiImageService;
 
 class RecipeLibrary {
 
@@ -160,6 +161,23 @@ class RecipeLibrary {
 					$state['messages'][] = 'Recipe deleted.';
 				}
 				return $state;
+
+			case 'generate_recipe_image':
+				$id = (int) ( $_POST['recipe_id'] ?? 0 );
+				check_admin_referer( 'jf_recipe_library_generate_image_' . $id );
+				if ( $id <= 0 ) {
+					$state['errors'][] = 'Choose a saved recipe before generating an image.';
+					return $state;
+				}
+
+				$recipe = self::generate_recipe_image( $id, get_current_user_id() );
+				if ( is_wp_error( $recipe ) ) {
+					$state['errors'][] = $recipe->get_error_message();
+					return $state;
+				}
+
+				$state['messages'][] = sprintf( 'Generated image for %s.', $recipe['recipe_name'] );
+				return $state;
 		}
 
 		return $state;
@@ -186,8 +204,16 @@ class RecipeLibrary {
 			.jf-recipe-library__discovery-body{min-width:0;flex:1}
 			.jf-recipe-library__table{table-layout:fixed}
 			.jf-recipe-library__table th,.jf-recipe-library__table td{vertical-align:top;word-break:break-word}
+			.jf-recipe-library__recipe-meta{display:grid;grid-template-columns:88px minmax(0,1fr);gap:14px;align-items:start}
+			.jf-recipe-library__recipe-thumb{width:88px;height:88px;border-radius:10px;object-fit:cover;border:1px solid #dcdcde;background:#f6f7f7}
+			.jf-recipe-library__recipe-thumb--placeholder{display:flex;align-items:center;justify-content:center;color:#50575e;font-size:12px;line-height:1.4;text-align:center;padding:8px}
+			.jf-recipe-library__actions{display:grid;gap:8px}
+			.jf-recipe-library__actions form{margin:0}
 			@media (max-width: 1200px){
 				.jf-recipe-library__layout{grid-template-columns:1fr}
+			}
+			@media (max-width: 782px){
+				.jf-recipe-library__recipe-meta{grid-template-columns:1fr}
 			}
 		</style>';
 	}
@@ -316,12 +342,21 @@ class RecipeLibrary {
 		foreach ( $recipes as $recipe ) {
 			echo '<tr>';
 			echo '<td>';
+			echo '<div class="jf-recipe-library__recipe-meta">';
+			if ( ! empty( $recipe['image_url'] ) ) {
+				echo '<img class="jf-recipe-library__recipe-thumb" src="' . esc_url( (string) $recipe['image_url'] ) . '" alt="' . esc_attr( (string) $recipe['recipe_name'] ) . '">';
+			} else {
+				echo '<div class="jf-recipe-library__recipe-thumb jf-recipe-library__recipe-thumb--placeholder">No image yet</div>';
+			}
+			echo '<div>';
 			echo '<strong>' . esc_html( (string) $recipe['recipe_name'] ) . '</strong><br>';
 			echo '<span style="color:#50575e">' . esc_html( ucfirst( (string) $recipe['meal_type'] ) ) . '</span>';
 			if ( ! empty( $recipe['why_this_works'] ) ) {
 				echo '<p style="margin:6px 0 0;">' . esc_html( (string) $recipe['why_this_works'] ) . '</p>';
 			}
 			echo '<p style="margin:6px 0 0;color:#50575e">' . esc_html( implode( ', ', array_slice( (array) $recipe['ingredients'], 0, 6 ) ) ) . '</p>';
+			echo '</div>';
+			echo '</div>';
 			echo '</td>';
 			echo '<td>' . esc_html( sprintf(
 				'%d kcal / %sg P / %sg C / %sg F',
@@ -337,12 +372,20 @@ class RecipeLibrary {
 			echo '<span style="color:#50575e">' . esc_html( ucfirst( str_replace( '_', ' ', (string) ( $recipe['source_type'] ?? 'manual' ) ) ) ) . '</span>';
 			echo '</td>';
 			echo '<td>';
+			echo '<div class="jf-recipe-library__actions">';
+			echo '<form method="post">';
+			echo '<input type="hidden" name="jf_recipe_action" value="generate_recipe_image">';
+			echo '<input type="hidden" name="recipe_id" value="' . esc_attr( (string) ( $recipe['id'] ?? 0 ) ) . '">';
+			wp_nonce_field( 'jf_recipe_library_generate_image_' . (int) ( $recipe['id'] ?? 0 ) );
+			submit_button( 'Generate image', 'secondary small', '', false );
+			echo '</form>';
 			echo '<form method="post" onsubmit="return confirm(\'Delete this recipe?\');">';
 			echo '<input type="hidden" name="jf_recipe_action" value="delete_recipe">';
 			echo '<input type="hidden" name="recipe_id" value="' . esc_attr( (string) ( $recipe['id'] ?? 0 ) ) . '">';
 			wp_nonce_field( 'jf_recipe_library_delete_' . (int) ( $recipe['id'] ?? 0 ) );
 			submit_button( 'Delete', 'delete small', '', false );
 			echo '</form>';
+			echo '</div>';
 			echo '</td>';
 			echo '</tr>';
 		}
@@ -393,6 +436,31 @@ class RecipeLibrary {
 		update_option( 'jf_recipe_library', $recipes, false );
 	}
 
+	private static function generate_recipe_image( int $id, int $user_id ): array|\WP_Error {
+		$recipes = get_option( 'jf_recipe_library', [] );
+		$recipes = is_array( $recipes ) ? array_values( $recipes ) : [];
+
+		foreach ( $recipes as $index => $recipe ) {
+			if ( (int) ( $recipe['id'] ?? 0 ) !== $id ) {
+				continue;
+			}
+
+			$recipe = self::normalise_recipe( (array) $recipe );
+			$image  = self::generate_recipe_image_file( $user_id, $recipe );
+			if ( is_wp_error( $image ) ) {
+				return $image;
+			}
+
+			$recipe['image_url'] = (string) ( $image['image_url'] ?? '' );
+			$recipes[ $index ]   = $recipe;
+			update_option( 'jf_recipe_library', $recipes, false );
+
+			return $recipe;
+		}
+
+		return new \WP_Error( 'recipe_not_found', 'Recipe not found.' );
+	}
+
 	private static function build_recipe_from_post( array $post ): array {
 		$id = (int) ( $post['id'] ?? 0 );
 		return self::normalise_recipe( [
@@ -409,6 +477,7 @@ class RecipeLibrary {
 			'source_title'        => sanitize_text_field( wp_unslash( $post['source_title'] ?? '' ) ),
 			'source_url'          => esc_url_raw( wp_unslash( $post['source_url'] ?? '' ) ),
 			'source_type'         => sanitize_key( (string) ( $post['source_type'] ?? 'manual' ) ),
+			'image_url'           => esc_url_raw( wp_unslash( $post['image_url'] ?? '' ) ),
 		] );
 	}
 
@@ -427,6 +496,7 @@ class RecipeLibrary {
 			'source_title'        => sanitize_text_field( (string) ( $recipe['source_title'] ?? '' ) ),
 			'source_url'          => esc_url_raw( (string) ( $recipe['source_url'] ?? '' ) ),
 			'source_type'         => sanitize_key( (string) ( $recipe['source_type'] ?? 'manual' ) ) ?: 'manual',
+			'image_url'           => esc_url_raw( (string) ( $recipe['image_url'] ?? '' ) ),
 		];
 	}
 
@@ -445,6 +515,7 @@ class RecipeLibrary {
 			'source_title'        => '',
 			'source_url'          => '',
 			'source_type'         => 'manual',
+			'image_url'           => '',
 		];
 	}
 
@@ -498,6 +569,69 @@ class RecipeLibrary {
 		echo '<input type="hidden" name="source_title" value="' . esc_attr( (string) $recipe['source_title'] ) . '">';
 		echo '<input type="hidden" name="source_url" value="' . esc_attr( (string) $recipe['source_url'] ) . '">';
 		echo '<input type="hidden" name="source_type" value="' . esc_attr( (string) $recipe['source_type'] ) . '">';
+		echo '<input type="hidden" name="image_url" value="' . esc_attr( (string) $recipe['image_url'] ) . '">';
+	}
+
+	private static function build_recipe_image_prompt( array $recipe ): string {
+		$meal_type   = sanitize_text_field( (string) ( $recipe['meal_type'] ?? 'meal' ) );
+		$name        = sanitize_text_field( (string) ( $recipe['recipe_name'] ?? 'Recipe' ) );
+		$ingredients = array_slice( array_values( array_filter( array_map( 'sanitize_text_field', (array) ( $recipe['ingredients'] ?? [] ) ) ) ), 0, 8 );
+
+		$parts = [
+			sprintf( 'Create a polished square food photo of %s.', $name ),
+			sprintf( 'Show it as a %s recipe plated attractively with realistic food texture and natural lighting.', $meal_type ),
+			$ingredients ? 'Key visible ingredients: ' . implode( ', ', $ingredients ) . '.' : '',
+			'Avoid text overlays, labels, watermarks, hands, or packaging. Keep it appetizing, clean, and suitable for a fitness recipe library.',
+		];
+
+		return trim( implode( ' ', array_filter( $parts ) ) );
+	}
+
+	private static function generate_recipe_image_file( int $user_id, array $recipe ): array|\WP_Error {
+		$result = GeminiImageService::generate_image( $user_id, self::build_recipe_image_prompt( $recipe ), [], [
+			'aspect_ratio' => '1:1',
+			'image_size'   => '2K',
+		] );
+
+		if ( is_wp_error( $result ) ) {
+			return $result;
+		}
+
+		if ( ! function_exists( 'wp_upload_dir' ) ) {
+			return new \WP_Error( 'recipe_image_upload_unavailable', 'The uploads directory is unavailable.' );
+		}
+
+		$upload_dir = wp_upload_dir();
+		$base_dir   = (string) ( $upload_dir['basedir'] ?? '' );
+		$base_url   = (string) ( $upload_dir['baseurl'] ?? '' );
+		if ( '' === $base_dir || '' === $base_url ) {
+			return new \WP_Error( 'recipe_image_upload_unavailable', 'The uploads directory is unavailable.' );
+		}
+
+		$target_dir = trailingslashit( $base_dir ) . 'johnny5k-recipe-images';
+		if ( ! file_exists( $target_dir ) && ! wp_mkdir_p( $target_dir ) ) {
+			return new \WP_Error( 'recipe_image_upload_failed', 'The recipe image directory could not be created.' );
+		}
+
+		$extension = 'png';
+		$mime_type = (string) ( $result['mime_type'] ?? 'image/png' );
+		if ( 'image/jpeg' === $mime_type ) {
+			$extension = 'jpg';
+		} elseif ( 'image/webp' === $mime_type ) {
+			$extension = 'webp';
+		}
+
+		$filename = sanitize_file_name(
+			sanitize_title( (string) ( $recipe['recipe_name'] ?? 'recipe' ) ) . '-' . time() . '.' . $extension
+		);
+		$target_path = trailingslashit( $target_dir ) . $filename;
+		if ( false === file_put_contents( $target_path, (string) ( $result['data'] ?? '' ) ) ) {
+			return new \WP_Error( 'recipe_image_upload_failed', 'The generated recipe image could not be saved.' );
+		}
+
+		return [
+			'image_url' => trailingslashit( $base_url ) . 'johnny5k-recipe-images/' . $filename,
+		];
 	}
 
 	private static function format_decimal( $value ): string {

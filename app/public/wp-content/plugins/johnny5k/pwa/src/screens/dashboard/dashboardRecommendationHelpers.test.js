@@ -132,7 +132,7 @@ describe('dashboardRecommendationHelpers', () => {
       today_schedule: { day_type: 'push' },
     })
 
-    expect(move.title).toBe('Go to bed instead of opening new loops')
+    expect(move.title).toBe('Start winding down for bed')
     expect(move.actionLabel).toBe('Open sleep')
     expect(move.href).toBe('/body')
   })

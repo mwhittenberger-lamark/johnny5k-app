@@ -4,6 +4,7 @@ import {
   buildRecipeAwareGroceryGap,
   filterRecipesByPlanningState,
   getRecipeKey,
+  mergeDailyMealsByType,
   normaliseCookbookRecipe,
 } from './NutritionScreen'
 
@@ -93,5 +94,43 @@ describe('NutritionScreen recipe planning helpers', () => {
       'Rice',
       'Greek Yogurt',
     ])
+  })
+
+  it('does not append the same meal row twice when duplicate meal ids are returned', () => {
+    const merged = mergeDailyMealsByType([
+      {
+        id: 101,
+        meal_type: 'breakfast',
+        meal_datetime: '2026-04-14 08:00:00',
+        source: 'manual',
+        items: [
+          { food_name: 'Eggs', serving_amount: 2, serving_unit: 'egg', calories: 140, protein_g: 12, carbs_g: 1, fat_g: 10 },
+        ],
+      },
+      {
+        id: 101,
+        meal_type: 'breakfast',
+        meal_datetime: '2026-04-14 08:00:00',
+        source: 'manual',
+        items: [
+          { food_name: 'Eggs', serving_amount: 2, serving_unit: 'egg', calories: 140, protein_g: 12, carbs_g: 1, fat_g: 10 },
+        ],
+      },
+      {
+        id: 202,
+        meal_type: 'lunch',
+        meal_datetime: '2026-04-14 12:30:00',
+        source: 'manual',
+        items: [
+          { food_name: 'Chicken Wrap', serving_amount: 1, serving_unit: 'wrap', calories: 420, protein_g: 32, carbs_g: 35, fat_g: 14 },
+        ],
+      },
+    ])
+
+    expect(merged).toHaveLength(2)
+    const breakfast = merged.find(meal => meal.meal_type === 'breakfast')
+    expect(breakfast?.meal_ids).toEqual([101])
+    expect(breakfast?.items).toHaveLength(1)
+    expect(breakfast?.items?.[0]?.food_name).toBe('Eggs')
   })
 })

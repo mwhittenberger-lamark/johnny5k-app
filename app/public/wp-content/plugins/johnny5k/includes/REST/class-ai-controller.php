@@ -39,7 +39,7 @@ abstract class AbstractNutritionController extends RestController {
 		}
 
 		$items   = self::enrich_meal_items_with_micros( $user_id, $items );
-		$existing_meal = self::find_existing_daily_meal_by_type( $user_id, $meal_dt, $type );
+		$existing_meal = self::consolidate_daily_meals_by_type( $user_id, $meal_dt, $type );
 
 		if ( $existing_meal ) {
 			$meal_id      = (int) $existing_meal->id;
@@ -141,6 +141,8 @@ abstract class AbstractNutritionController extends RestController {
 		$user_id = get_current_user_id();
 		$date    = sanitize_text_field( $req->get_param( 'date' ) ?: UserTime::today( $user_id ) );
 
+		self::consolidate_daily_meals_for_date( $user_id, $date );
+
 		$meals = $wpdb->get_results( $wpdb->prepare(
 			"SELECT m.id, m.meal_type, m.meal_datetime, m.source, m.confirmed
 			 FROM {$p}fit_meals m
@@ -199,6 +201,7 @@ abstract class AbstractNutritionController extends RestController {
 		$user_id = get_current_user_id();
 		$date    = sanitize_text_field( $req->get_param( 'date' ) ?: UserTime::today( $user_id ) );
 
+		self::consolidate_daily_meals_for_date( $user_id, $date );
 		self::backfill_missing_meal_item_micros_for_date( $user_id, $date );
 		\Johnny5k\Services\CalorieEngine::refresh_active_goal_targets( $user_id );
 
@@ -932,24 +935,71 @@ abstract class AbstractNutritionController extends RestController {
 		return is_array( $decoded ) ? $decoded : [];
 	}
 
-	private static function find_existing_daily_meal_by_type( int $user_id, string $meal_datetime, string $meal_type ) {
+	private static function consolidate_daily_meals_for_date( int $user_id, string $date ): void {
 		global $wpdb;
 		$p = $wpdb->prefix;
 
-		$meal_date = preg_match( '/^\d{4}-\d{2}-\d{2}/', $meal_datetime, $matches )
-			? $matches[0]
-			: UserTime::today( $user_id );
+		$meal_types = $wpdb->get_col( $wpdb->prepare(
+			"SELECT DISTINCT meal_type
+			 FROM {$p}fit_meals
+			 WHERE user_id = %d AND DATE(meal_datetime) = %s AND confirmed = 1",
+			$user_id,
+			$date
+		) );
 
-		return $wpdb->get_row( $wpdb->prepare(
+		foreach ( $meal_types as $meal_type ) {
+			self::consolidate_daily_meals_by_type( $user_id, $date, (string) $meal_type );
+		}
+	}
+
+	private static function consolidate_daily_meals_by_type( int $user_id, string $meal_datetime, string $meal_type ) {
+		global $wpdb;
+		$p = $wpdb->prefix;
+
+		$meal_date = self::normalize_meal_date( $user_id, $meal_datetime );
+		$meals     = $wpdb->get_results( $wpdb->prepare(
 			"SELECT id, meal_datetime, source
 			 FROM {$p}fit_meals
 			 WHERE user_id = %d AND meal_type = %s AND DATE(meal_datetime) = %s AND confirmed = 1
-			 ORDER BY meal_datetime DESC, id DESC
-			 LIMIT 1",
+			 ORDER BY meal_datetime DESC, id DESC",
 			$user_id,
 			$meal_type,
 			$meal_date
 		) );
+
+		if ( empty( $meals ) ) {
+			return null;
+		}
+
+		$primary = array_shift( $meals );
+		if ( empty( $meals ) ) {
+			return $primary;
+		}
+
+		$primary_id = (int) $primary->id;
+		$merged_items = self::get_meal_items_payload( $primary_id );
+
+		foreach ( $meals as $duplicate_meal ) {
+			$duplicate_id = (int) $duplicate_meal->id;
+			$merged_items = self::merge_unique_meal_items_payload(
+				$merged_items,
+				self::get_meal_items_payload( $duplicate_id )
+			);
+		}
+
+		self::replace_meal_items( $primary_id, $merged_items );
+
+		foreach ( $meals as $duplicate_meal ) {
+			$duplicate_id = (int) $duplicate_meal->id;
+			$wpdb->delete( $p . 'fit_meal_items', [ 'meal_id' => $duplicate_id ] );
+			$wpdb->delete( $p . 'fit_meals', [ 'id' => $duplicate_id ] );
+		}
+
+		return $primary;
+	}
+
+	private static function find_existing_daily_meal_by_type( int $user_id, string $meal_datetime, string $meal_type ) {
+		return self::consolidate_daily_meals_by_type( $user_id, $meal_datetime, $meal_type );
 	}
 
 	private static function get_meal_items_payload( int $meal_id ): array {
@@ -969,6 +1019,82 @@ abstract class AbstractNutritionController extends RestController {
 			unset( $item['micros_json'], $item['source_json'] );
 			return $item;
 		}, $items );
+	}
+
+	private static function merge_unique_meal_items_payload( array $primary_items, array $candidate_items ): array {
+		$seen = [];
+
+		foreach ( $primary_items as $item ) {
+			$seen[ self::build_meal_item_signature( (array) $item ) ] = true;
+		}
+
+		foreach ( $candidate_items as $item ) {
+			$signature = self::build_meal_item_signature( (array) $item );
+			if ( isset( $seen[ $signature ] ) ) {
+				continue;
+			}
+
+			$primary_items[] = $item;
+			$seen[ $signature ] = true;
+		}
+
+		return $primary_items;
+	}
+
+	private static function build_meal_item_signature( array $item ): string {
+		$micros = $item['micros'] ?? [];
+		if ( ! is_array( $micros ) ) {
+			$micros = self::decode_json_list( $micros );
+		}
+
+		$normalized = [
+			'food_id' => isset( $item['food_id'] ) ? (int) $item['food_id'] : 0,
+			'food_name' => strtolower( trim( (string) ( $item['food_name'] ?? '' ) ) ),
+			'serving_amount' => round( (float) ( $item['serving_amount'] ?? 1 ), 4 ),
+			'serving_unit' => strtolower( trim( (string) ( $item['serving_unit'] ?? 'serving' ) ) ),
+			'calories' => (int) ( $item['calories'] ?? 0 ),
+			'protein_g' => round( (float) ( $item['protein_g'] ?? 0 ), 4 ),
+			'carbs_g' => round( (float) ( $item['carbs_g'] ?? 0 ), 4 ),
+			'fat_g' => round( (float) ( $item['fat_g'] ?? 0 ), 4 ),
+			'fiber_g' => isset( $item['fiber_g'] ) ? round( (float) $item['fiber_g'], 4 ) : null,
+			'sugar_g' => isset( $item['sugar_g'] ) ? round( (float) $item['sugar_g'], 4 ) : null,
+			'sodium_mg' => isset( $item['sodium_mg'] ) ? round( (float) $item['sodium_mg'], 4 ) : null,
+			'is_beverage' => ! empty( $item['is_beverage'] ) ? 1 : 0,
+			'micros' => self::normalize_signature_value( $micros ),
+			'source' => self::normalize_signature_value( $item['source'] ?? null ),
+		];
+
+		return wp_json_encode( $normalized ) ?: '';
+	}
+
+	private static function normalize_signature_value( $value ) {
+		if ( ! is_array( $value ) ) {
+			return $value;
+		}
+
+		if ( self::is_associative_array( $value ) ) {
+			ksort( $value );
+		}
+
+		foreach ( $value as $key => $child_value ) {
+			$value[ $key ] = self::normalize_signature_value( $child_value );
+		}
+
+		return $value;
+	}
+
+	private static function is_associative_array( array $value ): bool {
+		if ( [] === $value ) {
+			return false;
+		}
+
+		return array_keys( $value ) !== range( 0, count( $value ) - 1 );
+	}
+
+	private static function normalize_meal_date( int $user_id, string $meal_datetime ): string {
+		return preg_match( '/^\d{4}-\d{2}-\d{2}/', $meal_datetime, $matches )
+			? $matches[0]
+			: UserTime::today( $user_id );
 	}
 
 	private static function replace_meal_items( int $meal_id, array $items ): void {
@@ -1121,6 +1247,10 @@ abstract class AbstractNutritionController extends RestController {
 		$seen = [];
 
 		foreach ( is_array( $rows ) ? $rows : [] as $row ) {
+			if ( self::recent_food_row_comes_from_saved_food( $row ) ) {
+				continue;
+			}
+
 			$key = self::build_recent_food_dedupe_key( (string) ( $row['food_name'] ?? '' ), $row['source_json'] ?? null );
 			if ( '' === $key || isset( $seen[ $key ] ) || isset( $hidden_keys[ $key ] ) ) {
 				continue;
@@ -1135,6 +1265,15 @@ abstract class AbstractNutritionController extends RestController {
 		}
 
 		return $deduped;
+	}
+
+	private static function recent_food_row_comes_from_saved_food( array $row ): bool {
+		$source_details = ! empty( $row['source_json'] ) ? json_decode( (string) $row['source_json'], true ) : [];
+		if ( ! is_array( $source_details ) ) {
+			return false;
+		}
+
+		return 'saved_food' === sanitize_key( (string) ( $source_details['type'] ?? '' ) );
 	}
 
 	private static function get_recent_food_row_by_id( int $user_id, int $item_id ): ?array {

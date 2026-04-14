@@ -28,6 +28,12 @@ class DashboardController {
 			'permission_callback' => $auth,
 		] );
 
+		register_rest_route( $ns, '/dashboard/coaching-context', [
+			'methods'             => 'GET',
+			'callback'            => [ __CLASS__, 'get_coaching_context' ],
+			'permission_callback' => $auth,
+		] );
+
 		register_rest_route( $ns, '/dashboard/awards', [
 			'methods'             => 'GET',
 			'callback'            => [ __CLASS__, 'get_awards' ],
@@ -121,6 +127,12 @@ class DashboardController {
 		return new \WP_REST_Response( self::get_daily_snapshot_data( $user_id ) );
 	}
 
+	public static function get_coaching_context( \WP_REST_Request $req ): \WP_REST_Response {
+		$user_id = get_current_user_id();
+
+		return new \WP_REST_Response( self::get_coaching_context_data( $user_id ) );
+	}
+
 	public static function get_johnny_review( \WP_REST_Request $req ): \WP_REST_Response {
 		$user_id = get_current_user_id();
 		$force   = rest_sanitize_boolean( $req->get_param( 'force' ) );
@@ -151,6 +163,46 @@ class DashboardController {
 
 	protected static function fetch_dashboard_real_success_story( int $user_id, bool $force ) {
 		return AiService::dashboard_real_success_story( $user_id, $force );
+	}
+
+	protected static function get_coaching_context_data( int $user_id ): array {
+		$recent_dates = self::get_recent_dates( $user_id, 7 );
+		$weight_rows = self::response_data_array( BodyMetricsController::get_weight( self::build_internal_request( [ 'limit' => 7 ] ) ) );
+		$sleep_rows = self::response_data_array( BodyMetricsController::get_sleep( self::build_internal_request( [ 'limit' => 7 ] ) ) );
+		$step_rows = self::response_data_array( BodyMetricsController::get_steps( self::build_internal_request( [ 'limit' => 7 ] ) ) );
+		$cardio_rows = self::response_data_array( BodyMetricsController::get_cardio( self::build_internal_request( [ 'limit' => 7 ] ) ) );
+		$workout_rows = self::response_data_array( WorkoutController::get_recent_history_sessions( self::build_internal_request( [ 'days' => 14, 'limit' => 50 ] ) ) );
+
+		$weekly_summary_rows = [];
+		$meal_rows = [];
+		foreach ( $recent_dates as $date ) {
+			$weekly_summary_rows[] = self::response_data_item( NutritionController::get_nutrition_summary( self::build_internal_request( [ 'date' => $date ] ) ) );
+			$daily_meals = self::response_data_array( NutritionController::get_meals( self::build_internal_request( [ 'date' => $date ] ) ) );
+			if ( $daily_meals ) {
+				$meal_rows = array_merge( $meal_rows, $daily_meals );
+			}
+		}
+
+		return [
+			'loaded_at' => current_time( 'mysql', true ),
+			'data_availability' => [
+				'coaching_context_loaded' => true,
+				'weights_loaded' => true,
+				'sleep_logs_loaded' => true,
+				'step_logs_loaded' => true,
+				'cardio_logs_loaded' => true,
+				'workout_history_loaded' => true,
+				'nutrition_window_loaded' => true,
+				'meals_loaded' => true,
+			],
+			'weights' => $weight_rows,
+			'sleep_logs' => $sleep_rows,
+			'step_logs' => $step_rows,
+			'cardio_logs' => $cardio_rows,
+			'workout_history' => $workout_rows,
+			'meals' => $meal_rows,
+			'weekly_calories_review' => self::build_dashboard_weekly_calories_review( $weekly_summary_rows ),
+		];
 	}
 
 	public static function get_daily_snapshot_data( int $user_id ): array {
@@ -322,6 +374,80 @@ class DashboardController {
 			'pending_follow_ups' => array_slice( $pending_follow_ups, 0, 4 ),
 			'delivery_diagnostics' => $delivery_diagnostics,
 		];
+	}
+
+	private static function build_internal_request( array $params = [] ): \WP_REST_Request {
+		$request = new \WP_REST_Request( 'GET' );
+		foreach ( $params as $key => $value ) {
+			$request->set_param( (string) $key, $value );
+		}
+
+		return $request;
+	}
+
+	private static function response_data_array( $response ): array {
+		$data = $response instanceof \WP_REST_Response ? $response->get_data() : $response;
+		return is_array( $data ) ? array_values( $data ) : [];
+	}
+
+	private static function response_data_item( $response ): array {
+		$data = $response instanceof \WP_REST_Response ? $response->get_data() : $response;
+		return is_array( $data ) ? $data : [];
+	}
+
+	private static function build_dashboard_weekly_calories_review( array $rows ): array {
+		$safe_rows = array_values( array_filter( $rows, static fn( $row ) => is_array( $row ) ) );
+		$total_calories = 0;
+		$target_calories = 0;
+		$logged_days = 0;
+
+		foreach ( $safe_rows as $row ) {
+			$total_day_calories = (float) self::nested_value( $row, [ 'totals', 'calories' ], 0 );
+			$target_day_calories = (float) self::nested_value( $row, [ 'targets', 'target_calories' ], 0 );
+
+			$total_calories += (int) round( $total_day_calories );
+			$target_calories += (int) round( $target_day_calories );
+			if ( $total_day_calories > 0 ) {
+				$logged_days++;
+			}
+		}
+
+		return [
+			'isLoaded' => true,
+			'totalCalories' => $total_calories,
+			'targetCalories' => $target_calories,
+			'loggedDays' => $logged_days,
+			'periodLabel' => 'Last 7 days',
+		];
+	}
+
+	private static function get_recent_dates( int $user_id, int $days ): array {
+		$total_days = max( 1, $days );
+		$dates = [];
+		for ( $index = $total_days - 1; $index >= 0; $index-- ) {
+			$dates[] = UserTime::days_ago( $user_id, $index );
+		}
+
+		return $dates;
+	}
+
+	private static function nested_value( $value, array $path, $fallback = null ) {
+		$current = $value;
+		foreach ( $path as $segment ) {
+			if ( is_array( $current ) && array_key_exists( $segment, $current ) ) {
+				$current = $current[ $segment ];
+				continue;
+			}
+
+			if ( is_object( $current ) && isset( $current->{$segment} ) ) {
+				$current = $current->{$segment};
+				continue;
+			}
+
+			return $fallback;
+		}
+
+		return $current;
 	}
 
 	private static function get_today_training_status_data( int $user_id, string $date, ?object $today_schedule = null, ?object $latest_session = null ): array {

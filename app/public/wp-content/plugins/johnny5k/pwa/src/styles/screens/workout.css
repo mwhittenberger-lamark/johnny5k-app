@@ -28,7 +28,12 @@
   font-weight: 700;
 }
 .ex-tab.active { background: var(--accent2); border-color: var(--accent2); color: #fff; }
-.ex-tab.has-sets { border-color: var(--success); color: var(--success); }
+.ex-tab.has-sets {
+  background: rgba(34, 196, 126, 0.14);
+  border-color: var(--success);
+  color: #13724a;
+}
+.ex-tab.active.has-sets { border-color: var(--accent2); color: #fff; }
 .exercise-card { position: relative; overflow: visible; }
 .exercise-card-accent { position: absolute; inset: 0 0 auto 0; height: 6px; background: linear-gradient(90deg, #2fa4a9 0%, #79cdc8 100%); border-radius: 16px 16px 0 0; }
 .exercise-card-header { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-4); padding-top: var(--space-1); }

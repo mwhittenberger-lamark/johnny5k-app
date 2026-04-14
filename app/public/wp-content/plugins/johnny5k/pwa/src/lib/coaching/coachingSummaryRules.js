@@ -238,6 +238,8 @@ function buildAdherenceSummary(input) {
 
 function buildNutritionSummary(input) {
   const loggingGap = Math.max(0, 7 - input.loggedDays)
+  const hasNutritionLoggingWindow = Boolean(input.hasNutritionLoggingWindow)
+  const hasMealHistory = Boolean(input.hasMealHistory)
   const restDayLoggingGap = input.mealDayBuckets.trainingLoggedDays > input.mealDayBuckets.restLoggedDays
     ? `${input.mealDayBuckets.trainingLoggedDays} logged training day${input.mealDayBuckets.trainingLoggedDays === 1 ? '' : 's'} versus ${input.mealDayBuckets.restLoggedDays} logged rest day${input.mealDayBuckets.restLoggedDays === 1 ? '' : 's'}.`
     : ''
@@ -259,19 +261,19 @@ function buildNutritionSummary(input) {
     status: input.loggedDays <= 3 ? 'at_risk' : 'steady',
     statusLabel: 'Nutrition gap',
     headline: 'Nutrition consistency is the next clean-up layer.',
-    summary: input.loggedDays <= 3
+    summary: hasNutritionLoggingWindow && input.loggedDays <= 3
       ? 'Logging is too patchy to trust the body signal yet. Tighten consistency before you change the bigger plan.'
       : input.proteinMetrics.pct < 0.75
         ? 'Protein is trailing often enough that recovery and body outcomes both stay noisier than they need to be.'
         : 'Weekly intake is partly on track, but the pattern still leaks enough to matter.',
     wins: [
       input.proteinMetrics.target > 0 && input.proteinMetrics.pct >= 0.9 ? 'Protein support is mostly on pace right now.' : '',
-      input.loggedDays >= 5 ? `${input.loggedDays} of the last 7 days are logged.` : '',
+      hasNutritionLoggingWindow && input.loggedDays >= 5 ? `${input.loggedDays} of the last 7 days are logged.` : '',
     ],
     risks: [
-      loggingGap > 0 ? `${loggingGap} of the last 7 days are still unlogged.` : '',
+      hasNutritionLoggingWindow && loggingGap > 0 ? `${loggingGap} of the last 7 days are still unlogged.` : '',
       input.proteinMetrics.target > 0 && input.proteinMetrics.pct < 0.75 ? 'Protein is lagging your current target.' : '',
-      restDayLoggingGap,
+      hasMealHistory ? restDayLoggingGap : '',
       trendWindowMessage && input.weightTrend.direction === 'stable' ? trendWindowMessage : '',
     ],
     insights: [
@@ -279,11 +281,13 @@ function buildNutritionSummary(input) {
         id: 'nutrition_logging',
         type: 'nutrition',
         title: 'Logging',
-        message: input.loggedDays > 0
+        message: !hasNutritionLoggingWindow
+          ? 'Seven-day nutrition logging is not loaded into this card yet.'
+          : input.loggedDays > 0
           ? `${input.loggedDays} of 7 days were logged in ${input.periodLabel.toLowerCase()}.`
           : 'There is not enough nutrition logging in the last 7 days to trust trend coaching yet.',
-        evidence: [input.periodLabel || 'Last 7 days'],
-        confidence: input.loggedDays >= 5 ? 'high' : input.loggedDays >= 3 ? 'medium' : 'low',
+        evidence: [hasNutritionLoggingWindow ? input.periodLabel || 'Last 7 days' : 'Dashboard nutrition logging review is still syncing.'],
+        confidence: !hasNutritionLoggingWindow ? 'low' : input.loggedDays >= 5 ? 'high' : input.loggedDays >= 3 ? 'medium' : 'low',
         priority: 10,
       }),
       buildInsight({
@@ -325,15 +329,21 @@ function buildNutritionSummary(input) {
 function buildBodySummary(input) {
   const movementMessage = input.avgSteps7d > 0
     ? `${Math.round(input.avgSteps7d).toLocaleString()} average daily steps across the last 7 logged entries.`
-    : 'Movement logging is still thin, so recovery context stays softer than ideal.'
+    : input.hasStepHistory || input.hasCardioHistory
+      ? 'Movement logging is still thin, so recovery context stays softer than ideal.'
+      : 'Movement context is still loading for this dashboard read.'
   const sleepMessage = input.avgSleep3d > 0
     ? `${input.avgSleep3d.toFixed(1)}h average sleep across the last 3 logs.`
     : input.sleepHours > 0
       ? `${input.sleepHours.toFixed(1)}h was the latest sleep entry.`
-      : 'Recent sleep is missing, which lowers confidence in the body read.'
+      : input.hasSleepHistory
+        ? 'Recent sleep is missing, which lowers confidence in the body read.'
+        : 'Recent sleep context is still loading for this dashboard read.'
   const workoutMessage = input.workoutCountRecent > 0
     ? `${input.workoutCountRecent} workout${input.workoutCountRecent === 1 ? '' : 's'} are already recorded from ${input.workoutWindowLabel}.`
-    : 'Recent workout context is thin, so this body read leans more on scale trend than training trend.'
+    : input.hasWorkoutHistory
+      ? 'Recent workout context is thin, so this body read leans more on scale trend than training trend.'
+      : 'Recent workout context is still loading for this dashboard read.'
   const nutritionRisk = input.loggedDays > 0 && input.loggedDays <= 4
   const longWindowMessage = input.weightTrend28d?.direction !== 'unknown'
     ? input.weightTrend28d.message
@@ -418,7 +428,7 @@ function buildBodySummary(input) {
         johnnyActionNotice: 'Coaching Summary flagged your 14-day to 28-day body trend for a closer look.',
       },
     }),
-    confidence: input.weightTrend.confidence || 'medium',
+    confidence: input.hasWeightHistory ? (input.weightTrend.confidence || 'medium') : 'low',
     generatedFrom: input.generatedFrom,
   })
 }
@@ -534,9 +544,9 @@ export function buildCoachingSummary(options = {}) {
   const nutritionRisk = Boolean(
     (input.loggedDays > 0 && input.loggedDays <= 4)
       || (input.proteinMetrics.target > 0 && input.proteinMetrics.pct > 0 && input.proteinMetrics.pct < 0.75)
-      || (input.mealDayBuckets.trainingLoggedDays > input.mealDayBuckets.restLoggedDays + 1)
+      || (input.hasMealHistory && input.mealDayBuckets.trainingLoggedDays > input.mealDayBuckets.restLoggedDays + 1)
   )
-  const bodySignalAvailable = input.weightTrend.direction !== 'unknown'
+  const bodySignalAvailable = input.hasWeightHistory && input.weightTrend.direction !== 'unknown'
   const bodyTrendStall = bodySignalAvailable
     && input.weightTrend.direction === 'stable'
     && (input.workoutCountRecent > 0 || input.currentStreak >= 3)

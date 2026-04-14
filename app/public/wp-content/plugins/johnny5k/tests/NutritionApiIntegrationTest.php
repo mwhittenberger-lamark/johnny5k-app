@@ -12,6 +12,10 @@ class NutritionApiIntegrationTest extends ApiIntegrationTestCase {
 		$db = $this->wpdb();
 		$GLOBALS['johnny5k_test_current_user_id'] = 42;
 
+		$db->expectGetCol(
+			"SELECT DISTINCT meal_type FROM wp_fit_meals WHERE user_id = 42 AND DATE(meal_datetime) = '2026-04-12' AND confirmed = 1",
+			[]
+		);
 		$db->expectGetResults( "AND DATE(m.meal_datetime) = '2026-04-12'", [] );
 		$db->expectGetRow( 'SELECT * FROM wp_fit_user_profiles WHERE user_id = 42', (object) [
 			'user_id' => 42,
@@ -71,9 +75,9 @@ class NutritionApiIntegrationTest extends ApiIntegrationTestCase {
 		$db = $this->wpdb();
 		$GLOBALS['johnny5k_test_current_user_id'] = 7;
 
-		$db->expectGetRow(
+		$db->expectGetResults(
 			"WHERE user_id = 7 AND meal_type = 'lunch' AND DATE(meal_datetime) = '2026-04-09' AND confirmed = 1",
-			null
+			[]
 		);
 
 		$req = new \WP_REST_Request( 'POST', '/fit/v1/nutrition/meal' );
@@ -117,9 +121,9 @@ class NutritionApiIntegrationTest extends ApiIntegrationTestCase {
 		$db = $this->wpdb();
 		$GLOBALS['johnny5k_test_current_user_id'] = 7;
 
-		$db->expectGetRow(
+		$db->expectGetResults(
 			"WHERE user_id = 7 AND meal_type = 'beverage' AND DATE(meal_datetime) = '2026-04-09' AND confirmed = 1",
-			null
+			[]
 		);
 
 		$req = new \WP_REST_Request( 'POST', '/fit/v1/nutrition/meal' );
@@ -203,9 +207,9 @@ class NutritionApiIntegrationTest extends ApiIntegrationTestCase {
 				] ),
 			]
 		);
-		$db->expectGetRow(
+		$db->expectGetResults(
 			"WHERE user_id = 7 AND meal_type = 'breakfast' AND DATE(meal_datetime) = '2026-04-09' AND confirmed = 1",
-			null
+			[]
 		);
 
 		$req = new \WP_REST_Request( 'POST', '/fit/v1/nutrition/saved-meals/12/log' );
@@ -254,6 +258,164 @@ class NutritionApiIntegrationTest extends ApiIntegrationTestCase {
 		$this->assertSame( 'Saved meal has no items. Edit or delete it first.', $data['message'] );
 		$this->assertSame( [], $db->inserted );
 		$this->assertSame( [], TestAiMealController::$synced_awards );
+	}
+
+	public function test_get_meals_consolidates_duplicate_daily_rows_without_repeating_items(): void {
+		$db = $this->wpdb();
+		$GLOBALS['johnny5k_test_current_user_id'] = 7;
+
+		$db->expectGetCol(
+			"SELECT DISTINCT meal_type FROM wp_fit_meals WHERE user_id = 7 AND DATE(meal_datetime) = '2026-04-09' AND confirmed = 1",
+			[ 'breakfast', 'lunch' ]
+		);
+		$db->expectGetResults(
+			"WHERE user_id = 7 AND meal_type = 'breakfast' AND DATE(meal_datetime) = '2026-04-09' AND confirmed = 1",
+			[
+				(object) [
+					'id' => 22,
+					'meal_datetime' => '2026-04-09 08:05:00',
+					'source' => 'saved_meal',
+				],
+				(object) [
+					'id' => 18,
+					'meal_datetime' => '2026-04-09 07:55:00',
+					'source' => 'saved_meal',
+				],
+			]
+		);
+		$db->expectGetResults(
+			'FROM wp_fit_meal_items WHERE meal_id = 22',
+			[
+				[
+					'food_id' => 91,
+					'food_name' => 'Greek Yogurt',
+					'serving_amount' => 1,
+					'serving_unit' => 'cup',
+					'calories' => 150,
+					'protein_g' => 15,
+					'carbs_g' => 8,
+					'fat_g' => 4,
+					'fiber_g' => 0,
+					'sugar_g' => 6,
+					'sodium_mg' => 55,
+					'micros_json' => null,
+					'is_beverage' => 0,
+					'source_json' => null,
+				],
+			]
+		);
+		$db->expectGetResults(
+			'FROM wp_fit_meal_items WHERE meal_id = 18',
+			[
+				[
+					'food_id' => 91,
+					'food_name' => 'Greek Yogurt',
+					'serving_amount' => 1,
+					'serving_unit' => 'cup',
+					'calories' => 150,
+					'protein_g' => 15,
+					'carbs_g' => 8,
+					'fat_g' => 4,
+					'fiber_g' => 0,
+					'sugar_g' => 6,
+					'sodium_mg' => 55,
+					'micros_json' => null,
+					'is_beverage' => 0,
+					'source_json' => null,
+				],
+			]
+		);
+		$db->expectGetResults(
+			"WHERE user_id = 7 AND meal_type = 'lunch' AND DATE(meal_datetime) = '2026-04-09' AND confirmed = 1",
+			[
+				(object) [
+					'id' => 31,
+					'meal_datetime' => '2026-04-09 12:15:00',
+					'source' => 'manual',
+				],
+			]
+		);
+		$db->expectGetResults(
+			'SELECT m.id, m.meal_type, m.meal_datetime, m.source, m.confirmed',
+			[
+				(object) [
+					'id' => 31,
+					'meal_type' => 'lunch',
+					'meal_datetime' => '2026-04-09 12:15:00',
+					'source' => 'manual',
+					'confirmed' => 1,
+				],
+				(object) [
+					'id' => 22,
+					'meal_type' => 'breakfast',
+					'meal_datetime' => '2026-04-09 08:05:00',
+					'source' => 'saved_meal',
+					'confirmed' => 1,
+				],
+			]
+		);
+		$db->expectGetResults(
+			'FROM wp_fit_meal_items WHERE meal_id = 31',
+			[
+				(object) [
+					'food_id' => 204,
+					'food_name' => 'Turkey Sandwich',
+					'serving_amount' => 1,
+					'serving_unit' => 'sandwich',
+					'calories' => 430,
+					'protein_g' => 28,
+					'carbs_g' => 36,
+					'fat_g' => 18,
+					'fiber_g' => 4,
+					'sugar_g' => 5,
+					'sodium_mg' => 760,
+					'micros_json' => null,
+					'is_beverage' => 0,
+					'source_json' => null,
+				],
+			]
+		);
+		$db->expectGetResults(
+			'FROM wp_fit_meal_items WHERE meal_id = 22',
+			[
+				(object) [
+					'food_id' => 91,
+					'food_name' => 'Greek Yogurt',
+					'serving_amount' => 1,
+					'serving_unit' => 'cup',
+					'calories' => 150,
+					'protein_g' => 15,
+					'carbs_g' => 8,
+					'fat_g' => 4,
+					'fiber_g' => 0,
+					'sugar_g' => 6,
+					'sodium_mg' => 55,
+					'micros_json' => null,
+					'is_beverage' => 0,
+					'source_json' => null,
+				],
+			]
+		);
+
+		$req = new \WP_REST_Request( 'GET', '/fit/v1/nutrition/meals' );
+		$req->set_param( 'date', '2026-04-09' );
+
+		$response = TestAiMealController::get_meals( $req );
+		$data = $response->get_data();
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertCount( 2, $data );
+		$this->assertSame( 'breakfast', $data[1]->meal_type );
+		$this->assertCount( 1, $data[1]->items );
+		$this->assertSame( 'Greek Yogurt', $data[1]->items[0]->food_name );
+		$this->assertSame(
+			[
+				[ 'table' => 'wp_fit_meal_items', 'where' => [ 'meal_id' => 22 ] ],
+				[ 'table' => 'wp_fit_meal_items', 'where' => [ 'meal_id' => 18 ] ],
+				[ 'table' => 'wp_fit_meals', 'where' => [ 'id' => 18 ] ],
+			],
+			$db->deleted
+		);
 	}
 
 	public function test_save_water_intake_creates_daily_hydration_row(): void {

@@ -1,3 +1,5 @@
+import { useState } from 'react'
+
 import { DashboardIconBadge } from './dashboardSharedCards'
 
 const BEGINNER_EDUCATION_ITEMS = [
@@ -100,6 +102,16 @@ const BEGINNER_EDUCATION_ITEMS = [
 ]
 
 export function BeginnerEducationCard({ onAction }) {
+  const [activeIndex, setActiveIndex] = useState(0)
+  const totalItems = BEGINNER_EDUCATION_ITEMS.length
+  const activeItem = BEGINNER_EDUCATION_ITEMS[activeIndex] ?? BEGINNER_EDUCATION_ITEMS[0]
+
+  function jumpToItem(nextIndex) {
+    if (!totalItems) return
+    const normalizedIndex = ((nextIndex % totalItems) + totalItems) % totalItems
+    setActiveIndex(normalizedIndex)
+  }
+
   return (
     <section className="dash-card dashboard-optional-card dashboard-beginner-education-card">
       <div className="dashboard-card-head">
@@ -109,19 +121,42 @@ export function BeginnerEducationCard({ onAction }) {
       </div>
       <h3>Start with the stuff that actually makes training easier</h3>
       <p className="dashboard-beginner-education-copy">These are the first concepts most people wish they understood sooner: effort, form, progression, recovery, and what to ignore while you build confidence.</p>
-      <div className="dashboard-beginner-education-grid">
-        {BEGINNER_EDUCATION_ITEMS.map(item => (
-          <article key={item.id} className="dashboard-beginner-resource-card">
-            <div className="dashboard-beginner-resource-head">
-              <span className="dashboard-chip subtle">{item.type}</span>
-              <strong>{item.title}</strong>
-            </div>
-            <p>{item.body}</p>
-            <button type="button" className="btn-outline small" onClick={() => onAction?.(item.action)}>
-              {item.actionLabel}
+      <div className="dashboard-beginner-education-rotator">
+        <div className="dashboard-beginner-education-rotator-top">
+          <span className="dashboard-beginner-education-progress">
+            {activeIndex + 1} / {totalItems}
+          </span>
+          <div className="dashboard-beginner-education-controls" aria-label="Beginner education rotator controls">
+            <button type="button" className="btn-outline small" onClick={() => jumpToItem(activeIndex - 1)}>
+              Previous
             </button>
-          </article>
-        ))}
+            <button type="button" className="btn-outline small" onClick={() => jumpToItem(activeIndex + 1)}>
+              Next
+            </button>
+          </div>
+        </div>
+        <article key={activeItem.id} className="dashboard-beginner-resource-card">
+          <div className="dashboard-beginner-resource-head">
+            <span className="dashboard-chip subtle">{activeItem.type}</span>
+            <strong>{activeItem.title}</strong>
+          </div>
+          <p>{activeItem.body}</p>
+          <button type="button" className="btn-outline small" onClick={() => onAction?.(activeItem.action)}>
+            {activeItem.actionLabel}
+          </button>
+        </article>
+        <div className="dashboard-beginner-education-dots" aria-label="Choose a beginner education card">
+          {BEGINNER_EDUCATION_ITEMS.map((item, index) => (
+            <button
+              key={item.id}
+              type="button"
+              className={`dashboard-beginner-education-dot${index === activeIndex ? ' active' : ''}`}
+              onClick={() => jumpToItem(index)}
+              aria-label={`Show ${item.title}`}
+              aria-pressed={index === activeIndex}
+            />
+          ))}
+        </div>
       </div>
     </section>
   )

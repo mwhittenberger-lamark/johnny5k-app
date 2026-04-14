@@ -41,10 +41,16 @@ function createSessionStorage() {
   }
 }
 
-async function loadWorkoutStore() {
+async function loadWorkoutStore(persistedWorkoutState = null) {
   vi.resetModules()
   globalThis.sessionStorage = createSessionStorage()
   globalThis.localStorage = createSessionStorage()
+  if (persistedWorkoutState) {
+    globalThis.localStorage.setItem('jf-workout-session', JSON.stringify({
+      state: persistedWorkoutState,
+      version: 0,
+    }))
+  }
   const module = await import('./workoutStore')
   return module.useWorkoutStore
 }
@@ -112,6 +118,36 @@ describe('useWorkoutStore', () => {
     expect(state.sessionId).toBeNull()
     expect(state.customWorkoutDraft).toEqual({ id: 'draft-1' })
     expect(state.wasResumed).toBe(false)
+  })
+
+  it('hydrates the selected time tier from a queued custom workout draft', async () => {
+    const store = await loadWorkoutStore()
+    workoutApiMock.current.mockResolvedValue({
+      custom_workout_draft: { id: 'draft-1', time_tier: 'full' },
+    })
+
+    await store.getState().bootstrapSession()
+
+    const state = store.getState()
+    expect(state.session).toBeNull()
+    expect(state.customWorkoutDraft).toEqual({ id: 'draft-1', time_tier: 'full' })
+    expect(state.timeTier).toBe('full')
+  })
+
+  it('normalizes legacy persisted time tier aliases during hydration', async () => {
+    const store = await loadWorkoutStore({
+      timeTier: 'full length',
+      readinessScore: 7,
+      sessionMode: 'normal',
+      offlineSessionSnapshot: false,
+      activeExerciseIdx: 0,
+      previewDayType: '',
+      previewDrafts: {},
+      discardedSessions: {},
+      sessionId: null,
+    })
+
+    expect(store.getState().timeTier).toBe('full')
   })
 
   it('falls back to a cached session snapshot during a network failure', async () => {
@@ -227,6 +263,23 @@ describe('useWorkoutStore', () => {
     expect(state.previewDayType).toBe('push')
     expect(state.previewDrafts.push.exerciseOrder).toEqual([101, 102])
     expect(state.previewDrafts.push.exerciseSwaps).toEqual({ 101: 202 })
+  })
+
+  it('normalizes aliased time tiers before starting a session', async () => {
+    const store = await loadWorkoutStore()
+    store.getState().setTimeTier('full length')
+    workoutApiMock.start.mockResolvedValue({
+      session: { id: 321, session_date: '2026-04-13', time_tier: 'full', readiness_score: 8, started_at: '2026-04-13 14:00:00' },
+      exercises: [],
+    })
+
+    await store.getState().startSession({ dayType: 'push' })
+
+    expect(workoutApiMock.start).toHaveBeenCalledWith(expect.objectContaining({
+      time_tier: 'full',
+      day_type: 'push',
+    }))
+    expect(store.getState().timeTier).toBe('full')
   })
 
   it('clears the planning draft when the workout is discarded', async () => {
