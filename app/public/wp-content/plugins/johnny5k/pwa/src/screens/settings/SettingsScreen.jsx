@@ -2177,12 +2177,19 @@ export default function SettingsScreen() {
                   type="button"
                   className={`settings-theme-option${form.color_scheme === option.id ? ' active' : ''}`}
                   onClick={() => update('color_scheme', option.id)}
+                  style={{
+                    '--theme-bg': option.colors.bg,
+                    '--theme-bg2': option.colors.bg2,
+                    '--theme-bg3': option.colors.bg3,
+                    '--theme-border': option.colors.border,
+                    '--theme-text': option.colors.text2 ?? option.colors.text,
+                    '--theme-text-muted': option.colors.textMuted2 ?? option.colors.textMuted,
+                  }}
                 >
                   <span className="settings-theme-swatches" aria-hidden="true">
                     <span style={{ background: option.colors.bg }} />
-                    <span style={{ background: option.colors.accent }} />
-                    <span style={{ background: option.colors.accent2 }} />
-                    <span style={{ background: option.colors.accent3 }} />
+                    <span style={{ background: option.colors.bg2 }} />
+                    <span style={{ background: option.colors.bg3 }} />
                   </span>
                   <strong>{option.label}</strong>
                   <span>{option.description}</span>

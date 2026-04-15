@@ -8,6 +8,10 @@
   --border:    #A8D4F0;
   --text:      #0F1F55;
   --text-muted:#5878A0;
+  --text2:     #0F1F55;
+  --text-muted2:#5878A0;
+  --text3:     #0F1F55;
+  --text-muted3:#5878A0;
   --accent:    #FF5530;   /* rocket orange */
   --accent2:   #00BCDE;   /* atomic teal   */
   --accent3:   #FF38A0;   /* electric pink */
@@ -109,6 +113,10 @@
   --border: rgba(214, 183, 96, 0.24);
   --text: #f7efe0;
   --text-muted: rgba(238, 228, 212, 0.78);
+  --text2: #f7efe0;
+  --text-muted2: rgba(238, 228, 212, 0.78);
+  --text3: #f7efe0;
+  --text-muted3: rgba(238, 228, 212, 0.78);
   --font-body: 'Spectral', Georgia, serif;
   --font-display: 'Cinzel', Georgia, serif;
   --font-ui: 'Exo 2', 'Trebuchet MS', system-ui, sans-serif;

@@ -32,6 +32,12 @@
   padding: 10px 12px;
 }
 
+:root[data-experience-mode='ironquest'] .code-row {
+  --text: var(--text2);
+  --text-muted: var(--text-muted2);
+  color: var(--text2);
+}
+
 .code-row code {
   flex: 1;
   font-family: 'Courier New', monospace;
@@ -57,6 +63,13 @@
   box-shadow: var(--shadow-sm);
   margin-bottom: 6px;
   font-size: 0.85rem;
+}
+
+:root[data-experience-mode='ironquest'] .cost-row,
+:root[data-experience-mode='ironquest'] .user-row {
+  --text: var(--text2);
+  --text-muted: var(--text-muted2);
+  color: var(--text2);
 }
 
 .persona-field {
@@ -86,6 +99,12 @@
   overflow-x: auto;
 }
 
+:root[data-experience-mode='ironquest'] .compiled-prompt pre {
+  --text: var(--text3);
+  --text-muted: var(--text-muted3);
+  color: var(--text3);
+}
+
 .test-chat-form {
   display: flex;
   gap: 8px;
@@ -111,6 +130,10 @@
 .badge.grey {
   background: var(--bg3);
   color: var(--text-muted);
+}
+
+:root[data-experience-mode='ironquest'] .badge.grey {
+  color: var(--text-muted3);
 }
 
 .admin-tab-bar {
@@ -160,6 +183,12 @@
   font-weight: 700;
 }
 
+:root[data-experience-mode='ironquest'] .admin-award-icon-option {
+  --text: var(--text2);
+  --text-muted: var(--text-muted2);
+  color: var(--text-muted2);
+}
+
 .admin-award-icon-option.active {
   border-color: rgba(0, 188, 222, 0.5);
   color: var(--accent2);
@@ -205,6 +234,12 @@
   box-shadow: var(--shadow-sm);
 }
 
+:root[data-experience-mode='ironquest'] .admin-card-row {
+  --text: var(--text2);
+  --text-muted: var(--text-muted2);
+  color: var(--text2);
+}
+
 .admin-card-row p {
   margin: 6px 0 0;
   color: var(--text-muted);
@@ -246,6 +281,12 @@
   box-shadow: var(--shadow-sm);
   color: var(--text);
   font: inherit;
+}
+
+:root[data-experience-mode='ironquest'] .admin-support-list-item {
+  --text: var(--text2);
+  --text-muted: var(--text-muted2);
+  color: var(--text2);
 }
 
 .admin-support-list-item.active {
@@ -290,6 +331,12 @@
   border-radius: 16px;
   background: var(--bg2);
   box-shadow: var(--shadow-sm);
+}
+
+:root[data-experience-mode='ironquest'] .admin-support-analytics-card {
+  --text: var(--text2);
+  --text-muted: var(--text-muted2);
+  color: var(--text2);
 }
 
 .admin-support-analytics-grid {

@@ -57,6 +57,12 @@
   overflow-wrap: anywhere;
 }
 
+:root[data-experience-mode='ironquest'] .btn-secondary {
+  --text: var(--text2);
+  --text-muted: var(--text-muted2);
+  color: var(--text2);
+}
+
 .btn-outline {
   display: inline-flex;
   align-items: center;

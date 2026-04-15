@@ -445,7 +445,7 @@ class Settings {
 
 	private static function render_color_schemes_editor(): void {
 		$schemes = AdminApiController::get_color_schemes_config();
-		$color_keys = [ 'bg', 'bg2', 'bg3', 'border', 'text', 'textMuted', 'accent', 'accent2', 'accent3', 'danger', 'success', 'yellow' ];
+		$color_keys = [ 'bg', 'text', 'textMuted', 'bg2', 'text2', 'textMuted2', 'bg3', 'text3', 'textMuted3', 'border', 'accent', 'accent2', 'accent3', 'danger', 'success', 'yellow' ];
 
 		echo '<p class="description" style="margin:0 0 12px">These color schemes feed the in-app profile selector. The first scheme acts as the fallback default.</p>';
 		echo '<div id="jf-color-schemes" style="display:grid;gap:16px">';

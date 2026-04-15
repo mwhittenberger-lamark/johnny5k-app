@@ -47,10 +47,12 @@ class ExerciseLibrary {
 			wp_die( 'Unauthorized' );
 		}
 
-		$state     = self::handle_post();
-		$exercise  = self::get_requested_exercise();
-		$exercise  = ! empty( $state['form'] ) ? $state['form'] : $exercise;
-		$exercises = self::get_exercises();
+		$state         = self::handle_post();
+		$exercise      = self::get_requested_exercise();
+		$exercise      = ! empty( $state['form'] ) ? $state['form'] : $exercise;
+		$all_exercises = self::get_exercises();
+		$list_state    = self::get_list_state();
+		$exercises     = self::filter_exercises( $all_exercises, $list_state );
 
 		echo '<div class="wrap jf-exercise-library">';
 		self::render_styles();
@@ -74,7 +76,7 @@ class ExerciseLibrary {
 		if ( ! empty( $state['discoveries'] ) ) {
 			self::render_discoveries( $state['discoveries'] );
 		}
-		self::render_list( $exercises );
+		self::render_list( $exercises, $list_state, self::get_filter_options( $all_exercises ), count( $all_exercises ) );
 		echo '</div>';
 		echo '</div>';
 		echo '</div>';
@@ -261,16 +263,28 @@ class ExerciseLibrary {
 			.jf-exercise-library__checkbox-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 12px}
 			.jf-exercise-library__table{table-layout:fixed}
 			.jf-exercise-library__table th,.jf-exercise-library__table td{vertical-align:top;word-break:break-word}
+			.jf-exercise-library__table th a{color:inherit;text-decoration:none}
 			.jf-exercise-library__meta{color:#50575e;margin-top:6px}
 			.jf-exercise-library__actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
 			.jf-exercise-library__results-header{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px}
 			.jf-exercise-library__results-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+			.jf-exercise-library__list-toolbar{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-bottom:16px}
+			.jf-exercise-library__list-summary{color:#50575e;margin:0}
+			.jf-exercise-library__filters{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px;align-items:end;margin-bottom:16px}
+			.jf-exercise-library__filter-field{display:flex;flex-direction:column;gap:6px}
+			.jf-exercise-library__filter-field label{font-weight:600}
+			.jf-exercise-library__filter-field input,
+			.jf-exercise-library__filter-field select{width:100%}
+			.jf-exercise-library__filter-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+			.jf-exercise-library__sort-link{display:inline-flex;align-items:center;gap:6px}
+			.jf-exercise-library__sort-indicator{font-size:12px;color:#646970}
 			.jf-exercise-library__discovery{border-top:1px solid #f0f0f1;padding:16px 0}
 			.jf-exercise-library__discovery:first-of-type{border-top:0;padding-top:0}
 			.jf-exercise-library__discovery label{display:flex;gap:10px;align-items:flex-start}
 			.jf-exercise-library__discovery input[type="checkbox"]{margin-top:2px}
 			.jf-exercise-library__discovery-body{min-width:0;flex:1}
-			@media (max-width: 1200px){.jf-exercise-library__layout{grid-template-columns:1fr}}
+			@media (max-width: 1200px){.jf-exercise-library__layout{grid-template-columns:1fr}.jf-exercise-library__filters{grid-template-columns:repeat(3,minmax(0,1fr))}}
+			@media (max-width: 782px){.jf-exercise-library__filters{grid-template-columns:1fr}.jf-exercise-library__list-toolbar{align-items:flex-start}}
 		</style>';
 	}
 
@@ -385,17 +399,25 @@ class ExerciseLibrary {
 		echo '</div>';
 	}
 
-	private static function render_list(array $exercises): void {
+	private static function render_list(array $exercises, array $list_state, array $filter_options, int $total_exercises): void {
 		echo '<div class="jf-exercise-library__card">';
 		echo '<h2 style="margin-top:0">Saved Exercises</h2>';
+		self::render_list_filters( $list_state, $filter_options, count( $exercises ), $total_exercises );
 
 		if ( empty( $exercises ) ) {
-			echo '<p>No exercises saved yet.</p>';
+			echo '<p>' . esc_html( $total_exercises > 0 ? 'No exercises matched the current filters.' : 'No exercises saved yet.' ) . '</p>';
 			echo '</div>';
 			return;
 		}
 
-		echo '<table class="widefat striped jf-exercise-library__table"><thead><tr><th>Exercise</th><th>Split / Slots</th><th>Muscles</th><th>Programming</th><th>Actions</th></tr></thead><tbody>';
+		echo '<table class="widefat striped jf-exercise-library__table"><thead><tr>';
+		echo '<th>' . self::render_sort_link( 'Exercise', 'name', $list_state ) . '</th>';
+		echo '<th>' . self::render_sort_link( 'Split / Slots', 'split', $list_state ) . '</th>';
+		echo '<th>' . self::render_sort_link( 'Muscles', 'primary_muscle', $list_state ) . '</th>';
+		echo '<th>' . self::render_sort_link( 'Programming', 'programming', $list_state ) . '</th>';
+		echo '<th>' . self::render_sort_link( 'Status', 'status', $list_state ) . '</th>';
+		echo '<th>Actions</th>';
+		echo '</tr></thead><tbody>';
 		foreach ( $exercises as $exercise ) {
 			$edit_url = add_query_arg(
 				[
@@ -413,7 +435,6 @@ class ExerciseLibrary {
 				echo '<p style="margin:8px 0 0;">' . esc_html( $exercise['description'] ) . '</p>';
 			}
 			echo '<p class="jf-exercise-library__meta">' . esc_html( ucfirst( $exercise['difficulty'] ) . ' · ' . $exercise['equipment'] . ' · ' . $exercise['movement_pattern'] ) . '</p>';
-			echo '<p class="jf-exercise-library__meta"><strong>Status:</strong> ' . esc_html( ! empty( $exercise['active'] ) ? 'Active' : 'Archived' ) . '</p>';
 			echo '</td>';
 			echo '<td>';
 			echo esc_html( implode( ', ', array_map( [ __CLASS__, 'format_label' ], $exercise['day_types'] ) ) ?: 'None assigned' );
@@ -429,6 +450,10 @@ class ExerciseLibrary {
 			echo esc_html( sprintf( '%d-%d reps × %d sets', (int) $exercise['default_rep_min'], (int) $exercise['default_rep_max'], (int) $exercise['default_sets'] ) );
 			echo '<p class="jf-exercise-library__meta"><strong>Progression:</strong> ' . esc_html( self::format_label( $exercise['default_progression_type'] ) ) . '</p>';
 			echo '<p class="jf-exercise-library__meta"><strong>Scores:</strong> Age ' . esc_html( (string) $exercise['age_friendliness_score'] ) . ' · Joint ' . esc_html( (string) $exercise['joint_stress_score'] ) . ' · Spinal ' . esc_html( (string) $exercise['spinal_load_score'] ) . '</p>';
+			echo '</td>';
+			echo '<td>';
+			echo '<strong>' . esc_html( ! empty( $exercise['active'] ) ? 'Active' : 'Archived' ) . '</strong>';
+			echo '<p class="jf-exercise-library__meta">' . esc_html( ucfirst( $exercise['difficulty'] ) ) . '</p>';
 			echo '</td>';
 			echo '<td>';
 			echo '<p><a class="button button-small" href="' . esc_url( $edit_url ) . '">Edit</a></p>';
@@ -464,11 +489,287 @@ class ExerciseLibrary {
 	private static function get_exercises(): array {
 		global $wpdb;
 		$rows = $wpdb->get_results(
-			"SELECT * FROM {$wpdb->prefix}fit_exercises ORDER BY active DESC, name ASC",
+			"SELECT * FROM {$wpdb->prefix}fit_exercises",
 			ARRAY_A
 		);
 
 		return array_values( array_map( [ __CLASS__, 'normalise_exercise' ], is_array( $rows ) ? $rows : [] ) );
+	}
+
+	private static function get_list_state(): array {
+		$allowed_statuses = [ 'all', 'active', 'archived' ];
+		$allowed_sorts    = [ '', 'name', 'split', 'primary_muscle', 'programming', 'status' ];
+
+		$status = sanitize_key( (string) ( $_GET['status_filter'] ?? 'all' ) );
+		$sort   = sanitize_key( (string) ( $_GET['sort'] ?? '' ) );
+		$order  = 'desc' === strtolower( (string) ( $_GET['order'] ?? '' ) ) ? 'desc' : 'asc';
+
+		return [
+			'search'         => sanitize_text_field( wp_unslash( (string) ( $_GET['s'] ?? '' ) ) ),
+			'status_filter'  => in_array( $status, $allowed_statuses, true ) ? $status : 'all',
+			'primary_muscle' => sanitize_key( (string) ( $_GET['primary_muscle'] ?? '' ) ),
+			'equipment'      => sanitize_key( (string) ( $_GET['equipment'] ?? '' ) ),
+			'difficulty'     => sanitize_key( (string) ( $_GET['difficulty'] ?? '' ) ),
+			'sort'           => in_array( $sort, $allowed_sorts, true ) ? $sort : '',
+			'order'          => $order,
+		];
+	}
+
+	private static function filter_exercises(array $exercises, array $list_state): array {
+		$filtered = array_values( array_filter( $exercises, static function ( array $exercise ) use ( $list_state ): bool {
+			if ( '' !== $list_state['search'] && ! self::exercise_matches_search( $exercise, $list_state['search'] ) ) {
+				return false;
+			}
+
+			if ( 'active' === $list_state['status_filter'] && empty( $exercise['active'] ) ) {
+				return false;
+			}
+
+			if ( 'archived' === $list_state['status_filter'] && ! empty( $exercise['active'] ) ) {
+				return false;
+			}
+
+			if ( '' !== $list_state['primary_muscle'] && $list_state['primary_muscle'] !== sanitize_key( (string) $exercise['primary_muscle'] ) ) {
+				return false;
+			}
+
+			if ( '' !== $list_state['equipment'] && $list_state['equipment'] !== sanitize_key( (string) $exercise['equipment'] ) ) {
+				return false;
+			}
+
+			if ( '' !== $list_state['difficulty'] && $list_state['difficulty'] !== sanitize_key( (string) $exercise['difficulty'] ) ) {
+				return false;
+			}
+
+			return true;
+		} ) );
+
+		usort( $filtered, static function ( array $left, array $right ) use ( $list_state ): int {
+			return self::compare_exercises_for_list( $left, $right, $list_state );
+		} );
+
+		return $filtered;
+	}
+
+	private static function exercise_matches_search(array $exercise, string $search): bool {
+		$needle = function_exists( 'mb_strtolower' ) ? mb_strtolower( trim( $search ) ) : strtolower( trim( $search ) );
+		if ( '' === $needle ) {
+			return true;
+		}
+
+		$haystack = implode( ' ', array_filter( [
+			(string) ( $exercise['name'] ?? '' ),
+			(string) ( $exercise['slug'] ?? '' ),
+			(string) ( $exercise['description'] ?? '' ),
+			(string) ( $exercise['movement_pattern'] ?? '' ),
+			(string) ( $exercise['primary_muscle'] ?? '' ),
+			implode( ' ', (array) ( $exercise['secondary_muscles'] ?? [] ) ),
+			(string) ( $exercise['equipment'] ?? '' ),
+			(string) ( $exercise['difficulty'] ?? '' ),
+			implode( ' ', (array) ( $exercise['day_types'] ?? [] ) ),
+			implode( ' ', (array) ( $exercise['slot_types'] ?? [] ) ),
+		] ) );
+
+		$haystack = function_exists( 'mb_strtolower' ) ? mb_strtolower( $haystack ) : strtolower( $haystack );
+		return false !== strpos( $haystack, $needle );
+	}
+
+	private static function compare_exercises_for_list(array $left, array $right, array $list_state): int {
+		$sort  = $list_state['sort'] ?? '';
+		$order = 'desc' === ( $list_state['order'] ?? 'asc' ) ? 'desc' : 'asc';
+
+		if ( '' === $sort ) {
+			$status_compare = (int) $right['active'] <=> (int) $left['active'];
+			if ( 0 !== $status_compare ) {
+				return $status_compare;
+			}
+
+			return self::compare_strings( (string) $left['name'], (string) $right['name'] );
+		}
+
+		switch ( $sort ) {
+			case 'status':
+				$result = (int) $left['active'] <=> (int) $right['active'];
+				break;
+			case 'primary_muscle':
+				$result = self::compare_strings( (string) $left['primary_muscle'], (string) $right['primary_muscle'] );
+				break;
+			case 'split':
+				$result = self::compare_strings(
+					implode( ', ', array_map( [ __CLASS__, 'format_label' ], (array) ( $left['day_types'] ?? [] ) ) ),
+					implode( ', ', array_map( [ __CLASS__, 'format_label' ], (array) ( $right['day_types'] ?? [] ) ) )
+				);
+				break;
+			case 'programming':
+				$result = (int) $left['default_rep_min'] <=> (int) $right['default_rep_min'];
+				if ( 0 === $result ) {
+					$result = (int) $left['default_sets'] <=> (int) $right['default_sets'];
+				}
+				if ( 0 === $result ) {
+					$result = self::compare_strings( (string) $left['difficulty'], (string) $right['difficulty'] );
+				}
+				break;
+			case 'name':
+			default:
+				$result = self::compare_strings( (string) $left['name'], (string) $right['name'] );
+				break;
+		}
+
+		if ( 'desc' === $order ) {
+			$result *= -1;
+		}
+
+		if ( 0 !== $result ) {
+			return $result;
+		}
+
+		return self::compare_strings( (string) $left['name'], (string) $right['name'] );
+	}
+
+	private static function compare_strings(string $left, string $right): int {
+		return strcasecmp( $left, $right );
+	}
+
+	private static function get_filter_options(array $exercises): array {
+		$options = [
+			'primary_muscles' => [],
+			'equipment'       => [],
+		];
+
+		foreach ( $exercises as $exercise ) {
+			$primary_muscle = sanitize_key( (string) ( $exercise['primary_muscle'] ?? '' ) );
+			$equipment      = sanitize_key( (string) ( $exercise['equipment'] ?? '' ) );
+
+			if ( '' !== $primary_muscle ) {
+				$options['primary_muscles'][ $primary_muscle ] = self::format_label( $primary_muscle );
+			}
+
+			if ( '' !== $equipment ) {
+				$options['equipment'][ $equipment ] = self::format_label( $equipment );
+			}
+		}
+
+		asort( $options['primary_muscles'] );
+		asort( $options['equipment'] );
+
+		return $options;
+	}
+
+	private static function render_list_filters(array $list_state, array $filter_options, int $visible_count, int $total_count): void {
+		echo '<div class="jf-exercise-library__list-toolbar">';
+		echo '<p class="jf-exercise-library__list-summary">Showing ' . esc_html( (string) $visible_count ) . ' of ' . esc_html( (string) $total_count ) . ' exercises.</p>';
+		echo '</div>';
+
+		echo '<form method="get" class="jf-exercise-library__filters">';
+		echo '<input type="hidden" name="page" value="jf-exercise-library">';
+
+		echo '<div class="jf-exercise-library__filter-field">';
+		echo '<label for="jf-exercise-filter-search">Search</label>';
+		echo '<input type="search" id="jf-exercise-filter-search" name="s" value="' . esc_attr( $list_state['search'] ) . '" placeholder="Name, slug, muscle, equipment">';
+		echo '</div>';
+
+		echo '<div class="jf-exercise-library__filter-field">';
+		echo '<label for="jf-exercise-filter-status">Status</label>';
+		echo '<select id="jf-exercise-filter-status" name="status_filter">';
+		foreach ( [ 'all' => 'All statuses', 'active' => 'Active only', 'archived' => 'Archived only' ] as $value => $label ) {
+			echo '<option value="' . esc_attr( $value ) . '"' . selected( $list_state['status_filter'], $value, false ) . '>' . esc_html( $label ) . '</option>';
+		}
+		echo '</select>';
+		echo '</div>';
+
+		echo '<div class="jf-exercise-library__filter-field">';
+		echo '<label for="jf-exercise-filter-muscle">Primary muscle</label>';
+		echo '<select id="jf-exercise-filter-muscle" name="primary_muscle">';
+		echo '<option value="">All muscles</option>';
+		foreach ( $filter_options['primary_muscles'] as $value => $label ) {
+			echo '<option value="' . esc_attr( $value ) . '"' . selected( $list_state['primary_muscle'], $value, false ) . '>' . esc_html( $label ) . '</option>';
+		}
+		echo '</select>';
+		echo '</div>';
+
+		echo '<div class="jf-exercise-library__filter-field">';
+		echo '<label for="jf-exercise-filter-equipment">Equipment</label>';
+		echo '<select id="jf-exercise-filter-equipment" name="equipment">';
+		echo '<option value="">All equipment</option>';
+		foreach ( $filter_options['equipment'] as $value => $label ) {
+			echo '<option value="' . esc_attr( $value ) . '"' . selected( $list_state['equipment'], $value, false ) . '>' . esc_html( $label ) . '</option>';
+		}
+		echo '</select>';
+		echo '</div>';
+
+		echo '<div class="jf-exercise-library__filter-field">';
+		echo '<label for="jf-exercise-filter-difficulty">Difficulty</label>';
+		echo '<select id="jf-exercise-filter-difficulty" name="difficulty">';
+		echo '<option value="">All levels</option>';
+		foreach ( self::DIFFICULTY_OPTIONS as $value => $label ) {
+			echo '<option value="' . esc_attr( $value ) . '"' . selected( $list_state['difficulty'], $value, false ) . '>' . esc_html( $label ) . '</option>';
+		}
+		echo '</select>';
+		echo '</div>';
+
+		echo '<div class="jf-exercise-library__filter-actions">';
+		submit_button( 'Filter', 'secondary', '', false );
+		echo '<a class="button button-link-delete" href="' . esc_url( admin_url( 'admin.php?page=jf-exercise-library' ) ) . '">Reset</a>';
+		echo '</div>';
+
+		echo '</form>';
+	}
+
+	private static function render_sort_link(string $label, string $sort_key, array $list_state): string {
+		$current_sort  = (string) ( $list_state['sort'] ?? '' );
+		$current_order = (string) ( $list_state['order'] ?? 'asc' );
+		$is_current    = $current_sort === $sort_key;
+		$next_order    = $is_current && 'asc' === $current_order ? 'desc' : 'asc';
+		$indicator     = $is_current ? ( 'asc' === $current_order ? '↑' : '↓' ) : '↕';
+
+		$url = add_query_arg(
+			self::build_list_query_args( [
+				'sort'  => $sort_key,
+				'order' => $next_order,
+			] ),
+			admin_url( 'admin.php' )
+		);
+
+		return '<a class="jf-exercise-library__sort-link" href="' . esc_url( $url ) . '"><span>' . esc_html( $label ) . '</span><span class="jf-exercise-library__sort-indicator" aria-hidden="true">' . esc_html( $indicator ) . '</span></a>';
+	}
+
+	private static function build_list_query_args(array $overrides = []): array {
+		$args = [
+			'page'           => 'jf-exercise-library',
+			's'              => sanitize_text_field( wp_unslash( (string) ( $_GET['s'] ?? '' ) ) ),
+			'status_filter'  => sanitize_key( (string) ( $_GET['status_filter'] ?? 'all' ) ),
+			'primary_muscle' => sanitize_key( (string) ( $_GET['primary_muscle'] ?? '' ) ),
+			'equipment'      => sanitize_key( (string) ( $_GET['equipment'] ?? '' ) ),
+			'difficulty'     => sanitize_key( (string) ( $_GET['difficulty'] ?? '' ) ),
+			'sort'           => sanitize_key( (string) ( $_GET['sort'] ?? '' ) ),
+			'order'          => 'desc' === strtolower( (string) ( $_GET['order'] ?? '' ) ) ? 'desc' : 'asc',
+		];
+
+		$args = array_merge( $args, $overrides );
+		$filtered_args = [];
+
+		foreach ( $args as $key => $value ) {
+			if ( 'page' === $key ) {
+				$filtered_args[ $key ] = $value;
+				continue;
+			}
+
+			if ( 'status_filter' === $key && 'all' === $value ) {
+				continue;
+			}
+
+			if ( 'order' === $key && 'asc' === $value && empty( $args['sort'] ) ) {
+				continue;
+			}
+
+			if ( '' === (string) $value ) {
+				continue;
+			}
+
+			$filtered_args[ $key ] = $value;
+		}
+
+		return $filtered_args;
 	}
 
 	private static function save_exercise(array $exercise): void {

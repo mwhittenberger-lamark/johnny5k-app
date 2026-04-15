@@ -88,6 +88,10 @@
   text-align: center;
 }
 
+.progress-activity-log-button {
+  margin-top: 65px;
+}
+
 .header-action-button .app-icon {
   width: 18px;
   height: 18px;

@@ -10,9 +10,13 @@ export const DEFAULT_COLOR_SCHEMES = [
       bg: '#E6F3FD',
       bg2: '#FFFFFF',
       bg3: '#CCE6F8',
-      border: '#A8D4F0',
       text: '#0F1F55',
       textMuted: '#5878A0',
+      text2: '#0F1F55',
+      textMuted2: '#5878A0',
+      text3: '#0F1F55',
+      textMuted3: '#5878A0',
+      border: '#A8D4F0',
       accent: '#FF5530',
       accent2: '#00BCDE',
       accent3: '#FF38A0',
@@ -29,9 +33,13 @@ export const DEFAULT_COLOR_SCHEMES = [
       bg: '#0A0B0F',
       bg2: '#171A21',
       bg3: '#242933',
-      border: '#445064',
       text: '#E8EDF6',
       textMuted: '#97A4BA',
+      text2: '#E8EDF6',
+      textMuted2: '#97A4BA',
+      text3: '#E8EDF6',
+      textMuted3: '#97A4BA',
+      border: '#445064',
       accent: '#F5C400',
       accent2: '#2D6CDF',
       accent3: '#5A6475',
@@ -48,9 +56,13 @@ export const DEFAULT_COLOR_SCHEMES = [
       bg: '#EAFBF4',
       bg2: '#FFFFFF',
       bg3: '#D0F3E5',
-      border: '#9EDBBC',
       text: '#F90505',
       textMuted: '#3E5F59',
+      text2: '#F90505',
+      textMuted2: '#3E5F59',
+      text3: '#F90505',
+      textMuted3: '#3E5F59',
+      border: '#9EDBBC',
       accent: '#0E7C66',
       accent2: '#3BC9A3',
       accent3: '#89E219',
@@ -67,9 +79,13 @@ export const DEFAULT_COLOR_SCHEMES = [
       bg: '#0D1B2A',
       bg2: '#132238',
       bg3: '#1C3350',
-      border: '#315074',
       text: '#EAF4FF',
       textMuted: '#98B6D8',
+      text2: '#EAF4FF',
+      textMuted2: '#98B6D8',
+      text3: '#EAF4FF',
+      textMuted3: '#98B6D8',
+      border: '#315074',
       accent: '#FF7A21',
       accent2: '#4FD1FF',
       accent3: '#FF4FA3',
@@ -86,9 +102,13 @@ export const DEFAULT_COLOR_SCHEMES = [
       bg: '#F8F2E3',
       bg2: '#FFF9ED',
       bg3: '#E8D8B1',
-      border: '#CFB37A',
       text: '#3B2A19',
       textMuted: '#7A6243',
+      text2: '#3B2A19',
+      textMuted2: '#7A6243',
+      text3: '#3B2A19',
+      textMuted3: '#7A6243',
+      border: '#CFB37A',
       accent: '#B8572D',
       accent2: '#5B8C5A',
       accent3: '#C08B14',
@@ -141,6 +161,10 @@ function getThemeMode(colors) {
   return getRelativeLuminance(parsedBackground) < 0.24 ? 'dark' : 'light'
 }
 
+function getSchemeColor(colors, key, fallback) {
+  return isValidColorString(colors?.[key]) ? colors[key] : fallback
+}
+
 function normalizeScheme(option, index) {
   const fallback = DEFAULT_COLOR_SCHEMES[index] ?? DEFAULT_COLOR_SCHEMES[0]
   const colors = option?.colors ?? {}
@@ -154,8 +178,12 @@ function normalizeScheme(option, index) {
       bg2: isValidColorString(colors.bg2) ? colors.bg2 : fallback.colors.bg2,
       bg3: isValidColorString(colors.bg3) ? colors.bg3 : fallback.colors.bg3,
       border: isValidColorString(colors.border) ? colors.border : fallback.colors.border,
-      text: isValidColorString(colors.text) ? colors.text : fallback.colors.text,
-      textMuted: isValidColorString(colors.textMuted) ? colors.textMuted : fallback.colors.textMuted,
+      text: getSchemeColor(colors, 'text', fallback.colors.text),
+      textMuted: getSchemeColor(colors, 'textMuted', fallback.colors.textMuted),
+      text2: getSchemeColor(colors, 'text2', getSchemeColor(colors, 'text', fallback.colors.text2 ?? fallback.colors.text)),
+      textMuted2: getSchemeColor(colors, 'textMuted2', getSchemeColor(colors, 'textMuted', fallback.colors.textMuted2 ?? fallback.colors.textMuted)),
+      text3: getSchemeColor(colors, 'text3', getSchemeColor(colors, 'text', fallback.colors.text3 ?? fallback.colors.text)),
+      textMuted3: getSchemeColor(colors, 'textMuted3', getSchemeColor(colors, 'textMuted', fallback.colors.textMuted3 ?? fallback.colors.textMuted)),
       accent: isValidColorString(colors.accent) ? colors.accent : fallback.colors.accent,
       accent2: isValidColorString(colors.accent2) ? colors.accent2 : fallback.colors.accent2,
       accent3: isValidColorString(colors.accent3) ? colors.accent3 : fallback.colors.accent3,
@@ -209,6 +237,10 @@ export function applyColorScheme(value) {
       root.style.setProperty('--border', scheme.colors.border)
       root.style.setProperty('--text', scheme.colors.text)
       root.style.setProperty('--text-muted', scheme.colors.textMuted)
+      root.style.setProperty('--text2', scheme.colors.text2)
+      root.style.setProperty('--text-muted2', scheme.colors.textMuted2)
+      root.style.setProperty('--text3', scheme.colors.text3)
+      root.style.setProperty('--text-muted3', scheme.colors.textMuted3)
     }
 
     root.style.setProperty('--accent', scheme.colors.accent)

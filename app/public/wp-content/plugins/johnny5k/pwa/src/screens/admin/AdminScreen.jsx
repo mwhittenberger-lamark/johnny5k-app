@@ -17,7 +17,7 @@ import { useAuthStore } from '../../store/authStore'
 
 const TABS = ['invites', 'costs', 'persona', 'users', 'exercises', 'awards', 'recipes', 'support', 'diagnostics', 'ironquest', 'settings', 'label-tests']
 const AWARD_ICON_OPTIONS = ['award', 'trophy', 'star', 'flame', 'bolt']
-const COLOR_FIELDS = ['bg', 'bg2', 'bg3', 'border', 'text', 'textMuted', 'accent', 'accent2', 'accent3', 'danger', 'success', 'yellow']
+const COLOR_FIELDS = ['bg', 'text', 'textMuted', 'bg2', 'text2', 'textMuted2', 'bg3', 'text3', 'textMuted3', 'border', 'accent', 'accent2', 'accent3', 'danger', 'success', 'yellow']
 const QA_ONLY_TABS = ['label-tests']
 const IRONQUEST_DAILY_QUEST_OPTIONS = ['meal', 'sleep', 'cardio', 'steps', 'workout']
 const IRONQUEST_MISSION_RESULT_OPTIONS = ['victory', 'partial', 'failure']

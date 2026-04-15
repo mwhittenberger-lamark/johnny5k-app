@@ -17,6 +17,14 @@ textarea {
   transition: border-color .2s, box-shadow .2s;
 }
 
+:root[data-experience-mode='ironquest'] input,
+:root[data-experience-mode='ironquest'] select,
+:root[data-experience-mode='ironquest'] textarea {
+  --text: var(--text2);
+  --text-muted: var(--text-muted2);
+  color: var(--text2);
+}
+
 input:focus,
 select:focus,
 textarea:focus {
@@ -229,6 +237,12 @@ input[type="time"]::-webkit-date-and-time-value {
   border-radius: 14px;
   background: var(--bg2);
   border: 1px solid rgba(168, 212, 240, 0.8);
+}
+
+:root[data-experience-mode='ironquest'] .onboarding-schedule-row {
+  --text: var(--text2);
+  --text-muted: var(--text-muted2);
+  color: var(--text2);
 }
 
 .onboarding-schedule-row span {

@@ -53,9 +53,13 @@ class AdminApiController {
 					'bg' => '#E6F3FD',
 					'bg2' => '#FFFFFF',
 					'bg3' => '#CCE6F8',
-					'border' => '#A8D4F0',
 					'text' => '#0F1F55',
 					'textMuted' => '#5878A0',
+					'text2' => '#0F1F55',
+					'textMuted2' => '#5878A0',
+					'text3' => '#0F1F55',
+					'textMuted3' => '#5878A0',
+					'border' => '#A8D4F0',
 					'accent' => '#FF5530',
 					'accent2' => '#00BCDE',
 					'accent3' => '#FF38A0',
@@ -72,9 +76,13 @@ class AdminApiController {
 					'bg' => '#0A0B0F',
 					'bg2' => '#171A21',
 					'bg3' => '#242933',
-					'border' => '#445064',
 					'text' => '#E8EDF6',
 					'textMuted' => '#97A4BA',
+					'text2' => '#E8EDF6',
+					'textMuted2' => '#97A4BA',
+					'text3' => '#E8EDF6',
+					'textMuted3' => '#97A4BA',
+					'border' => '#445064',
 					'accent' => '#F5C400',
 					'accent2' => '#2D6CDF',
 					'accent3' => '#5A6475',
@@ -91,9 +99,13 @@ class AdminApiController {
 					'bg' => '#EAFBF4',
 					'bg2' => '#FFFFFF',
 					'bg3' => '#D0F3E5',
-					'border' => '#9EDBBC',
 					'text' => '#123B3A',
 					'textMuted' => '#507A73',
+					'text2' => '#123B3A',
+					'textMuted2' => '#507A73',
+					'text3' => '#123B3A',
+					'textMuted3' => '#507A73',
+					'border' => '#9EDBBC',
 					'accent' => '#0E7C66',
 					'accent2' => '#3BC9A3',
 					'accent3' => '#89E219',
@@ -110,9 +122,13 @@ class AdminApiController {
 					'bg' => '#0D1B2A',
 					'bg2' => '#132238',
 					'bg3' => '#1C3350',
-					'border' => '#315074',
 					'text' => '#EAF4FF',
 					'textMuted' => '#98B6D8',
+					'text2' => '#EAF4FF',
+					'textMuted2' => '#98B6D8',
+					'text3' => '#EAF4FF',
+					'textMuted3' => '#98B6D8',
+					'border' => '#315074',
 					'accent' => '#FF7A21',
 					'accent2' => '#4FD1FF',
 					'accent3' => '#FF4FA3',
@@ -129,9 +145,13 @@ class AdminApiController {
 					'bg' => '#F8F2E3',
 					'bg2' => '#FFF9ED',
 					'bg3' => '#E8D8B1',
-					'border' => '#CFB37A',
 					'text' => '#3B2A19',
 					'textMuted' => '#7A6243',
+					'text2' => '#3B2A19',
+					'textMuted2' => '#7A6243',
+					'text3' => '#3B2A19',
+					'textMuted3' => '#7A6243',
+					'border' => '#CFB37A',
 					'accent' => '#B8572D',
 					'accent2' => '#5B8C5A',
 					'accent3' => '#C08B14',
@@ -172,7 +192,7 @@ class AdminApiController {
 
 	public static function sanitize_color_schemes( $schemes ): array {
 		$defaults = self::default_color_schemes();
-		$allowed_color_keys = [ 'bg', 'bg2', 'bg3', 'border', 'text', 'textMuted', 'accent', 'accent2', 'accent3', 'danger', 'success', 'yellow' ];
+		$allowed_color_keys = [ 'bg', 'bg2', 'bg3', 'text', 'textMuted', 'text2', 'textMuted2', 'text3', 'textMuted3', 'border', 'accent', 'accent2', 'accent3', 'danger', 'success', 'yellow' ];
 		$clean = [];
 
 		if ( ! is_array( $schemes ) ) {
@@ -193,8 +213,22 @@ class AdminApiController {
 			$colors = [];
 			$raw_colors = is_array( $scheme['colors'] ?? null ) ? $scheme['colors'] : [];
 			foreach ( $allowed_color_keys as $color_key ) {
+				$fallback_key = $color_key;
+
+				if ( 'text2' === $color_key || 'text3' === $color_key ) {
+					$fallback_key = 'text';
+				}
+
+				if ( 'textMuted2' === $color_key || 'textMuted3' === $color_key ) {
+					$fallback_key = 'textMuted';
+				}
+
 				$color_value = sanitize_hex_color( (string) ( $raw_colors[ $color_key ] ?? '' ) );
-				$colors[ $color_key ] = $color_value ?: $fallback['colors'][ $color_key ];
+				if ( ! $color_value && isset( $raw_colors[ $fallback_key ] ) ) {
+					$color_value = sanitize_hex_color( (string) $raw_colors[ $fallback_key ] );
+				}
+
+				$colors[ $color_key ] = $color_value ?: ( $fallback['colors'][ $color_key ] ?? $fallback['colors'][ $fallback_key ] );
 			}
 
 			$clean[] = [

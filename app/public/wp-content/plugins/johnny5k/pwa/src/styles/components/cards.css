@@ -7,6 +7,12 @@
   margin-bottom: var(--space-3);
 }
 
+:root[data-experience-mode='ironquest'] .dash-card {
+  --text: var(--text2);
+  --text-muted: var(--text-muted2);
+  color: var(--text2);
+}
+
 .dash-card.settings-warning {
   border-color: var(--accent);
   background: linear-gradient(135deg, rgba(255, 85, 48, 0.08), rgba(255, 255, 255, 0.9));
@@ -53,6 +59,12 @@
   box-shadow: var(--shadow-sm);
   padding: var(--space-3);
   text-align: center;
+}
+
+:root[data-experience-mode='ironquest'] .small-card {
+  --text: var(--text2);
+  --text-muted: var(--text-muted2);
+  color: var(--text2);
 }
 
 .small-card .val {

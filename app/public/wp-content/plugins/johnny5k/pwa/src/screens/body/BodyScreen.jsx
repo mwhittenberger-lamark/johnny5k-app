@@ -1,15 +1,13 @@
-import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { startTransition, useCallback, useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { bodyApi } from '../../api/modules/body'
 import { ironquestApi } from '../../api/modules/ironquest'
 import { workoutApi } from '../../api/modules/workout'
 import ClearableInput from '../../components/ui/ClearableInput'
-import CoachingSummaryPanel from '../../components/ui/CoachingSummaryPanel'
 import SupportIconButton from '../../components/ui/SupportIconButton'
 import { getAccessibleScrollBehavior } from '../../lib/accessibility'
 import { formatUsShortDate } from '../../lib/dateFormat'
 import { buildIronQuestDailyToast } from '../../lib/ironquestFeedback'
-import { buildCoachingPromptOptions, buildCoachingSummary, runCoachingAction } from '../../lib/coachingSummary'
 import { openSupportGuide } from '../../lib/supportHelp'
 import { scrollAppToTop } from '../../lib/scrollAppToTop'
 import { DAY_TYPE_OPTIONS } from '../../lib/trainingDayTypes'
@@ -386,15 +384,6 @@ export default function BodyScreen() {
   const sleepTarget = Number(snapshot?.goal?.target_sleep_hours ?? 8)
   const stepPct = stepTarget ? Math.min(100, Math.round((todayMovement / stepTarget) * 100)) : 0
   const lastSleep = sleepLogs[0]?.hours_sleep ?? snapshot?.sleep?.hours_sleep ?? '—'
-  const coachingSummary = useMemo(() => buildCoachingSummary({
-    surface: 'body',
-    snapshot,
-    weights,
-    sleepLogs,
-    stepLogs,
-    cardioLogs,
-    workoutHistory: workoutLogs,
-  }), [cardioLogs, sleepLogs, snapshot, stepLogs, weights, workoutLogs])
 
   function handleQueuedCardioMutation(nextForm, editingId, result) {
     const nextEntry = buildLocalCardioEntry({ ...nextForm, id: editingId || 0 }, result)
@@ -558,7 +547,7 @@ export default function BodyScreen() {
           <p className="body-screen-subtitle">Track bodyweight, movement, and cardio in one place.</p>
         </div>
         <div className="header-actions">
-          <button className="btn-secondary" type="button" onClick={() => navigate('/activity-log')}>
+          <button className="btn-secondary progress-activity-log-button" type="button" onClick={() => navigate('/activity-log')}>
             Activity Log
           </button>
         </div>
@@ -569,27 +558,6 @@ export default function BodyScreen() {
         <SummaryCard label="Avg sleep" value={avgSleep ? avgSleep.toFixed(1) : '—'} suffix=" h" meta={lastSleep !== '—' ? `Last night ${lastSleep}h` : 'Log sleep to see recovery trends'} accent="teal" />
         <SummaryCard label="Movement today" value={Number(todayMovement).toLocaleString()} meta={`Target ${Number(stepTarget).toLocaleString()} • ${stepPct}%`} accent="pink" />
       </section>
-
-      {coachingSummary ? (
-        <CoachingSummaryPanel
-          summary={coachingSummary}
-          className="dash-card"
-          chipLabel="Coaching read"
-          maxInsights={2}
-          onAction={(action, nextSummary) => runCoachingAction(
-            action,
-            { navigate, openDrawer },
-            nextSummary ? buildCoachingPromptOptions(nextSummary, {
-              screen: 'body',
-              surface: 'body_coaching_summary',
-              promptKind: 'next_action_prompt',
-            }) : null,
-          )}
-          onAskJohnny={(prompt, options) => openDrawer(prompt, options)}
-          askJohnnyLabel="Ask Johnny"
-          analyticsContext={{ screen: 'body', surface: 'body_coaching_summary' }}
-        />
-      ) : null}
 
       <section className="dash-card progress-photos-entry-card">
         <div className="body-progress-header">

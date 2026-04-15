@@ -764,6 +764,8 @@ export default function LiveWorkoutMode({
       ? (nextExercise?.exercise_name || '')
       : (activeExercise?.exercise_name || '')
     const allowRestMessages = !completedExercise || hasNextExercise
+    const saveStartedAt = Date.now()
+    const previousTransition = lastTransition
 
     const payload = {
       weight: parseFloat(currentDraft.weight) || 0,
@@ -771,6 +773,18 @@ export default function LiveWorkoutMode({
       rir: currentDraft.rir !== '' ? parseFloat(currentDraft.rir) : currentSet?.rir ?? null,
       completed: true,
     }
+    const savedSummary = buildSavedSetSummary(activeExercise, currentSetIdx, payload, {
+      totalSetCount,
+      completedExercise,
+    })
+
+    setLastTransition({
+      kind: restTransitionKind,
+      at: saveStartedAt,
+      summary: savedSummary,
+      allowRestMessages,
+      targetExerciseName: restTargetExerciseName,
+    })
 
     try {
       if (currentSet?.id) {
@@ -783,13 +797,9 @@ export default function LiveWorkoutMode({
         })
       }
 
-      const savedSummary = buildSavedSetSummary(activeExercise, currentSetIdx, payload, {
-        totalSetCount,
-        completedExercise,
-      })
       setLastTransition({
         kind: restTransitionKind,
-        at: Date.now(),
+        at: saveStartedAt,
         summary: savedSummary,
         allowRestMessages,
         targetExerciseName: restTargetExerciseName,
@@ -822,6 +832,7 @@ export default function LiveWorkoutMode({
         })
       }
     } catch (error) {
+      setLastTransition(previousTransition)
       setSetError(error?.message || 'Could not save that set right now.')
     } finally {
       setSavingSet(false)
