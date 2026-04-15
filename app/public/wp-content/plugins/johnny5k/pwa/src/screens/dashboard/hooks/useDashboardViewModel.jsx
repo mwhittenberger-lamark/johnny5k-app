@@ -27,11 +27,9 @@ import {
   buildDashboardContextualVisibility,
   buildDailyFocusModel,
   buildDashboardReviewTrigger,
-  buildDashboardSleepMeta,
   buildEditorialCard,
   buildFlagLoadExplanation,
   buildFlagLoadLabel,
-  buildGroceryGapSpotlightModel,
   buildInspirationalStories,
   buildJohnnyDashboardReview,
   buildMealRhythmModel,
@@ -43,9 +41,6 @@ import {
   buildRecoveryActionPlan,
   buildRecoverySleepLabel,
   buildRecoveryWindowLabel,
-  buildReminderQueueModel,
-  buildSleepDebtModel,
-  buildStepForecastModel,
   buildTrainingCardModel,
   buildTrainingQuickAction,
   countLoggedMealsByType,
@@ -62,8 +57,6 @@ import {
 import {
   BeginnerEducationCard,
   CoachingSummaryCard,
-  GroceryGapSpotlightCard,
-  JohnnyImageGalleryCard,
   MealRhythmCard,
   MomentumScoreCard,
   MomentumDashboardCard,
@@ -71,15 +64,10 @@ import {
   QuickActionCard,
   RealSuccessStoriesCard,
   RecoveryLoopCard,
-  ReminderQueueCard,
-  SleepDebtCard,
-  StatCard,
-  StepForecastCard,
   StoryCard,
   TodayIntakeCard,
   TomorrowPreviewCard,
   TrainingTodayCard,
-  WeeklyTrendCard,
 } from '../components/DashboardCards'
 import { useDashboardStore } from '../../../store/dashboardStore'
 import { useAuthStore } from '../../../store/authStore'
@@ -136,15 +124,12 @@ export function useDashboardViewModel() {
   const {
     cardioLogs,
     coachingDataAvailability,
-    groceryGap,
-    generatedImageGallery,
     meals,
     realSuccessStoryData,
     realSuccessStoryError,
     realSuccessStoryLoading,
     refreshRealSuccessStory,
     sleepLogs,
-    smsReminders,
     stepLogs,
     weeklyCaloriesReview,
     weeklyWeights,
@@ -201,12 +186,7 @@ export function useDashboardViewModel() {
   const momentumScore = useMemo(() => buildMomentumScoreModel(s), [s])
   const proteinRunway = useMemo(() => buildProteinRunwayModel(s), [s])
   const mealRhythm = useMemo(() => buildMealRhythmModel(s), [s])
-  const sleepDebt = useMemo(() => buildSleepDebtModel(s), [s])
-  const stepForecast = useMemo(() => buildStepForecastModel(s), [s])
-  const groceryGapSpotlight = useMemo(() => buildGroceryGapSpotlightModel(groceryGap), [groceryGap])
-  const reminderQueue = useMemo(() => buildReminderQueueModel(smsReminders), [smsReminders])
   const realSuccessStory = useMemo(() => buildRealSuccessStoryModel(realSuccessStoryData), [realSuccessStoryData])
-  const weeklyRhythmBreakdown = useMemo(() => Object.values(s?.score_7d_breakdown ?? {}), [s?.score_7d_breakdown])
   const activeStory = inspirationalStories[storyIndex] ?? inspirationalStories[0] ?? null
   const johnnyReview = useMemo(() => {
     if (!aiJohnnyReview) return fallbackJohnnyReview
@@ -254,10 +234,7 @@ export function useDashboardViewModel() {
     showBeginnerEducationCard,
     proteinRunway,
     mealRhythm,
-    sleepDebt,
-    stepForecast,
-    groceryGapSpotlight,
-  }), [groceryGapSpotlight, mealRhythm, proteinRunway, showBeginnerEducationCard, sleepDebt, stepForecast])
+  }), [mealRhythm, proteinRunway, showBeginnerEducationCard])
 
   const goal = s?.goal
   const nt = s?.nutrition_totals
@@ -267,14 +244,12 @@ export function useDashboardViewModel() {
   const carbPct = goal && nt ? Math.round((nt.carbs_g / goal.target_carbs_g) * 100) : 0
   const fatPct = goal && nt ? Math.round((nt.fat_g / goal.target_fat_g) * 100) : 0
   const exerciseCaloriesBurned = Number(s?.exercise_calories?.total_calories ?? 0)
-  const stepPct = s?.steps?.target ? Math.round((s.steps.today / s.steps.target) * 100) : 0
   const caloriesRemaining = goal ? Math.max(0, (goal.target_calories ?? 0) - (nt?.calories ?? 0)) : null
   const greetingName = getGreetingName(email)
   const dateLabel = formatFriendlyDate(s?.date)
   const coachLine = buildCoachLine(s)
   const pendingFollowUps = Array.isArray(s?.pending_follow_ups) ? s.pending_follow_ups : []
   const followUpOverview = s?.follow_up_overview ?? null
-  const weeklyScoreLabel = (s?.score_7d ?? 0) >= 80 ? 'Momentum is holding' : (s?.score_7d ?? 0) >= 40 ? 'Rhythm is building' : 'Still easy to steady'
   const mealCount = countLoggedMealsByType(s?.meals_today)
   const recoverySummary = s?.recovery_summary || {}
   const recoveryFlagItems = Array.isArray(recoverySummary?.active_flag_items) ? recoverySummary.active_flag_items : []
@@ -594,8 +569,8 @@ export function useDashboardViewModel() {
       />
     )),
     makeDashboardCard('ironquest_journey', ironQuestCard),
-      makeDashboardCard('momentum_score', <MomentumScoreCard model={momentumScore} onAction={handleDashboardAction} />),
-      makeDashboardCard('protein_runway', <ProteinRunwayCard model={proteinRunway} onOpenNutrition={() => navigate('/nutrition')} onAskJohnny={openDrawer} />),
+    makeDashboardCard('momentum_score', <MomentumScoreCard model={momentumScore} onAction={handleDashboardAction} />),
+    makeDashboardCard('protein_runway', <ProteinRunwayCard model={proteinRunway} onOpenNutrition={() => navigate('/nutrition')} onAskJohnny={openDrawer} />),
     makeDashboardCard('meal_rhythm', <MealRhythmCard model={mealRhythm} onOpenNutrition={() => navigate('/nutrition')} />),
     makeDashboardCard('quick_log_meal', <QuickActionCard title="Log meal" meta="Nutrition" icon="meal" onClick={() => navigate('/nutrition')} />),
     makeDashboardCard('quick_training', <QuickActionCard title={trainingQuickAction.title} meta={trainingQuickAction.meta} icon="workout" onClick={() => handleDashboardAction(trainingQuickAction)} />),
@@ -619,10 +594,6 @@ export function useDashboardViewModel() {
     makeDashboardCard('quick_add_sleep', <QuickActionCard title="Add sleep" meta="Recovery" icon="sleep" onClick={() => navigate('/body', { state: { focusTab: 'sleep' } })} />),
     makeDashboardCard('quick_add_cardio', <QuickActionCard title="Add cardio" meta="Conditioning" icon="cardio" onClick={() => navigate('/body', { state: { focusTab: 'cardio' } })} />),
     makeDashboardCard('quick_progress_photos', <QuickActionCard title="Progress photos" meta="Timeline" icon="photos" onClick={() => navigate('/progress-photos')} />),
-    makeDashboardCard('snapshot_steps', <StatCard label="Steps" value={s?.steps?.today?.toLocaleString() ?? '—'} meta={`Goal ${s?.steps?.target?.toLocaleString() ?? '—'} • ${Math.min(100, stepPct)}%`} accent="pink" onClick={() => navigate('/body')} />),
-    makeDashboardCard('snapshot_sleep', <StatCard label="Sleep" value={s?.sleep?.hours_sleep != null ? `${s.sleep.hours_sleep}h` : '—'} meta={buildDashboardSleepMeta(s?.sleep)} accent="teal" onClick={() => navigate('/body')} />),
-    makeDashboardCard('snapshot_weight', <StatCard label="Weight" value={s?.latest_weight?.weight_lb != null ? `${s.latest_weight.weight_lb}` : '—'} meta={s?.latest_weight?.metric_date ? `Logged ${formatFriendlyDate(s.latest_weight.metric_date)}` : 'No bodyweight yet'} accent="orange" onClick={() => navigate('/body')} />),
-    makeDashboardCard('snapshot_week_rhythm', <StatCard label="Week rhythm" value={s?.score_7d ?? 0} meta={weeklyScoreLabel} accent="yellow" onClick={() => setWeekRhythmOpen(open => !open)} />),
     makeDashboardCard('training_today', <TrainingTodayCard model={trainingCard} skipWarning={s?.skip_warning} skipCount30d={s?.skip_count_30d} onAction={handleDashboardAction} />),
     makeDashboardCard('training_tomorrow', <TomorrowPreviewCard tomorrow={tomorrow} title={tomorrowTitle} body={tomorrowBody} metaPrimary={tomorrowMetaPrimary} metaSecondary={tomorrowMetaSecondary} onOpenTraining={() => navigate('/workout')} />),
     makeDashboardCard('training_momentum', <MomentumDashboardCard momentumCard={momentumCard} onOpenRewards={() => navigate('/rewards')} />),
@@ -639,30 +610,14 @@ export function useDashboardViewModel() {
       />
     )),
     makeDashboardCard('real_success_stories', <RealSuccessStoriesCard story={realSuccessStory} loading={realSuccessStoryLoading} error={realSuccessStoryError} onRefresh={refreshRealSuccessStory} />),
-    makeDashboardCard('sleep_debt', <SleepDebtCard model={sleepDebt} onOpenRecovery={() => navigate('/body', { state: { focusTab: 'sleep' } })} />),
-    makeDashboardCard('step_finish_forecast', <StepForecastCard model={stepForecast} onOpenSteps={() => navigate('/body', { state: { focusTab: 'steps' } })} />),
-    makeDashboardCard('grocery_gap_spotlight', <GroceryGapSpotlightCard model={groceryGapSpotlight} onOpenGroceryGap={() => navigate('/nutrition', { state: { focusSection: 'groceryGap' } })} />),
-    makeDashboardCard('reminder_queue', <ReminderQueueCard model={reminderQueue} onOpenProfile={() => navigate('/settings')} />),
-    makeDashboardCard('weekly_trend', <WeeklyTrendCard weights={weeklyWeights} onOpenProgress={() => navigate('/body', { state: { focusTab: 'weight' } })} />),
-    makeDashboardCard('johnny_image_gallery', <JohnnyImageGalleryCard images={generatedImageGallery} onOpenProfile={() => navigate('/settings')} />),
   ].filter(card => card.content).map(card => ({
     ...card,
     bucket: getDashboardCardBucket(card.id, dashboardLayout, DASHBOARD_CARD_DEF_MAP),
   }))
-  const dashboardSectionControls = DASHBOARD_CARD_DEFS
-    .filter(card => card.sectionControl)
-    .map(card => ({
-      ...card,
-      bucket: getDashboardCardBucket(card.id, dashboardLayout, DASHBOARD_CARD_DEF_MAP),
-      content: null,
-    }))
-  const orderedDashboardCards = orderDashboardCards([...dashboardCards, ...dashboardSectionControls], dashboardLayout)
-  const visibleDashboardCards = orderedDashboardCards.filter(card => !card.sectionControl && !isGovernanceHidden(card))
-  const hiddenDashboardCards = orderedDashboardCards.filter(card => !card.sectionControl && isGovernanceHidden(card) && DASHBOARD_CARD_DEF_MAP.get(card.id)?.governance !== 'off_dashboard')
+  const orderedDashboardCards = orderDashboardCards(dashboardCards, dashboardLayout)
+  const visibleDashboardCards = orderedDashboardCards.filter(card => !isGovernanceHidden(card))
+  const hiddenDashboardCards = orderedDashboardCards.filter(card => isGovernanceHidden(card) && DASHBOARD_CARD_DEF_MAP.get(card.id)?.governance !== 'off_dashboard')
   const dashboardCardsByBucket = groupDashboardCardsByBucket(visibleDashboardCards)
-  const snapshotSectionTitleHidden = Boolean(dashboardLayout.hidden?.snapshot_section_title)
-  const snapshotEditTargetsHidden = Boolean(dashboardLayout.hidden?.snapshot_edit_targets)
-  const showSnapshotSectionRow = !snapshotSectionTitleHidden || !snapshotEditTargetsHidden
 
   return {
     actionNoticeKey,
@@ -680,17 +635,11 @@ export function useDashboardViewModel() {
     moveDashboardCard,
     resetDashboardLayout,
     setCustomizeOpen,
-    showSnapshotSectionRow,
     snapshot,
-    snapshotEditTargetsHidden,
-    snapshotSectionTitleHidden,
     targetsNoticeKey,
     targetsUpdated,
     toggleDashboardCard,
     visibleDashboardCards,
-    weekRhythmOpen,
-    weeklyRhythmBreakdown,
-    setWeekRhythmOpen,
     dateLabel,
     coachStarterPrompt,
     dailyFocus,
@@ -701,8 +650,5 @@ export function useDashboardViewModel() {
     quickPrompts,
     canMoveDashboardCardAcrossBuckets: (cardId, direction) => canMoveDashboardCardAcrossBuckets(cardId, dashboardLayout, direction, DASHBOARD_CARD_DEF_MAP, DASHBOARD_BUCKET_ORDER),
     buildVisibleBucketOrder: cards => cards.map(card => card.id),
-    openSettings: () => navigate('/settings'),
-    openRewards: () => navigate('/rewards'),
-    snapshotScore: s?.score_7d ?? 0,
   }
 }

@@ -96,7 +96,7 @@ export function moveArrayItem(items, fromIndex, toIndex) {
 }
 
 export function getDashboardCardDefaultBucket(cardId, cardDefMap) {
-  return cardDefMap.get(cardId)?.bucket || 'snapshot_detail'
+  return cardDefMap.get(cardId)?.bucket || 'story'
 }
 
 export function getDashboardCardBucket(cardId, layout, cardDefMap) {

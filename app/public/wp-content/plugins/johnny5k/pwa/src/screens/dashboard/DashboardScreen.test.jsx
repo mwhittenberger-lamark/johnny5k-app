@@ -94,8 +94,6 @@ function createViewModel() {
       primary_main: [coachCard],
       primary_side: [],
       quick_actions: [],
-      snapshot_stats: [],
-      snapshot_detail: [],
       training_main: [],
       training_side: [],
       story: [],
@@ -120,18 +118,11 @@ function createViewModel() {
     ],
     resetDashboardLayout: vi.fn(),
     setCustomizeOpen: vi.fn(),
-    showSnapshotSectionRow: false,
     snapshot: { date: '2026-04-14' },
-    snapshotEditTargetsHidden: false,
-    snapshotScore: 74,
-    snapshotSectionTitleHidden: false,
     targetsNoticeKey: '',
     targetsUpdated: null,
     toggleDashboardCard: vi.fn(),
     visibleDashboardCards: [coachCard],
-    weekRhythmOpen: false,
-    weeklyRhythmBreakdown: [],
-    setWeekRhythmOpen: vi.fn(),
   }
 }
 

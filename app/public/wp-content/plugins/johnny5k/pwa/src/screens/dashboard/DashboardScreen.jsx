@@ -1,11 +1,9 @@
 import { useState } from 'react'
-import AppIcon from '../../components/ui/AppIcon'
 import AppLoadingScreen from '../../components/ui/AppLoadingScreen'
 import OfflineState from '../../components/ui/OfflineState'
 import { groupDashboardCardsByBucket } from './dashboardLayoutUtils'
-import { DashboardAskJohnnyBar, DashboardIconBadge, DailyFocusHero, WeekRhythmDrawer } from './components/DashboardCards'
+import { DashboardAskJohnnyBar, DashboardIconBadge, DailyFocusHero } from './components/DashboardCards'
 import { DASHBOARD_BUCKET_META } from './dashboardCardRegistry'
-import { buildWeekRhythmDrawerCopy } from './dashboardRecommendationHelpers'
 import { useDashboardViewModel } from './hooks/useDashboardViewModel.jsx'
 
 export default function DashboardScreen() {
@@ -31,32 +29,23 @@ export default function DashboardScreen() {
     moveDashboardCard,
     openDashboardJohnny,
     openNutrition,
-    openRewards,
-    openSettings,
     primaryDashboardAction,
     quickPrompts,
     resetDashboardLayout,
     setCustomizeOpen,
-    showSnapshotSectionRow,
     snapshot,
-    snapshotEditTargetsHidden,
-    snapshotScore,
-    snapshotSectionTitleHidden,
     targetsNoticeKey,
     targetsUpdated,
     toggleDashboardCard,
     visibleDashboardCards,
-    weekRhythmOpen,
-    weeklyRhythmBreakdown,
-    setWeekRhythmOpen,
   } = useDashboardViewModel()
   const [dismissedTargetsNoticeKey, setDismissedTargetsNoticeKey] = useState('')
   const [dismissedActionNoticeKey, setDismissedActionNoticeKey] = useState('')
+  const [recoveryLoopOpen, setRecoveryLoopOpen] = useState(false)
   const [moreActionsOpen, setMoreActionsOpen] = useState(false)
-  const [snapshotOpen, setSnapshotOpen] = useState(false)
   const [trainingExtrasOpen, setTrainingExtrasOpen] = useState(false)
   const [storyOpen, setStoryOpen] = useState(false)
-  const supplementalQuickActions = (dashboardCardsByBucket.quick_actions || []).filter(card => !['quick_log_meal', 'quick_training', 'quick_ask_johnny'].includes(card.id))
+  const moreActionCards = dashboardCardsByBucket.quick_actions || []
 
   if (!snapshot && !isOnline) {
     return (
@@ -90,6 +79,18 @@ export default function DashboardScreen() {
     const canCrossBucketUp = Boolean(card.optional) && canMoveDashboardCardAcrossBuckets(card.id, -1)
     const canCrossBucketDown = Boolean(card.optional) && canMoveDashboardCardAcrossBuckets(card.id, 1)
 
+    const cardBody = card.id === 'recovery_loop' ? (
+      <DashboardDisclosureSection
+        title={card.label}
+        caption={card.description}
+        open={customizeOpen || recoveryLoopOpen}
+        onToggle={() => setRecoveryLoopOpen(open => !open)}
+        actionLabel={customizeOpen || recoveryLoopOpen ? 'Hide' : 'Show'}
+      >
+        {card.content}
+      </DashboardDisclosureSection>
+    ) : card.content
+
     return (
       <DashboardCardSlot
         key={card.id}
@@ -101,7 +102,7 @@ export default function DashboardScreen() {
         onMoveDown={() => moveDashboardCard(card.id, card.bucket, 1, visibleBucketIds)}
         onHide={() => toggleDashboardCard(card.id)}
       >
-        {card.content}
+        {cardBody}
       </DashboardCardSlot>
     )
   }
@@ -178,83 +179,6 @@ export default function DashboardScreen() {
             </section>
           ) : null}
 
-          {supplementalQuickActions.length ? (
-            <DashboardDisclosureSection
-              title="More actions"
-              caption="Secondary shortcuts for logging and profile tasks"
-              open={customizeOpen || moreActionsOpen}
-              onToggle={() => setMoreActionsOpen(open => !open)}
-              actionLabel={customizeOpen || moreActionsOpen ? 'Hide' : 'Show'}
-            >
-              <div className="dashboard-action-grid compact dashboard-action-grid-secondary">
-                {supplementalQuickActions.map(card => renderDashboardCardSlot(card, buildVisibleBucketOrder(supplementalQuickActions)))}
-              </div>
-            </DashboardDisclosureSection>
-          ) : null}
-
-          {(dashboardCardsByBucket.snapshot_stats?.length || dashboardCardsByBucket.snapshot_detail?.length) ? (
-            <DashboardDisclosureSection
-              title="Today&apos;s snapshot"
-              caption="Score, steps, sleep, weight, and lower-priority detail"
-              open={customizeOpen || snapshotOpen}
-              onToggle={() => setSnapshotOpen(open => !open)}
-              actionLabel={customizeOpen || snapshotOpen ? 'Hide' : 'Show'}
-            >
-              {showSnapshotSectionRow ? (
-                <div className="dashboard-section-title-row">
-                  {!snapshotSectionTitleHidden ? (
-                    <div className="dashboard-section-inline-control">
-                      <h2>Today&apos;s Snapshot</h2>
-                      {customizeOpen ? (
-                        <button
-                          type="button"
-                          className="btn-secondary small dashboard-slot-icon-control"
-                          onClick={() => toggleDashboardCard('snapshot_section_title')}
-                          aria-label="Hide Today’s Snapshot title"
-                        >
-                          <AppIcon name="close" />
-                        </button>
-                      ) : null}
-                    </div>
-                  ) : <div />}
-                  {!snapshotEditTargetsHidden ? (
-                    <div className="dashboard-section-inline-control">
-                      <button className="btn-outline small" onClick={openSettings}>Edit targets</button>
-                      {customizeOpen ? (
-                        <button
-                          type="button"
-                          className="btn-secondary small dashboard-slot-icon-control"
-                          onClick={() => toggleDashboardCard('snapshot_edit_targets')}
-                          aria-label="Hide Edit targets button"
-                        >
-                          <AppIcon name="close" />
-                        </button>
-                      ) : null}
-                    </div>
-                  ) : null}
-                </div>
-              ) : null}
-              {dashboardCardsByBucket.snapshot_stats?.length ? (
-                <div className="dashboard-stat-grid">
-                  {dashboardCardsByBucket.snapshot_stats.map(card => renderDashboardCardSlot(card, buildVisibleBucketOrder(dashboardCardsByBucket.snapshot_stats)))}
-                </div>
-              ) : null}
-              {dashboardCardsByBucket.snapshot_detail?.length ? (
-                <div className="dashboard-detail-stack">
-                  {dashboardCardsByBucket.snapshot_detail.map(card => renderDashboardCardSlot(card, buildVisibleBucketOrder(dashboardCardsByBucket.snapshot_detail)))}
-                </div>
-              ) : null}
-              <WeekRhythmDrawer
-                isOpen={weekRhythmOpen}
-                score={snapshotScore}
-                breakdown={weeklyRhythmBreakdown}
-                copy={buildWeekRhythmDrawerCopy(snapshotScore)}
-                onClose={() => setWeekRhythmOpen(false)}
-                onOpenRewards={openRewards}
-              />
-            </DashboardDisclosureSection>
-          ) : null}
-
           {(dashboardCardsByBucket.training_main?.length || dashboardCardsByBucket.training_side?.length) ? (
             <section className="dashboard-section dashboard-two-col">
               {dashboardCardsByBucket.training_main?.length ? (
@@ -278,6 +202,20 @@ export default function DashboardScreen() {
                 </div>
               ) : null}
             </section>
+          ) : null}
+
+          {moreActionCards.length ? (
+            <DashboardDisclosureSection
+              title="More actions"
+              caption="Secondary shortcuts for logging and profile tasks"
+              open={customizeOpen || moreActionsOpen}
+              onToggle={() => setMoreActionsOpen(open => !open)}
+              actionLabel={customizeOpen || moreActionsOpen ? 'Hide' : 'Show'}
+            >
+              <div className="dashboard-action-grid compact dashboard-action-grid-secondary">
+                {moreActionCards.map(card => renderDashboardCardSlot(card, buildVisibleBucketOrder(moreActionCards)))}
+              </div>
+            </DashboardDisclosureSection>
           ) : null}
 
           {dashboardCardsByBucket.story?.length ? (
