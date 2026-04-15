@@ -83,6 +83,7 @@ const DRAWER_NUTRITION_ACTION_TOOLS = new Set([
   'log_food_from_description',
   'add_pantry_items',
   'add_grocery_gap_items',
+  'add_recipe_to_cookbook',
 ])
 const SCROLL_BEHAVIOR = getAccessibleScrollBehavior()
 const MICRO_TARGETS = {
@@ -519,6 +520,9 @@ export default function NutritionScreen() {
     if (location.state?.recipeMealFilter) {
       setRecipeMealFilter(location.state.recipeMealFilter)
     }
+    if (location.state?.recipeCollectionFilter) {
+      setRecipeCollectionFilter(location.state.recipeCollectionFilter)
+    }
 
     const targetRef = focusSection === 'savedMeals'
       ? savedMealsSectionRef
@@ -538,6 +542,7 @@ export default function NutritionScreen() {
     groceryGapSectionRef,
     isPantryPage,
     location.state?.focusSection,
+    location.state?.recipeCollectionFilter,
     location.state?.openSavedMealForm,
     location.state?.recipeMealFilter,
     location.state?.savedMealDraft,
@@ -547,6 +552,7 @@ export default function NutritionScreen() {
     setActiveView,
     setExpandedSections,
     setPlanningAccordions,
+    setRecipeCollectionFilter,
     setRecipeMealFilter,
   ])
 

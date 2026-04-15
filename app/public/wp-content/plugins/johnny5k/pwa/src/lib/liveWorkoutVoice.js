@@ -10,7 +10,7 @@ export const LIVE_WORKOUT_INSTANT_RATE_MULTIPLIER = 1.25
 const DEFAULT_LIVE_WORKOUT_VOICE_PREFS = {
   autoSpeak: true,
   assistantAutoSpeak: false,
-  liveModeVoiceMode: 'premium',
+  liveModeVoiceMode: 'instant',
   preferNativeSpeech: true,
   nativeAudioMode: 'smart',
   openAiVoice: 'alloy',

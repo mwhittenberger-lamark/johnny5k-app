@@ -24,4 +24,14 @@ class AiToolServiceTest extends ServiceTestCase {
 		$this->assertSame( 'boolean', $registry['clear_follow_ups']['parameters']['properties']['clear_all']['type'] ?? null );
 		$this->assertSame( 'boolean', $registry['clear_sms_reminders']['parameters']['properties']['clear_all']['type'] ?? null );
 	}
+
+	public function test_recipe_tools_are_registered_for_recipe_review_and_cookbook_save(): void {
+		$registry = AiToolService::tool_registry( 5, 5, 5 );
+
+		$this->assertArrayHasKey( 'get_recipe_catalog', $registry );
+		$this->assertArrayHasKey( 'get_recipe_cookbook', $registry );
+		$this->assertArrayHasKey( 'add_recipe_to_cookbook', $registry );
+		$this->assertFalse( $registry['add_recipe_to_cookbook']['read_only'] ?? true );
+		$this->assertSame( 'string', $registry['add_recipe_to_cookbook']['parameters']['properties']['recipe_key']['type'] ?? null );
+	}
 }

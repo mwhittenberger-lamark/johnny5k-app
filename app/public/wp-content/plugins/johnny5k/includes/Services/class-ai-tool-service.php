@@ -58,13 +58,41 @@ class AiToolService {
 			'get_recipe_catalog' => [
 				'read_only'   => true,
 				'enabled'     => true,
-				'description' => 'Get recipe suggestions from the current recipe list, optionally filtered by meal type or minimum protein.',
+				'description' => 'Get recipe suggestions from the current recipe list, including recipe details, images, and whether each recipe is already in My Cookbook. Optionally filter by meal type or minimum protein.',
 				'parameters'  => [
 					'type'                 => 'object',
 					'properties'           => [
 						'meal_type'         => [ 'type' => 'string', 'description' => 'Optional meal type filter: breakfast, lunch, dinner, snack, or shake.' ],
 						'minimum_protein_g' => [ 'type' => 'number', 'minimum' => 0 ],
 						'limit'             => [ 'type' => 'integer', 'minimum' => 1, 'maximum' => $max_tool_recipe_rows ],
+					],
+					'additionalProperties' => false,
+				],
+			],
+			'get_recipe_cookbook' => [
+				'read_only'   => true,
+				'enabled'     => true,
+				'description' => 'Get the recipes currently saved in the user’s My Cookbook list, including images, ingredients, instructions, and macros.',
+				'parameters'  => [
+					'type'                 => 'object',
+					'properties'           => [
+						'meal_type'         => [ 'type' => 'string', 'description' => 'Optional meal type filter: breakfast, lunch, dinner, snack, or shake.' ],
+						'minimum_protein_g' => [ 'type' => 'number', 'minimum' => 0 ],
+						'limit'             => [ 'type' => 'integer', 'minimum' => 1, 'maximum' => $max_tool_recipe_rows ],
+					],
+					'additionalProperties' => false,
+				],
+			],
+			'add_recipe_to_cookbook' => [
+				'read_only'   => false,
+				'enabled'     => true,
+				'description' => 'Save a recipe from the recipe catalog into the user’s My Cookbook list when they say they like it, want to keep it, or want it added to My Cookbook. Prefer the recipe_key from get_recipe_catalog when it is available.',
+				'parameters'  => [
+					'type'                 => 'object',
+					'properties'           => [
+						'recipe_key' => [ 'type' => 'string', 'description' => 'Preferred stable recipe key from get_recipe_catalog.' ],
+						'recipe_name' => [ 'type' => 'string', 'description' => 'Recipe name to save when the key is not available.' ],
+						'meal_type' => [ 'type' => 'string', 'description' => 'Optional meal type filter to disambiguate the recipe.' ],
 					],
 					'additionalProperties' => false,
 				],

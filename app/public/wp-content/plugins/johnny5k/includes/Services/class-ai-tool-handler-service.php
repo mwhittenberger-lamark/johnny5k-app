@@ -32,6 +32,7 @@ class AiToolHandlerService {
 			'get_recent_meals'           => self::tool_recent_meals( $user_id, $arguments, $deps ),
 			'get_pantry_snapshot'        => self::tool_pantry_snapshot( $user_id, $arguments ),
 			'get_recipe_catalog'         => self::tool_recipe_catalog( $user_id, $arguments ),
+			'get_recipe_cookbook'        => self::tool_recipe_cookbook( $user_id, $arguments ),
 			'get_recovery_snapshot'      => self::tool_recovery_snapshot( $user_id ),
 			'get_current_workout'        => self::tool_current_workout( $user_id, $deps ),
 			'log_steps'                  => self::tool_log_steps( $user_id, $arguments, $deps ),
@@ -42,6 +43,7 @@ class AiToolHandlerService {
 			'log_sleep'                  => self::tool_log_sleep( $user_id, $arguments, $deps ),
 			'add_pantry_items'           => self::tool_add_pantry_items( $user_id, $arguments, $deps ),
 			'add_grocery_gap_items'      => self::tool_add_grocery_gap_items( $user_id, $arguments, $deps ),
+			'add_recipe_to_cookbook'     => self::tool_add_recipe_to_cookbook( $user_id, $arguments ),
 			'swap_workout_exercise'      => self::tool_swap_workout_exercise( $user_id, $arguments, $deps ),
 			'schedule_sms_reminder'      => self::tool_schedule_sms_reminder( $user_id, $arguments, $deps ),
 			'clear_follow_ups'          => self::tool_clear_follow_ups( $user_id, $arguments, $deps ),
@@ -204,52 +206,133 @@ class AiToolHandlerService {
 		$limit           = max( 1, min( 12, (int) ( $arguments['limit'] ?? 12 ) ) );
 		$meal_type       = self::sanitize_meal_type_value( (string) ( $arguments['meal_type'] ?? '' ), false );
 		$minimum_protein = isset( $arguments['minimum_protein_g'] ) ? max( 0, (float) $arguments['minimum_protein_g'] ) : 0;
+		$cookbook_lookup = self::load_recipe_lookup_by_key( self::load_recipe_cookbook_items() );
+		$catalog_result  = self::load_recipe_catalog_items();
 
-		$request  = new \WP_REST_Request( 'GET', '/fit/v1/nutrition/recipes' );
-		$response = NutritionRecipeController::get_recipe_suggestions( $request );
-		$data     = $response->get_data();
-		$status   = (int) $response->get_status();
-
-		if ( $status >= 400 || ! is_array( $data ) ) {
-			return [ 'error' => (string) ( $data['message'] ?? 'Could not load recipes.' ) ];
+		if ( ! empty( $catalog_result['error'] ) ) {
+			return [ 'error' => $catalog_result['error'] ];
 		}
 
-		$recipes = array_values( array_filter( array_map( static function( $recipe ) {
-			$payload = is_array( $recipe ) ? $recipe : (array) $recipe;
-			return [
-				'recipe_name'          => sanitize_text_field( (string) ( $payload['recipe_name'] ?? '' ) ),
-				'meal_type'            => sanitize_key( (string) ( $payload['meal_type'] ?? '' ) ),
-				'estimated_calories'   => (int) ( $payload['estimated_calories'] ?? 0 ),
-				'estimated_protein_g'  => (float) ( $payload['estimated_protein_g'] ?? 0 ),
-				'estimated_carbs_g'    => (float) ( $payload['estimated_carbs_g'] ?? 0 ),
-				'estimated_fat_g'      => (float) ( $payload['estimated_fat_g'] ?? 0 ),
-				'on_hand_ingredients'  => self::sanitize_string_list( is_array( $payload['on_hand_ingredients'] ?? null ) ? $payload['on_hand_ingredients'] : [] ),
-				'missing_ingredients'  => self::sanitize_string_list( is_array( $payload['missing_ingredients'] ?? null ) ? $payload['missing_ingredients'] : [] ),
-				'pantry_match_count'   => (int) ( $payload['pantry_match_count'] ?? 0 ),
-				'pantry_missing_count' => (int) ( $payload['pantry_missing_count'] ?? 0 ),
-			];
-		}, $data ), static function( array $recipe ) use ( $meal_type, $minimum_protein ): bool {
-			if ( '' !== $meal_type && $meal_type !== ( $recipe['meal_type'] ?? '' ) ) {
-				return false;
-			}
-
-			return (float) ( $recipe['estimated_protein_g'] ?? 0 ) >= $minimum_protein;
-		} ) );
-
-		usort( $recipes, static function( array $left, array $right ): int {
-			$protein_compare = (float) ( $right['estimated_protein_g'] ?? 0 ) <=> (float) ( $left['estimated_protein_g'] ?? 0 );
-			if ( 0 !== $protein_compare ) {
-				return $protein_compare;
-			}
-
-			return (int) ( $right['pantry_match_count'] ?? 0 ) <=> (int) ( $left['pantry_match_count'] ?? 0 );
-		} );
+		$recipes = self::filter_recipe_tool_items( $catalog_result['recipes'], $meal_type, $minimum_protein );
+		$recipes = array_map( static function( array $recipe ) use ( $cookbook_lookup ): array {
+			$key                     = (string) ( $recipe['key'] ?? '' );
+			$recipe['is_in_cookbook'] = '' !== $key && isset( $cookbook_lookup[ $key ] );
+			return $recipe;
+		}, $recipes );
+		$visible_recipes = array_slice( $recipes, 0, $limit );
 
 		return [
+			'ok'                => true,
+			'action'            => 'show_recipe_catalog',
 			'meal_type'         => $meal_type,
 			'minimum_protein_g' => $minimum_protein,
 			'recipe_count'      => count( $recipes ),
-			'recipes'           => array_slice( $recipes, 0, $limit ),
+			'recipes'           => $visible_recipes,
+			'summary'           => empty( $visible_recipes )
+				? 'Johnny did not find any recipe matches for that filter yet.'
+				: sprintf(
+					'Johnny found %d recipe recommendation%s%s%s.',
+					count( $visible_recipes ),
+					1 === count( $visible_recipes ) ? '' : 's',
+					'' !== $meal_type ? ' for ' . $meal_type : '',
+					$minimum_protein > 0 ? sprintf( ' at %.0f g protein or higher', $minimum_protein ) : ''
+				),
+		];
+	}
+
+	private static function tool_recipe_cookbook( int $user_id, array $arguments = [] ): array {
+		$limit           = max( 1, min( 12, (int) ( $arguments['limit'] ?? 12 ) ) );
+		$meal_type       = self::sanitize_meal_type_value( (string) ( $arguments['meal_type'] ?? '' ), false );
+		$minimum_protein = isset( $arguments['minimum_protein_g'] ) ? max( 0, (float) $arguments['minimum_protein_g'] ) : 0;
+		$cookbook_result = self::load_recipe_cookbook_items();
+
+		if ( ! empty( $cookbook_result['error'] ) ) {
+			return [ 'error' => $cookbook_result['error'] ];
+		}
+
+		$recipes = array_map( static function( array $recipe ): array {
+			$recipe['is_in_cookbook'] = true;
+			return $recipe;
+		}, self::filter_recipe_tool_items( $cookbook_result['recipes'], $meal_type, $minimum_protein ) );
+		$visible_recipes = array_slice( $recipes, 0, $limit );
+
+		return [
+			'ok'                => true,
+			'action'            => 'show_recipe_cookbook',
+			'meal_type'         => $meal_type,
+			'minimum_protein_g' => $minimum_protein,
+			'recipe_count'      => count( $recipes ),
+			'recipes'           => $visible_recipes,
+			'summary'           => empty( $visible_recipes )
+				? 'My Cookbook is empty for that filter right now.'
+				: sprintf(
+					'Johnny pulled %d recipe%s from My Cookbook%s%s.',
+					count( $visible_recipes ),
+					1 === count( $visible_recipes ) ? '' : 's',
+					'' !== $meal_type ? ' for ' . $meal_type : '',
+					$minimum_protein > 0 ? sprintf( ' at %.0f g protein or higher', $minimum_protein ) : ''
+				),
+		];
+	}
+
+	private static function tool_add_recipe_to_cookbook( int $user_id, array $arguments = [] ): array {
+		$cookbook_result = self::load_recipe_cookbook_items();
+		if ( ! empty( $cookbook_result['error'] ) ) {
+			return [ 'error' => $cookbook_result['error'] ];
+		}
+		$catalog_result = self::load_recipe_catalog_items();
+		if ( ! empty( $catalog_result['error'] ) ) {
+			return [ 'error' => $catalog_result['error'] ];
+		}
+
+		$cookbook_lookup = self::load_recipe_lookup_by_key( $cookbook_result );
+		$matched_recipe  = self::find_recipe_tool_match( array_merge( $cookbook_result['recipes'], $catalog_result['recipes'] ), $arguments );
+
+		if ( empty( $matched_recipe['recipe_name'] ) ) {
+			return [ 'error' => 'Johnny could not match that recipe in your recipe library.' ];
+		}
+
+		$recipe_key = (string) ( $matched_recipe['key'] ?? '' );
+		if ( '' !== $recipe_key && isset( $cookbook_lookup[ $recipe_key ] ) ) {
+			$recipe = $cookbook_lookup[ $recipe_key ];
+			$recipe['is_in_cookbook'] = true;
+
+			return [
+				'ok'             => true,
+				'action'         => 'add_recipe_to_cookbook',
+				'added'          => false,
+				'cookbook_count' => count( $cookbook_result['recipes'] ),
+				'recipe'         => $recipe,
+				'summary'        => sprintf( '%s is already in My Cookbook.', (string) ( $recipe['recipe_name'] ?? 'That recipe' ) ),
+				'coach_note'     => 'Johnny kept the existing cookbook entry so you can come back to it later.',
+			];
+		}
+
+		$request = new \WP_REST_Request( 'PUT', '/fit/v1/nutrition/recipe-cookbook' );
+		$request->set_param( 'recipes', array_merge( $cookbook_result['recipes'], [ $matched_recipe ] ) );
+
+		$response = NutritionRecipeController::update_recipe_cookbook( $request );
+		$data     = $response->get_data();
+		$status   = (int) $response->get_status();
+		if ( $status >= 400 || ! is_array( $data ) ) {
+			return [ 'error' => (string) ( $data['message'] ?? 'Could not save that recipe to My Cookbook.' ) ];
+		}
+
+		$persisted_result = [
+			'recipes' => array_map( [ self::class, 'normalize_recipe_tool_item' ], is_array( $data['recipes'] ?? null ) ? $data['recipes'] : [] ),
+		];
+		$persisted_lookup = self::load_recipe_lookup_by_key( $persisted_result );
+		$recipe           = $persisted_lookup[ $recipe_key ] ?? self::normalize_recipe_tool_item( $matched_recipe );
+		$recipe['is_in_cookbook'] = true;
+
+		return [
+			'ok'             => true,
+			'action'         => 'add_recipe_to_cookbook',
+			'added'          => true,
+			'cookbook_count' => count( $persisted_result['recipes'] ),
+			'recipe'         => $recipe,
+			'summary'        => sprintf( 'Johnny added %s to My Cookbook.', (string) ( $recipe['recipe_name'] ?? 'that recipe' ) ),
+			'coach_note'     => 'You can open Recipes anytime and switch to My Cookbook to pull it back up fast.',
 		];
 	}
 
@@ -1029,6 +1112,138 @@ class AiToolHandlerService {
 	 */
 	private static function sanitize_string_list( array $items ): array {
 		return array_values( array_filter( array_map( static fn( $item ) => sanitize_text_field( (string) $item ), $items ) ) );
+	}
+
+	private static function load_recipe_catalog_items(): array {
+		$request  = new \WP_REST_Request( 'GET', '/fit/v1/nutrition/recipes' );
+		$response = NutritionRecipeController::get_recipe_suggestions( $request );
+		$data     = $response->get_data();
+		$status   = (int) $response->get_status();
+
+		if ( $status >= 400 || ! is_array( $data ) ) {
+			return [ 'error' => (string) ( $data['message'] ?? 'Could not load recipes.' ) ];
+		}
+
+		return [
+			'recipes' => array_values( array_filter( array_map( [ self::class, 'normalize_recipe_tool_item' ], $data ), static fn( array $recipe ): bool => '' !== (string) ( $recipe['recipe_name'] ?? '' ) ) ),
+		];
+	}
+
+	private static function load_recipe_cookbook_items(): array {
+		$request  = new \WP_REST_Request( 'GET', '/fit/v1/nutrition/recipe-cookbook' );
+		$response = NutritionRecipeController::get_recipe_cookbook( $request );
+		$data     = $response->get_data();
+		$status   = (int) $response->get_status();
+
+		if ( $status >= 400 || ! is_array( $data ) ) {
+			return [ 'error' => (string) ( $data['message'] ?? 'Could not load My Cookbook.' ) ];
+		}
+
+		return [
+			'recipes' => array_values( array_filter( array_map( [ self::class, 'normalize_recipe_tool_item' ], $data ), static fn( array $recipe ): bool => '' !== (string) ( $recipe['recipe_name'] ?? '' ) ) ),
+		];
+	}
+
+	private static function normalize_recipe_tool_item( mixed $recipe ): array {
+		$payload       = is_array( $recipe ) ? $recipe : (array) $recipe;
+		$meal_type     = self::sanitize_meal_type_value( (string) ( $payload['meal_type'] ?? '' ), true );
+		$recipe_name   = sanitize_text_field( (string) ( $payload['recipe_name'] ?? '' ) );
+		$key           = sanitize_title( (string) ( $payload['key'] ?? '' ) );
+		$on_hand       = self::sanitize_string_list( is_array( $payload['on_hand_ingredients'] ?? null ) ? $payload['on_hand_ingredients'] : [] );
+		$missing       = self::sanitize_string_list( is_array( $payload['missing_ingredients'] ?? null ) ? $payload['missing_ingredients'] : [] );
+
+		if ( '' === $key ) {
+			$key = sanitize_title( $meal_type . '-' . $recipe_name );
+		}
+
+		return [
+			'key'                 => $key,
+			'recipe_name'         => $recipe_name,
+			'meal_type'           => $meal_type,
+			'ingredients'         => self::sanitize_string_list( is_array( $payload['ingredients'] ?? null ) ? $payload['ingredients'] : [] ),
+			'instructions'        => self::sanitize_string_list( is_array( $payload['instructions'] ?? null ) ? $payload['instructions'] : [] ),
+			'estimated_calories'  => (int) ( $payload['estimated_calories'] ?? 0 ),
+			'estimated_protein_g' => round( (float) ( $payload['estimated_protein_g'] ?? 0 ), 2 ),
+			'estimated_carbs_g'   => round( (float) ( $payload['estimated_carbs_g'] ?? 0 ), 2 ),
+			'estimated_fat_g'     => round( (float) ( $payload['estimated_fat_g'] ?? 0 ), 2 ),
+			'dietary_tags'        => self::sanitize_string_list( is_array( $payload['dietary_tags'] ?? null ) ? $payload['dietary_tags'] : [] ),
+			'why_this_works'      => sanitize_text_field( (string) ( $payload['why_this_works'] ?? '' ) ),
+			'source'              => sanitize_key( (string) ( $payload['source'] ?? '' ) ) ?: 'generated',
+			'source_title'        => sanitize_text_field( (string) ( $payload['source_title'] ?? '' ) ),
+			'source_url'          => esc_url_raw( (string) ( $payload['source_url'] ?? '' ) ),
+			'image_url'           => esc_url_raw( (string) ( $payload['image_url'] ?? '' ) ),
+			'on_hand_ingredients' => $on_hand,
+			'missing_ingredients' => $missing,
+			'pantry_match_count'  => max( count( $on_hand ), (int) ( $payload['pantry_match_count'] ?? 0 ) ),
+			'pantry_missing_count' => max( count( $missing ), (int) ( $payload['pantry_missing_count'] ?? 0 ) ),
+		];
+	}
+
+	private static function filter_recipe_tool_items( array $recipes, string $meal_type = '', float $minimum_protein = 0 ): array {
+		$filtered = array_values( array_filter( $recipes, static function( array $recipe ) use ( $meal_type, $minimum_protein ): bool {
+			if ( '' !== $meal_type && $meal_type !== ( $recipe['meal_type'] ?? '' ) ) {
+				return false;
+			}
+
+			return (float) ( $recipe['estimated_protein_g'] ?? 0 ) >= $minimum_protein;
+		} ) );
+
+		usort( $filtered, static function( array $left, array $right ): int {
+			$protein_compare = (float) ( $right['estimated_protein_g'] ?? 0 ) <=> (float) ( $left['estimated_protein_g'] ?? 0 );
+			if ( 0 !== $protein_compare ) {
+				return $protein_compare;
+			}
+
+			return (int) ( $right['pantry_match_count'] ?? 0 ) <=> (int) ( $left['pantry_match_count'] ?? 0 );
+		} );
+
+		return $filtered;
+	}
+
+	private static function load_recipe_lookup_by_key( array $result ): array {
+		$lookup = [];
+		foreach ( is_array( $result['recipes'] ?? null ) ? $result['recipes'] : [] as $recipe ) {
+			$key = (string) ( $recipe['key'] ?? '' );
+			if ( '' === $key ) {
+				continue;
+			}
+
+			$lookup[ $key ] = $recipe;
+		}
+
+		return $lookup;
+	}
+
+	private static function find_recipe_tool_match( array $recipes, array $arguments ): array {
+		$recipe_key = sanitize_title( (string) ( $arguments['recipe_key'] ?? '' ) );
+		$recipe_name = sanitize_text_field( (string) ( $arguments['recipe_name'] ?? '' ) );
+		$meal_type = self::sanitize_meal_type_value( (string) ( $arguments['meal_type'] ?? '' ), false );
+
+		if ( '' !== $recipe_key ) {
+			foreach ( $recipes as $recipe ) {
+				if ( $recipe_key === (string) ( $recipe['key'] ?? '' ) ) {
+					return $recipe;
+				}
+			}
+		}
+
+		if ( '' === $recipe_name ) {
+			return [];
+		}
+
+		$needle = sanitize_title( $recipe_name );
+		foreach ( $recipes as $recipe ) {
+			if ( $needle !== sanitize_title( (string) ( $recipe['recipe_name'] ?? '' ) ) ) {
+				continue;
+			}
+			if ( '' !== $meal_type && $meal_type !== (string) ( $recipe['meal_type'] ?? '' ) ) {
+				continue;
+			}
+
+			return $recipe;
+		}
+
+		return [];
 	}
 
 	private static function sanitize_meal_type_value( string $meal_type, bool $default_to_lunch = true ): string {

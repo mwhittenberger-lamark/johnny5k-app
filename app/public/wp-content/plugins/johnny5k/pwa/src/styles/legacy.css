@@ -742,6 +742,83 @@
   font-size: 0.78rem;
   color: var(--text-muted);
 }
+.johnny-recipe-preview-list {
+  display: grid;
+  gap: 10px;
+}
+.johnny-recipe-preview-card {
+  display: grid;
+  gap: 10px;
+  border: 1px solid rgba(168, 212, 240, 0.9);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.92);
+  overflow: hidden;
+}
+.johnny-recipe-preview-image {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  display: block;
+}
+.johnny-recipe-preview-body {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+}
+.johnny-recipe-preview-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.johnny-recipe-preview-head strong {
+  font-size: 0.92rem;
+  color: var(--text);
+}
+.johnny-recipe-preview-status {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 3px 8px;
+  background: rgba(34, 196, 126, 0.12);
+  color: var(--success);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+.johnny-recipe-preview-macros,
+.johnny-recipe-preview-note,
+.johnny-recipe-preview-source,
+.johnny-recipe-preview-details-body p {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: var(--text);
+}
+.johnny-recipe-preview-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.johnny-recipe-preview-details summary {
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--primary);
+}
+.johnny-recipe-preview-details-body {
+  display: grid;
+  gap: 8px;
+  padding-top: 8px;
+}
+.johnny-recipe-preview-steps {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 6px;
+  color: var(--text);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
 .johnny-memory-card,
 .johnny-follow-up-card,
 .johnny-reasoning-card {
@@ -1106,6 +1183,10 @@
   display: flex;
   flex-direction: column;
   gap: 18px;
+}
+
+.progress-photos-screen .header-actions {
+  margin-top: 65px;
 }
 
 .progress-toolbar {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  getDefaultLiveWorkoutVoicePrefs,
   formatLiveWorkoutNativeAudioModeLabel,
   formatInstantVoiceLabel,
   getDefaultInstantVoice,
@@ -70,6 +71,11 @@ describe('liveWorkoutVoice', () => {
       instantVoiceURI: 'com.apple.voice.enhanced',
       rate: 1.1,
     })
+  })
+
+  it('defaults live coach mode to instant voice for new preferences', () => {
+    expect(getDefaultLiveWorkoutVoicePrefs().liveModeVoiceMode).toBe('instant')
+    expect(normalizeLiveWorkoutVoicePrefs({}).liveModeVoiceMode).toBe('instant')
   })
 
   it('formats native audio modes for settings labels', () => {

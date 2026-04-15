@@ -34,7 +34,6 @@ import {
   buildJohnnyDashboardReview,
   buildMealRhythmModel,
   buildMomentumCard,
-  buildProteinRunwayModel,
   buildQuickPrompts,
   buildRealSuccessStoryModel,
   buildRecoveryActionPlan,
@@ -58,7 +57,6 @@ import {
   CoachingSummaryCard,
   MealRhythmCard,
   MomentumDashboardCard,
-  ProteinRunwayCard,
   QuickActionCard,
   RealSuccessStoriesCard,
   RecoveryLoopCard,
@@ -184,7 +182,6 @@ export function useDashboardViewModel() {
   const editorialCard = useMemo(() => buildEditorialCard(s), [s])
   const inspirationalStories = useMemo(() => buildInspirationalStories(s, thoughtWindowKey), [s, thoughtWindowKey])
   const momentumCard = useMemo(() => buildMomentumCard(s, awards?.earned ?? []), [awards?.earned, s])
-  const proteinRunway = useMemo(() => buildProteinRunwayModel(s), [s])
   const mealRhythm = useMemo(() => buildMealRhythmModel(s), [s])
   const realSuccessStory = useMemo(() => buildRealSuccessStoryModel(realSuccessStoryData), [realSuccessStoryData])
   const activeStory = inspirationalStories[storyIndex] ?? inspirationalStories[0] ?? null
@@ -232,9 +229,8 @@ export function useDashboardViewModel() {
   const dailyFocus = useMemo(() => buildDailyFocusModel(s), [s])
   const dashboardContextualVisibility = useMemo(() => buildDashboardContextualVisibility({
     showBeginnerEducationCard,
-    proteinRunway,
     mealRhythm,
-  }), [mealRhythm, proteinRunway, showBeginnerEducationCard])
+  }), [mealRhythm, showBeginnerEducationCard])
 
   const goal = s?.goal
   const nt = s?.nutrition_totals
@@ -570,7 +566,6 @@ export function useDashboardViewModel() {
       />
     )),
     makeDashboardCard('ironquest_journey', ironQuestCard),
-    makeDashboardCard('protein_runway', <ProteinRunwayCard model={proteinRunway} onOpenNutrition={() => navigate('/nutrition')} onAskJohnny={openDrawer} />),
     makeDashboardCard('meal_rhythm', <MealRhythmCard model={mealRhythm} onOpenNutrition={() => navigate('/nutrition')} />),
     makeDashboardCard('quick_log_meal', <QuickActionCard title="Log meal" meta="Nutrition" icon="meal" onClick={() => navigate('/nutrition')} />),
     makeDashboardCard('quick_training', <QuickActionCard title={trainingQuickAction.title} meta={trainingQuickAction.meta} icon="workout" onClick={() => handleDashboardAction(trainingQuickAction)} />),
@@ -646,7 +641,6 @@ export function useDashboardViewModel() {
     handleDashboardAction,
     openDashboardJohnny,
     openNutrition: () => navigate('/nutrition'),
-    primaryDashboardAction: trainingQuickAction,
     quickPrompts,
     canMoveDashboardCardAcrossBuckets: (cardId, direction) => canMoveDashboardCardAcrossBuckets(cardId, dashboardLayout, direction, DASHBOARD_CARD_DEF_MAP, DASHBOARD_BUCKET_ORDER),
     buildVisibleBucketOrder: cards => cards.map(card => card.id),

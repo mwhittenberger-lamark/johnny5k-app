@@ -15,7 +15,6 @@ export const DASHBOARD_CARD_DEFS = [
   { id: 'training_momentum', bucket: 'training_side', label: 'Momentum', description: 'Current streaks, awards, and momentum summary.', iconName: 'flame', iconTone: 'amber', defaultHidden: true },
   { id: 'story_card', bucket: 'story', label: 'Inspirational thoughts', description: 'Rotating thought set or editorial coaching card.', iconName: 'label', iconTone: 'amber', defaultHidden: true },
   { id: 'real_success_stories', bucket: 'story', label: 'Real Success Stories', description: 'A recent transformation story from Men\'s Health, Women\'s Health, or a similar publication.', optional: true, iconName: 'award', iconTone: 'green', governance: 'extra' },
-  { id: 'protein_runway', bucket: 'primary_main', label: 'Protein runway', description: 'How much protein is left and what the next meal should carry.', optional: true, iconName: 'nutrition', iconTone: 'teal', governance: 'contextual' },
   { id: 'meal_rhythm', bucket: 'primary_main', label: 'Meal rhythm', description: 'Which meal windows are logged and what meal slot is next.', optional: true, iconName: 'nutrition', iconTone: 'amber', governance: 'contextual' },
 ]
 

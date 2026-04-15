@@ -2,6 +2,11 @@
 .settings-screen {
   padding-bottom: 24px;
 }
+
+.settings-screen .settings-subtitle {
+  max-width: 25px;
+}
+
 .settings-accordion-stack {
   display: flex;
   flex-direction: column;
@@ -725,6 +730,13 @@
   background: var(--bg2);
   border: 1px solid rgba(168, 212, 240, 0.82);
 }
+
+:root[data-experience-mode='ironquest'] .ui-dialog.settings-image-zoom-panel {
+  --text: var(--text2);
+  --text-muted: var(--text-muted2);
+  color: var(--text2);
+  border-color: var(--border);
+}
 .settings-image-zoom-head {
   display: flex;
   align-items: center;
@@ -1175,7 +1187,7 @@
   }
 }
 
-.settings-screen div[class^='settings-'],
-.settings-screen div[class*=' settings-'] {
+:root[data-experience-mode='ironquest'] .settings-screen div[class^='settings-'],
+:root[data-experience-mode='ironquest'] .settings-screen div[class*=' settings-'] {
   background: none !important;
 }

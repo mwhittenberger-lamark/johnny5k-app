@@ -3,12 +3,10 @@ import { dashboardApi } from '../../api/modules/dashboard'
 import EmptyState from '../../components/ui/EmptyState'
 import ErrorState from '../../components/ui/ErrorState'
 import Field from '../../components/ui/Field'
-import { getAccessibleScrollBehavior } from '../../lib/accessibility'
 import { formatUsShortDate } from '../../lib/dateFormat'
 import { confirmGlobalAction, showGlobalToast } from '../../lib/uiFeedback'
 
 const ANGLES = ['front', 'side', 'back']
-const SCROLL_BEHAVIOR = getAccessibleScrollBehavior()
 
 function titleCase(value) {
   return value.charAt(0).toUpperCase() + value.slice(1)
@@ -25,15 +23,11 @@ export default function ProgressPhotosScreen() {
   const [angle, setAngle] = useState('front')
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10))
   const [uploading, setUploading] = useState(false)
-  const [comparing, setComparing] = useState(false)
   const [baselineSavingAngle, setBaselineSavingAngle] = useState('')
   const [deletingId, setDeletingId] = useState(0)
   const [error, setError] = useState('')
-  const [comparison, setComparison] = useState(null)
-  const [selectedPair, setSelectedPair] = useState(null)
   const [openTimelineDates, setOpenTimelineDates] = useState({})
   const uploadRef = useRef(null)
-  const comparisonRef = useRef(null)
 
   async function loadPhotos() {
     setError('')
@@ -142,9 +136,6 @@ export default function ProgressPhotosScreen() {
     }).filter(group => group.count > 0)
   }, [baselines, grouped])
 
-  const comparisonFirstSrc = comparison ? photoSrcs[comparison.first_photo?.id] ?? '' : ''
-  const comparisonSecondSrc = comparison ? photoSrcs[comparison.second_photo?.id] ?? '' : ''
-  const showComparisonCard = comparing || Boolean(comparison)
   const uploadButtonLabel = uploading ? 'Uploading…' : `Upload ${titleCase(angle)} Photo`
 
   useEffect(() => {
@@ -165,14 +156,6 @@ export default function ProgressPhotosScreen() {
       return next
     })
   }, [timelineDateGroups])
-
-  useEffect(() => {
-    if (!showComparisonCard || !comparisonRef.current) return
-
-    window.requestAnimationFrame(() => {
-      comparisonRef.current?.scrollIntoView({ behavior: SCROLL_BEHAVIOR, block: 'start' })
-    })
-  }, [showComparisonCard])
 
   async function handleUpload(event) {
     const file = event.target.files?.[0]
@@ -202,29 +185,6 @@ export default function ProgressPhotosScreen() {
     }
   }
 
-  async function runCompare(firstPhoto, secondPhoto, label) {
-    if (!firstPhoto || !secondPhoto) return
-
-    setSelectedPair(label)
-    setComparison(null)
-    setComparing(true)
-    setError('')
-    try {
-      const data = await dashboardApi.comparePhotos(firstPhoto.id, secondPhoto.id)
-      setComparison(data)
-      showGlobalToast({
-        kind: 'progress-photos-compare',
-        tone: 'info',
-        title: 'Comparison ready',
-        message: `Showing ${label.toLowerCase()}.`,
-      })
-    } catch (err) {
-      setError(err.message)
-    } finally {
-      setComparing(false)
-    }
-  }
-
   async function handleSetBaseline(photo) {
     setBaselineSavingAngle(photo.angle)
     setError('')
@@ -235,10 +195,6 @@ export default function ProgressPhotosScreen() {
         ...item,
         is_baseline: Number(item.id) === Number(photo.id) ? true : item.angle === photo.angle ? false : item.is_baseline,
       })))
-      if (comparison && [comparison.first_photo?.angle, comparison.second_photo?.angle].includes(photo.angle)) {
-        setComparison(null)
-        setSelectedPair(null)
-      }
       showGlobalToast({
         kind: `progress-baseline-${photo.angle}`,
         tone: 'success',
@@ -265,10 +221,6 @@ export default function ProgressPhotosScreen() {
     setError('')
     try {
       await dashboardApi.deletePhoto(photo.id)
-      if (comparison && [comparison.first_photo?.id, comparison.second_photo?.id].includes(photo.id)) {
-        setComparison(null)
-        setSelectedPair(null)
-      }
       await loadPhotos()
       showGlobalToast({
         kind: 'progress-photos-delete',
@@ -309,7 +261,7 @@ export default function ProgressPhotosScreen() {
         <ol className="progress-howto-list">
           <li>Upload a front or side photo with the correct date.</li>
           <li>Set a baseline in Timeline for each angle you want to track.</li>
-          <li>Run a comparison from the angle cards to get Johnny&apos;s review.</li>
+          <li>Keep adding newer photos to each angle so your baselines stay useful over time.</li>
         </ol>
       </section>
 
@@ -333,7 +285,7 @@ export default function ProgressPhotosScreen() {
 
       <section className="dashboard-section">
         <div className="dashboard-section-title-row">
-          <h2>Compare by angle</h2>
+          <h2>Track by angle</h2>
           <span>{timelinePhotos.length} total photo(s)</span>
         </div>
 
@@ -347,17 +299,9 @@ export default function ProgressPhotosScreen() {
                 </div>
                 {group.baseline ? <span className="dashboard-chip">Baseline set</span> : <span className="dashboard-chip subtle">No baseline yet</span>}
               </div>
-              <div className="progress-angle-actions">
-                <button
-                  className="btn-primary"
-                  disabled={comparing || !group.latest || !group.baseline || group.latest.id === group.baseline.id}
-                  onClick={() => runCompare(group.baseline, group.latest, `${titleCase(group.angle)} baseline vs latest`)}
-                >
-                  Compare baseline vs latest
-                </button>
-              </div>
               {!group.baseline ? <p className="progress-angle-tip">Set a baseline in Timeline first.</p> : null}
               {group.baseline && group.latest && group.latest.id === group.baseline.id ? <p className="progress-angle-tip">Add a newer {group.angle} photo to compare against your baseline.</p> : null}
+              {group.baseline && group.latest && group.latest.id !== group.baseline.id ? <p className="progress-angle-tip">Baseline is set and a newer {group.angle} photo is available in the timeline.</p> : null}
             </article>
           ))}
           {!compareGroups.length ? (
@@ -368,45 +312,6 @@ export default function ProgressPhotosScreen() {
             />
           ) : null}
         </div>
-
-        {showComparisonCard ? (
-          <div ref={comparisonRef} className="dash-card progress-comparison-card">
-            <div className="dashboard-card-head">
-              <span className="dashboard-chip ai">AI compare</span>
-              <strong>{selectedPair}</strong>
-            </div>
-            {comparing ? (
-              <>
-                <div className="progress-comparison-images progress-comparison-images-loading" aria-hidden="true">
-                  <div className="progress-comparison-image-skeleton" />
-                  <div className="progress-comparison-image-skeleton" />
-                </div>
-                <div className="progress-comparison-loading" aria-live="polite">
-                  <p className="progress-comparison-loading-copy">Johnny is reviewing both photos now.</p>
-                  <div className="progress-comparison-loading-lines">
-                    <span />
-                    <span />
-                    <span />
-                  </div>
-                </div>
-              </>
-            ) : comparison ? (
-              <>
-                <div className="progress-comparison-images">
-                  <figure>
-                    <img src={comparisonFirstSrc} alt={`${comparison.first_photo.angle} on ${formatPhotoDate(comparison.first_photo.photo_date)}`} />
-                    <figcaption>{formatPhotoDate(comparison.first_photo.photo_date)} · {comparison.first_photo.angle}</figcaption>
-                  </figure>
-                  <figure>
-                    <img src={comparisonSecondSrc} alt={`${comparison.second_photo.angle} on ${formatPhotoDate(comparison.second_photo.photo_date)}`} />
-                    <figcaption>{formatPhotoDate(comparison.second_photo.photo_date)} · {comparison.second_photo.angle}</figcaption>
-                  </figure>
-                </div>
-                <p>{comparison.comparison}</p>
-              </>
-            ) : null}
-          </div>
-        ) : null}
       </section>
 
       <section className="dashboard-section">

@@ -21,6 +21,14 @@ import {
 } from '../../lib/liveWorkoutVoice'
 import { useAuthStore } from '../../store/authStore'
 import { getPausedTimerNowValue } from '../../screens/workout/workoutScreenUtils'
+import {
+  buildCoachPrompt,
+  buildLiveExerciseSnapshot,
+  buildSavedSetSummary,
+  formatRepRange,
+  normalizeLiveWorkoutCoachingCues,
+  normalizeLiveWorkoutHistory,
+} from './liveWorkoutCoachHelpers'
 
 const DEFAULT_REST_TIMING = {
   setMinSeconds: 30,
@@ -63,7 +71,13 @@ export default function LiveWorkoutMode({
   const [voicePrefs, setVoicePrefs] = useState(() => readLiveWorkoutVoicePrefs())
   const [frameIndex, setFrameIndex] = useState(0)
   const [now, setNow] = useState(() => Date.now())
-  const [lastTransition, setLastTransition] = useState(() => ({ kind: 'exercise', at: Date.now(), summary: 'Workout live mode opened.' }))
+  const [lastTransition, setLastTransition] = useState(() => ({
+    kind: 'exercise',
+    at: Date.now(),
+    summary: 'Workout live mode opened.',
+    allowRestMessages: false,
+    targetExerciseName: '',
+  }))
   const [sessionMapOpen, setSessionMapOpen] = useState(false)
   const [coachLogOpen, setCoachLogOpen] = useState(false)
   const [voiceTestingOpen, setVoiceTestingOpen] = useState(false)
@@ -110,6 +124,7 @@ export default function LiveWorkoutMode({
   const activeExercise = exercises?.[activeExerciseIdx] ?? null
   const totalExerciseCount = Array.isArray(exercises) ? exercises.length : 0
   const totalSetCount = getLiveTotalSetCount(activeExercise)
+  const nextExercise = exercises?.[activeExerciseIdx + 1] ?? null
   const currentSet = activeExercise?.sets?.[currentSetIdx] ?? null
   const currentSetKey = activeExercise?.id ? `${activeExercise.id}:${currentSetIdx}` : 'idle'
   const currentDraft = drafts[currentSetKey] ?? buildDraftFromSet(currentSet)
@@ -117,6 +132,7 @@ export default function LiveWorkoutMode({
   const workoutTimerLabel = timerLabel || ''
   const restElapsedSeconds = Math.max(0, Math.floor((effectiveRestNow - Number(lastTransition?.at || effectiveRestNow)) / 1000))
   const restGuidance = useMemo(() => buildRestGuidance(lastTransition?.kind, restElapsedSeconds, restTiming), [lastTransition?.kind, restElapsedSeconds, restTiming])
+  const restCueExerciseName = String(lastTransition?.targetExerciseName || activeExercise?.exercise_name || 'the current lift').trim()
   const liveVoiceMode = String(voicePrefs.liveModeVoiceMode || 'premium').trim().toLowerCase()
   const voiceLabel = formatOpenAiVoiceLabel(voicePrefs.openAiVoice)
   const selectedInstantVoice = useMemo(
@@ -426,7 +442,13 @@ export default function LiveWorkoutMode({
     setPremiumVoiceTest(buildVoiceTestState())
     setInstantVoiceTest(buildVoiceTestState())
     setLatestVoiceIssue(null)
-    setLastTransition({ kind: 'exercise', at: Date.now(), summary: 'Workout live mode opened.' })
+    setLastTransition({
+      kind: 'exercise',
+      at: Date.now(),
+      summary: 'Workout live mode opened.',
+      allowRestMessages: false,
+      targetExerciseName: '',
+    })
     appendCoachMessage({
       role: 'assistant',
       text: buildSessionOpenedCoachMessage({
@@ -518,10 +540,13 @@ export default function LiveWorkoutMode({
         })
       },
     })
-  }, [coachMessages, handleSpeechAttemptEvent, instantVoiceSupported, isOpen, liveVoiceMode, playbackSupported, preferredInstantVoiceURI, stopTtsPlayback, voicePlaybackSupported, voicePrefs.openAiVoice, voicePrefs.rate, voiceTestingOpen, voiceLabel, workoutSessionId])
+  }, [coachMessages, handleSpeechAttemptEvent, instantVoiceSupported, isOpen, liveVoiceMode, playbackSupported, preferredInstantVoiceURI, stopTtsPlayback, voicePlaybackSupported, voicePrefs.nativeAudioMode, voicePrefs.openAiVoice, voicePrefs.preferNativeSpeech, voicePrefs.rate, voiceTestingOpen, voiceLabel, workoutSessionId])
 
   useEffect(() => {
-    if (!isOpen || !lastTransition?.summary) return
+    if (!isOpen || !lastTransition?.summary || !lastTransition?.allowRestMessages) {
+      setRestToast(null)
+      return
+    }
 
     const guidance = buildRestGuidance(lastTransition.kind, 0, restTiming)
     setRestToast({
@@ -541,7 +566,7 @@ export default function LiveWorkoutMode({
 
   useEffect(() => {
     if (!isOpen || !workoutSessionId || voiceTestingOpen) return
-    if (!lastTransition?.at || !activeExercise?.exercise_name) return
+    if (!lastTransition?.at || !lastTransition?.allowRestMessages || !restCueExerciseName) return
     if (!['sweet', 'drift'].includes(restGuidance.tone)) return
 
     const nextKey = `${workoutSessionId}:${lastTransition.at}:${restGuidance.tone}`
@@ -551,7 +576,7 @@ export default function LiveWorkoutMode({
     appendCoachMessage({
       role: 'assistant',
       text: buildRestCoachMessage({
-        exerciseName: activeExercise.exercise_name,
+        exerciseName: restCueExerciseName,
         kind: lastTransition.kind,
         restGuidance,
       }),
@@ -560,7 +585,7 @@ export default function LiveWorkoutMode({
       actions: [],
     })
     setCoachStatus('Johnny updated the live rest cue.')
-  }, [activeExercise?.exercise_name, isOpen, lastTransition, restGuidance, voiceTestingOpen, workoutSessionId])
+  }, [isOpen, lastTransition, restCueExerciseName, restGuidance, voiceTestingOpen, workoutSessionId])
 
   useEffect(() => {
     if (!isOpen) return undefined
@@ -681,6 +706,8 @@ export default function LiveWorkoutMode({
       kind: 'exercise',
       at: Date.now(),
       summary: `Moved to exercise ${nextIndex + 1} of ${totalExerciseCount}: ${nextExercise?.exercise_name || 'next exercise'}.`,
+      allowRestMessages: false,
+      targetExerciseName: nextExercise?.exercise_name || '',
     })
     enqueueCoachEvent({
       type: 'exercise_changed',
@@ -700,6 +727,8 @@ export default function LiveWorkoutMode({
       kind: 'set',
       at: Date.now(),
       summary: `Moved to set ${nextSetNumber} for ${activeExercise.exercise_name}.`,
+      allowRestMessages: false,
+      targetExerciseName: activeExercise.exercise_name || '',
     })
     appendCoachMessage({
       role: 'assistant',
@@ -727,6 +756,14 @@ export default function LiveWorkoutMode({
 
     setSavingSet(true)
     setSetError('')
+    const setNumber = currentSetIdx + 1
+    const completedExercise = setNumber >= totalSetCount
+    const hasNextExercise = completedExercise && Boolean(nextExercise?.exercise_name)
+    const restTransitionKind = completedExercise ? 'exercise' : 'set'
+    const restTargetExerciseName = completedExercise
+      ? (nextExercise?.exercise_name || '')
+      : (activeExercise?.exercise_name || '')
+    const allowRestMessages = !completedExercise || hasNextExercise
 
     const payload = {
       weight: parseFloat(currentDraft.weight) || 0,
@@ -741,39 +778,49 @@ export default function LiveWorkoutMode({
       } else {
         await onCreateSet(activeExercise.id, {
           session_exercise_id: activeExercise.id,
-          set_number: currentSetIdx + 1,
+          set_number: setNumber,
           ...payload,
         })
       }
 
-      const savedSummary = buildSavedSetSummary(activeExercise, currentSetIdx, payload)
+      const savedSummary = buildSavedSetSummary(activeExercise, currentSetIdx, payload, {
+        totalSetCount,
+        completedExercise,
+      })
       setLastTransition({
-        kind: 'set',
+        kind: restTransitionKind,
         at: Date.now(),
         summary: savedSummary,
+        allowRestMessages,
+        targetExerciseName: restTargetExerciseName,
       })
       enqueueCoachEvent({
-        type: 'set_saved',
+        type: completedExercise ? 'exercise_completed' : 'set_saved',
         summary: savedSummary,
+        exerciseContext: buildLiveExerciseSnapshot(activeExercise),
         savedSet: {
-          setNumber: currentSetIdx + 1,
+          setNumber,
+          totalSetCount,
+          completedExercise,
           ...payload,
         },
       })
-      setCoachStatus('Set saved. Johnny is updating.')
+      setCoachStatus(completedExercise ? 'Exercise saved. Johnny is wrapping up the lift.' : 'Set saved. Johnny is updating.')
 
       const nextSetKey = `${activeExercise.id}:${currentSetIdx + 1}`
-      setDrafts(current => {
-        if (current[nextSetKey]) return current
-        return {
-          ...current,
-          [nextSetKey]: {
-            weight: currentDraft.weight,
-            reps: currentDraft.reps,
-            rir: currentDraft.rir,
-          },
-        }
-      })
+      if (!completedExercise) {
+        setDrafts(current => {
+          if (current[nextSetKey]) return current
+          return {
+            ...current,
+            [nextSetKey]: {
+              weight: currentDraft.weight,
+              reps: currentDraft.reps,
+              rir: currentDraft.rir,
+            },
+          }
+        })
+      }
     } catch (error) {
       setSetError(error?.message || 'Could not save that set right now.')
     } finally {
@@ -1399,25 +1446,6 @@ export default function LiveWorkoutMode({
   )
 }
 
-function buildCoachPrompt(event, activeExercise) {
-  const eventSummary = String(event?.summary || '').trim()
-  const userText = String(event?.userText || '').trim()
-  const exerciseContext = event?.exerciseContext || buildLiveExerciseSnapshot(activeExercise)
-  const exerciseName = exerciseContext?.exercise_name || activeExercise?.exercise_name || 'the current exercise'
-  const coachingCueGuidance = buildCoachingCuePromptFragment(exerciseContext)
-
-  if (event?.manual && userText) {
-    return `You are Johnny coaching a user live during their workout inside Johnny5k. Current exercise: ${exerciseName}. Answer the user's question directly in no more than 3 short sentences. Give one concrete coaching cue when possible. ${coachingCueGuidance} You can give form and setup advice, but you cannot see the user, so do not claim visual confirmation with lines like "great form" or "that looked clean" unless the user said that first. If the question is about form, setup, or how to perform the movement, prefer returning an open_exercise_demo action for the current exercise. User question: ${userText}`
-  }
-
-  if (event?.type === 'exercise_changed') {
-    const loadGuidance = buildLoadGuidancePromptFragment(exerciseContext)
-    return `You are Johnny coaching a user live during their workout inside Johnny5k. The user just moved to a new exercise. Respond with 1 to 2 short sentences only. ${loadGuidance} Give a direct setup cue or execution reminder for the first working set. ${coachingCueGuidance} Do not repeat the whole workout plan. Event: ${eventSummary}`
-  }
-
-  return `You are Johnny coaching a user live during their workout inside Johnny5k. The app is sending you a workout-state update. Respond with 1 to 2 short sentences only. Give live encouragement, one useful cue, or rest-timing guidance based on the current state. ${coachingCueGuidance} Do not repeat the entire workout plan. Event: ${eventSummary}`
-}
-
 function buildSessionOpenedCoachMessage({ activeExercise, displayDayType, totalExerciseCount }) {
   const workoutLabel = formatToken(displayDayType || 'workout').toLowerCase()
   const exerciseName = activeExercise?.exercise_name || 'your first exercise'
@@ -1493,6 +1521,7 @@ function buildLiveWorkoutContext({
     rest_guidance_tone: restGuidance.tone,
     event_type: event?.type || '',
     event_summary: event?.summary || '',
+    event_saved_set: event?.savedSet || null,
     event_exercise_context: event?.exerciseContext || null,
     session_overview: Array.isArray(exercises)
       ? exercises.map((exercise, index) => ({
@@ -1512,100 +1541,6 @@ function buildDraftFromSet(set) {
     reps: set?.reps != null ? String(set.reps) : '',
     rir: set?.rir != null ? String(set.rir) : '',
   }
-}
-
-function buildLiveExerciseSnapshot(exercise) {
-  if (!exercise) return null
-
-  return {
-    exercise_name: exercise.exercise_name || '',
-    equipment: exercise.equipment || '',
-    planned_rep_range: formatRepRange(exercise),
-    recommended_weight: Number(exercise.recommended_weight || 0) || null,
-    coaching_cues: normalizeLiveWorkoutCoachingCues(exercise.coaching_cues ?? exercise.coaching_cues_json),
-    recent_history: normalizeLiveWorkoutHistory(exercise.recent_history),
-  }
-}
-
-function normalizeLiveWorkoutCoachingCues(value) {
-  if (!value) return []
-
-  const list = Array.isArray(value)
-    ? value
-    : (() => {
-        try {
-          const parsed = JSON.parse(value)
-          return Array.isArray(parsed) ? parsed : []
-        } catch {
-          return []
-        }
-      })()
-
-  return list
-    .map(entry => String(entry || '').trim())
-    .filter(Boolean)
-    .slice(0, 4)
-}
-
-function normalizeLiveWorkoutHistory(history) {
-  if (!Array.isArray(history)) return []
-
-  return history
-    .map(entry => ({
-      snapshot_date: entry?.snapshot_date || '',
-      best_weight: Number(entry?.best_weight || 0) || null,
-      best_reps: Number(entry?.best_reps || 0) || null,
-      best_volume: Number(entry?.best_volume || 0) || null,
-      estimated_1rm: Number(entry?.estimated_1rm || 0) || null,
-    }))
-    .filter(entry => entry.snapshot_date || entry.best_weight || entry.best_reps || entry.best_volume || entry.estimated_1rm)
-    .slice(0, 3)
-}
-
-function buildLoadGuidancePromptFragment(exerciseContext) {
-  const recommendedWeight = Number(exerciseContext?.recommended_weight || 0) || 0
-  const latestHistory = Array.isArray(exerciseContext?.recent_history) ? exerciseContext.recent_history[0] : null
-  const previousWeight = Number(latestHistory?.best_weight || 0) || 0
-  const previousReps = Number(latestHistory?.best_reps || 0) || 0
-
-  if (recommendedWeight > 0) {
-    const formattedWeight = formatLiveWorkoutWeight(recommendedWeight, exerciseContext?.equipment)
-    if (previousWeight > 0) {
-      return `Tell the user what weight to start with for this exercise. Recommended starting load is about ${formattedWeight} lbs, with recent history around ${formatLiveWorkoutWeight(previousWeight, exerciseContext?.equipment)} lbs${previousReps > 0 ? ` for ${previousReps} reps` : ''}.`
-    }
-
-    return `Tell the user what weight to start with for this exercise. Recommended starting load is about ${formattedWeight} lbs.`
-  }
-
-  if (previousWeight > 0) {
-    return `Tell the user what weight to start with for this exercise using their recent history. Their latest top effort was about ${formatLiveWorkoutWeight(previousWeight, exerciseContext?.equipment)} lbs${previousReps > 0 ? ` for ${previousReps} reps` : ''}.`
-  }
-
-  return 'If no prior loading data exists, say that clearly and give a practical first-set feel target instead of inventing a number.'
-}
-
-function buildCoachingCuePromptFragment(exerciseContext) {
-  const coachingCues = Array.isArray(exerciseContext?.coaching_cues)
-    ? exerciseContext.coaching_cues.filter(Boolean).slice(0, 3)
-    : []
-
-  if (!coachingCues.length) {
-    return 'If you give a form cue, keep it practical and specific to the lift.'
-  }
-
-  return `Use these known coaching cues when relevant: ${coachingCues.join('; ')}.`
-}
-
-function formatLiveWorkoutWeight(value, equipment = '') {
-  const numeric = Number(value)
-  if (!Number.isFinite(numeric) || numeric <= 0) return '0'
-
-  const increment = equipment === 'dumbbell'
-    ? 10
-    : (numeric >= 100 ? 5 : 2.5)
-  const rounded = Math.round(numeric / increment) * increment
-
-  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1)
 }
 
 function getSuggestedSetIndex(exercise) {
@@ -1664,16 +1599,6 @@ function buildRestGuidance(kind, elapsedSeconds, restTiming = DEFAULT_REST_TIMIN
   }
 }
 
-function buildSavedSetSummary(exercise, currentSetIdx, payload) {
-  const parts = [`Saved set ${currentSetIdx + 1} for ${exercise?.exercise_name || 'the current exercise'}`]
-  parts.push(`${payload.reps} reps`)
-  parts.push(`${payload.weight || 0} lb`)
-  if (payload.rir != null && payload.rir !== '') {
-    parts.push(`RiR ${payload.rir}`)
-  }
-  return `${parts.join(' • ')}.`
-}
-
 function coalesceQueuedCoachEvents(queue, nextEvent) {
   const normalizedQueue = Array.isArray(queue) ? queue.filter(Boolean) : []
   if (!nextEvent || typeof nextEvent !== 'object') return normalizedQueue
@@ -1686,14 +1611,6 @@ function coalesceQueuedCoachEvents(queue, nextEvent) {
     ...normalizedQueue.filter(candidate => candidate?.manual),
     nextEvent,
   ]
-}
-
-function formatRepRange(exercise) {
-  const min = Number(exercise?.planned_rep_min || 0)
-  const max = Number(exercise?.planned_rep_max || 0)
-  if (!min && !max) return 'working reps'
-  if (min && max && min !== max) return `${min}-${max} reps`
-  return `${max || min} reps`
 }
 
 function formatToken(value) {

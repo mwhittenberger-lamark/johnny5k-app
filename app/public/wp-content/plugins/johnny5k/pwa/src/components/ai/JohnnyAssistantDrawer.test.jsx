@@ -182,4 +182,48 @@ describe('JohnnyAssistantDrawer', () => {
 
     expect(johnnyState.closeDrawer).toHaveBeenCalledTimes(2)
   })
+
+  it('renders recipe recommendations with image and details in action cards', async () => {
+    aiApiMock.getThread.mockResolvedValueOnce({
+      messages: [{
+        role: 'assistant',
+        message_text: 'Here are a few recipe ideas.',
+        action_results: [{
+          action: 'show_recipe_catalog',
+          summary: 'Johnny found 1 recipe recommendation.',
+          recipe_count: 1,
+          recipes: [{
+            key: 'dinner-salmon-bowl',
+            recipe_name: 'Salmon Rice Bowl',
+            meal_type: 'dinner',
+            estimated_calories: 620,
+            estimated_protein_g: 42,
+            estimated_carbs_g: 48,
+            estimated_fat_g: 20,
+            image_url: 'https://example.com/salmon-rice-bowl.jpg',
+            why_this_works: 'High-protein dinner with straightforward prep.',
+            on_hand_ingredients: ['Salmon'],
+            missing_ingredients: ['Rice'],
+            instructions: ['Cook the salmon.', 'Build the bowl.'],
+            dietary_tags: ['high_protein'],
+            source: 'admin_library',
+          }],
+        }],
+      }],
+      follow_ups: [],
+      durable_memory: { bullets: [] },
+    })
+
+    await renderComponent(
+      <MemoryRouter initialEntries={['/nutrition']}>
+        <JohnnyAssistantDrawer />
+      </MemoryRouter>,
+    )
+    await flushPendingWork()
+
+    expect(document.body.textContent).toContain('Salmon Rice Bowl')
+    expect(document.body.textContent).toContain('High-protein dinner with straightforward prep.')
+    expect(document.querySelector('img[src="https://example.com/salmon-rice-bowl.jpg"]')).not.toBeNull()
+    expect(Array.from(document.querySelectorAll('summary')).some(node => node.textContent?.includes('Show details'))).toBe(true)
+  })
 })

@@ -26,6 +26,7 @@ const ACTION_TOOLS = new Set([
   'create_personal_exercise',
   'add_pantry_items',
   'add_grocery_gap_items',
+  'add_recipe_to_cookbook',
   'swap_workout_exercise',
   'schedule_sms_reminder',
   'clear_follow_ups',
@@ -36,6 +37,9 @@ const ACTION_DESTINATIONS = {
   log_steps: { path: '/body', state: { focusTab: 'steps' }, label: 'Open steps' },
   log_sleep: { path: '/body', state: { focusTab: 'sleep' }, label: 'Open sleep' },
   log_food_from_description: { path: '/nutrition', label: 'Open nutrition' },
+  show_recipe_catalog: { path: '/nutrition', state: { focusSection: 'recipes', johnnyActionNotice: 'Johnny opened recipe ideas so you can review the latest recommendations.' }, label: 'Open recipes' },
+  show_recipe_cookbook: { path: '/nutrition', state: { focusSection: 'recipes', recipeCollectionFilter: 'cookbook', johnnyActionNotice: 'Johnny opened My Cookbook so you can revisit the saved recipes.' }, label: 'Open My Cookbook' },
+  add_recipe_to_cookbook: { path: '/nutrition', state: { focusSection: 'recipes', recipeCollectionFilter: 'cookbook', johnnyActionNotice: 'Johnny saved that recipe to My Cookbook.' }, label: 'Open My Cookbook' },
   add_pantry_items: { path: '/nutrition/pantry', label: 'Open pantry' },
   add_grocery_gap_items: { path: '/nutrition', state: { focusSection: 'groceryGap' }, label: 'Open grocery gap' },
   create_training_plan: { path: '/workout', label: 'Open workout' },
@@ -822,6 +826,7 @@ function ActionResultList({ actionResults, onNavigate }) {
         const actionName = getActionName(result)
         const destination = ACTION_DESTINATIONS[actionName] ?? null
         const meta = buildActionMeta(result)
+        const recipes = getRecipeActionItems(result)
 
         return (
           <div key={`${actionName}-${index}`} className="johnny-action-card">
@@ -832,6 +837,7 @@ function ActionResultList({ actionResults, onNavigate }) {
             <p className="johnny-action-card-summary">{result.summary || buildFallbackSummary(result)}</p>
             {result.coach_note ? <p className="johnny-action-card-coach-note">{result.coach_note}</p> : null}
             {meta ? <p className="johnny-action-card-meta">{meta}</p> : null}
+            {recipes.length ? <RecipeActionPreviewList recipes={recipes} /> : null}
             {destination ? (
               <button type="button" className="btn-secondary small johnny-action-link" onClick={() => onNavigate(destination)}>
                 {destination.label}
@@ -898,6 +904,12 @@ function formatToolLabel(toolName) {
       return 'Sleep logged'
     case 'log_food_from_description':
       return 'Food logged'
+    case 'show_recipe_catalog':
+      return 'Recipe recommendations'
+    case 'show_recipe_cookbook':
+      return 'My Cookbook'
+    case 'add_recipe_to_cookbook':
+      return 'Recipe saved'
     case 'add_pantry_items':
       return 'Pantry updated'
     case 'add_grocery_gap_items':
@@ -1444,6 +1456,12 @@ function buildActionTitle(result) {
       return `${result.hours_sleep || 0} hours of sleep logged`
     case 'log_food_from_description':
       return `${result.estimated ? 'Estimated' : 'Logged'} ${result.food_name || 'food entry'}`
+    case 'show_recipe_catalog':
+      return result.recipe_count === 1 ? '1 recipe recommendation ready' : `${Number(result.recipe_count || getRecipeActionItems(result).length || 0).toLocaleString()} recipe recommendations ready`
+    case 'show_recipe_cookbook':
+      return result.recipe_count === 1 ? '1 saved recipe ready' : `${Number(result.recipe_count || getRecipeActionItems(result).length || 0).toLocaleString()} saved recipes ready`
+    case 'add_recipe_to_cookbook':
+      return result?.recipe?.recipe_name || 'Recipe saved to My Cookbook'
     case 'add_pantry_items':
       return pluraliseItems(result.item_names?.length || 0, 'Pantry item')
     case 'add_grocery_gap_items':
@@ -1471,6 +1489,12 @@ function buildFallbackSummary(result) {
   const actionName = getActionName(result)
 
   switch (actionName) {
+    case 'show_recipe_catalog':
+      return 'Johnny surfaced recipe recommendations from your recipe library.'
+    case 'show_recipe_cookbook':
+      return 'Johnny surfaced recipes already saved in My Cookbook.'
+    case 'add_recipe_to_cookbook':
+      return result.added === false ? 'That recipe was already in My Cookbook.' : 'Johnny saved that recipe to My Cookbook.'
     case 'swap_workout_exercise':
       return `Swapped ${result.previous_exercise || 'the current exercise'} for ${result.new_exercise || 'a new movement'}.`
     case 'add_pantry_items':
@@ -1521,6 +1545,18 @@ function buildActionMeta(result) {
         result.estimated ? 'Estimate' : '',
         result.review_recommended ? 'Review recommended' : '',
       ].filter(Boolean).join(' | ')
+    case 'show_recipe_catalog':
+    case 'show_recipe_cookbook':
+      return [
+        result.meal_type ? `Meal: ${result.meal_type}` : '',
+        Number.isFinite(result.minimum_protein_g) && Number(result.minimum_protein_g) > 0 ? `${Number(result.minimum_protein_g)}g+ protein` : '',
+        Number.isFinite(result.recipe_count) ? `${Number(result.recipe_count)} total` : '',
+      ].filter(Boolean).join(' | ')
+    case 'add_recipe_to_cookbook':
+      return [
+        result.added === false ? 'Already saved' : 'Saved to My Cookbook',
+        Number.isFinite(result.cookbook_count) ? `${Number(result.cookbook_count)} total saved` : '',
+      ].filter(Boolean).join(' | ')
     case 'add_pantry_items':
     case 'add_grocery_gap_items':
       return [
@@ -1568,6 +1604,108 @@ function pluraliseItems(count, label) {
     return `${label}s updated`
   }
   return `${count} ${label.toLowerCase()}${count === 1 ? '' : 's'}`
+}
+
+function getRecipeActionItems(result) {
+  if (result?.recipe && typeof result.recipe === 'object') {
+    return [result.recipe]
+  }
+
+  return Array.isArray(result?.recipes)
+    ? result.recipes.filter(recipe => recipe && typeof recipe === 'object').slice(0, 3)
+    : []
+}
+
+function RecipeActionPreviewList({ recipes }) {
+  return (
+    <div className="johnny-recipe-preview-list">
+      {recipes.map((recipe, index) => <RecipeActionPreviewCard key={String(recipe?.key || recipe?.recipe_name || `recipe-${index}`)} recipe={recipe} />)}
+    </div>
+  )
+}
+
+function RecipeActionPreviewCard({ recipe }) {
+  const [detailsOpen, setDetailsOpen] = useState(false)
+  const dietaryTags = Array.isArray(recipe?.dietary_tags) ? recipe.dietary_tags : []
+  const onHand = Array.isArray(recipe?.on_hand_ingredients) ? recipe.on_hand_ingredients.filter(Boolean) : []
+  const missing = Array.isArray(recipe?.missing_ingredients) ? recipe.missing_ingredients.filter(Boolean) : []
+  const ingredients = Array.isArray(recipe?.ingredients) ? recipe.ingredients.filter(Boolean) : []
+  const instructions = Array.isArray(recipe?.instructions) ? recipe.instructions.filter(Boolean) : []
+
+  return (
+    <section className="johnny-recipe-preview-card">
+      {recipe?.image_url ? <img className="johnny-recipe-preview-image" src={recipe.image_url} alt={recipe?.recipe_name || 'Recipe'} loading="lazy" /> : null}
+      <div className="johnny-recipe-preview-body">
+        <div className="johnny-recipe-preview-head">
+          <strong>{recipe?.recipe_name || 'Recipe'}</strong>
+          {recipe?.is_in_cookbook ? <span className="johnny-recipe-preview-status">In My Cookbook</span> : null}
+        </div>
+        <p className="johnny-recipe-preview-macros">
+          {formatRecipeMealTypeLabel(recipe?.meal_type || 'lunch')} · {Math.round(Number(recipe?.estimated_calories) || 0)} Calories · {Math.round(Number(recipe?.estimated_protein_g) || 0)}g protein · {Math.round(Number(recipe?.estimated_carbs_g) || 0)}g carbs · {Math.round(Number(recipe?.estimated_fat_g) || 0)}g fat
+        </p>
+        {recipe?.why_this_works ? <p className="johnny-recipe-preview-note">{recipe.why_this_works}</p> : null}
+        <div className="johnny-recipe-preview-badges">
+          {formatRecipeSourceLabel(recipe?.source) ? <span className="nutrition-inline-badge pantry-category">{formatRecipeSourceLabel(recipe?.source)}</span> : null}
+          {onHand.length ? <span className="nutrition-inline-badge on-hand">{onHand.length} on hand</span> : null}
+          {missing.length ? <span className="nutrition-inline-badge missing">{missing.length} need pickup</span> : null}
+          {dietaryTags.map(tag => <span key={tag} className="nutrition-inline-badge">{formatRecipeDietaryTagLabel(tag)}</span>)}
+        </div>
+        {recipe?.source_title ? (
+          <p className="johnny-recipe-preview-source">
+            <strong>Source:</strong>{' '}
+            {recipe?.source_url ? (
+              <a href={recipe.source_url} target="_blank" rel="noreferrer">{recipe.source_title}</a>
+            ) : (
+              <span>{recipe.source_title}</span>
+            )}
+          </p>
+        ) : null}
+        <details className="johnny-recipe-preview-details" open={detailsOpen} onToggle={event => setDetailsOpen(event.currentTarget.open)}>
+          <summary>{detailsOpen ? 'Hide details' : 'Show details'}</summary>
+          <div className="johnny-recipe-preview-details-body">
+            {onHand.length ? <p><strong>On hand:</strong> {onHand.join(', ')}</p> : null}
+            {missing.length ? <p><strong>Still need:</strong> {missing.join(', ')}</p> : null}
+            {!onHand.length && !missing.length && ingredients.length ? <p><strong>Ingredients:</strong> {ingredients.join(', ')}</p> : null}
+            {instructions.length ? (
+              <ol className="johnny-recipe-preview-steps">
+                {instructions.map((step, index) => <li key={`${recipe?.key || recipe?.recipe_name || 'recipe'}-${index}`}>{step}</li>)}
+              </ol>
+            ) : null}
+          </div>
+        </details>
+      </div>
+    </section>
+  )
+}
+
+function formatRecipeMealTypeLabel(value) {
+  return String(value || 'meal')
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, char => char.toUpperCase())
+}
+
+function formatRecipeDietaryTagLabel(tag) {
+  switch (tag) {
+    case 'high_protein':
+      return 'High Protein'
+    case 'whole30':
+      return 'Whole30'
+    default:
+      return formatRecipeMealTypeLabel(tag)
+  }
+}
+
+function formatRecipeSourceLabel(source) {
+  switch (source) {
+    case 'admin_library':
+      return 'Recipe library'
+    case 'ai_discovery':
+      return 'Web recipe'
+    case 'generated':
+      return 'Generated'
+    default:
+      return ''
+  }
 }
 
 function getStarterSuggestionsForCurrentTime(now = new Date()) {

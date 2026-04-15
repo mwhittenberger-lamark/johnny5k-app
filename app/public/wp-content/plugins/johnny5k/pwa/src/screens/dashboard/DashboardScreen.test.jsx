@@ -112,7 +112,6 @@ function createViewModel() {
     openNutrition: vi.fn(),
     openRewards: vi.fn(),
     openSettings: vi.fn(),
-    primaryDashboardAction: { title: 'Start workout', href: '/workout' },
     quickPrompts: [
       { id: 'highest_impact', label: 'Highest-impact move', prompt: 'What is my highest-impact move right now?' },
     ],
@@ -156,7 +155,6 @@ describe('DashboardScreen', () => {
     expect(container.textContent).toContain('Complete your workout and hit the last 40g protein.')
     expect(container.textContent).toContain('Ask Johnny')
     expect(container.textContent).toContain('Highest-impact move')
-    expect(container.textContent).toContain('Today\'s move')
     expect(container.textContent).toContain(summary.headline)
     expect(container.textContent).toContain(summary.summary)
     expect(container.textContent).toContain(nextActionTitle)

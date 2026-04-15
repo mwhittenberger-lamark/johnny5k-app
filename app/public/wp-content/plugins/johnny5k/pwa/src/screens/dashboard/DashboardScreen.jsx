@@ -27,7 +27,6 @@ export default function DashboardScreen() {
     loading,
     moveDashboardCard,
     openDashboardJohnny,
-    primaryDashboardAction,
     quickPrompts,
     resetDashboardLayout,
     setCustomizeOpen,
@@ -233,14 +232,6 @@ export default function DashboardScreen() {
         </section>
       )}
 
-      {!customizeOpen && dailyFocus?.primaryAction ? (
-        <DashboardMobileActionBar
-          instruction={dailyFocus.instruction}
-          action={dailyFocus.primaryAction}
-          onAction={handleDashboardAction}
-        />
-      ) : null}
-
       {customizeOpen ? <DashboardAddCardsSection cards={hiddenDashboardCards} onAddCard={addDashboardCard} /> : null}
 
       <div className="dashboard-bottom-actions">
@@ -250,20 +241,6 @@ export default function DashboardScreen() {
         {customizeOpen ? <button type="button" className="btn-secondary small dashboard-customize-trigger" onClick={resetDashboardLayout}>Reset layout</button> : null}
       </div>
     </div>
-  )
-}
-
-function DashboardMobileActionBar({ instruction, action, onAction }) {
-  return (
-    <section className="dashboard-mobile-action-bar" aria-label="Today's primary action">
-      <div className="dashboard-mobile-action-copy">
-        <span>Today&apos;s move</span>
-        <strong>{instruction}</strong>
-      </div>
-      <button type="button" className="btn-primary" onClick={() => onAction?.(action)}>
-        {action?.title || 'Take action'}
-      </button>
-    </section>
   )
 }
 

@@ -422,6 +422,8 @@ class NutritionRecipeController extends RestController {
 					'estimated_fat_g'      => (float) ( $recipe['estimated_fat_g'] ?? 0 ),
 					'dietary_tags'         => self::sanitize_recipe_dietary_tags( $recipe['dietary_tags'] ?? [] ),
 					'why_this_works'       => sanitize_text_field( (string) ( $recipe['why_this_works'] ?? 'Added from your recipe library.' ) ),
+					'source_title'         => sanitize_text_field( (string) ( $recipe['source_title'] ?? '' ) ),
+					'source_url'           => esc_url_raw( (string) ( $recipe['source_url'] ?? '' ) ),
 					'image_url'            => esc_url_raw( (string) ( $recipe['image_url'] ?? '' ) ),
 				];
 			}
@@ -468,6 +470,8 @@ class NutritionRecipeController extends RestController {
 			$suggestion['pantry_missing_count']  = count( $suggestion['missing_ingredients'] );
 			$suggestion['preferred_match_count'] = $preferred_matches;
 			$suggestion['dietary_tags']          = self::recipe_tags_for_suggestion( $suggestion );
+			$suggestion['source_title']          = sanitize_text_field( (string) ( $suggestion['source_title'] ?? '' ) );
+			$suggestion['source_url']            = esc_url_raw( (string) ( $suggestion['source_url'] ?? '' ) );
 			$suggestion['image_url']             = esc_url_raw( (string) ( $suggestion['image_url'] ?? '' ) );
 			return $suggestion;
 		}, $suggestions );
