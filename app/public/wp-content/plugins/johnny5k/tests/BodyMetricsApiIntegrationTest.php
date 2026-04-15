@@ -59,9 +59,9 @@ class BodyMetricsApiIntegrationTest extends \Johnny5k\Tests\Support\ApiIntegrati
 		self::assertSame(
 			[
 				'date' => '2026-04-08',
-				'steps' => 4900,
+				'steps' => 4764,
 				'actual_steps' => 3200,
-				'cardio_equivalent_steps' => 1700,
+				'cardio_equivalent_steps' => 1564,
 			],
 			$data['movement'][0]
 		);

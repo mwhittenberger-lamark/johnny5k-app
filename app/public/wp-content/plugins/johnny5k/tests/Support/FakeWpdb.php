@@ -182,8 +182,10 @@ class FakeWpdb {
 	}
 
 	private function resolve( string $method, string $query ): mixed {
+		$normalized_query = $this->normalize_sql( $query );
+
 		foreach ( $this->handlers[ $method ] as $index => $handler ) {
-			if ( str_contains( $query, $handler['needle'] ) ) {
+			if ( str_contains( $normalized_query, $this->normalize_sql( $handler['needle'] ) ) ) {
 				array_splice( $this->handlers[ $method ], $index, 1 );
 				return is_callable( $handler['response'] )
 					? $handler['response']( $query )
@@ -192,5 +194,10 @@ class FakeWpdb {
 		}
 
 		throw new RuntimeException( sprintf( "No %s handler matched query:\n%s", $method, $query ) );
+	}
+
+	private function normalize_sql( string $sql ): string {
+		$sql = preg_replace( '/\s+/', ' ', trim( $sql ) ) ?? trim( $sql );
+		return strtolower( $sql );
 	}
 }

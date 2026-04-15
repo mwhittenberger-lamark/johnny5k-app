@@ -175,7 +175,7 @@ export function formatRepRange(exercise) {
   return `${max || min} reps`
 }
 
-export function buildNextSetCoachMessage(exercise, setNumber, totalSetCount, restTiming = {}) {
+export function buildNextSetCoachMessage(exercise, setNumber, totalSetCount) {
   const exerciseName = exercise?.exercise_name || 'the current exercise'
   const repRange = formatRepRange(exercise)
   const totalSetsLabel = totalSetCount > 0 ? `Set ${setNumber} of ${totalSetCount}` : `Set ${setNumber}`
@@ -319,26 +319,6 @@ function isRepTargetHit(reps, targetMin, targetMax) {
 
 function pluralize(word, count) {
   return count === 1 ? word : `${word}s`
-}
-
-function formatDurationRange(minSeconds, maxSeconds) {
-  const minLabel = formatDurationLabel(minSeconds)
-  const maxLabel = formatDurationLabel(maxSeconds)
-  return minLabel === maxLabel ? minLabel : `${minLabel} to ${maxLabel}`
-}
-
-function formatDurationLabel(totalSeconds) {
-  const normalized = Math.max(0, Number(totalSeconds || 0))
-  if (normalized >= 60 && normalized % 60 === 0) {
-    const minutes = normalized / 60
-    return `${minutes} min`
-  }
-  return `${normalized} sec`
-}
-
-function normalizePositiveNumber(value, fallback) {
-  const numeric = Number(value)
-  return Number.isFinite(numeric) && numeric > 0 ? numeric : fallback
 }
 
 function formatLiveWorkoutWeight(value, equipment = '') {

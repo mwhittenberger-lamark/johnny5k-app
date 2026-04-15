@@ -62,8 +62,6 @@ export default function AppLoadingScreen({
   const [visibleCount, setVisibleCount] = useState(1)
 
   useEffect(() => {
-    setVisibleCount(1)
-
     const timers = shapes.slice(1).map((_, index) => window.setTimeout(() => {
       setVisibleCount(current => Math.max(current, index + 2))
     }, (index + 1) * 140))

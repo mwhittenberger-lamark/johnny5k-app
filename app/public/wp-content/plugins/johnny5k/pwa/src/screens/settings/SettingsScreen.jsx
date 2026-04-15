@@ -206,7 +206,7 @@ export default function SettingsScreen() {
       })
 
     return () => { active = false }
-  }, [])
+  }, [setExperienceMode])
 
   useEffect(() => {
     applyColorScheme(form.color_scheme)

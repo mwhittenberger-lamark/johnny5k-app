@@ -153,23 +153,12 @@ export default function AdminScreen() {
   const navigate = useNavigate()
   const { canAccessPwaAdmin, isAdmin } = useAuthStore()
   const availableTabs = isAdmin ? TABS : QA_ONLY_TABS
-  const [tab, setTab] = useState(() => tabFromPathname(location.pathname, isAdmin))
-
-  useEffect(() => {
-    if (!availableTabs.includes(tab)) {
-      setTab(availableTabs[0] || 'label-tests')
-    }
-  }, [availableTabs, tab])
-
-  useEffect(() => {
-    const routeTab = tabFromPathname(location.pathname, isAdmin)
-    if (availableTabs.includes(routeTab) && routeTab !== tab) {
-      setTab(routeTab)
-    }
-  }, [availableTabs, isAdmin, location.pathname, tab])
+  const routeTab = tabFromPathname(location.pathname, isAdmin)
+  const tab = availableTabs.includes(routeTab)
+    ? routeTab
+    : (availableTabs[0] || 'label-tests')
 
   function handleTabChange(nextTab) {
-    setTab(nextTab)
     const nextRoute = routeForAdminTab(nextTab, isAdmin)
     if (location.pathname !== nextRoute) {
       navigate(nextRoute)

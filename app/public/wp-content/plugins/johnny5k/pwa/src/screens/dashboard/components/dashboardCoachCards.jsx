@@ -15,10 +15,8 @@ export function CoachingSummaryCard({
   coachBackupStep,
   coachBackupAction,
   quickPrompts,
-  coachPromptsOpen,
   pendingFollowUps,
   followUpOverview,
-  onTogglePrompts,
   onRefresh,
   johnnyReviewLoading,
 }) {

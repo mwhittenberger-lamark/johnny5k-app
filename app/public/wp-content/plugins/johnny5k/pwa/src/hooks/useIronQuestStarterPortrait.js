@@ -2,15 +2,14 @@ import { useEffect, useState } from 'react'
 import { onboardingApi } from '../api/modules/onboarding'
 
 export function useIronQuestStarterPortrait(attachmentId) {
+  const normalizedAttachmentId = Number(attachmentId || 0)
   const [portrait, setPortrait] = useState(null)
 
   useEffect(() => {
-    const normalizedAttachmentId = Number(attachmentId || 0)
     let cancelled = false
     let objectUrl = ''
 
     if (normalizedAttachmentId <= 0) {
-      setPortrait(null)
       return undefined
     }
 
@@ -67,7 +66,6 @@ export function useIronQuestStarterPortrait(attachmentId) {
       }
     }
 
-    setPortrait(null)
     void loadPortrait()
 
     return () => {
@@ -76,7 +74,11 @@ export function useIronQuestStarterPortrait(attachmentId) {
         URL.revokeObjectURL(objectUrl)
       }
     }
-  }, [attachmentId])
+  }, [normalizedAttachmentId])
 
-  return portrait
+  if (normalizedAttachmentId <= 0) {
+    return null
+  }
+
+  return portrait?.attachmentId === normalizedAttachmentId ? portrait : null
 }

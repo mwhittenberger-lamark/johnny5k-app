@@ -1,6 +1,7 @@
 import { formatUsShortDate } from '../../../lib/dateFormat'
 import AppIcon from '../../../components/ui/AppIcon'
-import { DashboardIconBadge, StreakRow, buildDashboardWeeklyTrendBars } from './dashboardSharedCards'
+import { DashboardIconBadge, StreakRow } from './dashboardSharedCards'
+import { buildDashboardWeeklyTrendBars } from './dashboardSharedCardUtils'
 
 export function TrainingTodayCard({ model, skipWarning, skipCount30d, onAction }) {
   if (!model) return null

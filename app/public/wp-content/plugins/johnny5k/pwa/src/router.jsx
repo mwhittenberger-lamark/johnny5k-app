@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import { lazy } from 'react'
 import { createBrowserRouter, Navigate, Outlet } from 'react-router-dom'
 import { AppBootstrapLayout } from './App'
@@ -28,10 +29,12 @@ const ProgressPhotosScreen = lazy(() => import('./screens/progress/ProgressPhoto
 const RewardsScreen = lazy(() => import('./screens/rewards/RewardsScreen'))
 const IronQuestScreen = lazy(() => import('./screens/ironquest/IronQuestScreen'))
 
-function lazyElement(Component) {
+function lazyElement(routeComponent) {
+  const RouteComponent = routeComponent
+
   return (
     <LazyRoute>
-      <Component />
+      <RouteComponent />
     </LazyRoute>
   )
 }

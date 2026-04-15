@@ -3,6 +3,9 @@ import AppLoadingScreen from '../../components/ui/AppLoadingScreen'
 import AppIcon from '../../components/ui/AppIcon'
 import OfflineState from '../../components/ui/OfflineState'
 import { DailyFocusHero } from './components/DashboardCards'
+import { DashboardIconBadge } from './components/dashboardSharedCards'
+import { DASHBOARD_BUCKET_META } from './dashboardCardRegistry'
+import { groupDashboardCardsByBucket } from './dashboardLayoutUtils'
 import { useDashboardViewModel } from './hooks/useDashboardViewModel.jsx'
 
 export default function DashboardScreen() {

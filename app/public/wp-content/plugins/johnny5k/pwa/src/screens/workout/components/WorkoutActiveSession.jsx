@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import ErrorState from '../../../components/ui/ErrorState'
 import SupportIconButton from '../../../components/ui/SupportIconButton'
 import ExerciseCard from '../../../components/workout/ExerciseCard'
@@ -30,6 +31,25 @@ export default function WorkoutActiveSession({
   const activeEx = exercises[activeExerciseIdx]
   const quickAddDisabled = Boolean(sessionController.addingSlot)
   const confirmBusy = sessionController.exiting || sessionController.restarting
+  const attemptedDemoRefreshRef = useRef(false)
+
+  useEffect(() => {
+    if (attemptedDemoRefreshRef.current) {
+      return
+    }
+
+    if (!session?.session?.id || !Array.isArray(exercises) || !exercises.length) {
+      return
+    }
+
+    const isMissingDemoField = exercises.some(exercise => !Object.prototype.hasOwnProperty.call(exercise || {}, 'demo_image_url'))
+    if (!isMissingDemoField || typeof sessionController.reloadSession !== 'function') {
+      return
+    }
+
+    attemptedDemoRefreshRef.current = true
+    void sessionController.reloadSession()
+  }, [exercises, session?.session?.id, sessionController])
 
   return (
     <div className="screen workout-active workout-upgraded">

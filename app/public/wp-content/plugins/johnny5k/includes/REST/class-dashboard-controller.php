@@ -130,7 +130,7 @@ class DashboardController {
 	public static function get_coaching_context( \WP_REST_Request $req ): \WP_REST_Response {
 		$user_id = get_current_user_id();
 
-		return new \WP_REST_Response( self::get_coaching_context_data( $user_id ) );
+		return new \WP_REST_Response( static::get_coaching_context_data( $user_id ) );
 	}
 
 	public static function get_johnny_review( \WP_REST_Request $req ): \WP_REST_Response {

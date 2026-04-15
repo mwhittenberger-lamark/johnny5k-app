@@ -232,7 +232,11 @@ if ( ! function_exists( 'wp_timezone_string' ) ) {
 
 if ( ! function_exists( 'current_time' ) ) {
 	function current_time( string $type, bool $gmt = false ): string {
-		return '2026-04-09 12:00:00';
+		return match ( $type ) {
+			'Y-m-d' => '2026-04-09',
+			'mysql' => '2026-04-09 12:00:00',
+			default => '2026-04-09 12:00:00',
+		};
 	}
 }
 
@@ -718,6 +722,13 @@ if ( ! function_exists( 'esc_url_raw' ) ) {
 	}
 }
 
+if ( ! function_exists( 'sanitize_hex_color' ) ) {
+	function sanitize_hex_color( string $color ): string {
+		$color = trim( $color );
+		return 1 === preg_match( '/^#(?:[0-9a-fA-F]{3}){1,2}$/', $color ) ? strtolower( $color ) : '';
+	}
+}
+
 if ( ! function_exists( 'wp_remote_post' ) ) {
 	function wp_remote_post( string $url, array $args = [] ): mixed {
 		$GLOBALS['johnny5k_test_http_log']['post'][] = [
@@ -1081,6 +1092,13 @@ require_once dirname( __DIR__ ) . '/includes/Support/class-private-media-service
 require_once dirname( __DIR__ ) . '/includes/Admin/class-overview-stats.php';
 require_once dirname( __DIR__ ) . '/includes/Admin/class-overview-page.php';
 require_once dirname( __DIR__ ) . '/includes/Admin/class-admin-menu.php';
+require_once dirname( __DIR__ ) . '/includes/Bootstrap/class-rest-bootstrap.php';
+require_once dirname( __DIR__ ) . '/includes/Bootstrap/class-frontend-bootstrap.php';
+require_once dirname( __DIR__ ) . '/includes/Bootstrap/class-admin-bootstrap.php';
+require_once dirname( __DIR__ ) . '/includes/Bootstrap/class-ajax-bootstrap.php';
+require_once dirname( __DIR__ ) . '/includes/Bootstrap/class-cron-bootstrap.php';
+require_once dirname( __DIR__ ) . '/includes/Bootstrap/class-plugin-lifecycle.php';
+require_once dirname( __DIR__ ) . '/includes/Bootstrap/class-plugin.php';
 require_once dirname( __DIR__ ) . '/includes/REST/class-auth-controller.php';
 require_once dirname( __DIR__ ) . '/includes/REST/class-admin-api-controller.php';
 require_once dirname( __DIR__ ) . '/includes/REST/class-onboarding-controller.php';

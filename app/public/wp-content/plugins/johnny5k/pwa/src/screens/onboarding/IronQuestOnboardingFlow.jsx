@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Navigate, Route, Routes, useNavigate } from 'react-router-dom'
 import { ironquestApi } from '../../api/modules/ironquest'
 import { onboardingApi } from '../../api/modules/onboarding'
@@ -154,7 +154,7 @@ function ClassStep({ selectedClass, onSelectClass }) {
   )
 }
 
-function MotivationStep({ selectedMotivation, onSelectMotivation, selectedClass, onFinish, submitting, error }) {
+function MotivationStep({ selectedMotivation, onSelectMotivation, selectedClass, submitting, error }) {
   const navigate = useNavigate()
   const selectedClassLabel = formatOptionLabel(IRONQUEST_CLASS_OPTIONS, selectedClass, 'Class pending')
   const selectedOption = IRONQUEST_MOTIVATION_OPTIONS.find((option) => option.value === selectedMotivation) ?? IRONQUEST_MOTIVATION_OPTIONS[0]
@@ -400,7 +400,7 @@ export default function IronQuestOnboardingFlow() {
   const [selectedClass, setSelectedClass] = useState(IRONQUEST_CLASS_OPTIONS[0].value)
   const [selectedMotivation, setSelectedMotivation] = useState(IRONQUEST_MOTIVATION_OPTIONS[0].value)
 
-  function applyIronQuestState(payload) {
+  const applyIronQuestState = useCallback((payload) => {
     setIronQuest(payload)
     const nextClass = String(payload?.profile?.class_slug || '').trim()
     const nextMotivation = String(payload?.profile?.motivation_slug || '').trim()
@@ -417,9 +417,9 @@ export default function IronQuestOnboardingFlow() {
     if (nextPortraitAttachmentId > 0) {
       setSelectedPortraitAttachmentId(nextPortraitAttachmentId)
     }
-  }
+  }, [])
 
-  function applyOnboardingAssets(payload) {
+  const applyOnboardingAssets = useCallback((payload) => {
     const nextHeadshot = payload?.headshot ?? { configured: false }
     const nextGeneratedImages = Array.isArray(payload?.generated_images) ? payload.generated_images : []
     setHeadshot(nextHeadshot)
@@ -435,7 +435,7 @@ export default function IronQuestOnboardingFlow() {
       }
       return 0
     })
-  }
+  }, [ironQuest?.profile?.starter_portrait_attachment_id])
 
   async function loadOnboardingAssets() {
     const data = await onboardingApi.getState()
@@ -466,7 +466,7 @@ export default function IronQuestOnboardingFlow() {
     return () => {
       active = false
     }
-  }, [setExperienceMode])
+  }, [applyIronQuestState, applyOnboardingAssets, setExperienceMode])
 
   useEffect(() => {
     if (!headshot?.configured) {
@@ -659,7 +659,7 @@ export default function IronQuestOnboardingFlow() {
     <Routes>
       <Route index element={isReady ? <Navigate to="/onboarding/ironquest/ready" replace /> : <IntroStep />} />
       <Route path="class" element={isReady ? <Navigate to="/onboarding/ironquest/ready" replace /> : <ClassStep selectedClass={selectedClass} onSelectClass={setSelectedClass} />} />
-      <Route path="motivation" element={isReady ? <Navigate to="/onboarding/ironquest/ready" replace /> : <MotivationStep selectedMotivation={selectedMotivation} onSelectMotivation={setSelectedMotivation} selectedClass={selectedClass} onFinish={finishSetup} submitting={submitting} error={error} />} />
+      <Route path="motivation" element={isReady ? <Navigate to="/onboarding/ironquest/ready" replace /> : <MotivationStep selectedMotivation={selectedMotivation} onSelectMotivation={setSelectedMotivation} selectedClass={selectedClass} submitting={submitting} error={error} />} />
       <Route path="image" element={isReady ? <Navigate to="/onboarding/ironquest/ready" replace /> : <PortraitStep headshot={headshot} headshotSrc={headshotSrc} generatedImages={generatedImages} generatedImageSrcs={generatedImageSrcs} selectedPortraitAttachmentId={selectedPortraitAttachmentId} generationPrompt={generationPrompt} generationCount={generationCount} headshotUploading={headshotUploading} generatingImages={generatingImages} error={error} message={message} onUploadHeadshot={handleHeadshotUpload} onDeleteHeadshot={handleHeadshotDelete} onGenerationPromptChange={setGenerationPrompt} onGenerationCountChange={setGenerationCount} onGenerateImages={handleGenerateImages} onSelectPortrait={setSelectedPortraitAttachmentId} onFinish={finishSetup} submitting={submitting} />} />
       <Route path="ready" element={readyElement} />
       <Route path="*" element={<Navigate to="/onboarding/ironquest" replace />} />

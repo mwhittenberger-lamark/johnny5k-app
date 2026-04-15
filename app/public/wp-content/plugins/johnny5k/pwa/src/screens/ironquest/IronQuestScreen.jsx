@@ -82,7 +82,7 @@ export default function IronQuestScreen() {
   const missionBoardPayload = useMemo(() => Array.isArray(hub?.mission_board) ? hub.mission_board : [], [hub?.mission_board])
   const activeRun = hub?.active_run ?? null
   const dailyState = hub?.daily_state ?? {}
-  const routeState = hub?.route_state ?? {}
+  const routeState = useMemo(() => hub?.route_state ?? {}, [hub?.route_state])
   const travelBreakdown = routeState?.travel_points_breakdown ?? {}
   const recentUnlocks = useMemo(() => Array.isArray(hub?.recent_unlocks) ? hub.recent_unlocks : [], [hub?.recent_unlocks])
   const unlockHistory = useMemo(() => Array.isArray(hub?.unlock_history) ? hub.unlock_history : [], [hub?.unlock_history])
@@ -260,7 +260,7 @@ export default function IronQuestScreen() {
     } finally {
       setFastTraveling(false)
     }
-  }, [loadIronQuestHub, nextUnlock?.location_slug])
+  }, [loadIronQuestHub, locations, nextUnlock?.location_slug])
 
   if (loading && !hub) {
     return (

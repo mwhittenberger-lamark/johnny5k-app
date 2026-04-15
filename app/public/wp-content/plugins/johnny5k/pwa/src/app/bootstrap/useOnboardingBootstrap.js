@@ -21,28 +21,21 @@ export function useOnboardingBootstrap(session) {
   const setPreferenceMeta = useAuthStore((state) => state.setPreferenceMeta)
   const setIssue = useStartupStatusStore((state) => state.setIssue)
   const clearIssue = useStartupStatusStore((state) => state.clearIssue)
-  const [status, setStatus] = useState(STARTUP_STATUS.idle)
+  const [resolvedStatus, setResolvedStatus] = useState(STARTUP_STATUS.loading)
+  const [completedKey, setCompletedKey] = useState('')
+  const canBootstrap = Boolean(session?.ready && session?.restored && isAuthenticated)
+  const bootstrapKey = canBootstrap ? `${Number(Boolean(session?.ready))}:${Number(Boolean(session?.restored))}:${Number(Boolean(isAuthenticated))}` : ''
 
   useEffect(() => {
     let active = true
 
     clearIssue(STARTUP_ISSUE_KEYS.authBootstrap)
 
-    if (!session?.ready) {
-      setStatus(STARTUP_STATUS.loading)
+    if (!canBootstrap) {
       return () => {
         active = false
       }
     }
-
-    if (!session?.restored || !isAuthenticated) {
-      setStatus(STARTUP_STATUS.skipped)
-      return () => {
-        active = false
-      }
-    }
-
-    setStatus(STARTUP_STATUS.loading)
 
     Promise.all([
       onboardingApi.getState(),
@@ -64,7 +57,8 @@ export function useOnboardingBootstrap(session) {
         setAvailableColorSchemes(data?.color_schemes)
         applyColorScheme(preferenceMeta?.color_scheme)
         clearIssue(STARTUP_ISSUE_KEYS.authBootstrap)
-        setStatus(STARTUP_STATUS.ready)
+        setCompletedKey(bootstrapKey)
+        setResolvedStatus(STARTUP_STATUS.ready)
       })
       .catch((error) => {
         if (!active) {
@@ -87,7 +81,8 @@ export function useOnboardingBootstrap(session) {
         })
 
         setIssue(createOnboardingBootstrapIssue(error))
-        setStatus(STARTUP_STATUS.degraded)
+        setCompletedKey(bootstrapKey)
+        setResolvedStatus(STARTUP_STATUS.degraded)
       })
 
     return () => {
@@ -96,8 +91,8 @@ export function useOnboardingBootstrap(session) {
   }, [
     clearIssue,
     isAuthenticated,
-    session?.ready,
-    session?.restored,
+    bootstrapKey,
+    canBootstrap,
     setAppImages,
     setDailyCheckInEntry,
     setExperienceMode,
@@ -105,6 +100,14 @@ export function useOnboardingBootstrap(session) {
     setNotificationPrefs,
     setPreferenceMeta,
   ])
+
+  const status = !session?.ready
+    ? STARTUP_STATUS.loading
+    : !session?.restored || !isAuthenticated
+      ? STARTUP_STATUS.skipped
+      : completedKey === bootstrapKey
+        ? resolvedStatus
+        : STARTUP_STATUS.loading
 
   return createStartupStep(status, {
     key: 'onboarding',

@@ -11,7 +11,7 @@ const NONCE_KEY = 'jf_rest_nonce'
 const PWA_QA_EMAIL = 'mike@panempire.com'
 
 function canAccessPwaAdmin(email, isAdmin) {
-  if (Boolean(isAdmin)) {
+  if (isAdmin) {
     return true
   }
 

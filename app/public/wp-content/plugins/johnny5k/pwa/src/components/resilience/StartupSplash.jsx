@@ -20,37 +20,42 @@ function readSessionJson(key) {
   }
 }
 
+function buildRestartContext(now) {
+  const lastReady = readSessionJson(LAST_READY_KEY)
+  const interrupt = readSessionJson(STARTUP_INTERRUPT_KEY)
+
+  const nextContext = {
+    lastReady: lastReady && now - Number(lastReady.at || 0) <= RECENT_RESTART_WINDOW_MS ? lastReady : null,
+    interrupt: interrupt && now - Number(interrupt.at || 0) <= RECENT_RESTART_WINDOW_MS ? interrupt : null,
+  }
+
+  return nextContext.lastReady || nextContext.interrupt ? nextContext : null
+}
+
 export default function StartupSplash({ startup = null }) {
   const pendingRequiredSteps = useMemo(() => (
     Array.isArray(startup?.pendingRequiredSteps)
       ? startup.pendingRequiredSteps.filter((step) => step?.label || step?.requestLabel)
       : []
-  ), [startup?.pendingRequiredSteps])
-  const [showDiagnostics, setShowDiagnostics] = useState(false)
-  const [restartContext, setRestartContext] = useState(null)
+  ), [startup])
+  const diagnosticKey = pendingRequiredSteps.length
+    ? `${startup?.status || 'loading'}:${pendingRequiredSteps.map((step) => step.key || step.label || step.requestLabel).join('|')}`
+    : ''
+  const [shownDiagnosticKey, setShownDiagnosticKey] = useState('')
+  const [diagnosticNow, setDiagnosticNow] = useState(0)
+  const restartContext = useMemo(() => (diagnosticNow ? buildRestartContext(diagnosticNow) : null), [diagnosticNow])
+  const showDiagnostics = Boolean(diagnosticKey) && shownDiagnosticKey === diagnosticKey
 
   useEffect(() => {
-    const lastReady = readSessionJson(LAST_READY_KEY)
-    const interrupt = readSessionJson(STARTUP_INTERRUPT_KEY)
-    const now = Date.now()
-
-    const nextContext = {
-      lastReady: lastReady && now - Number(lastReady.at || 0) <= RECENT_RESTART_WINDOW_MS ? lastReady : null,
-      interrupt: interrupt && now - Number(interrupt.at || 0) <= RECENT_RESTART_WINDOW_MS ? interrupt : null,
-    }
-
-    setRestartContext(nextContext.lastReady || nextContext.interrupt ? nextContext : null)
-  }, [startup?.status])
-
-  useEffect(() => {
-    setShowDiagnostics(false)
-
-    if (!pendingRequiredSteps.length) {
+    if (!diagnosticKey) {
       return undefined
     }
 
     const timer = window.setTimeout(() => {
-      setShowDiagnostics(true)
+      const now = Date.now()
+      const nextRestartContext = buildRestartContext(now)
+      setDiagnosticNow(now)
+      setShownDiagnosticKey(diagnosticKey)
       reportClientDiagnostic({
         source: 'startup_loading_timeout',
         message: 'Startup is still waiting on required bootstrap steps.',
@@ -59,7 +64,7 @@ export default function StartupSplash({ startup = null }) {
           startup_status: startup?.status || '',
           runtime_origin: typeof window !== 'undefined' ? window.location.origin : '',
           is_native_shell: typeof window !== 'undefined' && typeof window.Capacitor !== 'undefined',
-          restart_context: restartContext,
+          restart_context: nextRestartContext,
         },
       })
     }, STARTUP_DIAGNOSTIC_DELAY_MS)
@@ -67,7 +72,7 @@ export default function StartupSplash({ startup = null }) {
     return () => {
       window.clearTimeout(timer)
     }
-  }, [pendingRequiredSteps, restartContext, startup?.status])
+  }, [diagnosticKey, pendingRequiredSteps, startup?.status])
 
   return (
     <div className="splash">
@@ -83,7 +88,7 @@ export default function StartupSplash({ startup = null }) {
           <p>Johnny is still waiting on these requests:</p>
           {restartContext?.lastReady ? (
             <p>
-              The app had already reached a ready state {Math.max(1, Math.round((Date.now() - Number(restartContext.lastReady.at || 0)) / 1000))}s ago on {restartContext.lastReady.path || '/'}.
+              The app had already reached a ready state {Math.max(1, Math.round((diagnosticNow - Number(restartContext.lastReady.at || 0)) / 1000))}s ago on {restartContext.lastReady.path || '/'}.
             </p>
           ) : null}
           {restartContext?.interrupt?.type === 'auth-failure' ? (

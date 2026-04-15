@@ -98,7 +98,6 @@ export function useDashboardViewModel() {
   const johnnyActionNotice = location.state?.johnnyActionNotice
   const targetsNoticeKey = JSON.stringify(targetsUpdated || null)
   const actionNoticeKey = String(johnnyActionNotice || '')
-  const [weekRhythmOpen, setWeekRhythmOpen] = useState(false)
   const [thoughtWindowKey, setThoughtWindowKey] = useState(() => getInspirationalThoughtWindow().key)
   const [storyIndex, setStoryIndex] = useState(0)
   const showBeginnerEducationCard = String(preferenceMeta?.workout_confidence || '').trim().toLowerCase() === 'building'

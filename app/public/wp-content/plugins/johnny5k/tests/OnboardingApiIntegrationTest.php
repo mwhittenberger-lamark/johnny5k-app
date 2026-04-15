@@ -76,6 +76,7 @@ class OnboardingApiIntegrationTest extends ApiIntegrationTestCase {
 		update_user_meta( 7, 'jf_user_gemini_generated_images_daily_usage', [
 			current_time( 'Y-m-d' ) => 2,
 		] );
+		$this->wpdb()->expectGetResults( 'SELECT attachment_id FROM wp_fit_progress_photos WHERE user_id = 7', [] );
 
 		$req = new \WP_REST_Request( 'POST', '/fit/v1/onboarding/generated-images' );
 		$req->set_param( 'count', 1 );

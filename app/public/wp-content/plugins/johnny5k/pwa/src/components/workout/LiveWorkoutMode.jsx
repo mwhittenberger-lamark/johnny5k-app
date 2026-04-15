@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { aiApi } from '../../api/modules/ai'
 import { onboardingApi } from '../../api/modules/onboarding'
 import AppDialog from '../ui/AppDialog'
+import ExerciseDemoImageLightbox from './ExerciseDemoImageLightbox'
 import { getDefaultLiveWorkoutFrames } from '../../lib/appImages'
 import { getAccessibleScrollBehavior, useOverlayAccessibility } from '../../lib/accessibility'
 import { reportClientDiagnostic, showGlobalToast } from '../../lib/clientDiagnostics'
@@ -92,6 +93,7 @@ export default function LiveWorkoutMode({
   const [instantVoiceTest, setInstantVoiceTest] = useState(() => buildVoiceTestState())
   const [instantVoiceOptions, setInstantVoiceOptions] = useState([])
   const [latestVoiceIssue, setLatestVoiceIssue] = useState(null)
+  const [showDemoImage, setShowDemoImage] = useState(false)
   const queueRef = useRef([])
   const pumpCoachQueueRef = useRef(null)
   const processingRef = useRef(false)
@@ -124,6 +126,7 @@ export default function LiveWorkoutMode({
     ? ''
     : voicePrefs.instantVoiceURI
   const activeExercise = exercises?.[activeExerciseIdx] ?? null
+  const activeExerciseDemoImageUrl = String(activeExercise?.demo_image_url || '').trim()
   const totalExerciseCount = Array.isArray(exercises) ? exercises.length : 0
   const totalSetCount = getLiveTotalSetCount(activeExercise)
   const nextExercise = exercises?.[activeExerciseIdx + 1] ?? null
@@ -179,6 +182,10 @@ export default function LiveWorkoutMode({
   useEffect(() => {
     isOpenRef.current = isOpen
   }, [isOpen])
+
+  useEffect(() => {
+    setShowDemoImage(false)
+  }, [activeExercise?.id])
 
   useOverlayAccessibility({
     open: isOpen,
@@ -1187,7 +1194,12 @@ export default function LiveWorkoutMode({
                     {formatToken(activeExercise.slot_type || 'accessory')} slot • {activeExercise.planned_sets || totalSetCount} planned sets • {formatRepRange(activeExercise)}
                   </p>
                 </div>
-                <button type="button" className="btn-outline small" onClick={() => openDemoForExercise(activeExercise.exercise_name)}>Demo on YouTube</button>
+                <div className="exercise-demo-actions live-workout-demo-actions">
+                  <button type="button" className="btn-outline small" onClick={() => openDemoForExercise(activeExercise.exercise_name)}>Demo</button>
+                  {activeExerciseDemoImageUrl ? (
+                    <button type="button" className="btn-secondary small" onClick={() => setShowDemoImage(true)}>Show Me</button>
+                  ) : null}
+                </div>
               </div>
 
               <div className="live-workout-progress-grid">
@@ -1461,6 +1473,13 @@ export default function LiveWorkoutMode({
               </div>
           </AppDialog>
         ) : null}
+
+        <ExerciseDemoImageLightbox
+          open={showDemoImage}
+          imageUrl={activeExerciseDemoImageUrl}
+          exerciseName={activeExercise?.exercise_name || 'Exercise'}
+          onClose={() => setShowDemoImage(false)}
+        />
       </section>
     </div>
   )

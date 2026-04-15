@@ -13,20 +13,19 @@ export function usePushBootstrap(session, onboarding) {
   const setNotificationPrefs = useAuthStore((state) => state.setNotificationPrefs)
   const setIssue = useStartupStatusStore((state) => state.setIssue)
   const clearIssue = useStartupStatusStore((state) => state.clearIssue)
-  const [status, setStatus] = useState(STARTUP_STATUS.idle)
+  const [resolvedStatus, setResolvedStatus] = useState(STARTUP_STATUS.loading)
+  const [completedKey, setCompletedKey] = useState('')
   const canBootstrap = Boolean(session?.ready && onboarding?.ready && isAuthenticated)
+  const bootstrapKey = canBootstrap ? `${Number(Boolean(session?.ready))}:${Number(Boolean(onboarding?.ready))}:${Number(Boolean(isAuthenticated))}` : ''
 
   useEffect(() => {
     let active = true
 
     if (!canBootstrap) {
-      setStatus(STARTUP_STATUS.skipped)
       return () => {
         active = false
       }
     }
-
-    setStatus(STARTUP_STATUS.loading)
     const pushSupport = getPushSupportState()
 
     clearIssue(STARTUP_ISSUE_KEYS.pushConfig)
@@ -115,7 +114,8 @@ export function usePushBootstrap(session, onboarding) {
           pushSubscribed: Boolean(subscription),
           ...(subscription ? { pushPromptStatus: 'accepted' } : {}),
         })
-        setStatus(configState?.loadFailed || subscriptionState?.loadFailed ? STARTUP_STATUS.degraded : STARTUP_STATUS.ready)
+        setCompletedKey(bootstrapKey)
+        setResolvedStatus(configState?.loadFailed || subscriptionState?.loadFailed ? STARTUP_STATUS.degraded : STARTUP_STATUS.ready)
       })
       .catch((error) => {
         if (!active) {
@@ -132,13 +132,18 @@ export function usePushBootstrap(session, onboarding) {
         })
 
         setIssue(createPushBootstrapIssue(error))
-        setStatus(STARTUP_STATUS.degraded)
+        setCompletedKey(bootstrapKey)
+        setResolvedStatus(STARTUP_STATUS.degraded)
       })
 
     return () => {
       active = false
     }
-  }, [canBootstrap, clearIssue, isAuthenticated, onboarding?.ready, session?.ready, setIssue, setNotificationPrefs])
+  }, [bootstrapKey, canBootstrap, clearIssue, setIssue, setNotificationPrefs])
+
+  const status = canBootstrap
+    ? (completedKey === bootstrapKey ? resolvedStatus : STARTUP_STATUS.loading)
+    : STARTUP_STATUS.skipped
 
   return createStartupStep(status, {
     key: 'push',

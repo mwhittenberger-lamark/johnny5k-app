@@ -13,16 +13,34 @@ class AiLabelApiIntegrationTest extends ApiIntegrationTestCase {
 		$GLOBALS['johnny5k_test_current_user_id'] = 22;
 		$GLOBALS['johnny5k_test_options']['jf_openai_api_key'] = 'test-key';
 
-		$db->expectGetRow( 'FROM wp_fit_user_profiles WHERE user_id = 22', (object) [
+		$db->expectGetRow( 'SELECT first_name, training_experience FROM wp_fit_user_profiles WHERE user_id = 22', (object) [
 			'first_name' => 'Mike',
 			'training_experience' => 'intermediate',
 		] );
+		$db->expectGetRow( 'SELECT * FROM wp_fit_user_profiles WHERE user_id = 22', (object) [
+			'user_id' => 22,
+			'date_of_birth' => '',
+			'starting_weight_lb' => 188.2,
+			'height_cm' => 180,
+			'sex' => 'male',
+			'activity_level' => 'moderate',
+			'current_goal' => 'cut',
+			'goal_rate' => 'moderate',
+		] );
 		$db->expectGetRow( 'FROM wp_fit_user_goals', (object) [
+			'id' => 14,
 			'goal_type' => 'cut',
 			'target_calories' => 2300,
 			'target_protein_g' => 210,
 		] );
-		$db->expectGetCol( 'FROM wp_fit_body_metrics', [ 188.2 ] );
+		$db->expectGetRow( 'SELECT goal_type, target_calories, target_protein_g FROM wp_fit_user_goals WHERE user_id = 22 AND active = 1', (object) [
+			'id' => 14,
+			'goal_type' => 'cut',
+			'target_calories' => 2300,
+			'target_protein_g' => 210,
+		] );
+		$db->expectGetVar( 'SELECT weight_lb FROM wp_fit_body_metrics', 188.2 );
+		$db->expectGetCol( 'SELECT weight_lb FROM wp_fit_body_metrics WHERE user_id = 22 ORDER BY metric_date DESC LIMIT 14', [ 188.2, 189.0 ] );
 		for ( $i = 0; $i < 12; $i++ ) {
 			$db->expectGetVar( 'SELECT timezone FROM wp_fit_user_profiles WHERE user_id = 22', 'UTC' );
 		}

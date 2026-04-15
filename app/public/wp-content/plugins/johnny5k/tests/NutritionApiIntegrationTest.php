@@ -211,6 +211,7 @@ class NutritionApiIntegrationTest extends ApiIntegrationTestCase {
 			"WHERE user_id = 7 AND meal_type = 'breakfast' AND DATE(meal_datetime) = '2026-04-09' AND confirmed = 1",
 			[]
 		);
+		$db->expectGetVar( 'SELECT timezone FROM wp_fit_user_profiles WHERE user_id = 7 LIMIT 1', 'UTC' );
 
 		$req = new \WP_REST_Request( 'POST', '/fit/v1/nutrition/saved-meals/12/log' );
 		$req->set_param( 'id', 12 );

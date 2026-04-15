@@ -11,12 +11,11 @@ export function usePublicConfigBootstrap() {
   const setAppImages = useAuthStore((state) => state.setAppImages)
   const setIssue = useStartupStatusStore((state) => state.setIssue)
   const clearIssue = useStartupStatusStore((state) => state.clearIssue)
-  const [status, setStatus] = useState(STARTUP_STATUS.idle)
+  const [status, setStatus] = useState(STARTUP_STATUS.loading)
 
   useEffect(() => {
     let active = true
 
-    setStatus(STARTUP_STATUS.loading)
     clearIssue(STARTUP_ISSUE_KEYS.publicConfig)
 
     authApi.publicConfig()

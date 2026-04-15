@@ -4,6 +4,7 @@ namespace Johnny5k\REST;
 defined( 'ABSPATH' ) || exit;
 
 use Johnny5k\Services\TrainingEngine;
+use Johnny5k\Services\ExerciseDemoImageService;
 use Johnny5k\Services\ExerciseLibraryService;
 use Johnny5k\Services\PrebuiltWorkoutLibraryService;
 use Johnny5k\Services\UserTime;
@@ -474,6 +475,7 @@ class WorkoutController {
 		foreach ( $exercises as $ex ) {
 			$progression = TrainingEngine::recommended_progression( $user_id, (int) $ex->exercise_id );
 			$is_bonus_fill = self::session_exercise_has_bonus_fill_marker( is_string( $ex->notes ?? null ) ? $ex->notes : '' );
+			$demo_image = ExerciseDemoImageService::get_demo_image( (int) $ex->exercise_id );
 			$ex->sets = $wpdb->get_results( $wpdb->prepare(
 				"SELECT * FROM {$p}fit_workout_sets WHERE session_exercise_id = %d ORDER BY set_number",
 				$ex->id
@@ -490,6 +492,7 @@ class WorkoutController {
 			$ex->coaching_cues     = self::decode_json_list( $ex->coaching_cues_json ?? '' );
 			$ex->day_types         = self::decode_json_list( $ex->day_types_json ?? '' );
 			$ex->slot_types        = self::decode_json_list( $ex->slot_types_json ?? '' );
+			$ex->demo_image_url    = esc_url_raw( (string) ( $demo_image['image_url'] ?? '' ) );
 			$ex->exercise_summary = self::build_exercise_summary( $ex );
 			$ex->recent_history = self::get_recent_history( $user_id, (int) $ex->exercise_id );
 			$ex->swap_options   = self::get_swap_options( $user_id, $session, $ex );

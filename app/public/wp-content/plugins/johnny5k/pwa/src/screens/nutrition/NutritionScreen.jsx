@@ -4871,6 +4871,7 @@ function getVisibleItems(items, expanded, limit = 4) {
   return expanded ? list : list.slice(0, limit)
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function mergeDailyMealsByType(meals) {
   const groupedMeals = new Map()
 

@@ -18,6 +18,7 @@ export function RecoveryLoopCard({
   const recommendedActionTarget = String(recommendedAction?.target || '').trim().toLowerCase()
   const quickActionDuplicatesRecovery = recommendedActionTarget === 'body' || recommendedActionLabel.toLowerCase() === 'open recovery'
   const showQuickAction = Boolean(onQuickAction) && !quickActionDuplicatesRecovery
+  const primaryActionHandler = quickActionDuplicatesRecovery && onQuickAction ? onQuickAction : onOpenRecovery
   const nextSteps = (Array.isArray(recoveryActionPlan) ? recoveryActionPlan : []).filter(Boolean).slice(0, 2)
   const secondaryActionLabel = showQuickAction
     ? (recommendedActionLabel || 'Take action')
@@ -89,7 +90,7 @@ export function RecoveryLoopCard({
       ) : null}
 
       <div className="dashboard-recovery-action-row">
-        <button className="btn-primary small" type="button" onClick={onOpenRecovery}>Open recovery</button>
+        <button className="btn-primary small" type="button" onClick={primaryActionHandler}>Open recovery</button>
         {secondaryActionHandler ? (
           <button className="btn-outline small" type="button" onClick={secondaryActionHandler}>
             {secondaryActionLabel}

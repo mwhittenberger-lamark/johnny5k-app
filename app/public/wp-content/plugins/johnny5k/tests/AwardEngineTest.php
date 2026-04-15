@@ -44,6 +44,27 @@ class AwardEngineTest extends ServiceTestCase {
 	public function test_calorie_target_week_is_earned_when_five_days_land_inside_tolerance(): void {
 		$db = $this->wpdb();
 
+		$db->expectGetRow( 'SELECT * FROM wp_fit_user_profiles WHERE user_id = 7', (object) [
+			'user_id' => 7,
+			'date_of_birth' => '',
+			'starting_weight_lb' => 200,
+			'height_cm' => 180,
+			'sex' => 'male',
+			'activity_level' => 'moderate',
+			'current_goal' => 'cut',
+			'goal_rate' => 'moderate',
+		] );
+		$db->expectGetRow( 'SELECT * FROM wp_fit_user_goals WHERE user_id = 7 AND active = 1', (object) [
+			'id' => 9,
+			'user_id' => 7,
+			'goal_type' => 'cut',
+			'goal_rate' => 'moderate',
+			'target_calories' => 2000,
+			'target_protein_g' => 200,
+			'target_carbs_g' => 138,
+			'target_fat_g' => 92,
+		] );
+		$db->expectGetVar( 'SELECT weight_lb FROM wp_fit_body_metrics', 200.0 );
 		$db->expectGetVar( 'SELECT target_calories FROM wp_fit_user_goals WHERE user_id = 7', 2000 );
 		$db->expectGetVar( 'SELECT timezone FROM wp_fit_user_profiles', 'UTC' );
 		$db->expectGetVar( 'SELECT SUM(mi.calories) FROM wp_fit_meal_items mi JOIN wp_fit_meals m ON m.id = mi.meal_id WHERE m.user_id = 7', 1980 );

@@ -120,6 +120,7 @@ export function useOverlayAccessibility({
     }
 
     window.addEventListener('keydown', handleKeydown)
+    const restoreTarget = restoreFocusRef?.current || previousActiveElement
 
     return () => {
       window.clearTimeout(focusTimer)
@@ -129,7 +130,6 @@ export function useOverlayAccessibility({
         document.body.style.overflow = previousOverflow
       }
 
-      const restoreTarget = restoreFocusRef?.current || previousActiveElement
       restoreTarget?.focus?.({ preventScroll: true })
     }
   }, [containerRef, dismissible, initialFocusRef, lockBodyScroll, onClose, open, restoreFocusRef, trapFocus])

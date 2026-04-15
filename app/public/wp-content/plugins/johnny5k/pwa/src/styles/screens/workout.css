@@ -80,10 +80,62 @@
 .exercise-description-head p { margin: 0; color: var(--text-muted); line-height: 1.5; }
 .exercise-context-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: var(--space-2-5); margin-bottom: var(--space-3); }
 .exercise-context-item { display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-2-5) var(--space-3); border-radius: 12px; background: rgba(255, 255, 255, 0.72); border: 1px solid rgba(21, 29, 38, 0.08); }
+.exercise-demo-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
 .exercise-demo-button {
   width: auto;
   min-height: var(--button-h-compact);
   min-inline-size: 7rem;
+}
+.ui-overlay.exercise-demo-lightbox-modal {
+  z-index: 2400;
+  padding: var(--space-4);
+}
+.ui-overlay.exercise-demo-lightbox-modal .ui-overlay-backdrop {
+  background: rgba(6, 16, 44, 0.72);
+}
+.ui-dialog.exercise-demo-lightbox-panel {
+  width: min(1100px, calc(100vw - 24px));
+  max-height: calc(100vh - 24px);
+  overflow: auto;
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-3-5);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.98);
+}
+.exercise-demo-lightbox-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2-5);
+}
+.exercise-demo-lightbox-head strong {
+  font-family: 'Exo 2', system-ui, sans-serif;
+  font-size: 1.05rem;
+}
+.exercise-demo-lightbox-canvas {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: min(72vh, 760px);
+  padding: var(--space-2);
+  border-radius: 16px;
+  background: rgba(244, 251, 255, 0.96);
+  border: 1px solid rgba(168, 212, 240, 0.82);
+}
+.exercise-demo-lightbox-canvas img {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  max-height: min(72vh, 760px);
+  height: auto;
+  object-fit: contain;
+  border-radius: 12px;
 }
 .exercise-ai-swap-form { display: flex; flex-direction: column; gap: var(--space-2-5); margin-top: var(--space-3-5); padding-top: 14px; border-top: 1px solid rgba(21, 29, 38, 0.08); }
 .exercise-ai-swap-form .exercise-panel-actions { width: 100%; }
@@ -1437,6 +1489,9 @@
   color: rgba(8, 21, 51, 0.68);
   line-height: 1.4;
 }
+.live-workout-demo-actions {
+  justify-content: flex-end;
+}
 .live-workout-progress-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -2414,6 +2469,15 @@
   .live-workout-johnny-hero {
     grid-template-columns: 1fr;
     flex-direction: column;
+  }
+
+  .ui-overlay.exercise-demo-lightbox-modal {
+    padding: var(--space-2-5);
+  }
+
+  .ui-dialog.exercise-demo-lightbox-panel {
+    width: min(1100px, calc(100vw - 20px));
+    max-height: calc(100vh - 20px);
   }
 
   .live-workout-progress-grid,

@@ -1140,20 +1140,9 @@ function CompleteStep() {
   const [ironQuest, setIronQuest] = useState(null)
   const [ironQuestLoading, setIronQuestLoading] = useState(false)
   const [ironQuestError, setIronQuestError] = useState('')
-  const [ironQuestSubmitting, setIronQuestSubmitting] = useState(false)
-  const [selectedIronQuestClass, setSelectedIronQuestClass] = useState(IRONQUEST_CLASS_OPTIONS[0].value)
-  const [selectedIronQuestMotivation, setSelectedIronQuestMotivation] = useState(IRONQUEST_MOTIVATION_OPTIONS[0].value)
 
   function applyIronQuestState(payload) {
     setIronQuest(payload)
-    const nextClass = String(payload?.profile?.class_slug || '').trim()
-    const nextMotivation = String(payload?.profile?.motivation_slug || '').trim()
-    if (nextClass) {
-      setSelectedIronQuestClass(nextClass)
-    }
-    if (nextMotivation) {
-      setSelectedIronQuestMotivation(nextMotivation)
-    }
   }
 
   useEffect(() => {
@@ -1182,7 +1171,7 @@ function CompleteStep() {
     return () => {
       active = false
     }
-  }, [result])
+  }, [result, setExperienceMode])
 
   async function finish() {
     setSubmitting(true)
@@ -1197,45 +1186,6 @@ function CompleteStep() {
       setError(missing.length ? `Complete these fields before finishing: ${missing.join(', ')}.` : err.message)
     } finally {
       setSubmitting(false)
-    }
-  }
-
-  async function handleEnableIronQuest() {
-    setIronQuestSubmitting(true)
-    setIronQuestError('')
-
-    try {
-      const data = await ironquestApi.enable()
-      setExperienceMode('ironquest')
-      applyIronQuestState({
-        ...ironQuest,
-        profile: data?.profile ?? ironQuest?.profile ?? {},
-      })
-    } catch (err) {
-      setIronQuestError(err?.message || 'Could not activate IronQuest right now.')
-    } finally {
-      setIronQuestSubmitting(false)
-    }
-  }
-
-  async function handleSaveIronQuestIdentity() {
-    setIronQuestSubmitting(true)
-    setIronQuestError('')
-
-    try {
-      const data = await ironquestApi.saveIdentity({
-        class_slug: selectedIronQuestClass,
-        motivation_slug: selectedIronQuestMotivation,
-      })
-      setExperienceMode('ironquest')
-      applyIronQuestState({
-        ...ironQuest,
-        profile: data?.profile ?? ironQuest?.profile ?? {},
-      })
-    } catch (err) {
-      setIronQuestError(err?.message || 'Could not save your IronQuest identity right now.')
-    } finally {
-      setIronQuestSubmitting(false)
     }
   }
 

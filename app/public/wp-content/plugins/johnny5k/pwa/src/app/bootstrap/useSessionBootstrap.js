@@ -14,12 +14,14 @@ export function useSessionBootstrap() {
   const revalidate = useAuthStore((state) => state.revalidate)
   const setIssue = useStartupStatusStore((state) => state.setIssue)
   const clearIssue = useStartupStatusStore((state) => state.clearIssue)
-  const [status, setStatus] = useState(STARTUP_STATUS.idle)
+  const [resolvedStatus, setResolvedStatus] = useState(STARTUP_STATUS.loading)
+  const [completedKey, setCompletedKey] = useState('')
   const [restoreResult, setRestoreResult] = useState({
-    ok: !Boolean(nonce || isAuthenticated),
+    ok: !(nonce || isAuthenticated),
     reason: 'skipped',
   })
   const requiresBootstrap = useMemo(() => Boolean(nonce || isAuthenticated), [isAuthenticated, nonce])
+  const bootstrapKey = requiresBootstrap ? `${String(nonce || '')}:${Number(Boolean(isAuthenticated))}` : ''
 
   useEffect(() => {
     applyColorScheme(getStoredColorScheme())
@@ -33,18 +35,11 @@ export function useSessionBootstrap() {
     clearIssue(STARTUP_ISSUE_KEYS.authBootstrap)
 
     if (!requiresBootstrap) {
-      setRestoreResult({
-        ok: true,
-        reason: 'skipped',
-        error: null,
-      })
-      setStatus(STARTUP_STATUS.skipped)
       return () => {
         active = false
       }
     }
 
-    setStatus(STARTUP_STATUS.loading)
     revalidate()
       .then((result) => {
         if (!active) {
@@ -52,15 +47,16 @@ export function useSessionBootstrap() {
         }
 
         setRestoreResult(result)
+        setCompletedKey(bootstrapKey)
 
         if (!result?.ok) {
           setIssue(createAuthSessionIssue(result))
-          setStatus(STARTUP_STATUS.degraded)
+          setResolvedStatus(STARTUP_STATUS.degraded)
           return
         }
 
         clearIssue(STARTUP_ISSUE_KEYS.authSession)
-        setStatus(STARTUP_STATUS.ready)
+        setResolvedStatus(STARTUP_STATUS.ready)
       })
       .catch((error) => {
         if (!active) {
@@ -83,14 +79,22 @@ export function useSessionBootstrap() {
           error,
         }
         setRestoreResult(result)
+        setCompletedKey(bootstrapKey)
         setIssue(createAuthSessionIssue(result))
-        setStatus(STARTUP_STATUS.degraded)
+        setResolvedStatus(STARTUP_STATUS.degraded)
       })
 
     return () => {
       active = false
     }
-  }, [clearIssue, revalidate, requiresBootstrap, setIssue])
+  }, [bootstrapKey, clearIssue, revalidate, requiresBootstrap, setIssue])
+
+  const status = requiresBootstrap
+    ? (completedKey === bootstrapKey ? resolvedStatus : STARTUP_STATUS.loading)
+    : STARTUP_STATUS.skipped
+  const effectiveRestoreResult = requiresBootstrap
+    ? restoreResult
+    : { ok: true, reason: 'skipped', error: null }
 
   return createStartupStep(status, {
     key: 'session',
@@ -98,7 +102,7 @@ export function useSessionBootstrap() {
     requestLabel: 'GET /wp-admin/admin-ajax.php?action=rest-nonce, then GET /wp-json/fit/v1/auth/validate',
     requiresBootstrap,
     isAuthenticated,
-    restored: Boolean(restoreResult?.ok),
-    restoreResult,
+    restored: Boolean(effectiveRestoreResult?.ok),
+    restoreResult: effectiveRestoreResult,
   })
 }

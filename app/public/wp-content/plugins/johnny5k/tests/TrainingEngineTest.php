@@ -59,6 +59,7 @@ class TrainingEngineTest extends ServiceTestCase {
 		] );
 		$db->expectGetVar( 'SELECT equipment FROM wp_fit_exercises WHERE id = 501', 'barbell' );
 		$db->expectGetVar( 'SELECT equipment FROM wp_fit_exercises WHERE id = 502', 'cable' );
+		$db->expectGetRow( 'FROM wp_fit_workout_sessions WHERE user_id = 7 AND completed = 1', null );
 		$db->expectGetResults( 'FROM wp_fit_workout_sets ws', [] );
 		$db->expectGetResults( 'FROM wp_fit_workout_sets ws', [] );
 

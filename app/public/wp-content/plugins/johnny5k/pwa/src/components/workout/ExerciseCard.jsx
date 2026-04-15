@@ -4,6 +4,7 @@ import AppDrawer from '../ui/AppDrawer'
 import ClearableInput from '../ui/ClearableInput'
 import ErrorState from '../ui/ErrorState'
 import Field from '../ui/Field'
+import ExerciseDemoImageLightbox from './ExerciseDemoImageLightbox'
 import { formatUsShortDate } from '../../lib/dateFormat'
 import {
   buildExerciseMeta,
@@ -46,11 +47,13 @@ function ExerciseCard({
   const [aiSwapSuggestions, setAiSwapSuggestions] = useState([])
   const [savingSuggestionName, setSavingSuggestionName] = useState('')
   const [saveMessage, setSaveMessage] = useState('')
+  const [showDemoImage, setShowDemoImage] = useState(false)
 
   const activeSetSignature = (exercise?.sets ?? []).map(set => `${set.id}:${set.weight}:${set.reps}:${set.rir ?? ''}:${set.completed}`).join('|')
   const coachingCues = parseCoachingCues(exercise?.coaching_cues ?? exercise?.coaching_cues_json)
   const secondaryMuscles = parseStringList(exercise?.secondary_muscles ?? exercise?.secondary_muscles_json)
   const librarySlots = parseStringList(exercise?.slot_types ?? exercise?.slot_types_json)
+  const demoImageUrl = String(exercise?.demo_image_url || '').trim()
   const nextRowKey = getNewRowKey(exercise)
   const {
     myExercises,
@@ -85,6 +88,7 @@ function ExerciseCard({
     setAiSwapSuggestions([])
     setSavingSuggestionName('')
     setSaveMessage('')
+    setShowDemoImage(false)
   }, [exercise, exercise?.id, exercise?.notes, activeSetSignature])
 
   function handleSetDraftChange(rowKey, key, value) {
@@ -308,9 +312,16 @@ function ExerciseCard({
         </div>
 
         <div className="exercise-card-header-actions">
-          <button type="button" className="btn-secondary small exercise-demo-button" onClick={handleOpenDemo}>
-            Demo
-          </button>
+          <div className="exercise-demo-actions">
+            <button type="button" className="btn-secondary small exercise-demo-button" onClick={handleOpenDemo}>
+              Demo
+            </button>
+            {demoImageUrl ? (
+              <button type="button" className="btn-outline small exercise-demo-button" onClick={() => setShowDemoImage(true)}>
+                Show Me
+              </button>
+            ) : null}
+          </div>
 
           <div className="exercise-card-menu-wrap">
             <button type="button" className="exercise-menu-button" onClick={() => setMenuOpen(open => !open)} aria-expanded={menuOpen} aria-label="Exercise actions">
@@ -804,6 +815,13 @@ function ExerciseCard({
             </ul>
         </AppDrawer>
       ) : null}
+
+      <ExerciseDemoImageLightbox
+        open={showDemoImage}
+        imageUrl={demoImageUrl}
+        exerciseName={exercise?.exercise_name || 'Exercise'}
+        onClose={() => setShowDemoImage(false)}
+      />
     </div>
   )
 }
