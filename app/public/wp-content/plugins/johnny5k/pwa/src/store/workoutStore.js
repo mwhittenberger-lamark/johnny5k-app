@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
 import { mutateOfflineWriteQueueEntry, removeOfflineWriteQueueEntry } from '../api/client'
+import { ironquestApi } from '../api/modules/ironquest'
 import { workoutApi } from '../api/modules/workout'
 import { cacheWorkoutSessionSnapshot, clearCachedWorkoutSessionSnapshot, readCachedWorkoutSessionSnapshot } from '../lib/workoutOffline'
 
@@ -335,13 +336,17 @@ export const useWorkoutStore = create(persist((set, get) => ({
         const retriedSession = retryData.session ? retryData : await workoutApi.get(retryData.session_id)
         get().clearDiscardedSessionsForDate(retriedSession?.session?.session_date)
         setResolvedSessionState(set, get, retriedSession, selectedTimeTier, selectedReadiness)
-        return
+        const ironquest = await startIronQuestMissionForSession(retriedSession)
+        return { session: retriedSession, ironquest }
       }
 
       get().clearDiscardedSessionsForDate(resolvedSession?.session?.session_date)
       setResolvedSessionState(set, get, resolvedSession, selectedTimeTier, selectedReadiness)
+      const ironquest = await startIronQuestMissionForSession(resolvedSession)
+      return { session: resolvedSession, ironquest }
     } catch (err) {
       set({ loading: false, error: err.message, bootstrapped: true })
+      throw err
     }
   },
 
@@ -678,12 +683,16 @@ export const useWorkoutStore = create(persist((set, get) => ({
   },
 
   completeSession: async () => {
-    const { sessionId } = get()
+    const { sessionId, session } = get()
     const result = await workoutApi.complete(sessionId, {})
+    const ironquest = await resolveIronQuestMissionForSession(session)
     get().clearDiscardedSession(sessionId)
     get().clearSessionState()
     get().resetPlanningState()
-    return result
+    return {
+      ...result,
+      ironquest,
+    }
   },
 
   skipSession: async () => {
@@ -787,6 +796,66 @@ export const useWorkoutStore = create(persist((set, get) => ({
     discardedSessions: state.discardedSessions,
   }),
 }))
+
+async function startIronQuestMissionForSession(sessionData) {
+  const sessionId = Number(sessionData?.session?.id || 0)
+  const runType = normalizeIronQuestRunType(sessionData?.session?.day_type)
+
+  if (!sessionId || !runType) {
+    return null
+  }
+
+  try {
+    return await ironquestApi.startMission({
+      run_type: runType,
+      source_session_id: String(sessionId),
+    })
+  } catch (error) {
+    return {
+      error: error?.message || 'IronQuest mission could not be started.',
+    }
+  }
+}
+
+async function resolveIronQuestMissionForSession(sessionData) {
+  const sessionId = Number(sessionData?.session?.id || 0)
+
+  if (!sessionId) {
+    return null
+  }
+
+  try {
+    const activeMissionState = await ironquestApi.activeMission()
+    const activeRun = activeMissionState?.active_run ?? null
+
+    if (!activeRun || String(activeRun?.source_session_id || '') !== String(sessionId) || String(activeRun?.status || '') !== 'active') {
+      return null
+    }
+
+    return await ironquestApi.resolveMission({
+      run_id: activeRun.id,
+      result_band: 'victory',
+    })
+  } catch (error) {
+    return {
+      error: error?.message || 'IronQuest mission could not be resolved.',
+    }
+  }
+}
+
+function normalizeIronQuestRunType(dayType) {
+  const normalizedDayType = String(dayType || '').trim().toLowerCase()
+
+  if (!normalizedDayType || normalizedDayType === 'rest') {
+    return ''
+  }
+
+  if (normalizedDayType === 'cardio') {
+    return 'cardio'
+  }
+
+  return 'workout'
+}
 
 function setResolvedSessionState(set, get, sessionData, selectedTimeTier, selectedReadiness) {
   persistCachedSession(sessionData)

@@ -521,7 +521,7 @@ The v1 premium release should be much smaller than the full document corpus.
 - motivation selection
 - optional headshot upload
 - starter portrait generation
-- 3 starter locations
+- 4 starter locations
 - replayable missions
 - mission framing on dashboard
 - mission overlay in workout flow
@@ -549,11 +549,11 @@ The v1 premium release should be much smaller than the full document corpus.
 
 Only a small world slice should be seeded first.
 
-Suggested starter set:
+Suggested starter set, using the canonical location list:
 
-- Training Grounds
+- The Training Grounds
 - Grim Hollow Village
-- Emberforge
+- The Emberforge
 - Whispering Wilds
 
 Why this set:

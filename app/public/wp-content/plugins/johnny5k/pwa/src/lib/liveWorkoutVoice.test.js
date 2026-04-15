@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  formatLiveWorkoutNativeAudioModeLabel,
   formatInstantVoiceLabel,
   getDefaultInstantVoice,
   getLiveWorkoutInstantVoiceRate,
@@ -58,12 +59,23 @@ describe('liveWorkoutVoice', () => {
   it('preserves a saved native voice preference when voice prefs are normalized', () => {
     expect(normalizeLiveWorkoutVoicePrefs({
       liveModeVoiceMode: 'instant',
+      nativeAudioMode: 'duck',
+      preferNativeSpeech: false,
       instantVoiceURI: 'com.apple.voice.enhanced',
       rate: 1.1,
     })).toMatchObject({
       liveModeVoiceMode: 'instant',
+      nativeAudioMode: 'duck',
+      preferNativeSpeech: false,
       instantVoiceURI: 'com.apple.voice.enhanced',
       rate: 1.1,
     })
+  })
+
+  it('formats native audio modes for settings labels', () => {
+    expect(formatLiveWorkoutNativeAudioModeLabel('smart')).toBe('Smart')
+    expect(formatLiveWorkoutNativeAudioModeLabel('duck')).toBe('Duck music')
+    expect(formatLiveWorkoutNativeAudioModeLabel('pause')).toBe('Pause music')
+    expect(formatLiveWorkoutNativeAudioModeLabel('off')).toBe('Do nothing')
   })
 })

@@ -5,6 +5,7 @@ import AppDialog from '../ui/AppDialog'
 import { getDefaultLiveWorkoutFrames } from '../../lib/appImages'
 import { getAccessibleScrollBehavior, useOverlayAccessibility } from '../../lib/accessibility'
 import { reportClientDiagnostic, showGlobalToast } from '../../lib/clientDiagnostics'
+import { speakNativeJohnnyAnnouncement, stopNativeJohnnySpeech } from '../../lib/nativeAudioSpeech'
 import {
   cycleLiveWorkoutVoiceMode,
   formatInstantVoiceLabel,
@@ -207,6 +208,7 @@ export default function LiveWorkoutMode({
     if (instantVoiceSupported) {
       window.speechSynthesis.cancel()
     }
+    void stopNativeJohnnySpeech()
   }, [instantVoiceSupported])
 
   useEffect(() => () => {
@@ -485,6 +487,8 @@ export default function LiveWorkoutMode({
       messageKey: nextKey,
       createdAt: nextCreatedAt,
       jobId: currentJobId,
+      preferNativeSpeech: voicePrefs.preferNativeSpeech,
+      nativeAudioMode: voicePrefs.nativeAudioMode,
       usePremiumVoice,
       useInstantVoice,
       openAiVoice: voicePrefs.openAiVoice,
@@ -948,6 +952,8 @@ export default function LiveWorkoutMode({
       createdAt: requestStartedAt,
       requestStartedAt,
       jobId: testJobId,
+      preferNativeSpeech: voicePrefs.preferNativeSpeech,
+      nativeAudioMode: voicePrefs.nativeAudioMode,
       usePremiumVoice: true,
       useInstantVoice: false,
       openAiVoice: voicePrefs.openAiVoice,
@@ -999,6 +1005,8 @@ export default function LiveWorkoutMode({
       createdAt: requestStartedAt,
       requestStartedAt,
       jobId: testJobId,
+      preferNativeSpeech: voicePrefs.preferNativeSpeech,
+      nativeAudioMode: voicePrefs.nativeAudioMode,
       usePremiumVoice: false,
       useInstantVoice: true,
       openAiVoice: voicePrefs.openAiVoice,
@@ -1910,6 +1918,8 @@ async function deliverSpeech({
   createdAt,
   requestStartedAt = Date.now(),
   jobId,
+  preferNativeSpeech,
+  nativeAudioMode,
   usePremiumVoice,
   useInstantVoice,
   openAiVoice,
@@ -1940,6 +1950,22 @@ async function deliverSpeech({
   }
 
   stopPlayback()
+  const nativeResult = await speakNativeJohnnyAnnouncement({
+    text,
+    utteranceId: messageKey,
+    voicePrefs: {
+      preferNativeSpeech,
+      nativeAudioMode,
+      openAiVoice,
+      rate,
+    },
+    onEvent: onAttemptEvent,
+  })
+  if (nativeResult.started) {
+    markSpoken(messageKey)
+    return true
+  }
+
   let premiumFailed = false
 
   if (usePremiumVoice && audioSupported) {

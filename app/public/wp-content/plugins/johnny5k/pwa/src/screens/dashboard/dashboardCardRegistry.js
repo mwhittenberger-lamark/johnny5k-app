@@ -4,6 +4,7 @@ export const DASHBOARD_CARD_DEFS = [
   { id: 'today_intake', bucket: 'primary_main', label: 'Today\'s intake', description: 'Calories, macros, and meal count for today.', iconName: 'nutrition', iconTone: 'teal' },
   { id: 'recovery_loop', bucket: 'primary_main', label: 'Recovery Loop', description: 'Recovery mode, sleep, and recovery flags.', iconName: 'star', iconTone: 'slate' },
   { id: 'momentum_score', bucket: 'primary_side', label: 'Momentum score', description: 'Explains what is driving the week rhythm score and the fastest way to improve it today.', iconName: 'award', iconTone: 'gold' },
+  { id: 'ironquest_journey', bucket: 'primary_side', label: 'IronQuest', description: 'Quest progression, current location, and the next mission tied to your training.', optional: true, iconName: 'award', iconTone: 'amber' },
   { id: 'quick_log_meal', bucket: 'quick_actions', label: 'Quick action · Log meal', description: 'Jump straight into nutrition logging.', iconName: 'nutrition', iconTone: 'teal' },
   { id: 'quick_training', bucket: 'quick_actions', label: 'Quick action · Training', description: 'Open the current workout or cardio action.', iconName: 'workout', iconTone: 'pink' },
   { id: 'quick_ask_johnny', bucket: 'quick_actions', label: 'Quick action · Ask Johnny', description: 'Open Johnny with a dashboard-aware prompt.', iconName: 'coach', iconTone: 'teal' },

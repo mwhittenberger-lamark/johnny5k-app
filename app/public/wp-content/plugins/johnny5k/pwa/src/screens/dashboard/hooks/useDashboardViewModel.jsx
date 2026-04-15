@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
+import { ironquestApi } from '../../../api/modules/ironquest'
 import {
   canMoveDashboardCardAcrossBuckets,
   getDashboardCardBucket,
@@ -119,6 +120,10 @@ export function useDashboardViewModel() {
     defaultVisibleCardIds: showBeginnerEducationCard ? ['beginner_education'] : [],
     prependCardOrder: showBeginnerEducationCard ? ['beginner_education'] : [],
   }), [showBeginnerEducationCard])
+  const [ironQuest, setIronQuest] = useState(null)
+  const [ironQuestLoading, setIronQuestLoading] = useState(true)
+  const [ironQuestError, setIronQuestError] = useState('')
+  const [ironQuestActivating, setIronQuestActivating] = useState(false)
   const {
     coachPromptsOpen,
     customizeOpen,
@@ -148,10 +153,28 @@ export function useDashboardViewModel() {
 
   const reviewTrigger = useMemo(() => buildDashboardReviewTrigger(snapshot), [snapshot])
 
+  const loadIronQuest = useCallback(async () => {
+    setIronQuestLoading(true)
+    setIronQuestError('')
+
+    try {
+      const data = await ironquestApi.profile()
+      setIronQuest(data)
+    } catch (error) {
+      setIronQuestError(error?.message || 'Could not load IronQuest.')
+    } finally {
+      setIronQuestLoading(false)
+    }
+  }, [])
+
   useEffect(() => {
     if (!snapshot || !reviewTrigger) return
     loadJohnnyReview(false)
   }, [snapshot, reviewTrigger, loadJohnnyReview])
+
+  useEffect(() => {
+    void loadIronQuest()
+  }, [loadIronQuest])
 
   useEffect(() => {
     function scheduleThoughtWindowRefresh() {
@@ -331,6 +354,103 @@ export function useDashboardViewModel() {
     ])
   }
 
+  const handleActivateIronQuest = useCallback(async () => {
+    setIronQuestActivating(true)
+    setIronQuestError('')
+
+    try {
+      const data = await ironquestApi.enable()
+      setIronQuest(current => ({
+        ...(current || {}),
+        entitlement: current?.entitlement || { has_access: true },
+        profile: data?.profile ?? current?.profile ?? {},
+        location: current?.location ?? null,
+        missions: current?.missions ?? [],
+        active_run: current?.active_run ?? null,
+        daily_state: current?.daily_state ?? null,
+      }))
+    } catch (error) {
+      setIronQuestError(error?.message || 'Could not activate IronQuest right now.')
+    } finally {
+      setIronQuestActivating(false)
+    }
+  }, [])
+
+  const ironQuestCard = useMemo(() => {
+    if (ironQuestLoading) {
+      return (
+        <section className="dash-card settings-section">
+          <div className="dashboard-card-head">
+            <span className="dashboard-chip subtle">IronQuest</span>
+          </div>
+          <h3>Loading quest state…</h3>
+        </section>
+      )
+    }
+
+    if (ironQuest?.entitlement && !ironQuest.entitlement.has_access) {
+      return null
+    }
+
+    if (ironQuestError && !ironQuest?.profile?.enabled) {
+      return (
+        <section className="dash-card settings-section">
+          <div className="dashboard-card-head">
+            <span className="dashboard-chip subtle">IronQuest</span>
+          </div>
+          <h3>IronQuest is unavailable right now</h3>
+          <p className="settings-subtitle">{ironQuestError}</p>
+        </section>
+      )
+    }
+
+    const profile = ironQuest?.profile ?? {}
+    const locationName = ironQuest?.location?.name || 'The Training Grounds'
+    const activeMissionSlug = String(profile.active_mission_slug || '').trim()
+    const activeMission = (ironQuest?.missions ?? []).find(mission => mission.slug === activeMissionSlug)
+    const missionName = activeMission?.name || ironQuest?.active_run?.mission_slug || 'Awaiting first mission'
+
+    if (!profile.enabled) {
+      return (
+        <section className="dash-card settings-section">
+          <div className="dashboard-card-head">
+            <span className="dashboard-chip workout">IronQuest</span>
+            <span className="dashboard-chip subtle">Optional</span>
+          </div>
+          <h3>Turn your training into a quest</h3>
+          <p className="settings-subtitle">IronQuest tracks a parallel RPG progression layer without changing your actual training plan.</p>
+          <div className="settings-actions">
+            <button type="button" className="btn-primary small" onClick={handleActivateIronQuest} disabled={ironQuestActivating}>
+              {ironQuestActivating ? 'Activating…' : 'Activate IronQuest'}
+            </button>
+          </div>
+          {ironQuestError ? <p className="settings-subtitle">{ironQuestError}</p> : null}
+        </section>
+      )
+    }
+
+    return (
+      <section className="dash-card settings-section">
+        <div className="dashboard-card-head">
+          <span className="dashboard-chip workout">IronQuest</span>
+          <span className="dashboard-chip subtle">Level {profile.level || 1}</span>
+        </div>
+        <h3>{locationName}</h3>
+        <p className="settings-subtitle">Next mission: {missionName}</p>
+        <div className="onboarding-review-list">
+          <div className="onboarding-review-row"><span>XP</span><strong>{profile.xp || 0}</strong></div>
+          <div className="onboarding-review-row"><span>Gold</span><strong>{profile.gold || 0}</strong></div>
+          <div className="onboarding-review-row"><span>HP</span><strong>{profile.hp_current || 0}/{profile.hp_max || 100}</strong></div>
+        </div>
+        <div className="settings-actions">
+          <button type="button" className="btn-primary small" onClick={() => navigate('/workout')}>Start mission</button>
+          <button type="button" className="btn-secondary small" onClick={() => navigate('/rewards')}>Open rewards</button>
+        </div>
+        {ironQuestError ? <p className="settings-subtitle">{ironQuestError}</p> : null}
+      </section>
+    )
+  }, [handleActivateIronQuest, ironQuest, ironQuestActivating, ironQuestError, ironQuestLoading, navigate])
+
   function moveDashboardCard(cardId, bucket, direction, visibleBucketIds = []) {
     const cardDef = DASHBOARD_CARD_DEF_MAP.get(cardId)
 
@@ -473,8 +593,9 @@ export function useDashboardViewModel() {
         onQuickAction={handleRecoveryQuickAction}
       />
     )),
-    makeDashboardCard('momentum_score', <MomentumScoreCard model={momentumScore} onAction={handleDashboardAction} />),
-    makeDashboardCard('protein_runway', <ProteinRunwayCard model={proteinRunway} onOpenNutrition={() => navigate('/nutrition')} />),
+    makeDashboardCard('ironquest_journey', ironQuestCard),
+      makeDashboardCard('momentum_score', <MomentumScoreCard model={momentumScore} onAction={handleDashboardAction} />),
+      makeDashboardCard('protein_runway', <ProteinRunwayCard model={proteinRunway} onOpenNutrition={() => navigate('/nutrition')} onAskJohnny={openDrawer} />),
     makeDashboardCard('meal_rhythm', <MealRhythmCard model={mealRhythm} onOpenNutrition={() => navigate('/nutrition')} />),
     makeDashboardCard('quick_log_meal', <QuickActionCard title="Log meal" meta="Nutrition" icon="meal" onClick={() => navigate('/nutrition')} />),
     makeDashboardCard('quick_training', <QuickActionCard title={trainingQuickAction.title} meta={trainingQuickAction.meta} icon="workout" onClick={() => handleDashboardAction(trainingQuickAction)} />),

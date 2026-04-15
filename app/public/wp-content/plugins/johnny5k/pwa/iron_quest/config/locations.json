@@ -1,0 +1,272 @@
+{
+  "version": 1,
+  "seed_set": "v1_starter_locations",
+  "locations": [
+    {
+      "slug": "the_training_grounds",
+      "name": "The Training Grounds",
+      "seeded_for_v1": true,
+      "v1_seed_order": 1,
+      "theme": "Beginner-friendly, structured challenges",
+      "tone": "Encouraging, disciplined, lightly heroic",
+      "level_range": {
+        "label": "Levels 1-2",
+        "min": 1,
+        "max": 2
+      },
+      "source_doc": "docs/locations/location_the_training_grounds.md",
+      "content_counts": {
+        "standard_missions": 3,
+        "boss_missions": 1,
+        "easy_workout_missions": 1,
+        "runner_task_cardio_missions": 1
+      },
+      "reward_profile": {
+        "standard_xp": {
+          "min": 60,
+          "max": 100
+        },
+        "standard_gold": {
+          "min": 8,
+          "max": 15
+        },
+        "boss_xp": 160,
+        "boss_gold": 20,
+        "full_clear_bonus": {
+          "xp": 30,
+          "gold": 15,
+          "progression_unlock": "grim_hollow_village"
+        }
+      },
+      "ai_prompt_anchor": {
+        "theme": "open training yard, banners, wooden dummies, early adventure gear",
+        "tone": "hopeful, structured, heroic beginnings",
+        "enemy_types": [
+          "sparring partners",
+          "drill captains",
+          "training constructs"
+        ]
+      },
+      "tavern": {
+        "name": "The First Rest",
+        "tone_tags": [
+          "recruits",
+          "mentors",
+          "low-stakes optimism"
+        ]
+      },
+      "source_graph": {
+        "connected_from": [
+          "onboarding_and_class_selection"
+        ],
+        "unlocks_toward": [
+          "grim_hollow_village"
+        ],
+        "travel_requirement": {
+          "type": "distance_from_onboarding_camp",
+          "value": 1,
+          "unit": "travel_point"
+        }
+      }
+    },
+    {
+      "slug": "grim_hollow_village",
+      "name": "Grim Hollow Village",
+      "seeded_for_v1": true,
+      "v1_seed_order": 2,
+      "theme": "Undead, decay, cursed settlement",
+      "tone": "Dark, oppressive, slow dread rather than chaos",
+      "level_range": {
+        "label": "Early game, roughly levels 2-4",
+        "min": 2,
+        "max": 4
+      },
+      "source_doc": "docs/locations/location_grim_hollow_village.md",
+      "content_counts": {
+        "standard_missions": 4,
+        "boss_missions": 1
+      },
+      "reward_profile": {
+        "standard_xp": {
+          "min": 150,
+          "max": 200
+        },
+        "standard_gold": {
+          "min": 20,
+          "max": 25
+        },
+        "boss_xp": 300,
+        "boss_gold": 40,
+        "full_clear_bonus": {
+          "xp": 50,
+          "gold": 30,
+          "progression_unlock": "next_region_paths"
+        }
+      },
+      "ai_prompt_anchor": {
+        "theme": "undead decay, fog, cursed village",
+        "tone": "dark, slow dread",
+        "enemy_types": [
+          "undead",
+          "necromancer",
+          "corrupted villagers"
+        ]
+      },
+      "tavern": {
+        "name": "The Last Lantern",
+        "tone_tags": [
+          "survivors",
+          "quiet desperation"
+        ]
+      },
+      "source_graph": {
+        "connected_from": [
+          "the_training_grounds"
+        ],
+        "unlocks_toward": [
+          "ironhold_fortress",
+          "whispering_wilds"
+        ],
+        "travel_requirement": {
+          "type": "distance_from_previous_node",
+          "value": 3,
+          "unit": "travel_points"
+        }
+      }
+    },
+    {
+      "slug": "the_emberforge",
+      "name": "The Emberforge",
+      "seeded_for_v1": true,
+      "v1_seed_order": 3,
+      "theme": "Fire, blacksmiths, molten environments",
+      "tone": "Industrious, brutal, glowing with contained violence",
+      "level_range": {
+        "label": "Levels 8-10",
+        "min": 8,
+        "max": 10
+      },
+      "source_doc": "docs/locations/location_the_emberforge.md",
+      "content_counts": {
+        "standard_missions": 4,
+        "boss_missions": 1,
+        "easy_workout_missions": 1,
+        "runner_task_cardio_missions": 1
+      },
+      "reward_profile": {
+        "standard_xp": {
+          "min": 210,
+          "max": 250
+        },
+        "standard_gold": {
+          "min": 32,
+          "max": 38
+        },
+        "boss_xp": 360,
+        "boss_gold": 52,
+        "full_clear_bonus": {
+          "xp": 70,
+          "gold": 42,
+          "progression_unlock": "whispering_wilds_route_and_advanced_crafting_hooks"
+        }
+      },
+      "ai_prompt_anchor": {
+        "theme": "lava channels, anvils, molten steel, smoke and sparks",
+        "tone": "intense, industrial, volcanic",
+        "enemy_types": [
+          "slag constructs",
+          "forge-wraiths",
+          "flamebound smiths"
+        ]
+      },
+      "tavern": {
+        "name": "The Cinder Cup",
+        "tone_tags": [
+          "smiths",
+          "laborers",
+          "proud exhaustion"
+        ]
+      },
+      "source_graph": {
+        "connected_from": [
+          "stormpeak_mountains"
+        ],
+        "unlocks_toward": [
+          "whispering_wilds"
+        ],
+        "travel_requirement": {
+          "type": "distance_from_previous_node",
+          "value": 7,
+          "unit": "travel_points"
+        }
+      }
+    },
+    {
+      "slug": "whispering_wilds",
+      "name": "Whispering Wilds",
+      "seeded_for_v1": true,
+      "v1_seed_order": 4,
+      "theme": "Stealth, rogues, hidden threats",
+      "tone": "Secretive, tense, predatory and elegant",
+      "level_range": {
+        "label": "Levels 10-12",
+        "min": 10,
+        "max": 12
+      },
+      "source_doc": "docs/locations/location_whispering_wilds.md",
+      "content_counts": {
+        "standard_missions": 4,
+        "boss_missions": 1,
+        "easy_workout_missions": 1,
+        "runner_task_cardio_missions": 1
+      },
+      "reward_profile": {
+        "standard_xp": {
+          "min": 225,
+          "max": 265
+        },
+        "standard_gold": {
+          "min": 34,
+          "max": 40
+        },
+        "boss_xp": 380,
+        "boss_gold": 56,
+        "full_clear_bonus": {
+          "xp": 75,
+          "gold": 45,
+          "progression_unlock": "harsher_attrition_zones_beyond_the_wilds"
+        }
+      },
+      "ai_prompt_anchor": {
+        "theme": "dark forest, hanging lanterns, thorn canopies, hidden blades",
+        "tone": "quiet, tense, predatory",
+        "enemy_types": [
+          "rogue hunters",
+          "poison archers",
+          "thorn assassins"
+        ]
+      },
+      "tavern": {
+        "name": "The Veiled Cup",
+        "tone_tags": [
+          "informants",
+          "smugglers",
+          "people who never sit with their backs exposed"
+        ]
+      },
+      "source_graph": {
+        "connected_from": [
+          "the_emberforge"
+        ],
+        "unlocks_toward": [
+          "the_rotting_marsh"
+        ],
+        "travel_requirement": {
+          "type": "distance_from_previous_node",
+          "value": 8,
+          "unit": "travel_points"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,301 @@
+{
+  "version": 1,
+  "seed_set": "v1_starter_locations",
+  "missions": [
+    {
+      "slug": "form_check",
+      "location_slug": "the_training_grounds",
+      "name": "Form Check",
+      "mission_number": 1,
+      "is_boss": false,
+      "replayable": true,
+      "mission_type": "easy_workout",
+      "goal": "Learn the basic Johnny5k rhythm",
+      "threat": "Training dummies and instructor prompts",
+      "workout_feel": "3 exercises only"
+    },
+    {
+      "slug": "marker_run",
+      "location_slug": "the_training_grounds",
+      "name": "Marker Run",
+      "mission_number": 2,
+      "is_boss": false,
+      "replayable": true,
+      "mission_type": "runner_task",
+      "run_type": "cardio",
+      "goal": "Visit the outer flags and return before the bell",
+      "threat": "Short practice loop",
+      "workout_feel": "Cardio challenge"
+    },
+    {
+      "slug": "first_steel",
+      "location_slug": "the_training_grounds",
+      "name": "First Steel",
+      "mission_number": 3,
+      "is_boss": false,
+      "replayable": true,
+      "mission_type": "intro_combat",
+      "goal": "Turn exercise into adventure fantasy",
+      "threat": "Straw soldiers and light sparring partners",
+      "workout_feel": "Controlled starter effort"
+    },
+    {
+      "slug": "cadence_yard",
+      "location_slug": "the_training_grounds",
+      "name": "Cadence Yard",
+      "mission_number": 4,
+      "is_boss": false,
+      "replayable": true,
+      "mission_type": "structured_progression",
+      "goal": "Learn pacing, rests, and mission completion",
+      "threat": "Drill captains and timed circuits",
+      "workout_feel": "Moderate mixed output"
+    },
+    {
+      "slug": "captain_of_the_yard",
+      "location_slug": "the_training_grounds",
+      "name": "Captain of the Yard",
+      "mission_number": 5,
+      "is_boss": true,
+      "replayable": true,
+      "mission_type": "boss",
+      "goal": "Pass the first real confidence test and earn the road forward",
+      "boss_unlock_requirements": {
+        "complete_prior_missions": 4,
+        "min_hp": 18,
+        "source_doc_flags": [
+          "starter_supplies"
+        ]
+      },
+      "narrative": "The captain does not want to break you. They want to know if you'll keep moving once your first confidence runs out.",
+      "workout_feel": "Short-form full workout with clear instruction and low punishment",
+      "outcomes": {
+        "victory": "You earn your place beyond the yard and unlock the road to Grim Hollow Village.",
+        "partial": "The captain sends you back for one more round of preparation, but your path remains open.",
+        "failure": "You recover, regroup, and try again with no major setback."
+      }
+    },
+    {
+      "slug": "shadows_in_the_streets",
+      "location_slug": "grim_hollow_village",
+      "name": "Shadows in the Streets",
+      "mission_number": 1,
+      "is_boss": false,
+      "replayable": true,
+      "mission_type": "intro_combat",
+      "goal": "Establish tone",
+      "narrative": "The streets are silent. Too silent. Then... movement. Shapes emerge from the fog.",
+      "threat": "Shamblers and weak but numerous undead",
+      "workout_feel": "Steady effort and controlled pacing"
+    },
+    {
+      "slug": "the_burning_chapel",
+      "location_slug": "grim_hollow_village",
+      "name": "The Burning Chapel",
+      "mission_number": 2,
+      "is_boss": false,
+      "replayable": true,
+      "mission_type": "pressure_and_intensity",
+      "goal": "Raise urgency",
+      "narrative": "Flames consume the chapel. Something inside refuses to burn.",
+      "threat": "Faster undead with aggressive behavior",
+      "workout_feel": "Higher intensity with shorter rest"
+    },
+    {
+      "slug": "the_graveyard_watcher",
+      "location_slug": "grim_hollow_village",
+      "name": "The Graveyard Watcher",
+      "mission_number": 3,
+      "is_boss": false,
+      "replayable": true,
+      "mission_type": "endurance_and_tension",
+      "goal": "Build fatigue pressure",
+      "narrative": "Graves have been disturbed. Something watches from beyond the stones.",
+      "threat": "Lurking entity, slow and persistent",
+      "workout_feel": "Endurance and fatigue management"
+    },
+    {
+      "slug": "the_hollow_well",
+      "location_slug": "grim_hollow_village",
+      "name": "The Hollow Well",
+      "mission_number": 4,
+      "is_boss": false,
+      "replayable": true,
+      "mission_type": "pre_boss_escalation",
+      "goal": "Build toward the boss reveal",
+      "narrative": "The well at the village center descends into darkness. The source is below.",
+      "threat": "Corrupted villagers and environmental pressure",
+      "workout_feel": "Mixed intensity with clear buildup"
+    },
+    {
+      "slug": "the_necromancer_of_hollow",
+      "location_slug": "grim_hollow_village",
+      "name": "The Necromancer of Hollow",
+      "mission_number": 5,
+      "is_boss": true,
+      "replayable": true,
+      "mission_type": "boss",
+      "goal": "Confront the source beneath the well",
+      "boss_unlock_requirements": {
+        "complete_prior_missions": 4,
+        "min_hp": 30,
+        "source_doc_flags": [
+          "required_supplies"
+        ]
+      },
+      "narrative": "You descend into the well... and find him waiting. The one who commands the dead. The one who will not yield.",
+      "workout_feel": "Full workout structure with buildup sets leading into a final confrontation",
+      "outcomes": {
+        "victory": "The Necromancer falls. The dead collapse. Silence returns... for now.",
+        "partial": "He retreats into shadow. The village is not yet free.",
+        "failure": "You survive, but barely. The darkness remains."
+      }
+    },
+    {
+      "slug": "bellows_duty",
+      "location_slug": "the_emberforge",
+      "name": "Bellows Duty",
+      "mission_number": 1,
+      "is_boss": false,
+      "replayable": true,
+      "mission_type": "easy_workout",
+      "goal": "Learn the forge rhythm",
+      "threat": "Overheated machinery and worker strain",
+      "workout_feel": "3 exercises only, low complexity"
+    },
+    {
+      "slug": "coal_run_to_the_lower_kiln",
+      "location_slug": "the_emberforge",
+      "name": "Coal Run to the Lower Kiln",
+      "mission_number": 2,
+      "is_boss": false,
+      "replayable": true,
+      "mission_type": "runner_task",
+      "run_type": "cardio",
+      "goal": "Deliver fuel before the flame fades",
+      "threat": "Timed route through heat vents",
+      "workout_feel": "Cardio challenge"
+    },
+    {
+      "slug": "sparks_on_the_anvil_line",
+      "location_slug": "the_emberforge",
+      "name": "Sparks on the Anvil Line",
+      "mission_number": 3,
+      "is_boss": false,
+      "replayable": true,
+      "mission_type": "pressure_combat",
+      "goal": "Hold output under heat",
+      "threat": "Molten husks and forge-wraiths",
+      "workout_feel": "Mid-intensity intervals"
+    },
+    {
+      "slug": "the_cracked_crucible",
+      "location_slug": "the_emberforge",
+      "name": "The Cracked Crucible",
+      "mission_number": 4,
+      "is_boss": false,
+      "replayable": true,
+      "mission_type": "pre_boss_escalation",
+      "goal": "Stop a forge core rupture",
+      "threat": "Living slag and collapsing platforms",
+      "workout_feel": "Mixed intensity with rising stakes"
+    },
+    {
+      "slug": "the_forgemaster_unbound",
+      "location_slug": "the_emberforge",
+      "name": "The Forgemaster Unbound",
+      "mission_number": 5,
+      "is_boss": true,
+      "replayable": true,
+      "mission_type": "boss",
+      "goal": "Stabilize the forge and defeat the fused master smith",
+      "boss_unlock_requirements": {
+        "complete_prior_missions": 4,
+        "min_hp": 40,
+        "source_doc_flags": [
+          "heat_resistant_supplies"
+        ]
+      },
+      "narrative": "Deep in the master forge, the smith who once ruled the city has fused with iron and flame. He strikes the anvil once, and the whole chamber answers.",
+      "workout_feel": "Full workout with rhythm-based intensity waves",
+      "outcomes": {
+        "victory": "The forge stabilizes and the city glows with disciplined fire once more.",
+        "partial": "The master withdraws into the furnace heart and the city survives on borrowed time.",
+        "failure": "The chamber forces you back and the forge remains dangerously unstable."
+      }
+    },
+    {
+      "slug": "quiet_hands",
+      "location_slug": "whispering_wilds",
+      "name": "Quiet Hands",
+      "mission_number": 1,
+      "is_boss": false,
+      "replayable": true,
+      "mission_type": "easy_workout",
+      "goal": "Establish stealth rhythm",
+      "threat": "Tripwires, lookouts, pressure to stay clean",
+      "workout_feel": "3 exercises only"
+    },
+    {
+      "slug": "message_through_the_bramble",
+      "location_slug": "whispering_wilds",
+      "name": "Message Through the Bramble",
+      "mission_number": 2,
+      "is_boss": false,
+      "replayable": true,
+      "mission_type": "runner_task",
+      "run_type": "cardio",
+      "goal": "Carry an intercepted note to the safehouse",
+      "threat": "Fast-moving forest route",
+      "workout_feel": "Cardio challenge"
+    },
+    {
+      "slug": "lanterns_in_the_leaves",
+      "location_slug": "whispering_wilds",
+      "name": "Lanterns in the Leaves",
+      "mission_number": 3,
+      "is_boss": false,
+      "replayable": true,
+      "mission_type": "ambush_control",
+      "goal": "Turn the hunters into the hunted",
+      "threat": "Hidden archers and mimic lights",
+      "workout_feel": "Quick bursts with sharp rests"
+    },
+    {
+      "slug": "the_thornveil_nest",
+      "location_slug": "whispering_wilds",
+      "name": "The Thornveil Nest",
+      "mission_number": 4,
+      "is_boss": false,
+      "replayable": true,
+      "mission_type": "pre_boss_escalation",
+      "goal": "Cut into the Wilds' command center",
+      "threat": "Assassins, poison vines, collapsing platforms",
+      "workout_feel": "Fast mixed-intensity flow"
+    },
+    {
+      "slug": "the_thornveil_matron",
+      "location_slug": "whispering_wilds",
+      "name": "The Thornveil Matron",
+      "mission_number": 5,
+      "is_boss": true,
+      "replayable": true,
+      "mission_type": "boss",
+      "goal": "Win the speed-and-precision duel beneath the canopy",
+      "boss_unlock_requirements": {
+        "complete_prior_missions": 4,
+        "min_hp": 42,
+        "source_doc_flags": [
+          "antidote_supplies"
+        ]
+      },
+      "narrative": "Beneath a canopy of hanging blades and woven roots, the Matron smiles before anyone sees her move.",
+      "workout_feel": "Full workout built around repeated burst phases",
+      "outcomes": {
+        "victory": "The hidden paths belong to you and the Wilds finally whisper your name with respect.",
+        "partial": "The Matron fades into deeper forest and the Wilds remain divided.",
+        "failure": "The forest closes behind you and escape becomes the only victory left."
+      }
+    }
+  ]
+}

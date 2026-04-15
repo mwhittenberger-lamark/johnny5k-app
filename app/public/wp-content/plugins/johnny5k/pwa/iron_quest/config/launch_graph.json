@@ -1,0 +1,73 @@
+{
+  "version": 1,
+  "graph_slug": "v1_launch_graph",
+  "purpose": "Runtime launch graph override for the v1 seeded IronQuest slice. This file controls what the app unlocks in v1 without rewriting the canonical source_graph values stored on each location.",
+  "start_node": "the_training_grounds",
+  "recommended_path": [
+    "the_training_grounds",
+    "grim_hollow_village",
+    "the_emberforge",
+    "whispering_wilds"
+  ],
+  "nodes": [
+    {
+      "slug": "the_training_grounds",
+      "role": "starter",
+      "available_at_start": true
+    },
+    {
+      "slug": "grim_hollow_village",
+      "role": "early_region",
+      "available_at_start": false
+    },
+    {
+      "slug": "the_emberforge",
+      "role": "advanced_seeded_region",
+      "available_at_start": false
+    },
+    {
+      "slug": "whispering_wilds",
+      "role": "advanced_seeded_region",
+      "available_at_start": false
+    }
+  ],
+  "edges": [
+    {
+      "from": "the_training_grounds",
+      "to": "grim_hollow_village",
+      "edge_type": "unlock",
+      "source": "canonical_source_graph",
+      "requirements": {
+        "complete_location_arc": "the_training_grounds"
+      }
+    },
+    {
+      "from": "grim_hollow_village",
+      "to": "the_emberforge",
+      "edge_type": "unlock",
+      "source": "v1_launch_override",
+      "requirements": {
+        "complete_location_arc": "grim_hollow_village"
+      },
+      "notes": "Override added so all four seeded v1 locations are reachable at launch even though the canonical source docs place The Emberforge behind Stormpeak Mountains."
+    },
+    {
+      "from": "grim_hollow_village",
+      "to": "whispering_wilds",
+      "edge_type": "unlock",
+      "source": "canonical_source_graph",
+      "requirements": {
+        "complete_location_arc": "grim_hollow_village"
+      }
+    },
+    {
+      "from": "the_emberforge",
+      "to": "whispering_wilds",
+      "edge_type": "unlock",
+      "source": "canonical_source_graph",
+      "requirements": {
+        "complete_location_arc": "the_emberforge"
+      }
+    }
+  ]
+}

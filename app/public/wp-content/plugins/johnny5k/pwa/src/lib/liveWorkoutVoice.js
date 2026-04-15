@@ -3,6 +3,7 @@ const LIVE_WORKOUT_VOICE_STORAGE_KEY = 'johnny5k:live-workout:voice'
 export const LIVE_WORKOUT_VOICE_RATE_OPTIONS = [0.85, 1, 1.1, 1.2, 1.3]
 export const OPENAI_TTS_VOICE_OPTIONS = ['alloy', 'ash', 'ballad', 'coral', 'echo', 'fable', 'nova', 'onyx', 'sage', 'shimmer']
 export const LIVE_WORKOUT_VOICE_MODE_OPTIONS = ['premium', 'instant', 'auto', 'mute']
+export const LIVE_WORKOUT_NATIVE_AUDIO_MODE_OPTIONS = ['smart', 'duck', 'pause', 'off']
 export const LIVE_WORKOUT_DEFAULT_INSTANT_VOICE = 'default'
 export const LIVE_WORKOUT_INSTANT_RATE_MULTIPLIER = 1.25
 
@@ -10,6 +11,8 @@ const DEFAULT_LIVE_WORKOUT_VOICE_PREFS = {
   autoSpeak: true,
   assistantAutoSpeak: false,
   liveModeVoiceMode: 'premium',
+  preferNativeSpeech: true,
+  nativeAudioMode: 'smart',
   openAiVoice: 'alloy',
   instantVoiceURI: LIVE_WORKOUT_DEFAULT_INSTANT_VOICE,
   rate: 1,
@@ -25,6 +28,7 @@ export function normalizeLiveWorkoutVoicePrefs(value) {
   const openAiVoice = String(next.openAiVoice || '').trim().toLowerCase()
   const legacyVoiceUri = String(next.voiceURI || '').trim().toLowerCase()
   const liveModeVoiceMode = String(next.liveModeVoiceMode || '').trim().toLowerCase()
+  const nativeAudioMode = String(next.nativeAudioMode || '').trim().toLowerCase()
   const instantVoiceURI = String(next.instantVoiceURI || next.voiceURI || '').trim()
   const resolvedVoice = OPENAI_TTS_VOICE_OPTIONS.includes(openAiVoice)
     ? openAiVoice
@@ -36,11 +40,16 @@ export function normalizeLiveWorkoutVoicePrefs(value) {
     : typeof next.autoSpeak === 'boolean'
       ? (next.autoSpeak ? DEFAULT_LIVE_WORKOUT_VOICE_PREFS.liveModeVoiceMode : 'mute')
       : DEFAULT_LIVE_WORKOUT_VOICE_PREFS.liveModeVoiceMode
+  const resolvedNativeAudioMode = LIVE_WORKOUT_NATIVE_AUDIO_MODE_OPTIONS.includes(nativeAudioMode)
+    ? nativeAudioMode
+    : DEFAULT_LIVE_WORKOUT_VOICE_PREFS.nativeAudioMode
 
   return {
     autoSpeak: resolvedMode !== 'mute',
     assistantAutoSpeak: typeof next.assistantAutoSpeak === 'boolean' ? next.assistantAutoSpeak : DEFAULT_LIVE_WORKOUT_VOICE_PREFS.assistantAutoSpeak,
     liveModeVoiceMode: resolvedMode,
+    preferNativeSpeech: typeof next.preferNativeSpeech === 'boolean' ? next.preferNativeSpeech : DEFAULT_LIVE_WORKOUT_VOICE_PREFS.preferNativeSpeech,
+    nativeAudioMode: resolvedNativeAudioMode,
     openAiVoice: resolvedVoice,
     instantVoiceURI: instantVoiceURI || DEFAULT_LIVE_WORKOUT_VOICE_PREFS.instantVoiceURI,
     rate: LIVE_WORKOUT_VOICE_RATE_OPTIONS.includes(rate) ? rate : DEFAULT_LIVE_WORKOUT_VOICE_PREFS.rate,
@@ -84,6 +93,14 @@ export function formatLiveWorkoutVoiceModeLabel(mode) {
   if (key === 'auto') return 'Auto'
   if (key === 'mute') return 'Mute'
   return 'Premium'
+}
+
+export function formatLiveWorkoutNativeAudioModeLabel(mode) {
+  const key = String(mode || '').trim().toLowerCase()
+  if (key === 'duck') return 'Duck music'
+  if (key === 'pause') return 'Pause music'
+  if (key === 'off') return 'Do nothing'
+  return 'Smart'
 }
 
 export function cycleLiveWorkoutVoiceMode(mode) {

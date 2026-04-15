@@ -15,10 +15,11 @@ class Router {
 		OnboardingController::register_routes();
 
 		// User state and coaching surfaces.
-		BodyMetricsController::register_routes();
-		DashboardController::register_routes();
-		TrainingController::register_routes();
-		WorkoutController::register_routes();
+			BodyMetricsController::register_routes();
+			DashboardController::register_routes();
+			IronQuestController::register_routes();
+			TrainingController::register_routes();
+			WorkoutController::register_routes();
 
 		// Nutrition and AI assistants.
 		NutritionController::register_routes();

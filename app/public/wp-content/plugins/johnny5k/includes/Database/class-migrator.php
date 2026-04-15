@@ -21,5 +21,10 @@ class Migrator {
 			// v1.1.0 — summary_text added to fit_ai_threads (handled by dbDelta via create_tables).
 			update_option( 'jf_db_version', '1.1.0' );
 		}
+
+		if ( version_compare( $current, '1.1.13', '<' ) ) {
+			// v1.1.13 — IronQuest v1 backend tables added (handled by dbDelta via create_tables).
+			update_option( 'jf_db_version', '1.1.13' );
+		}
 	}
 }

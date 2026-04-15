@@ -758,6 +758,100 @@ class Schema {
   KEY channel_status_time (channel,status,created_at)
 ) $c;",
 
+			/* ── IronQuest Profiles ───────────────────────────────────────────── */
+			"CREATE TABLE {$p}ironquest_profiles (
+  id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  user_id bigint(20) unsigned NOT NULL,
+  enabled tinyint(1) NOT NULL DEFAULT 0,
+  class_slug varchar(100) NOT NULL DEFAULT '',
+  motivation_slug varchar(100) NOT NULL DEFAULT '',
+  level int(11) NOT NULL DEFAULT 1,
+  xp int(11) NOT NULL DEFAULT 0,
+  gold int(11) NOT NULL DEFAULT 0,
+  hp_current int(11) NOT NULL DEFAULT 100,
+  hp_max int(11) NOT NULL DEFAULT 100,
+  current_location_slug varchar(150) NOT NULL DEFAULT '',
+  active_mission_slug varchar(150) NOT NULL DEFAULT '',
+  starter_portrait_attachment_id bigint(20) unsigned DEFAULT NULL,
+  created_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY  (id),
+  UNIQUE KEY user_id (user_id),
+  KEY enabled (enabled),
+  KEY current_location_slug (current_location_slug)
+) $c;",
+
+			/* ── IronQuest Mission Runs ───────────────────────────────────────── */
+			"CREATE TABLE {$p}ironquest_mission_runs (
+  id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  user_id bigint(20) unsigned NOT NULL,
+  mission_slug varchar(150) NOT NULL DEFAULT '',
+  location_slug varchar(150) NOT NULL DEFAULT '',
+  run_type varchar(50) NOT NULL DEFAULT 'workout',
+  source_session_id varchar(191) NOT NULL DEFAULT '',
+  status enum('active','completed','abandoned') NOT NULL DEFAULT 'active',
+  encounter_phase varchar(100) NOT NULL DEFAULT '',
+  result_band varchar(50) NOT NULL DEFAULT '',
+  xp_awarded int(11) NOT NULL DEFAULT 0,
+  gold_awarded int(11) NOT NULL DEFAULT 0,
+  started_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  completed_at datetime DEFAULT NULL,
+  PRIMARY KEY  (id),
+  KEY user_status_started (user_id,status,started_at),
+  KEY mission_slug (mission_slug),
+  KEY location_slug (location_slug),
+  KEY source_session (source_session_id)
+) $c;",
+
+			/* ── IronQuest Unlocks ────────────────────────────────────────────── */
+			"CREATE TABLE {$p}ironquest_unlocks (
+  id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  user_id bigint(20) unsigned NOT NULL,
+  unlock_type varchar(100) NOT NULL DEFAULT '',
+  unlock_key varchar(191) NOT NULL DEFAULT '',
+  source_run_id bigint(20) unsigned DEFAULT NULL,
+  meta_json longtext DEFAULT NULL,
+  created_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY  (id),
+  UNIQUE KEY user_unlock (user_id,unlock_type,unlock_key),
+  KEY source_run_id (source_run_id),
+  KEY user_type_created (user_id,unlock_type,created_at)
+) $c;",
+
+			/* ── IronQuest Daily State ────────────────────────────────────────── */
+			"CREATE TABLE {$p}ironquest_daily_state (
+  id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  user_id bigint(20) unsigned NOT NULL,
+  state_date date NOT NULL,
+  meal_quest_complete tinyint(1) NOT NULL DEFAULT 0,
+  sleep_quest_complete tinyint(1) NOT NULL DEFAULT 0,
+  cardio_quest_complete tinyint(1) NOT NULL DEFAULT 0,
+  steps_quest_complete tinyint(1) NOT NULL DEFAULT 0,
+  workout_quest_complete tinyint(1) NOT NULL DEFAULT 0,
+  travel_points_earned int(11) NOT NULL DEFAULT 0,
+  bonus_state_json longtext DEFAULT NULL,
+  updated_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  created_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY  (id),
+  UNIQUE KEY user_state_date (user_id,state_date),
+  KEY state_date (state_date)
+) $c;",
+
+			/* ── IronQuest Activity Ledger ────────────────────────────────────── */
+			"CREATE TABLE {$p}ironquest_activity_ledger (
+  id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  user_id bigint(20) unsigned NOT NULL,
+  source_type varchar(100) NOT NULL DEFAULT '',
+  source_key varchar(191) NOT NULL DEFAULT '',
+  award_type varchar(100) NOT NULL DEFAULT '',
+  payload_json longtext DEFAULT NULL,
+  created_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY  (id),
+  UNIQUE KEY user_source_award (user_id,source_type,source_key,award_type),
+  KEY user_created (user_id,created_at),
+  KEY source_lookup (source_type,source_key)
+) $c;",
+
 		]; // end return
 	}
 

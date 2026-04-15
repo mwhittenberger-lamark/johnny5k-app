@@ -317,7 +317,7 @@ export function useWorkoutSessionController({
       return
     }
 
-    await startSessionMutation.mutateAsync({
+    const startResult = await startSessionMutation.mutateAsync({
       dayType: previewDayType || scheduledDayType,
       ...(hasCustomWorkoutDraft ? { customWorkoutDraftId: customWorkoutDraft?.id } : {}),
       ...(!hasCustomWorkoutDraft ? {
@@ -334,6 +334,11 @@ export function useWorkoutSessionController({
         exerciseAdditions: exerciseAdditionsPayload,
       } : {}),
     })
+
+    const missionName = startResult?.ironquest?.mission?.name || ''
+    if (missionName) {
+      setStatusNotice(`IronQuest mission started: ${missionName}.`)
+    }
   }
 
   function handleLogCardio() {

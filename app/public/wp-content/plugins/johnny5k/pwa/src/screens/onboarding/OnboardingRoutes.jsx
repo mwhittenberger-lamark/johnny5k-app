@@ -1,6 +1,7 @@
 import { startTransition, useEffect, useMemo, useState } from 'react'
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { dashboardApi } from '../../api/modules/dashboard'
+import { ironquestApi } from '../../api/modules/ironquest'
 import { onboardingApi } from '../../api/modules/onboarding'
 import AppLoadingScreen from '../../components/ui/AppLoadingScreen'
 import ClearableInput from '../../components/ui/ClearableInput'
@@ -40,6 +41,18 @@ const COMMON_EXERCISE_AVOIDS = [
   'Pull-ups',
   'Dips',
   'Running',
+]
+const IRONQUEST_CLASS_OPTIONS = [
+  { value: 'warrior', label: 'Warrior', detail: 'Direct and durable. Best if you want your quest tone to feel physical and relentless.' },
+  { value: 'ranger', label: 'Ranger', detail: 'Balanced and disciplined. A good fit if you like steady training momentum and range.' },
+  { value: 'mage', label: 'Mage', detail: 'Calculated and focused. Good for a more cerebral, ritual-driven progression vibe.' },
+  { value: 'rogue', label: 'Rogue', detail: 'Fast and adaptable. Fits a scrappier, efficient training identity.' },
+]
+const IRONQUEST_MOTIVATION_OPTIONS = [
+  { value: 'discipline', label: 'Discipline', detail: 'You want consistent reps, steady structure, and visible momentum.' },
+  { value: 'strength', label: 'Strength', detail: 'You care most about feeling powerful and capable.' },
+  { value: 'transformation', label: 'Transformation', detail: 'You want the quest framed around visible physical change.' },
+  { value: 'redemption', label: 'Redemption', detail: 'You want a comeback arc and a harder-edged story tone.' },
 ]
 const ONBOARDING_STEPS = [
   { key: 'welcome', label: 'Welcome' },
@@ -173,6 +186,131 @@ function buildOnboardingHypeMessage(state, result) {
     : 'I will shape meals around what you actually stick to, not generic meal templates.'
 
   return `Huge win. You just completed setup and gave me what I need to coach you like a ${experienceLabel} lifter chasing ${goalLabel}. Starting now, expect a clear daily target (${targetCalories || 'custom'} calories, ${targetProtein || 'custom'}g protein), a ${splitDays || 'custom'}-day training split, and tighter daily guidance that adjusts off your actual logs. ${mealHint} You are officially locked in.`
+}
+
+function formatIronQuestOptionLabel(options, value, fallback = 'Unchosen') {
+  const match = options.find(option => option.value === String(value || '').trim())
+  return match?.label || fallback
+}
+
+function buildIronQuestMissionLabel(ironQuest) {
+  const activeMissionSlug = String(ironQuest?.profile?.active_mission_slug || '').trim()
+  const activeMission = (ironQuest?.missions ?? []).find(mission => mission.slug === activeMissionSlug)
+  return activeMission?.name || ironQuest?.active_run?.mission_slug || 'Awaiting first mission'
+}
+
+function IronQuestSetupCard({
+  ironQuest,
+  ironQuestLoading,
+  ironQuestError,
+  selectedClass,
+  selectedMotivation,
+  onSelectClass,
+  onSelectMotivation,
+  onEnable,
+  onSaveIdentity,
+  submitting,
+  navigate,
+}) {
+  if (ironQuestLoading) {
+    return (
+      <div className="dash-card settings-section">
+        <h3>IronQuest</h3>
+        <p>Loading your quest profile…</p>
+      </div>
+    )
+  }
+
+  if (ironQuestError) {
+    return (
+      <div className="dash-card settings-section">
+        <h3>IronQuest</h3>
+        <ErrorState className="onboarding-inline-error" message={ironQuestError} title="IronQuest setup could not load" />
+      </div>
+    )
+  }
+
+  if (!ironQuest?.entitlement?.has_access) {
+    return null
+  }
+
+  const profile = ironQuest?.profile ?? {}
+  const location = ironQuest?.location ?? null
+  const missionLabel = buildIronQuestMissionLabel(ironQuest)
+  const hasIdentity = Boolean(profile.class_slug && profile.motivation_slug)
+
+  if (profile.enabled && hasIdentity) {
+    return (
+      <div className="dash-card settings-section">
+        <div className="dashboard-card-head">
+          <span className="dashboard-chip workout">IronQuest ready</span>
+          <span className="dashboard-chip subtle">Level {profile.level || 1}</span>
+        </div>
+        <h3>Your quest profile is live</h3>
+        <p className="settings-subtitle">
+          {formatIronQuestOptionLabel(IRONQUEST_CLASS_OPTIONS, profile.class_slug)} | {formatIronQuestOptionLabel(IRONQUEST_MOTIVATION_OPTIONS, profile.motivation_slug)}
+        </p>
+        <div className="onboarding-review-list">
+          <div className="onboarding-review-row"><span>Current location</span><strong>{location?.name || 'The Training Grounds'}</strong></div>
+          <div className="onboarding-review-row"><span>Next mission</span><strong>{missionLabel}</strong></div>
+          <div className="onboarding-review-row"><span>Resources</span><strong>{profile.xp || 0} XP | {profile.gold || 0} gold</strong></div>
+        </div>
+        <p className="settings-subtitle">Starting a workout will now spin up an IronQuest mission in the background.</p>
+        <div className="settings-actions">
+          <button className="btn-primary" type="button" onClick={() => navigate('/dashboard', { state: { johnnyActionNotice: 'IronQuest is active. Your quest state is now available on the dashboard and workout flow.' } })}>
+            Open dashboard
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="dash-card settings-section">
+      <div className="dashboard-card-head">
+        <span className="dashboard-chip workout">IronQuest</span>
+        <span className="dashboard-chip subtle">{profile.enabled ? 'Identity setup' : 'Optional add-on'}</span>
+      </div>
+      <h3>Turn your training into a quest</h3>
+      <p className="settings-subtitle">This keeps the workout flow intact, then layers a location, mission, and progression track on top of it.</p>
+      {!profile.enabled ? (
+        <div className="settings-actions">
+          <button className="btn-primary" type="button" onClick={onEnable} disabled={submitting}>
+            {submitting ? 'Activating…' : 'Activate IronQuest'}
+          </button>
+        </div>
+      ) : null}
+      {profile.enabled ? (
+        <>
+          <div className="onboarding-form">
+            <label>
+              Class
+              <select value={selectedClass} onChange={event => onSelectClass(event.target.value)}>
+                {IRONQUEST_CLASS_OPTIONS.map(option => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+              <small className="settings-subtitle">{IRONQUEST_CLASS_OPTIONS.find(option => option.value === selectedClass)?.detail}</small>
+            </label>
+            <label>
+              Motivation
+              <select value={selectedMotivation} onChange={event => onSelectMotivation(event.target.value)}>
+                {IRONQUEST_MOTIVATION_OPTIONS.map(option => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+              <small className="settings-subtitle">{IRONQUEST_MOTIVATION_OPTIONS.find(option => option.value === selectedMotivation)?.detail}</small>
+            </label>
+          </div>
+          <div className="settings-actions">
+            <button className="btn-primary" type="button" onClick={onSaveIdentity} disabled={submitting}>
+              {submitting ? 'Saving…' : 'Save quest identity'}
+            </button>
+          </div>
+        </>
+      ) : null}
+    </div>
+  )
 }
 
 function Welcome() {
@@ -996,6 +1134,51 @@ function CompleteStep() {
   const [submitting, setSubmitting] = useState(false)
   const [result, setResult] = useState(null)
   const [error, setError] = useState('')
+  const [ironQuest, setIronQuest] = useState(null)
+  const [ironQuestLoading, setIronQuestLoading] = useState(false)
+  const [ironQuestError, setIronQuestError] = useState('')
+  const [ironQuestSubmitting, setIronQuestSubmitting] = useState(false)
+  const [selectedIronQuestClass, setSelectedIronQuestClass] = useState(IRONQUEST_CLASS_OPTIONS[0].value)
+  const [selectedIronQuestMotivation, setSelectedIronQuestMotivation] = useState(IRONQUEST_MOTIVATION_OPTIONS[0].value)
+
+  function applyIronQuestState(payload) {
+    setIronQuest(payload)
+    const nextClass = String(payload?.profile?.class_slug || '').trim()
+    const nextMotivation = String(payload?.profile?.motivation_slug || '').trim()
+    if (nextClass) {
+      setSelectedIronQuestClass(nextClass)
+    }
+    if (nextMotivation) {
+      setSelectedIronQuestMotivation(nextMotivation)
+    }
+  }
+
+  useEffect(() => {
+    if (!result) return undefined
+
+    let active = true
+    setIronQuestLoading(true)
+    setIronQuestError('')
+
+    ironquestApi.profile()
+      .then((data) => {
+        if (!active) return
+        applyIronQuestState(data)
+      })
+      .catch((err) => {
+        if (!active) return
+        setIronQuestError(err?.message || 'Could not load IronQuest right now.')
+      })
+      .finally(() => {
+        if (active) {
+          setIronQuestLoading(false)
+        }
+      })
+
+    return () => {
+      active = false
+    }
+  }, [result])
 
   async function finish() {
     setSubmitting(true)
@@ -1010,6 +1193,43 @@ function CompleteStep() {
       setError(missing.length ? `Complete these fields before finishing: ${missing.join(', ')}.` : err.message)
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  async function handleEnableIronQuest() {
+    setIronQuestSubmitting(true)
+    setIronQuestError('')
+
+    try {
+      const data = await ironquestApi.enable()
+      applyIronQuestState({
+        ...ironQuest,
+        profile: data?.profile ?? ironQuest?.profile ?? {},
+      })
+    } catch (err) {
+      setIronQuestError(err?.message || 'Could not activate IronQuest right now.')
+    } finally {
+      setIronQuestSubmitting(false)
+    }
+  }
+
+  async function handleSaveIronQuestIdentity() {
+    setIronQuestSubmitting(true)
+    setIronQuestError('')
+
+    try {
+      const data = await ironquestApi.saveIdentity({
+        class_slug: selectedIronQuestClass,
+        motivation_slug: selectedIronQuestMotivation,
+      })
+      applyIronQuestState({
+        ...ironQuest,
+        profile: data?.profile ?? ironQuest?.profile ?? {},
+      })
+    } catch (err) {
+      setIronQuestError(err?.message || 'Could not save your IronQuest identity right now.')
+    } finally {
+      setIronQuestSubmitting(false)
     }
   }
 
@@ -1053,6 +1273,19 @@ function CompleteStep() {
           <h3>Coach note</h3>
           <p>{result.coach_message}</p>
         </div>
+        <IronQuestSetupCard
+          ironQuest={ironQuest}
+          ironQuestLoading={ironQuestLoading}
+          ironQuestError={ironQuestError}
+          selectedClass={selectedIronQuestClass}
+          selectedMotivation={selectedIronQuestMotivation}
+          onSelectClass={setSelectedIronQuestClass}
+          onSelectMotivation={setSelectedIronQuestMotivation}
+          onEnable={handleEnableIronQuest}
+          onSaveIdentity={handleSaveIronQuestIdentity}
+          submitting={ironQuestSubmitting}
+          navigate={navigate}
+        />
         <StepUnlock text="From here, Johnny will use this setup to drive your dashboard, workout suggestions, nutrition guidance, and reminders." />
         <button className="btn-primary" onClick={() => navigate('/dashboard')}>Open dashboard</button>
       </StepLayout>
