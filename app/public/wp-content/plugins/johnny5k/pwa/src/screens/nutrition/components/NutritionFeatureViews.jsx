@@ -587,7 +587,7 @@ export function TodayNutritionView({ screen, deps }) {
           screen.setShowLabelScanPrompt(false)
           screen.setShowMealPhotoPrompt(true)
         }} onSave={async data => {
-          const result = await screen.runAction(() => nutritionApi.logMeal(data), '', { onSuccess: async () => { screen.invalidate(); screen.closeAddMealFlow(); await screen.loadData(); scrollNodeIntoView(screen.mealsSectionAnchor.current) } })
+          const result = await screen.runAction(() => nutritionApi.logMeal(data), '', { onSuccess: async () => { const ironquestProgress = await screen.syncIronQuestDailyProgress({ quest_key: 'meal', state_date: screen.resolveIronQuestStateDate(data.meal_datetime) }); screen.revealIronQuestProgress(ironquestProgress, 'Meal logged'); screen.invalidate(); screen.closeAddMealFlow(); await screen.loadData(); scrollNodeIntoView(screen.mealsSectionAnchor.current) } })
           if (result) {
             const itemCount = data.items.length
             const merged = Boolean(result?.merged)
@@ -656,7 +656,7 @@ export function TodayNutritionView({ screen, deps }) {
                 if (duplicateMealIds.length) {
                   await Promise.all(duplicateMealIds.map(id => nutritionApi.deleteMeal(id)))
                 }
-              }, data.items.length ? 'Logged meal updated.' : 'Logged meal deleted.', { onSuccess: async () => { screen.invalidate(); await screen.loadData() } })
+              }, data.items.length ? 'Logged meal updated.' : 'Logged meal deleted.', { onSuccess: async () => { if (data.items.length) { const ironquestProgress = await screen.syncIronQuestDailyProgress({ quest_key: 'meal', state_date: screen.resolveIronQuestStateDate(data.meal_datetime) }); screen.revealIronQuestProgress(ironquestProgress, 'Meal updated') } screen.invalidate(); await screen.loadData() } })
             }} onDelete={async () => {
               const mealIds = Array.isArray(meal.meal_ids) && meal.meal_ids.length ? meal.meal_ids : [meal.id]
               await screen.runAction(() => Promise.all(mealIds.map(id => nutritionApi.deleteMeal(id))), 'Logged meal deleted.', { onSuccess: async () => { screen.invalidate(); await screen.loadData() } })

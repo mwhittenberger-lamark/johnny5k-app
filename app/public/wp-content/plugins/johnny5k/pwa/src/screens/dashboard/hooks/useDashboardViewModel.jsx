@@ -33,7 +33,6 @@ import {
   buildInspirationalStories,
   buildJohnnyDashboardReview,
   buildMealRhythmModel,
-  buildMomentumScoreModel,
   buildMomentumCard,
   buildProteinRunwayModel,
   buildQuickPrompts,
@@ -58,7 +57,6 @@ import {
   BeginnerEducationCard,
   CoachingSummaryCard,
   MealRhythmCard,
-  MomentumScoreCard,
   MomentumDashboardCard,
   ProteinRunwayCard,
   QuickActionCard,
@@ -75,6 +73,7 @@ import { useJohnnyAssistantStore } from '../../../store/johnnyAssistantStore'
 import { useOnlineStatus } from '../../../lib/useOnlineStatus'
 import { buildCoachingPromptOptions, buildCoachingSummary } from '../../../lib/coachingSummary'
 import { trackCoachingPromptOpen } from '../../../lib/coaching/coachingAnalytics'
+import { resolveExperienceModeFromIronQuestPayload } from '../../../lib/experienceMode'
 import { useDashboardPreferences } from './useDashboardPreferences'
 import { useDashboardSupplementalData } from './useDashboardSupplementalData'
 
@@ -95,6 +94,7 @@ export function useDashboardViewModel() {
   const openDrawer = useJohnnyAssistantStore(state => state.openDrawer)
   const email = useAuthStore(state => state.email)
   const preferenceMeta = useAuthStore(state => state.preferenceMeta)
+  const setExperienceMode = useAuthStore(state => state.setExperienceMode)
   const isOnline = useOnlineStatus()
   const targetsUpdated = location.state?.targetsUpdated
   const johnnyActionNotice = location.state?.johnnyActionNotice
@@ -145,12 +145,13 @@ export function useDashboardViewModel() {
     try {
       const data = await ironquestApi.profile()
       setIronQuest(data)
+      setExperienceMode(resolveExperienceModeFromIronQuestPayload(data))
     } catch (error) {
       setIronQuestError(error?.message || 'Could not load IronQuest.')
     } finally {
       setIronQuestLoading(false)
     }
-  }, [])
+  }, [setExperienceMode])
 
   useEffect(() => {
     if (!snapshot || !reviewTrigger) return
@@ -183,7 +184,6 @@ export function useDashboardViewModel() {
   const editorialCard = useMemo(() => buildEditorialCard(s), [s])
   const inspirationalStories = useMemo(() => buildInspirationalStories(s, thoughtWindowKey), [s, thoughtWindowKey])
   const momentumCard = useMemo(() => buildMomentumCard(s, awards?.earned ?? []), [awards?.earned, s])
-  const momentumScore = useMemo(() => buildMomentumScoreModel(s), [s])
   const proteinRunway = useMemo(() => buildProteinRunwayModel(s), [s])
   const mealRhythm = useMemo(() => buildMealRhythmModel(s), [s])
   const realSuccessStory = useMemo(() => buildRealSuccessStoryModel(realSuccessStoryData), [realSuccessStoryData])
@@ -335,6 +335,7 @@ export function useDashboardViewModel() {
 
     try {
       const data = await ironquestApi.enable()
+      setExperienceMode('ironquest')
       setIronQuest(current => ({
         ...(current || {}),
         entitlement: current?.entitlement || { has_access: true },
@@ -349,7 +350,7 @@ export function useDashboardViewModel() {
     } finally {
       setIronQuestActivating(false)
     }
-  }, [])
+  }, [setExperienceMode])
 
   const ironQuestCard = useMemo(() => {
     if (ironQuestLoading) {
@@ -418,8 +419,8 @@ export function useDashboardViewModel() {
           <div className="onboarding-review-row"><span>HP</span><strong>{profile.hp_current || 0}/{profile.hp_max || 100}</strong></div>
         </div>
         <div className="settings-actions">
-          <button type="button" className="btn-primary small" onClick={() => navigate('/workout')}>Start mission</button>
-          <button type="button" className="btn-secondary small" onClick={() => navigate('/rewards')}>Open rewards</button>
+          <button type="button" className="btn-primary small" onClick={() => navigate('/ironquest')}>Open hub</button>
+          <button type="button" className="btn-secondary small" onClick={() => navigate('/workout')}>Start mission</button>
         </div>
         {ironQuestError ? <p className="settings-subtitle">{ironQuestError}</p> : null}
       </section>
@@ -569,7 +570,6 @@ export function useDashboardViewModel() {
       />
     )),
     makeDashboardCard('ironquest_journey', ironQuestCard),
-    makeDashboardCard('momentum_score', <MomentumScoreCard model={momentumScore} onAction={handleDashboardAction} />),
     makeDashboardCard('protein_runway', <ProteinRunwayCard model={proteinRunway} onOpenNutrition={() => navigate('/nutrition')} onAskJohnny={openDrawer} />),
     makeDashboardCard('meal_rhythm', <MealRhythmCard model={mealRhythm} onOpenNutrition={() => navigate('/nutrition')} />),
     makeDashboardCard('quick_log_meal', <QuickActionCard title="Log meal" meta="Nutrition" icon="meal" onClick={() => navigate('/nutrition')} />),

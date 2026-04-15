@@ -132,13 +132,14 @@ Recommended v1 endpoints:
 
 - [ ] `GET /fit/v1/ironquest/profile`
 - [ ] `POST /fit/v1/ironquest/enable`
+- [ ] `POST /fit/v1/ironquest/disable`
 - [ ] `POST /fit/v1/ironquest/identity`
-- [ ] `GET /fit/v1/ironquest/dashboard`
-- [ ] `GET /fit/v1/ironquest/rewards`
 - [ ] `POST /fit/v1/ironquest/missions/start`
 - [ ] `POST /fit/v1/ironquest/missions/resolve`
 - [ ] `GET /fit/v1/ironquest/missions/active`
 - [ ] `POST /fit/v1/ironquest/daily/refresh`
+- [ ] `POST /fit/v1/ironquest/daily/progress`
+- [ ] `POST /fit/v1/ironquest/route/fast-travel`
 
 Optional internal-only endpoints if needed:
 

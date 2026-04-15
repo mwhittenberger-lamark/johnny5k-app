@@ -49,8 +49,8 @@ export const DEFAULT_COLOR_SCHEMES = [
       bg2: '#FFFFFF',
       bg3: '#D0F3E5',
       border: '#9EDBBC',
-      text: '#123B3A',
-      textMuted: '#507A73',
+      text: '#F90505',
+      textMuted: '#3E5F59',
       accent: '#0E7C66',
       accent2: '#3BC9A3',
       accent3: '#89E219',
@@ -200,12 +200,17 @@ export function applyColorScheme(value) {
 
   if (typeof document !== 'undefined') {
     const root = document.documentElement
-    root.style.setProperty('--bg', scheme.colors.bg)
-    root.style.setProperty('--bg2', scheme.colors.bg2)
-    root.style.setProperty('--bg3', scheme.colors.bg3)
-    root.style.setProperty('--border', scheme.colors.border)
-    root.style.setProperty('--text', scheme.colors.text)
-    root.style.setProperty('--text-muted', scheme.colors.textMuted)
+    const ironQuestActive = root.dataset.experienceMode === 'ironquest'
+
+    if (!ironQuestActive) {
+      root.style.setProperty('--bg', scheme.colors.bg)
+      root.style.setProperty('--bg2', scheme.colors.bg2)
+      root.style.setProperty('--bg3', scheme.colors.bg3)
+      root.style.setProperty('--border', scheme.colors.border)
+      root.style.setProperty('--text', scheme.colors.text)
+      root.style.setProperty('--text-muted', scheme.colors.textMuted)
+    }
+
     root.style.setProperty('--accent', scheme.colors.accent)
     root.style.setProperty('--accent2', scheme.colors.accent2)
     root.style.setProperty('--accent3', scheme.colors.accent3)
@@ -213,8 +218,8 @@ export function applyColorScheme(value) {
     root.style.setProperty('--success', scheme.colors.success)
     root.style.setProperty('--yellow', scheme.colors.yellow)
     root.dataset.colorScheme = scheme.id
-    root.dataset.themeMode = themeMode
-    root.style.colorScheme = themeMode
+    root.dataset.themeMode = ironQuestActive ? 'dark' : themeMode
+    root.style.colorScheme = ironQuestActive ? 'dark' : themeMode
   }
 
   if (typeof window !== 'undefined') {

@@ -2,16 +2,19 @@
 
 body {
   margin: 0;
-  background: var(--bg);
+  background: var(--surface-app);
   color: var(--text);
   overflow-x: hidden;
   font-size: 1rem;
   line-height: 1.55;
+  font-family: var(--font-body);
 }
 
 h1, h2, h3 {
-  font-family: 'Exo 2', 'Trebuchet MS', system-ui, sans-serif;
+  font-family: var(--font-display);
   color: var(--text);
+  letter-spacing: var(--display-letter-spacing);
+  text-transform: var(--display-text-transform);
 }
 p {
   margin: 4px 0;

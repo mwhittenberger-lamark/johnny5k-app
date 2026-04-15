@@ -34,6 +34,7 @@
   letter-spacing: 0.16em;
   font-size: 0.82rem;
   color: var(--text-muted);
+  font-weight: 600;
   margin: 0 0 var(--space-1-5);
 }
 .dashboard-subtitle {
@@ -41,30 +42,98 @@
   max-width: 52ch;
   margin-top: 6px;
   font-size: 1rem;
+  font-weight: 500;
 }
 .dashboard-date {
   align-self: flex-start;
-  background: rgba(255,255,255,0.72);
-  border: 1px solid rgba(168, 212, 240, 0.9);
+  background: var(--surface-meta);
+  border: 1px solid var(--border-strong);
   border-radius: 999px;
   padding: var(--space-2) var(--space-3);
   font-size: 0.92rem;
-  color: var(--text-muted);
+  color: var(--hero-copy-color);
   white-space: nowrap;
+}
+:root[data-experience-mode='ironquest'] .dashboard-eyebrow {
+  color: var(--hero-copy-color);
+  opacity: 0.82;
+}
+:root[data-experience-mode='ironquest'] .dashboard-subtitle {
+  color: var(--hero-copy-color);
+  opacity: 0.92;
+}
+:root[data-experience-mode='ironquest'] .dashboard-date {
+  font-weight: 600;
+}
+:root[data-experience-mode='ironquest'] .dashboard-daily-focus-actions .btn-outline,
+:root[data-experience-mode='ironquest'] .dashboard-daily-focus-actions .btn-secondary,
+:root[data-experience-mode='ironquest'] .dashboard-daily-focus-followups,
+:root[data-experience-mode='ironquest'] .dashboard-johnny-entry-card,
+:root[data-experience-mode='ironquest'] .dashboard-johnny-zone,
+:root[data-experience-mode='ironquest'] .dashboard-johnny-summary-zone,
+:root[data-experience-mode='ironquest'] .dashboard-johnny-action-zone,
+:root[data-experience-mode='ironquest'] .dashboard-johnny-metric-card,
+:root[data-experience-mode='ironquest'] .dashboard-johnny-next-step,
+:root[data-experience-mode='ironquest'] .dashboard-johnny-backup-step,
+:root[data-experience-mode='ironquest'] .dashboard-disclosure-section,
+:root[data-experience-mode='ironquest'] .dashboard-empty-layout-card,
+:root[data-experience-mode='ironquest'] .dashboard-score-explainer-why,
+:root[data-experience-mode='ironquest'] .dashboard-score-explainer-column.open,
+:root[data-experience-mode='ironquest'] .dashboard-score-explainer-column.done {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(214, 183, 96, 0.2);
+  box-shadow: 0 18px 38px rgba(3, 5, 12, 0.18);
+}
+:root[data-experience-mode='ironquest'] .dashboard-daily-focus-followups strong,
+:root[data-experience-mode='ironquest'] .dashboard-johnny-message,
+:root[data-experience-mode='ironquest'] .dashboard-johnny-next-step-copy span,
+:root[data-experience-mode='ironquest'] .dashboard-johnny-backup-step span,
+:root[data-experience-mode='ironquest'] .dashboard-score-explainer-label,
+:root[data-experience-mode='ironquest'] .dashboard-score-explainer-why strong {
+  color: var(--text);
+}
+:root[data-experience-mode='ironquest'] .dashboard-johnny-metric-card strong,
+:root[data-experience-mode='ironquest'] .dashboard-johnny-next-step-copy strong {
+  color: var(--hero-title-color);
+}
+:root[data-experience-mode='ironquest'] .dashboard-daily-focus-followups .dashboard-prompt-chip {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
 }
 .dashboard-command-center {
   display: grid;
   gap: var(--space-3);
-  margin-bottom: var(--space-3);
+  margin-bottom: var(--space-4);
 }
 .dashboard-daily-focus-card {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
   display: grid;
-  gap: var(--space-3);
-  background:
-    radial-gradient(circle at top right, rgba(255, 208, 0, 0.18), transparent 32%),
-    radial-gradient(circle at left center, rgba(0, 188, 222, 0.12), transparent 36%),
-    linear-gradient(160deg, rgba(255,255,255,0.98), rgba(238, 248, 255, 0.96));
-  border: 1px solid rgba(168, 212, 240, 0.92);
+  gap: var(--space-3-5);
+  padding: clamp(20px, 3vw, 30px);
+  background: var(--surface-hero);
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--mode-shadow);
+}
+.dashboard-daily-focus-card::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 5px;
+  background: var(--ornament-gradient);
+  z-index: -1;
+}
+.dashboard-daily-focus-card::after {
+  content: '';
+  position: absolute;
+  width: 220px;
+  height: 220px;
+  right: -72px;
+  bottom: -112px;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.56), rgba(255, 255, 255, 0));
+  z-index: -1;
 }
 .dashboard-daily-focus-head {
   display: flex;
@@ -81,22 +150,28 @@
 }
 .dashboard-daily-focus-copy {
   display: grid;
-  gap: var(--space-1-5);
+  gap: var(--space-2);
 }
 .dashboard-daily-focus-copy h2 {
   margin: 0;
-  font-size: 1.65rem;
-  line-height: 1.08;
+  max-width: 15ch;
+  font-size: clamp(1.95rem, 4vw, 2.6rem);
+  line-height: 0.98;
+  letter-spacing: -0.03em;
+  color: var(--hero-title-color);
 }
 .dashboard-daily-focus-copy p {
   margin: 0;
-  color: #28445f;
-  font-size: 1rem;
-  max-width: 54ch;
+  color: var(--hero-copy-color);
+  font-size: 1.02rem;
+  line-height: 1.5;
+  max-width: 46ch;
 }
 .dashboard-daily-focus-boosts {
   display: grid;
   gap: var(--space-2);
+  padding-top: var(--space-1);
+  border-top: 1px solid rgba(128, 184, 225, 0.35);
 }
 .dashboard-daily-focus-boosts strong {
   font-size: 0.78rem;
@@ -112,12 +187,12 @@
 .dashboard-daily-focus-pill {
   display: inline-flex;
   align-items: center;
-  min-height: 32px;
-  padding: 8px 12px 6px;
+  min-height: 34px;
+  padding: 9px 13px 7px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.82);
-  border: 1px solid rgba(168, 212, 240, 0.82);
-  color: #0b2441;
+  background: var(--surface-pill);
+  border: 1px solid var(--hero-pill-border);
+  color: var(--hero-pill-text);
   font-size: 0.82rem;
   font-weight: 700;
 }
@@ -125,12 +200,36 @@
   display: flex;
   gap: var(--space-2-5);
   flex-wrap: wrap;
+  align-items: center;
 }
 .dashboard-daily-focus-actions .btn-primary,
 .dashboard-daily-focus-actions .btn-outline,
 .dashboard-daily-focus-actions .btn-secondary {
   width: auto;
   min-width: 0;
+}
+.dashboard-daily-focus-actions .btn-primary {
+  min-width: 184px;
+  box-shadow: 0 14px 28px rgba(8, 21, 51, 0.16);
+}
+.dashboard-daily-focus-actions .btn-outline,
+.dashboard-daily-focus-actions .btn-secondary {
+  border-color: rgba(128, 184, 225, 0.55);
+  background: rgba(255, 255, 255, 0.72);
+}
+.dashboard-daily-focus-followups {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.58);
+  border: 1px solid rgba(128, 184, 225, 0.34);
+}
+.dashboard-daily-focus-followups strong {
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #37516f;
 }
 .dashboard-johnny-entry-card {
   display: grid;
@@ -254,8 +353,8 @@
   margin-bottom: var(--space-3);
 }
 .dashboard-primary-grid .dash-card {
-  border-color: rgba(129, 185, 226, 0.95);
-  box-shadow: 0 12px 30px rgba(31, 42, 46, 0.08);
+  border-color: rgba(129, 185, 226, 0.72);
+  box-shadow: 0 8px 20px rgba(31, 42, 46, 0.06);
 }
 .dashboard-primary-stack {
   display: grid;
@@ -315,9 +414,9 @@
 }
 .dashboard-hero-card {
   background:
-    radial-gradient(circle at top right, rgba(255, 208, 0, 0.18), transparent 36%),
+    radial-gradient(circle at top right, rgba(255, 208, 0, 0.18), #000000e3 36%),
     radial-gradient(circle at left center, rgba(0, 188, 222, 0.12), transparent 38%),
-    linear-gradient(160deg, rgba(255,255,255,0.98), rgba(238, 248, 255, 0.95));
+    linear-gradient(160deg, rgba(255, 255, 255, 0.98), rgb(22 17 6 / 95%));
 }
 .dashboard-hero-progress-row {
   display: grid;
@@ -330,8 +429,8 @@
   gap: var(--space-4-5);
   text-align: left;
   background:
-    radial-gradient(circle at top left, rgba(0, 188, 222, 0.14), transparent 34%),
-    linear-gradient(160deg, rgba(255,255,255,0.98), rgba(245, 251, 255, 0.96));
+    radial-gradient(circle at top left, rgba(0, 188, 222, 0.1), transparent 34%),
+    linear-gradient(160deg, rgba(255,255,255,0.97), rgba(246, 250, 253, 0.94));
 }
 .dashboard-recovery-summary-card h3 {
   margin: 0;
@@ -516,8 +615,8 @@
   flex-direction: column;
   gap: var(--space-3-5);
   background:
-    radial-gradient(circle at top left, rgba(0, 188, 222, 0.18), transparent 34%),
-    linear-gradient(160deg, rgba(255,255,255,0.98), rgba(240, 252, 255, 0.95));
+    radial-gradient(circle at top left, rgba(0, 188, 222, 0.12), transparent 34%),
+    linear-gradient(160deg, rgba(255,255,255,0.98), rgba(243, 250, 255, 0.94));
 }
 .dashboard-johnny-zone {
   display: grid;
@@ -737,6 +836,15 @@
   color: var(--text);
   border-color: rgba(0, 188, 222, 0.28);
   background: rgba(255,255,255,0.9);
+}
+.dashboard-daily-focus-followups .dashboard-prompt-chip {
+  background: rgba(248, 252, 255, 0.88);
+  color: #163652;
+  font-weight: 600;
+}
+.dashboard-daily-focus-followups .dashboard-prompt-chip:hover {
+  background: rgba(255, 255, 255, 0.96);
+  border-color: rgba(0, 188, 222, 0.34);
 }
 .dashboard-section {
   margin-bottom: var(--space-4);
@@ -1633,6 +1741,16 @@
     align-items: stretch;
   }
 
+  .dashboard-daily-focus-card {
+    padding: var(--space-3-5);
+    gap: var(--space-3);
+  }
+
+  .dashboard-daily-focus-copy h2 {
+    max-width: none;
+    font-size: 1.9rem;
+  }
+
   .dashboard-daily-focus-meta {
     justify-content: flex-start;
   }
@@ -1642,6 +1760,10 @@
   .dashboard-daily-focus-actions .btn-secondary,
   .dashboard-section-toggle {
     width: 100%;
+  }
+
+  .dashboard-daily-focus-followups {
+    padding: var(--space-2-5);
   }
 
   .dashboard-coaching-summary-panel .coaching-summary-signal-grid {
@@ -1798,4 +1920,48 @@
 :root[data-theme-mode='dark'] .dashboard-chip.subtle {
   background: rgba(255, 255, 255, 0.1);
   color: var(--text);
+}
+
+:root[data-experience-mode='ironquest'] .dashboard-daily-focus-actions .btn-outline,
+:root[data-experience-mode='ironquest'] .dashboard-daily-focus-actions .btn-secondary,
+:root[data-experience-mode='ironquest'] .dashboard-daily-focus-followups,
+:root[data-experience-mode='ironquest'] .dashboard-macro-pill,
+:root[data-experience-mode='ironquest'] .dashboard-coach-card,
+:root[data-experience-mode='ironquest'] .dashboard-johnny-zone,
+:root[data-experience-mode='ironquest'] .dashboard-johnny-summary-zone,
+:root[data-experience-mode='ironquest'] .dashboard-johnny-action-zone,
+:root[data-experience-mode='ironquest'] .dashboard-johnny-followups,
+:root[data-experience-mode='ironquest'] .dashboard-johnny-metric-card,
+:root[data-experience-mode='ironquest'] .dashboard-johnny-next-step,
+:root[data-experience-mode='ironquest'] .dashboard-johnny-backup-step,
+:root[data-experience-mode='ironquest'] .dashboard-disclosure-section,
+:root[data-experience-mode='ironquest'] .dashboard-empty-layout-card,
+:root[data-experience-mode='ironquest'] .dashboard-score-explainer-why,
+:root[data-experience-mode='ironquest'] .dashboard-score-explainer-column.open,
+:root[data-experience-mode='ironquest'] .dashboard-score-explainer-column.done {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(214, 183, 96, 0.2);
+  color: var(--text);
+  box-shadow: 0 18px 38px rgba(3, 5, 12, 0.18);
+}
+
+:root[data-experience-mode='ironquest'] .dashboard-daily-focus-followups strong,
+:root[data-experience-mode='ironquest'] .dashboard-johnny-message,
+:root[data-experience-mode='ironquest'] .dashboard-johnny-backup-step span,
+:root[data-experience-mode='ironquest'] .dashboard-johnny-next-step-copy span,
+:root[data-experience-mode='ironquest'] .dashboard-johnny-next-step-copy small,
+:root[data-experience-mode='ironquest'] .dashboard-johnny-metric-card span,
+:root[data-experience-mode='ironquest'] .dashboard-johnny-metric-card strong,
+:root[data-experience-mode='ironquest'] .dashboard-score-explainer-label,
+:root[data-experience-mode='ironquest'] .dashboard-score-explainer-why strong,
+:root[data-experience-mode='ironquest'] .dashboard-meal-meta,
+:root[data-experience-mode='ironquest'] .dashboard-session-meta,
+:root[data-experience-mode='ironquest'] .dashboard-award-meta {
+  color: var(--text);
+}
+
+:root[data-experience-mode='ironquest'] .dashboard-daily-focus-followups .dashboard-prompt-chip {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+  border-color: rgba(214, 183, 96, 0.18);
 }

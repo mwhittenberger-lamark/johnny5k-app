@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { showGlobalToast } from '../../../lib/uiFeedback'
+import { buildIronQuestMissionIntro, buildIronQuestWorkoutToast } from '../../../lib/ironquestFeedback'
 import { useLatest } from './useLatest'
 import { buildWorkoutCompletionReview, formatDayType, formatWorkoutElapsedTime, getPausedTimerNowValue } from '../workoutScreenUtils'
 
@@ -56,6 +58,7 @@ export function useWorkoutSessionController({
   const [sessionTimerPausedAt, setSessionTimerPausedAt] = useState(null)
   const [sessionTimerPausedMs, setSessionTimerPausedMs] = useState(0)
   const [completionReview, setCompletionReview] = useState(null)
+  const [missionIntro, setMissionIntro] = useState(null)
   const [pendingSessionAction, setPendingSessionAction] = useState(null)
   const queryClient = useQueryClient()
   const locationStateRef = useLatest(location.state && typeof location.state === 'object' ? location.state : null)
@@ -252,6 +255,7 @@ export function useWorkoutSessionController({
     setCompleting(true)
     try {
       const result = await completeSessionMutation.mutateAsync()
+      setMissionIntro(null)
       const review = buildWorkoutCompletionReview({
         result,
         dayType: completedDayType,
@@ -261,6 +265,13 @@ export function useWorkoutSessionController({
       if (review) {
         setCompletionReview(review)
         return
+      }
+
+      const ironQuestToast = buildIronQuestWorkoutToast(result?.ironquest, {
+        onOpenHub: () => navigate('/ironquest'),
+      })
+      if (ironQuestToast) {
+        showGlobalToast(ironQuestToast)
       }
 
       navigate('/dashboard', { state: { workoutResult: result } })
@@ -303,6 +314,7 @@ export function useWorkoutSessionController({
   async function handleStartSession() {
     setStatusNotice('')
     setStatusError('')
+    setMissionIntro(null)
 
     if (!hasCustomWorkoutDraft && previewDayType === 'rest') {
       setTakingRestDay(true)
@@ -336,6 +348,7 @@ export function useWorkoutSessionController({
     })
 
     const missionName = startResult?.ironquest?.mission?.name || ''
+    setMissionIntro(buildIronQuestMissionIntro(startResult?.ironquest))
     if (missionName) {
       setStatusNotice(`IronQuest mission started: ${missionName}.`)
     }
@@ -467,6 +480,7 @@ export function useWorkoutSessionController({
     handleUndoAction,
     handleUpdateSet,
     liveModeOpen,
+    missionIntro,
     openLiveMode,
     closeLiveMode,
     pauseSessionTimer,

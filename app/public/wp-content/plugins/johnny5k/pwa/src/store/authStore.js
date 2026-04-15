@@ -4,6 +4,7 @@ import { authApi } from '../api/modules/auth'
 import { reportClientDiagnostic } from '../lib/clientDiagnostics'
 import { DEFAULT_APP_IMAGES, normalizeAppImages } from '../lib/appImages'
 import { normalizeDailyCheckInEntry } from '../lib/dailyCheckIn'
+import { applyExperienceMode, clearStoredExperienceMode, DEFAULT_EXPERIENCE_MODE, normalizeExperienceMode } from '../lib/experienceMode'
 import { applyColorScheme, clearStoredColorScheme, DEFAULT_COLOR_SCHEME } from '../lib/theme'
 
 const NONCE_KEY = 'jf_rest_nonce'
@@ -52,6 +53,7 @@ export const useAuthStore = create(
         pushConfigured: false,
         pushSubscribed: false,
       },
+      experienceMode: DEFAULT_EXPERIENCE_MODE,
 
       setAuth: ({ nonce, user_id, email, onboarding_complete, is_admin, app_images }) => {
         const current = get()
@@ -112,10 +114,20 @@ export const useAuthStore = create(
         }))
       },
 
+      setExperienceMode: (experienceMode) => {
+        const nextExperienceMode = applyExperienceMode(normalizeExperienceMode(experienceMode))
+        set(current => ({
+          ...current,
+          experienceMode: nextExperienceMode,
+        }))
+      },
+
       clearAuth: () => {
         localStorage.removeItem(NONCE_KEY)
         clearStoredColorScheme()
+        clearStoredExperienceMode()
         applyColorScheme(DEFAULT_COLOR_SCHEME)
+        applyExperienceMode(DEFAULT_EXPERIENCE_MODE)
         set(current => ({
           ...current,
           nonce: null,
@@ -133,6 +145,7 @@ export const useAuthStore = create(
             pushConfigured: false,
             pushSubscribed: false,
           },
+          experienceMode: DEFAULT_EXPERIENCE_MODE,
         }))
       },
 
@@ -196,10 +209,12 @@ export const useAuthStore = create(
         preferenceMeta: state.preferenceMeta,
         dailyCheckInEntry: state.dailyCheckInEntry,
         notificationPrefs: state.notificationPrefs,
+        experienceMode: state.experienceMode,
       }),
       // Sync nonce to the key the API client reads.
       onRehydrateStorage: () => (state) => {
         if (state?.nonce) localStorage.setItem(NONCE_KEY, state.nonce)
+        applyExperienceMode(state?.experienceMode)
       },
     }
   )

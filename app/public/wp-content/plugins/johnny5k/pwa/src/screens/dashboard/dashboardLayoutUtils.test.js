@@ -8,6 +8,7 @@ import {
 const CARD_DEFS = [
   { id: 'beginner_education', bucket: 'primary_main', optional: true },
   { id: 'coaching_summary', bucket: 'primary_main' },
+  { id: 'story_card', bucket: 'story', defaultHidden: true },
   { id: 'today_intake', bucket: 'primary_main' },
 ]
 
@@ -45,5 +46,12 @@ describe('dashboardLayoutUtils', () => {
 
     expect(layout.hidden.beginner_education).toBe(true)
     expect(layout.touched.beginner_education).toBe(false)
+  })
+
+  it('keeps default-hidden cards off the board until the user opts in', () => {
+    const layout = getDefaultDashboardLayout(CARD_DEFS)
+
+    expect(layout.hidden.story_card).toBe(true)
+    expect(layout.touched.story_card).toBe(false)
   })
 })

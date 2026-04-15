@@ -1,5 +1,5 @@
 .dash-card {
-  background: var(--bg2);
+  background: var(--surface-card);
   border: 1.5px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow-sm);
@@ -10,6 +10,10 @@
 .dash-card.settings-warning {
   border-color: var(--accent);
   background: linear-gradient(135deg, rgba(255, 85, 48, 0.08), rgba(255, 255, 255, 0.9));
+}
+:root[data-experience-mode='ironquest'] .dash-card.settings-warning {
+  background: linear-gradient(135deg, rgba(255, 85, 48, 0.14), rgba(43, 30, 63, 0.94));
+  border-color: rgba(255, 125, 84, 0.42);
 }
 
 .dashboard-notice {
@@ -31,7 +35,7 @@
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  font-family: 'Exo 2', system-ui, sans-serif;
+  font-family: var(--font-ui);
   font-weight: 700;
 }
 
@@ -43,7 +47,7 @@
 }
 
 .small-card {
-  background: var(--bg2);
+  background: var(--surface-card);
   border: 1.5px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow-sm);
@@ -55,7 +59,7 @@
   font-size: 1.4rem;
   font-weight: 800;
   color: var(--accent2);
-  font-family: 'Exo 2', system-ui, sans-serif;
+  font-family: var(--font-display);
 }
 
 .small-card .lbl {
@@ -73,4 +77,8 @@
   color: var(--danger);
   font-size: 0.9rem;
   font-weight: 600;
+}
+:root[data-experience-mode='ironquest'] .skip-warning {
+  background: rgba(255, 46, 80, 0.12);
+  color: #ffd7de;
 }

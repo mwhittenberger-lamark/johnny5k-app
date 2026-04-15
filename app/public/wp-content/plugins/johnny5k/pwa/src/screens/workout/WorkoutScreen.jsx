@@ -19,6 +19,7 @@ import WorkoutOfflineStatusCard from './components/WorkoutOfflineStatusCard'
 import { useLiveWorkoutFrames } from './hooks/useLiveWorkoutFrames'
 import { useWorkoutPlanningController } from './hooks/useWorkoutPlanningController'
 import { useWorkoutSessionController } from './hooks/useWorkoutSessionController'
+import { useIronQuestStarterPortrait } from '../../hooks/useIronQuestStarterPortrait'
 import { weekdayLabelForDate, weekdayOrderForDate } from './workoutScreenUtils'
 
 export default function WorkoutScreen() {
@@ -192,6 +193,12 @@ export default function WorkoutScreen() {
     completionReview: sessionController.completionReview,
     readinessScore,
   }), [dashboardSnapshot, readinessScore, sessionController.completionReview])
+  const starterPortraitAttachmentId = Number(
+    sessionController.completionReview?.ironQuestReveal?.portraitAttachmentId
+    || sessionController.missionIntro?.portraitAttachmentId
+    || 0,
+  )
+  const starterPortrait = useIronQuestStarterPortrait(starterPortraitAttachmentId)
 
   const recoverWorkoutState = useCallback(async (message = 'Connection restored. Your workout data was refreshed from the server.') => {
     setRecoveringWorkout(true)
@@ -375,6 +382,8 @@ export default function WorkoutScreen() {
     return (
       <WorkoutCompletionReviewModal
         completionReview={sessionController.completionReview}
+        starterPortraitSrc={starterPortrait?.src || ''}
+        starterPortraitAlt={starterPortrait?.label || 'Starter portrait'}
         coachingSummary={workoutCoachingSummary}
         onAction={(action, summary) => runCoachingAction(
           action,
@@ -386,6 +395,7 @@ export default function WorkoutScreen() {
           }) : null,
         )}
         onAskJohnny={(prompt, options) => openDrawer(prompt, options)}
+        onOpenIronQuest={() => navigate('/ironquest')}
         onClose={sessionController.handleCloseCompletionReview}
       />
     )
@@ -444,6 +454,8 @@ export default function WorkoutScreen() {
       displayDayType={planning.displayDayType}
       displaySessionTitle={planning.displaySessionTitle}
       isMaintenanceMode={isMaintenanceMode}
+      starterPortraitSrc={starterPortrait?.src || ''}
+      starterPortraitAlt={starterPortrait?.label || 'Starter portrait'}
       offlineStatus={<WorkoutOfflineStatusCard {...workoutOfflineStatus} />}
       onOpenWorkoutSupport={handleOpenWorkoutSupport}
       liveWorkoutFrames={liveWorkoutFrames}

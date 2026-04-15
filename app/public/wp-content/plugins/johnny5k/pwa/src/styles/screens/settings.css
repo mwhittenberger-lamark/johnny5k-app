@@ -14,6 +14,9 @@
   box-shadow: 0 16px 36px rgba(15, 31, 85, 0.08);
   overflow: hidden;
 }
+:root[data-experience-mode='ironquest'] .settings-accordion-group {
+  background: linear-gradient(180deg, rgb(122 83 7 / 96%), rgb(170 102 12 / 94%));
+}
 .settings-accordion-group.open {
   border-color: rgba(0, 188, 222, 0.18);
 }
@@ -286,6 +289,8 @@
     linear-gradient(160deg, rgba(255,255,255,0.99), rgba(240, 247, 255, 0.98));
   border-color: rgba(0, 188, 222, 0.22);
 }
+:root[data-experience-mode='ironquest'] .settings-checkin-card {
+}
 .settings-checkin-head {
   display: flex;
   align-items: flex-start;
@@ -348,6 +353,8 @@
   background:
     radial-gradient(circle at top right, rgba(0, 188, 222, 0.14), transparent 34%),
     linear-gradient(160deg, rgba(255,255,255,0.99), rgba(242, 248, 255, 0.97));
+}
+:root[data-experience-mode='ironquest'] .settings-ai-card {
 }
 .settings-ai-head {
   display: flex;
@@ -462,6 +469,9 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
+}
+:root[data-experience-mode='ironquest'] .reminder-setting-card {
+  background: linear-gradient(180deg, rgb(5 63 5 / 98%), rgb(18 152 48 / 92%));
 }
 .settings-inline-panel {
   display: flex;
@@ -1163,4 +1173,9 @@
   .reminder-card-head {
     align-items: flex-start;
   }
+}
+
+.settings-screen div[class^='settings-'],
+.settings-screen div[class*=' settings-'] {
+  background: none !important;
 }

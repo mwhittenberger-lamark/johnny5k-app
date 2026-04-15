@@ -8,6 +8,9 @@ use Johnny5k\Services\AiService;
 use Johnny5k\Services\CostTracker;
 use Johnny5k\Services\GeminiImageService;
 use Johnny5k\Services\InternalDiagnosticsLogger;
+use Johnny5k\Services\IronQuestEntitlementService;
+use Johnny5k\Services\IronQuestProfileService;
+use Johnny5k\Services\IronQuestRegistryService;
 use Johnny5k\Services\PushService;
 use Johnny5k\Services\SupportGuideService;
 use Johnny5k\Services\UserTime;
@@ -405,6 +408,18 @@ class AdminApiController {
 			'permission_callback' => $admin,
 		] );
 
+		register_rest_route( $ns, '/admin/ironquest/state', [
+			'methods'             => 'GET',
+			'callback'            => [ __CLASS__, 'get_ironquest_state' ],
+			'permission_callback' => $admin,
+		] );
+
+		register_rest_route( $ns, '/admin/ironquest/action', [
+			'methods'             => 'POST',
+			'callback'            => [ __CLASS__, 'run_ironquest_action' ],
+			'permission_callback' => $admin,
+		] );
+
 		register_rest_route( $ns, '/client-diagnostics', [
 			'methods'             => 'POST',
 			'callback'            => [ __CLASS__, 'log_client_diagnostic' ],
@@ -474,6 +489,150 @@ class AdminApiController {
 			'monthly_by_user'  => CostTracker::monthly_by_user(),
 			'daily_last_30'    => CostTracker::daily_totals_last_30(),
 		] );
+	}
+
+	public static function get_ironquest_state( \WP_REST_Request $req ): \WP_REST_Response {
+		$user_id = (int) ( $req->get_param( 'user_id' ) ?: 0 );
+		if ( $user_id <= 0 ) {
+			return new \WP_REST_Response( [ 'message' => 'A valid user id is required.' ], 400 );
+		}
+
+		$user = get_userdata( $user_id );
+		if ( ! $user ) {
+			return new \WP_REST_Response( [ 'message' => 'User not found.' ], 404 );
+		}
+
+		return new \WP_REST_Response(
+			[
+				'user'  => [
+					'user_id'    => $user_id,
+					'user_email' => (string) $user->user_email,
+					'display_name' => (string) $user->display_name,
+				],
+				'state' => IronQuestController::admin_build_profile_payload( $user_id ),
+				'config' => [
+					'locations' => array_values( IronQuestRegistryService::get_locations_config()['locations'] ?? [] ),
+					'graph'     => IronQuestRegistryService::get_launch_graph_config(),
+					'seed'      => IronQuestRegistryService::get_seed_bundle(),
+				],
+			]
+		);
+	}
+
+	public static function run_ironquest_action( \WP_REST_Request $req ): \WP_REST_Response {
+		$user_id = (int) ( $req->get_param( 'user_id' ) ?: 0 );
+		$action  = sanitize_key( (string) ( $req->get_param( 'action' ) ?: '' ) );
+
+		if ( $user_id <= 0 ) {
+			return new \WP_REST_Response( [ 'message' => 'A valid user id is required.' ], 400 );
+		}
+
+		if ( ! get_userdata( $user_id ) ) {
+			return new \WP_REST_Response( [ 'message' => 'User not found.' ], 404 );
+		}
+
+		$result  = [];
+		$message = '';
+
+		switch ( $action ) {
+			case 'enable':
+				$result  = [ 'profile' => IronQuestProfileService::enable_for_user( $user_id ) ];
+				$message = 'IronQuest enabled for this user.';
+				break;
+
+			case 'disable':
+				$result  = [ 'profile' => IronQuestProfileService::disable_for_user( $user_id ) ];
+				$message = 'IronQuest disabled for this user.';
+				break;
+
+			case 'start_mission':
+				$result = IronQuestController::admin_start_mission(
+					$user_id,
+					(string) ( $req->get_param( 'location_slug' ) ?: '' ),
+					(string) ( $req->get_param( 'mission_slug' ) ?: '' ),
+					(string) ( $req->get_param( 'run_type' ) ?: 'workout' ),
+					(string) ( $req->get_param( 'source_session_id' ) ?: '' )
+				);
+				$message = 'Started an IronQuest mission run.';
+				break;
+
+			case 'grant_travel':
+				$result = IronQuestController::admin_grant_travel_points(
+					$user_id,
+					(int) ( $req->get_param( 'travel_points' ) ?: 0 ),
+					(string) ( $req->get_param( 'travel_source' ) ?: '' ),
+					(string) ( $req->get_param( 'state_date' ) ?: '' )
+				);
+				$message = 'Granted travel points.';
+				break;
+
+			case 'mark_daily_quest':
+				$quest_key = sanitize_key( (string) ( $req->get_param( 'quest_key' ) ?: '' ) );
+				if ( ! in_array( $quest_key, [ 'meal', 'sleep', 'cardio', 'steps', 'workout' ], true ) ) {
+					return new \WP_REST_Response( [ 'message' => 'A valid daily quest key is required.' ], 400 );
+				}
+				$result  = IronQuestController::admin_mark_daily_quest( $user_id, $quest_key, (string) ( $req->get_param( 'state_date' ) ?: '' ) );
+				$message = sprintf( 'Marked the %s quest complete.', $quest_key );
+				break;
+
+			case 'resolve_active_mission':
+				$result = IronQuestController::admin_resolve_active_mission(
+					$user_id,
+					(string) ( $req->get_param( 'result_band' ) ?: 'victory' ),
+					(int) ( $req->get_param( 'xp_awarded' ) ?: 0 ),
+					(int) ( $req->get_param( 'gold_awarded' ) ?: 0 )
+				);
+				$message = 'Resolved the active IronQuest mission.';
+				break;
+
+			case 'clear_location_arc':
+				$location_slug = sanitize_key( (string) ( $req->get_param( 'location_slug' ) ?: '' ) );
+				if ( '' === $location_slug ) {
+					return new \WP_REST_Response( [ 'message' => 'A location slug is required.' ], 400 );
+				}
+				$result  = IronQuestController::admin_clear_location_arc( $user_id, $location_slug, (int) ( $req->get_param( 'source_run_id' ) ?: 0 ) );
+				$message = sprintf( 'Cleared the %s location arc.', $location_slug );
+				break;
+
+			case 'unlock_location':
+				$location_slug = sanitize_key( (string) ( $req->get_param( 'location_slug' ) ?: '' ) );
+				if ( '' === $location_slug ) {
+					return new \WP_REST_Response( [ 'message' => 'A location slug is required.' ], 400 );
+				}
+				$result  = IronQuestController::admin_unlock_location( $user_id, $location_slug, (int) ( $req->get_param( 'source_run_id' ) ?: 0 ) );
+				$message = sprintf( 'Unlocked the %s location.', $location_slug );
+				break;
+
+			case 'jump_location':
+				$location_slug = sanitize_key( (string) ( $req->get_param( 'location_slug' ) ?: '' ) );
+				if ( '' === $location_slug ) {
+					return new \WP_REST_Response( [ 'message' => 'A location slug is required.' ], 400 );
+				}
+				$result  = IronQuestController::admin_jump_location( $user_id, $location_slug );
+				$message = sprintf( 'Moved the user to %s.', $location_slug );
+				break;
+
+			default:
+				return new \WP_REST_Response( [ 'message' => 'Unsupported IronQuest admin action.' ], 400 );
+		}
+
+		if ( is_wp_error( $result ) ) {
+			return new \WP_REST_Response( [ 'message' => $result->get_error_message() ], 400 );
+		}
+
+		return new \WP_REST_Response(
+			[
+				'success' => true,
+				'action'  => $action,
+				'message' => $message,
+				'result'  => $result,
+				'state'   => IronQuestController::admin_build_profile_payload( $user_id ),
+				'access'  => [
+					'entitled' => IronQuestEntitlementService::user_has_access( $user_id ),
+					'profile_enabled' => ! empty( ( IronQuestProfileService::get_profile( $user_id ) ?? [] )['enabled'] ),
+				],
+			]
+		);
 	}
 
 	public static function list_exercises( \WP_REST_Request $req ): \WP_REST_Response {

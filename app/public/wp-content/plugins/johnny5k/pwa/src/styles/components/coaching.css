@@ -190,3 +190,15 @@
     radial-gradient(circle at top right, rgba(255, 208, 0, 0.18), transparent 42%),
     rgba(255, 255, 255, 0.08);
 }
+
+:root[data-experience-mode='ironquest'] .coaching-summary-next-action,
+:root[data-experience-mode='ironquest'] .coaching-summary-panel.coaching-summary-panel-dark .coaching-summary-next-action {
+  display: grid;
+  gap: var(--space-1-5);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background:
+    radial-gradient(circle at top right, rgba(255, 208, 0, 0.18), transparent 42%),
+    linear-gradient(180deg, rgb(65 4 4 / 96%), rgb(4 22 34 / 96%));
+  border: 1px solid rgba(255, 208, 0, 0.28);
+}

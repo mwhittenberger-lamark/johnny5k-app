@@ -1,298 +1,147 @@
-# Onboarding Feature
+# IronQuest Onboarding Feature
 
-You've built a deep system, but onboarding determines whether users feel:
+## Current Product Position
 
-> "This is exciting"
+IronQuest onboarding is now a secondary add-on flow layered on top of the main Johnny5k onboarding.
 
-Or:
+That means:
 
-> "This is too much"
+- Core Johnny5k onboarding still completes first
+- Workout, nutrition, and daily-plan setup remain the source of truth
+- IronQuest is offered after core onboarding for entitled users who want the quest layer
 
-The goal is:
+This keeps the primary onboarding lean while still letting IronQuest feel intentional.
 
-> Hook -> Identity -> First Win -> Momentum
+## Live Entry Point
 
-Not:
+Current route tree:
 
-> "Explain everything"
+- `/onboarding/*` handles the main Johnny5k onboarding
+- `/onboarding/ironquest/*` handles the optional IronQuest follow-up
 
-## Onboarding Philosophy
+The IronQuest entry point is launched from the main onboarding completion screen, not mixed into the core intake steps.
 
-Do not teach the system upfront.
+## Implemented Flow
 
-Instead:
+### Step 1: Intro
 
-- Reveal mechanics gradually
-- Let users experience, not read
+Purpose:
 
-## Target Experience (First 5 Minutes)
+- Position IronQuest as an overlay on top of the plan Johnny already built
+- Reduce anxiety by making it optional
 
-The user should:
+Current copy direction:
 
-- Become a character
-- See themselves in IronQuest
-- Complete their first mission
-- Feel successful
-- Want to come back
-
-## Full Onboarding Flow
-
-### Step 1: Hook Screen
-
-#### Screen
-
-- Dark background
-- Subtle animation
-
-#### Text
-
-> "You are about to enter IronQuest."
-
-#### Button
-
-- Begin
+- “You can enter IronQuest without changing your Johnny5k plan”
+- “This is a secondary setup pass”
 
 ### Step 2: Class Selection
 
-Simple, visual cards:
+Current options:
 
 - Warrior
 - Ranger
 - Mage
 - Rogue
 
-Keep descriptions very short:
+This sets the identity framing for the quest layer only.
 
-#### Warrior
+### Step 3: Motivation Selection
 
-Lift heavy. Dominate.
+Current options:
 
-#### Ranger
-
-Move fast. Endure.
-
-#### Mage
-
-Stay consistent. Control.
-
-#### Rogue
-
-Start small. Stay sharp.
-
-Add:
-
-> "You can change this later"
-
-This removes anxiety.
-
-### Step 3: Motivation Pick (Light Personalization)
-
-> "What drives you?"
-
-- Power
 - Discipline
-- Survival
-- Freedom
+- Strength
+- Transformation
+- Redemption
 
-This feeds tone and portrait.
+This personalizes the tone of the quest identity while leaving the actual training plan unchanged.
 
-### Step 4: Face Upload (Highly Encouraged)
+### Step 4: Image / Starter Portrait
 
-#### Framing
+This is now part of the live onboarding flow.
 
-> "See yourself in IronQuest"
+Current behavior:
 
-#### Buttons
+- User can upload a headshot
+- User can optionally generate 1-2 stylized portrait variants from that headshot
+- User can select either the raw headshot or one generated image as the starter portrait
+- User can skip the image step entirely
 
-- Upload Image
-- Skip, small option
+Persistence:
 
-### Step 5: Character Awakening (Big Moment)
+- The chosen image is stored as `starter_portrait_attachment_id` in IronQuest identity
 
-#### Loading Screen
+Important product behavior:
 
-> "Johnny5k is forging your identity..."
+- Portrait is optional, not blocking
+- The image system reuses the existing Johnny5k onboarding media pipeline
+- No separate IronQuest-only upload system exists
 
-#### Reveal Screen
+### Step 5: Ready / Launch Screen
 
-- Full-screen portrait
+The live ready screen now shows:
 
-Text:
+- Chosen class
+- Chosen motivation
+- Current region
+- First mission label
+- Current starter resources
+- Selected starter portrait, when one exists
 
-> "You have entered IronQuest."
+CTA behavior:
 
-> "You are a [Class]."
+- Open quest hub
+- Open dashboard
 
-Johnny5k:
+## What Happens After Onboarding
 
-> "You are untested... but not without potential. Begin."
+The selected starter portrait now carries into the first visible IronQuest surfaces after onboarding.
 
-#### Button
+Current live surfaces:
 
-- Start First Quest
+- IronQuest ready screen
+- IronQuest hub hero
+- Workout mission intro card when a workout-backed mission starts
+- Workout completion reward reveal when that mission resolves
 
-### Step 6: First Map Intro (Simplified)
+This gives the portrait real continuity instead of leaving it trapped inside onboarding.
 
-Show:
+## Current Workout Integration
 
-- 1 location: Grim Hollow Village
-- Everything else locked
+When a workout starts and IronQuest is active:
 
-Tooltip:
+- The workout session automatically starts the current IronQuest mission
+- The active workout screen shows a mission intro moment tied to that run
+- The starter portrait is used in that intro moment when available
 
-> "Complete missions to progress your journey."
+When a workout completes:
 
-Do not explain the travel system yet.
+- The mission resolves through the existing workout completion flow
+- The workout completion review modal shows the IronQuest reward reveal
+- The starter portrait is used again in that reward moment when available
 
-### Step 7: First Mission (Guided)
+## Intentional Non-Goals For The Current Version
 
-Important:
+The following ideas may still be useful later, but they are not live onboarding behavior and should not be documented as current state:
 
-- This is not a full boss system
-- Keep it simple
+- Forced first-mission tutorial flow
+- Mandatory portrait generation
+- Guided first-set narrative beats unique to onboarding
+- Store tutorial as part of onboarding
+- Large upfront explanation of travel math, dice, HP, or deeper systems
 
-Johnny5k:
+## Product Rule
 
-> "The village is not safe. Move."
+The onboarding goal remains:
 
-No choices yet, to reduce friction.
+- Hook
+- Identity
+- Optional portrait personalization
+- Ready state
+- Immediate transition into normal Johnny5k usage with IronQuest layered on top
 
-### Step 8: First Workout (Guided Experience)
-
-During the workout:
-
-After the first set:
-
-> "Good. Stay controlled."
-
-After the second set:
-
-> "You're holding your ground."
-
-Do not show yet:
-
-- Dice rolls
-- HP
-
-Show only:
-
-- Feedback
-- Encouragement
-
-### Step 9: First Win (Critical)
-
-After the workout:
-
-#### Narrative
-
-> "The threat retreats. You've survived your first encounter."
-
-#### Rewards
-
-- XP
-- Gold
-- Maybe a small item
-
-Keep it positive.
-
-No failure possible here.
-
-### Step 10: Introduce First Systems (Gradually)
-
-Now start layering:
-
-#### Show XP Bar
-
-> "You are growing stronger."
-
-#### Show Gold
-
-> "You've earned gold. Spend it wisely."
-
-#### Show Store Button
-
-> "Prepare for what's next."
-
-### Step 11: Store Intro (Light)
-
-Highlight:
-
-- Potion
-- Basic gear
-
-Johnny5k:
-
-> "You'll need more than strength to survive."
-
-Do not show yet:
-
-- Full economy complexity
-- Artifact system
-
-### Step 12: Travel Intro (Second Session, Not First)
-
-This is key.
-
-On next login, show map with:
-
-- Next location locked
-- Travel requirement: 3 points
-
-Tooltip:
-
-> "Move through the world by walking or training."
-
-Now:
-
-- Steps = meaningful
-- Cardio = meaningful
-
-### Step 13: HP System Intro (Second Or Third Session)
-
-After the first real struggle:
-
-Message:
-
-> "You are fatigued."
-
-Show:
-
-- HP bar
-
-Explain:
-
-> "Rest and recovery restore your strength."
-
-### Step 14: Boss Tease (End Of First Location)
-
-After 2-3 missions, show:
-
-> "A greater threat waits..."
-
-Build anticipation before explaining mechanics.
-
-## What You Delay (On Purpose)
-
-Do not show upfront:
-
-- Boss mechanics
-- Dice system
-- Artifacts
-- Complex gear
-- Full map
-
-## Why This Works
-
-Because the user learns like this:
-
-1. I am a character
-2. I did something
-3. I got rewarded
-4. Now I want more
-
-Instead of:
-
-> "Here are 15 systems, good luck"
+The onboarding should not try to explain the whole game. It should make the user feel oriented, personalized, and ready to start training inside the quest layer.
 
 ## Onboarding Metrics To Watch
 

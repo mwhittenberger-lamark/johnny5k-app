@@ -6,7 +6,7 @@ import {
 } from '../dashboardLayoutUtils'
 
 const COACH_PROMPTS_STORAGE_KEY = 'johnny5k.dashboard.coachPromptsOpen'
-const DASHBOARD_LAYOUT_STORAGE_KEY = 'johnny5k.dashboard.layout.v2'
+const DASHBOARD_LAYOUT_STORAGE_KEY = 'johnny5k.dashboard.layout.v3'
 
 export function useDashboardPreferences({ email, cardDefs, defaultLayoutOptions = {} }) {
   const layoutOwner = email || 'guest'

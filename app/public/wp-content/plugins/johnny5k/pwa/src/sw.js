@@ -19,6 +19,7 @@ const APP_SHELL_ALLOWLIST = [
   /^\/activity-log(?:\/.*)?$/,
   /^\/progress-photos(?:\/.*)?$/,
   /^\/rewards(?:\/.*)?$/,
+  /^\/ironquest(?:\/.*)?$/,
   /^\/settings(?:\/.*)?$/,
   /^\/ai(?:\/.*)?$/,
   /^\/admin(?:\/.*)?$/,

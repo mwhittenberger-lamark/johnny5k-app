@@ -4,12 +4,9 @@
 .splash {
   display: flex; align-items: center; justify-content: center;
   min-height: 100vh; font-size: 1.2rem; color: var(--text-muted);
-  font-family: 'Exo 2', system-ui, sans-serif;
+  font-family: var(--font-display);
   padding: 24px;
-  background:
-    radial-gradient(circle at top left, rgba(0, 188, 222, 0.14), transparent 28%),
-    radial-gradient(circle at bottom right, rgba(255, 125, 84, 0.12), transparent 24%),
-    linear-gradient(180deg, rgba(232, 244, 252, 0.98), rgba(248, 251, 254, 1));
+  background: var(--surface-hero);
 }
 
 .app-shell { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
@@ -22,7 +19,7 @@
   position: sticky;
   top: 0;
   z-index: 20;
-  background: linear-gradient(180deg, rgba(230, 243, 253, 0.96) 0%, rgba(230, 243, 253, 0.82) 65%, rgba(230, 243, 253, 0) 100%);
+  background: var(--surface-shell-header);
   backdrop-filter: blur(8px);
 }
 .app-shell-header-main {
@@ -91,6 +88,36 @@
 .app-shell-push-notice-dismiss:hover {
   color: #9d3e17;
 }
+:root[data-experience-mode='ironquest'] .app-shell-push-notice,
+:root[data-experience-mode='ironquest'] .app-shell-install-notice,
+:root[data-experience-mode='ironquest'] .app-shell-update-notice,
+:root[data-experience-mode='ironquest'] .app-shell-connectivity-notice {
+  color: var(--text);
+  border-color: rgba(214, 183, 96, 0.24);
+  box-shadow: 0 16px 34px rgba(3, 5, 12, 0.24);
+}
+:root[data-experience-mode='ironquest'] .app-shell-push-notice {
+  background: linear-gradient(135deg, rgba(58, 41, 23, 0.96), rgba(50, 28, 36, 0.96));
+}
+:root[data-experience-mode='ironquest'] .app-shell-install-notice,
+:root[data-experience-mode='ironquest'] .app-shell-update-notice,
+:root[data-experience-mode='ironquest'] .app-shell-connectivity-notice {
+  background: var(--surface-shell-notice);
+}
+:root[data-experience-mode='ironquest'] .app-shell-connectivity-notice.offline {
+  background: linear-gradient(135deg, rgba(72, 44, 24, 0.96), rgba(54, 31, 31, 0.96));
+}
+:root[data-experience-mode='ironquest'] .app-shell-push-notice-copy span,
+:root[data-experience-mode='ironquest'] .app-shell-install-copy span,
+:root[data-experience-mode='ironquest'] .app-shell-connectivity-copy span {
+  color: var(--text-muted);
+}
+:root[data-experience-mode='ironquest'] .app-shell-push-notice-action,
+:root[data-experience-mode='ironquest'] .app-shell-push-notice-dismiss,
+:root[data-experience-mode='ironquest'] .app-shell-install-action,
+:root[data-experience-mode='ironquest'] .app-shell-connectivity-action {
+  color: var(--hero-title-color);
+}
 .app-shell-install-notice,
 .app-shell-update-notice,
 .app-shell-connectivity-notice {
@@ -106,7 +133,7 @@
 .app-shell-install-notice,
 .app-shell-update-notice {
   border: 1px solid rgba(30, 72, 102, 0.18);
-  background: linear-gradient(135deg, rgba(240, 248, 255, 0.96), rgba(228, 242, 255, 0.96));
+  background: var(--surface-shell-notice);
   box-shadow: 0 12px 24px rgba(13, 50, 87, 0.1);
   color: var(--text);
 }
@@ -197,9 +224,9 @@
   height: 44px;
   border-radius: 16px;
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.78);
-  border: 1px solid rgba(168, 212, 240, 0.9);
-  box-shadow: 0 8px 18px rgba(8, 21, 51, 0.12);
+  background: var(--shell-brand-bg);
+  border: 1px solid var(--shell-brand-border);
+  box-shadow: var(--mode-shadow);
 }
 .app-shell-brand-mark img {
   display: block;
@@ -213,14 +240,20 @@
   min-width: 0;
 }
 .app-shell-brand-copy strong {
-  font-family: 'Exo 2', system-ui, sans-serif;
+  font-family: var(--font-display);
   font-size: 1.08rem;
   line-height: 1.05;
 }
 .app-shell-brand-copy small {
   color: var(--text-muted);
   font-size: 0.88rem;
-  white-space: nowrap;
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: normal;
+}
+:root[data-experience-mode='ironquest'] .app-shell-brand-copy small {
+  color: var(--hero-copy-color);
+  opacity: 0.88;
 }
 .app-shell-actions {
   display: flex;
@@ -232,9 +265,9 @@
   align-items: center;
   gap: 8px;
   padding: 6px;
-  border: 1px solid rgba(168, 212, 240, 0.88);
+  border: 1px solid var(--shell-nav-border);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.66);
+  background: var(--shell-nav-bg);
   box-shadow: var(--shadow-sm);
 }
 .app-shell-desktop-link {
@@ -273,6 +306,9 @@
   background: linear-gradient(135deg, rgba(0, 188, 222, 0.14), rgba(255, 56, 160, 0.14));
   border-color: rgba(0, 188, 222, 0.28);
 }
+:root[data-experience-mode='ironquest'] .app-shell-coach {
+  border-color: var(--accent2);
+}
 .app-shell-actions .app-icon,
 .app-shell-mobile-link-icon .app-icon {
   width: 18px;
@@ -290,6 +326,9 @@
   background: rgba(255, 255, 255, 0.82);
   box-shadow: var(--shadow-sm);
   color: var(--text);
+}
+:root[data-experience-mode='ironquest'] .app-shell-menu-toggle {
+  background: rgb(123 69 69 / 82%);
 }
 .app-shell-menu-label {
   font-weight: 800;
@@ -363,6 +402,9 @@
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
 }
+:root[data-experience-mode='ironquest'] .app-shell-mobile-nav-shell {
+  background: linear-gradient(180deg, rgb(28 90 7), rgb(98 170 81 / 98%));
+}
 .app-shell-mobile-nav.open {
   pointer-events: auto;
 }
@@ -396,6 +438,9 @@
   color: var(--text);
   font-weight: 700;
 }
+:root[data-experience-mode='ironquest'] .app-shell-mobile-nav-close {
+  background: #081533;
+}
 .app-shell-mobile-nav-grid {
   display: grid;
   gap: 10px;
@@ -414,6 +459,9 @@
   color: var(--text);
   box-shadow: var(--shadow-sm);
   transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+}
+:root[data-experience-mode='ironquest'] .app-shell-mobile-link {
+  background: rgb(58 6 6 / 84%);
 }
 .app-shell-mobile-link:hover,
 .app-shell-mobile-link.active {

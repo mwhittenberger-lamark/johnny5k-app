@@ -97,6 +97,35 @@ class IronQuestDailyStateService {
 		);
 	}
 
+	public static function sync_travel_points_source( int $user_id, string $source_key, int $points, ?string $state_date = null ): array {
+		$date  = self::normalize_state_date( $user_id, $state_date );
+		$state = self::get_state( $user_id, $date );
+		$bonus = is_array( $state['bonus_state'] ?? null ) ? $state['bonus_state'] : [];
+		$source = sanitize_key( $source_key );
+
+		if ( '' === $source ) {
+			return $state;
+		}
+
+		$travel_sources = is_array( $bonus['travel_sources'] ?? null ) ? $bonus['travel_sources'] : [];
+		$travel_sources[ $source ] = max( 0, $points );
+		$bonus['travel_sources']   = $travel_sources;
+
+		$total_points = 0;
+		foreach ( $travel_sources as $travel_points ) {
+			$total_points += max( 0, (int) $travel_points );
+		}
+
+		return self::upsert_state(
+			$user_id,
+			$date,
+			[
+				'travel_points_earned' => $total_points,
+				'bonus_state_json'     => $bonus,
+			]
+		);
+	}
+
 	private static function get_existing_row( int $user_id, string $state_date ): ?array {
 		global $wpdb;
 

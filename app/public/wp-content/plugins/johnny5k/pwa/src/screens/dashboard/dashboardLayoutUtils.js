@@ -1,11 +1,13 @@
 export function getDefaultDashboardLayout(cardDefs, options = {}) {
   const defaultVisibleCardIds = new Set(Array.isArray(options.defaultVisibleCardIds) ? options.defaultVisibleCardIds : [])
+  const defaultHiddenCardIds = new Set(Array.isArray(options.defaultHiddenCardIds) ? options.defaultHiddenCardIds : [])
   const prependCardOrder = Array.isArray(options.prependCardOrder) ? options.prependCardOrder : []
   const hidden = {}
   const touched = {}
 
   for (const card of cardDefs) {
-    hidden[card.id] = Boolean(card.optional && !defaultVisibleCardIds.has(card.id))
+    const hideByDefault = Boolean(card.optional || card.defaultHidden || defaultHiddenCardIds.has(card.id))
+    hidden[card.id] = Boolean(hideByDefault && !defaultVisibleCardIds.has(card.id))
     touched[card.id] = false
   }
 

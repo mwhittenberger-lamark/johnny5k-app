@@ -8,7 +8,7 @@
   top: -8px;
   z-index: 10;
   padding: var(--space-2-5) 0 var(--space-3);
-  background: color-mix(in srgb, var(--bg) 92%, white 8%);
+  background: var(--surface-workout-header);
   backdrop-filter: blur(14px);
   border-bottom: 1px solid rgba(18, 24, 31, 0.08);
 }
@@ -35,7 +35,7 @@
 }
 .ex-tab.active.has-sets { border-color: var(--accent2); color: #fff; }
 .exercise-card { position: relative; overflow: visible; }
-.exercise-card-accent { position: absolute; inset: 0 0 auto 0; height: 6px; background: linear-gradient(90deg, #2fa4a9 0%, #79cdc8 100%); border-radius: 16px 16px 0 0; }
+.exercise-card-accent { position: absolute; inset: 0 0 auto 0; height: 6px; background: var(--ornament-gradient); border-radius: 16px 16px 0 0; }
 .exercise-card-header { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-4); padding-top: var(--space-1); }
 .exercise-card-header-copy { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; flex: 1; }
 .exercise-card-header h2 { margin: 0; font-size: 1.2rem; }
@@ -106,9 +106,9 @@
 .exercise-ai-swap-reply p { margin: 0; white-space: pre-wrap; }
 .ui-overlay.exercise-drawer-shell { z-index: 80; }
 .ui-overlay.exercise-drawer-shell .ui-overlay-backdrop { background: rgba(18, 24, 31, 0.42); }
-.ui-drawer.exercise-drawer { position: relative; top: auto; right: auto; display: flex; flex-direction: column; gap: var(--space-4); width: min(420px, 100%); height: 100%; padding: var(--space-6) var(--space-5); background: linear-gradient(180deg, #fffaf4 0%, #f4f8fa 100%); box-shadow: -24px 0 60px rgba(18, 24, 31, 0.18); border: 0; }
+.ui-drawer.exercise-drawer { position: relative; top: auto; right: auto; display: flex; flex-direction: column; gap: var(--space-4); width: min(420px, 100%); height: 100%; padding: var(--space-6) var(--space-5); background: var(--surface-drawer); box-shadow: -24px 0 60px rgba(18, 24, 31, 0.18); border: 0; }
 .exercise-drawer-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-4); }
-.exercise-drawer-eyebrow { margin: 0 0 var(--space-1-5); font-size: 0.76rem; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: #2fa4a9; }
+.exercise-drawer-eyebrow { margin: 0 0 var(--space-1-5); font-size: 0.76rem; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent2); }
 .exercise-drawer-head h3 { margin: 0; font-size: 1.3rem; }
 .exercise-drawer-close { border: 1px solid rgba(21, 29, 38, 0.12); background: rgba(255, 255, 255, 0.92); color: var(--text); border-radius: 999px; padding: 10px 14px; font: inherit; font-weight: 700; cursor: pointer; }
 .exercise-drawer-subtitle { margin: 0; color: var(--text-muted); }
@@ -166,6 +166,7 @@
   align-items: stretch;
   justify-content: flex-start;
   min-height: auto;
+  padding-bottom: calc(104px + env(safe-area-inset-bottom, 0px));
 }
 .workout-start-card,
 .workout-plan-card,
@@ -180,6 +181,151 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-2-5);
+}
+.workout-launchpad-primary-card {
+  gap: var(--space-4);
+  padding: var(--space-4);
+  background:
+    radial-gradient(circle at top right, rgba(255, 160, 81, 0.24), transparent 34%),
+    linear-gradient(180deg, rgba(255, 250, 242, 0.98), rgba(255, 255, 255, 0.96));
+  border: 1px solid rgba(21, 29, 38, 0.08);
+  box-shadow: 0 18px 44px rgba(31, 42, 46, 0.08);
+}
+.workout-launchpad-primary-kicker {
+  margin: -8px 0 0;
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: var(--text);
+}
+.workout-launchpad-primary-card .dashboard-eyebrow,
+.workout-launchpad-primary-card h1,
+.workout-launchpad-primary-card .settings-subtitle,
+.workout-launchpad-primary-card .workout-inline-error,
+.workout-launchpad-primary-card .workout-launchpad-focus-card p,
+.workout-launchpad-primary-card .workout-launchpad-callout,
+.workout-launchpad-primary-card .workout-launchpad-callout .settings-subtitle {
+  color: var(--text);
+}
+.workout-launchpad-focus-card,
+.workout-launchpad-callout {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-3-5);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid rgba(21, 29, 38, 0.08);
+}
+.workout-launchpad-focus-label {
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.workout-launchpad-focus-card p,
+.workout-launchpad-preview-summary,
+.workout-launchpad-stickybar-copy strong,
+.workout-launchpad-stickybar-copy span {
+  margin: 0;
+}
+.workout-launchpad-primary-actions {
+  margin-top: var(--space-1);
+}
+.workout-launchpad-adjust-card {
+  gap: var(--space-4);
+}
+.workout-launchpad-preview-card {
+  gap: var(--space-3);
+}
+.workout-launchpad-preview-summary {
+  font-size: 1rem;
+  font-weight: 800;
+  color: var(--text);
+}
+.workout-launchpad-preview-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2-5) var(--space-3);
+  border-radius: 14px;
+  background: rgba(21, 29, 38, 0.04);
+}
+.workout-launchpad-preview-simple-list {
+  gap: var(--space-2);
+}
+.workout-launchpad-preview-simple-row {
+  justify-content: flex-start;
+}
+.workout-launchpad-preview-simple-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.workout-launchpad-preview-simple-copy small {
+  color: var(--text-muted);
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+.workout-launchpad-addon-card,
+.workout-launchpad-customize-card {
+  background: rgba(249, 246, 240, 0.92);
+  border: 1px solid rgba(21, 29, 38, 0.08);
+}
+.workout-launchpad-utility-actions {
+  margin-top: var(--space-1);
+  padding-top: var(--space-3);
+  border-top: 1px solid rgba(21, 29, 38, 0.08);
+}
+.workout-launchpad-stickybar {
+  position: sticky;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
+  z-index: 12;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-top: auto;
+  padding: var(--space-3) var(--space-3-5);
+  border-radius: 18px;
+  border: 1px solid rgba(21, 29, 38, 0.08);
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(16px);
+  box-shadow: 0 18px 40px rgba(31, 42, 46, 0.14);
+}
+.workout-launchpad-stickybar-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.workout-launchpad-stickybar-copy strong {
+  font-size: 0.95rem;
+}
+.workout-launchpad-stickybar-copy span {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.workout-plan-customize-drawer .ui-drawer-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3-5);
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 6px;
+}
+.workout-preview-list-editor {
+  max-height: unset;
+}
+.workout-customize-drawer-actions {
+  padding-bottom: var(--space-2);
+}
+.workout-customize-drawer-actions .btn-primary {
+  width: 100%;
 }
 .workout-launchpad-helper {
   margin: 0;
@@ -211,6 +357,83 @@
 .workout-offline-status.online {
   background: rgba(236, 250, 242, 0.92);
   border-color: rgba(39, 143, 88, 0.18);
+}
+:root[data-experience-mode='ironquest'] .exercise-card-tag,
+:root[data-experience-mode='ironquest'] .exercise-menu-button,
+:root[data-experience-mode='ironquest'] .exercise-card-menu,
+:root[data-experience-mode='ironquest'] .exercise-muscle-pill,
+:root[data-experience-mode='ironquest'] .exercise-muscle-pill.primary,
+:root[data-experience-mode='ironquest'] .exercise-card-summary-block,
+:root[data-experience-mode='ironquest'] .exercise-card-summary-prescription,
+:root[data-experience-mode='ironquest'] .exercise-panel,
+:root[data-experience-mode='ironquest'] .exercise-context-item,
+:root[data-experience-mode='ironquest'] .exercise-ai-swap-row,
+:root[data-experience-mode='ironquest'] .exercise-drawer-close,
+:root[data-experience-mode='ironquest'] .workout-launchpad-focus-card,
+:root[data-experience-mode='ironquest'] .workout-launchpad-callout,
+:root[data-experience-mode='ironquest'] .workout-launchpad-addon-card,
+:root[data-experience-mode='ironquest'] .workout-launchpad-customize-card,
+:root[data-experience-mode='ironquest'] .workout-launchpad-utility-actions,
+:root[data-experience-mode='ironquest'] .workout-launchpad-stickybar,
+:root[data-experience-mode='ironquest'] .workout-offline-status,
+:root[data-experience-mode='ironquest'] .workout-offline-status.offline,
+:root[data-experience-mode='ironquest'] .workout-offline-status.syncing,
+:root[data-experience-mode='ironquest'] .workout-offline-status.retry,
+:root[data-experience-mode='ironquest'] .workout-offline-status.error,
+:root[data-experience-mode='ironquest'] .workout-offline-status.recovered,
+:root[data-experience-mode='ironquest'] .workout-offline-status.online,
+:root[data-experience-mode='ironquest'] .workout-cardio-callout,
+:root[data-experience-mode='ironquest'] .workout-johnny-review,
+:root[data-experience-mode='ironquest'] .daytype-pill {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(214, 183, 96, 0.18);
+  color: var(--text);
+}
+
+:root[data-experience-mode='ironquest'] .workout-launchpad-primary-card {
+  background:
+    radial-gradient(circle at top right, rgba(242, 95, 92, 0.24), transparent 34%),
+    radial-gradient(circle at left bottom, rgba(255, 175, 92, 0.18), transparent 42%),
+    linear-gradient(160deg, rgba(45, 30, 22, 0.98), rgba(27, 25, 33, 0.98));
+  border-color: rgba(255, 184, 117, 0.16);
+  box-shadow: 0 18px 44px rgba(14, 12, 16, 0.34);
+}
+
+:root[data-experience-mode='ironquest'] .workout-launchpad-primary-kicker {
+  color: rgba(255, 232, 210, 0.96);
+}
+
+:root[data-experience-mode='ironquest'] .workout-launchpad-primary-card .dashboard-eyebrow,
+:root[data-experience-mode='ironquest'] .workout-launchpad-primary-card h1,
+:root[data-experience-mode='ironquest'] .workout-launchpad-primary-card .settings-subtitle,
+:root[data-experience-mode='ironquest'] .workout-launchpad-primary-card .workout-inline-error,
+:root[data-experience-mode='ironquest'] .workout-launchpad-primary-card .workout-launchpad-focus-card p,
+:root[data-experience-mode='ironquest'] .workout-launchpad-primary-card .workout-launchpad-callout,
+:root[data-experience-mode='ironquest'] .workout-launchpad-primary-card .workout-launchpad-callout .settings-subtitle {
+  color: rgba(255, 244, 234, 0.96);
+}
+
+:root[data-experience-mode='ironquest'] .workout-launchpad-focus-label {
+  color: rgba(255, 203, 158, 0.88);
+}
+:root[data-experience-mode='ironquest'] .exercise-smart-prompt,
+:root[data-experience-mode='ironquest'] .exercise-ai-swap-reply {
+  background: rgba(255, 208, 120, 0.12);
+  border: 1px solid rgba(214, 183, 96, 0.24);
+  color: #ffe6ba;
+}
+:root[data-experience-mode='ironquest'] .exercise-card-tag,
+:root[data-experience-mode='ironquest'] .exercise-card-tag.subtle,
+:root[data-experience-mode='ironquest'] .exercise-card-tag.bonus-fill,
+:root[data-experience-mode='ironquest'] .exercise-card-tag.equipment-adjusted,
+:root[data-experience-mode='ironquest'] .workout-bonus-note,
+:root[data-experience-mode='ironquest'] .exercise-set-sync-badge,
+:root[data-experience-mode='ironquest'] .exercise-set-sync-badge.syncing,
+:root[data-experience-mode='ironquest'] .exercise-set-sync-badge.queued {
+  color: var(--text);
+}
+:root[data-experience-mode='ironquest'] .exercise-card-menu button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
 }
 .workout-offline-badge {
   color: #5a4a19;
@@ -390,6 +613,20 @@
   gap: var(--space-3-5);
   min-height: 0;
   overflow: hidden;
+}
+@media (max-width: 640px) {
+  .workout-launchpad-primary-card {
+    padding: var(--space-3-5);
+  }
+
+  .workout-launchpad-stickybar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .workout-launchpad-stickybar .btn-primary {
+    width: 100%;
+  }
 }
 .workout-quickadd-grid {
   display: grid;
@@ -774,6 +1011,54 @@
   background: linear-gradient(180deg, #ffffff, #fff5ea);
   border: 1px solid rgba(164, 75, 0, 0.1);
 }
+
+.workout-ironquest-moment {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.workout-ironquest-moment-body {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-3-5);
+  align-items: center;
+}
+
+.workout-ironquest-portrait-frame {
+  width: 104px;
+  height: 104px;
+  border-radius: 22px;
+  overflow: hidden;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(255, 245, 234, 0.96));
+  border: 1px solid rgba(164, 75, 0, 0.14);
+}
+
+.workout-ironquest-portrait-frame img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.workout-ironquest-moment-copy {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.workout-ironquest-moment-copy h2,
+.workout-ironquest-moment-copy h3,
+.workout-ironquest-moment-copy p {
+  margin: 0;
+}
+
+.workout-ironquest-moment-copy p {
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
+.workout-ironquest-moment-detail {
+  font-size: 0.94rem;
+}
 .workout-complete-review-copy {
   margin: 0;
   font-size: clamp(1.05rem, 2vw, 1.28rem);
@@ -787,6 +1072,12 @@
   justify-content: flex-end;
   gap: var(--space-3);
   flex-wrap: wrap;
+}
+
+@media (max-width: 720px) {
+  .workout-ironquest-moment-body {
+    grid-template-columns: 1fr;
+  }
 }
 .ui-overlay.workout-session-confirm-shell {
   position: fixed;
@@ -2213,4 +2504,69 @@
 :root[data-theme-mode='dark'] .workout-plan-chip.equipment-adjusted {
   background: rgba(34, 196, 126, 0.24);
   color: #effff6;
+}
+
+:root[data-experience-mode='ironquest'] .exercise-card-tag,
+:root[data-experience-mode='ironquest'] .exercise-menu-button,
+:root[data-experience-mode='ironquest'] .exercise-card-menu,
+:root[data-experience-mode='ironquest'] .exercise-muscle-pill,
+:root[data-experience-mode='ironquest'] .exercise-muscle-pill.primary,
+:root[data-experience-mode='ironquest'] .exercise-card-summary-block,
+:root[data-experience-mode='ironquest'] .exercise-card-summary-prescription,
+:root[data-experience-mode='ironquest'] .exercise-panel,
+:root[data-experience-mode='ironquest'] .exercise-context-item,
+:root[data-experience-mode='ironquest'] .exercise-ai-swap-row,
+:root[data-experience-mode='ironquest'] .exercise-drawer-close,
+:root[data-experience-mode='ironquest'] .exercise-set-row,
+:root[data-experience-mode='ironquest'] .exercise-set-number,
+:root[data-experience-mode='ironquest'] .exercise-set-grid input,
+:root[data-experience-mode='ironquest'] .exercise-set-row-footer input,
+:root[data-experience-mode='ironquest'] .exercise-set-complete:not(.completed),
+:root[data-experience-mode='ironquest'] .workout-offline-status,
+:root[data-experience-mode='ironquest'] .workout-offline-status.offline,
+:root[data-experience-mode='ironquest'] .workout-offline-status.syncing,
+:root[data-experience-mode='ironquest'] .workout-offline-status.retry,
+:root[data-experience-mode='ironquest'] .workout-offline-status.error,
+:root[data-experience-mode='ironquest'] .workout-offline-status.recovered,
+:root[data-experience-mode='ironquest'] .workout-offline-status.online,
+:root[data-experience-mode='ironquest'] .workout-cardio-callout,
+:root[data-experience-mode='ironquest'] .workout-johnny-review,
+:root[data-experience-mode='ironquest'] .daytype-pill {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(214, 183, 96, 0.18);
+  color: var(--text);
+}
+
+:root[data-experience-mode='ironquest'] .exercise-smart-prompt,
+:root[data-experience-mode='ironquest'] .exercise-ai-swap-reply,
+:root[data-experience-mode='ironquest'] .exercise-set-sync-badge,
+:root[data-experience-mode='ironquest'] .exercise-set-sync-badge.syncing,
+:root[data-experience-mode='ironquest'] .exercise-set-sync-badge.queued,
+:root[data-experience-mode='ironquest'] .workout-offline-badge,
+:root[data-experience-mode='ironquest'] .workout-offline-badge.syncing,
+:root[data-experience-mode='ironquest'] .workout-offline-badge.retry,
+:root[data-experience-mode='ironquest'] .workout-offline-badge.error,
+:root[data-experience-mode='ironquest'] .workout-offline-badge.recovered,
+:root[data-experience-mode='ironquest'] .workout-offline-badge.online {
+  background: rgba(255, 208, 120, 0.12);
+  border-color: rgba(214, 183, 96, 0.24);
+  color: #ffe6ba;
+}
+
+:root[data-experience-mode='ironquest'] .exercise-card-menu button,
+:root[data-experience-mode='ironquest'] .exercise-ai-swap-row p,
+:root[data-experience-mode='ironquest'] .exercise-ai-swap-missing,
+:root[data-experience-mode='ironquest'] .exercise-drawer-subtitle,
+:root[data-experience-mode='ironquest'] .exercise-note-label,
+:root[data-experience-mode='ironquest'] .exercise-description-head p,
+:root[data-experience-mode='ironquest'] .exercise-card-label,
+:root[data-experience-mode='ironquest'] .exercise-card-target-note,
+:root[data-experience-mode='ironquest'] .workout-swap-note,
+:root[data-experience-mode='ironquest'] .rir-help,
+:root[data-experience-mode='ironquest'] .daytype-pill small {
+  color: var(--text-muted);
+}
+
+:root[data-experience-mode='ironquest'] .exercise-card-menu button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
 }

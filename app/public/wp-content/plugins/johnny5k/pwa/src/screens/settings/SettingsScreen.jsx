@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { aiApi } from '../../api/modules/ai'
 import { analyticsApi } from '../../api/modules/analytics'
 import { bodyApi } from '../../api/modules/body'
+import { ironquestApi } from '../../api/modules/ironquest'
 import { onboardingApi } from '../../api/modules/onboarding'
 import { pushApi } from '../../api/modules/push'
 import AppDialog from '../../components/ui/AppDialog'
@@ -20,6 +21,7 @@ import { useAuthStore } from '../../store/authStore'
 import { useJohnnyAssistantStore } from '../../store/johnnyAssistantStore'
 import { formatLiveWorkoutNativeAudioModeLabel, formatOpenAiVoiceLabel, getDefaultLiveWorkoutVoicePrefs, LIVE_WORKOUT_NATIVE_AUDIO_MODE_OPTIONS, LIVE_WORKOUT_VOICE_RATE_OPTIONS, OPENAI_TTS_VOICE_OPTIONS, readLiveWorkoutVoicePrefs, writeLiveWorkoutVoicePrefs } from '../../lib/liveWorkoutVoice'
 import { DAILY_CHECK_IN_QUESTIONS, normalizeDailyCheckInEntry } from '../../lib/dailyCheckIn'
+import { resolveExperienceModeFromIronQuestPayload } from '../../lib/experienceMode'
 import { buildHeightCm, buildPushPromptSnoozedUntil, formatPhoneInput, formatReminderHour, formatMissingFields, getTimezoneRegion, getTimezoneRegions, getTimezonesForRegion, isPushPromptSnoozed, normalizePhoneNumber, normalizePushPromptStatus, normalizeTargets, PUSH_PROMPT_SNOOZE_DAYS, reminderHourOptions, settingsFormFromState } from '../../lib/onboarding'
 import { DAY_TYPE_OPTIONS } from '../../lib/trainingDayTypes'
 import { formatUsShortDate } from '../../lib/dateFormat'
@@ -58,6 +60,7 @@ export default function SettingsScreen() {
   const authEmail = useAuthStore(s => s.email)
   const dailyCheckInEntry = useAuthStore(s => s.dailyCheckInEntry)
   const setAuth = useAuthStore(s => s.setAuth)
+  const setExperienceMode = useAuthStore(s => s.setExperienceMode)
   const setNotificationPrefs = useAuthStore(s => s.setNotificationPrefs)
   const setPreferenceMeta = useAuthStore(s => s.setPreferenceMeta)
   const openDrawer = useJohnnyAssistantStore(state => state.openDrawer)
@@ -115,6 +118,11 @@ export default function SettingsScreen() {
   const [generationPrompt, setGenerationPrompt] = useState('')
   const [generationError, setGenerationError] = useState('')
   const [generationMessage, setGenerationMessage] = useState('')
+  const [ironQuest, setIronQuest] = useState(null)
+  const [ironQuestLoading, setIronQuestLoading] = useState(true)
+  const [ironQuestError, setIronQuestError] = useState('')
+  const [ironQuestSubmitting, setIronQuestSubmitting] = useState(false)
+  const [ironQuestResetting, setIronQuestResetting] = useState(false)
   const [zoomedImageId, setZoomedImageId] = useState('')
   const [zoomScale, setZoomScale] = useState(1)
   const pushPanelRef = useRef(null)
@@ -183,6 +191,27 @@ export default function SettingsScreen() {
 
     return () => { active = false }
   }, [setNotificationPrefs, setPreferenceMeta])
+
+  useEffect(() => {
+    let active = true
+
+    ironquestApi.profile()
+      .then(data => {
+        if (!active) return
+        setIronQuest(data)
+        setIronQuestError('')
+        setExperienceMode(resolveExperienceModeFromIronQuestPayload(data))
+      })
+      .catch(err => {
+        if (!active) return
+        setIronQuestError(err?.message || 'Could not load IronQuest.')
+      })
+      .finally(() => {
+        if (active) setIronQuestLoading(false)
+      })
+
+    return () => { active = false }
+  }, [])
 
   useEffect(() => {
     applyColorScheme(form.color_scheme)
@@ -664,6 +693,64 @@ export default function SettingsScreen() {
     } catch (err) {
       setError(err.message)
       setSaving(false)
+    }
+  }
+
+  async function handleToggleIronQuestMode(nextEnabled) {
+    if (ironQuestSubmitting || ironQuestResetting) return
+
+    setIronQuestSubmitting(true)
+    setIronQuestError('')
+
+    try {
+      const data = nextEnabled
+        ? await ironquestApi.enable()
+        : await ironquestApi.disable()
+      setExperienceMode(nextEnabled ? 'ironquest' : 'standard')
+
+      setIronQuest(current => ({
+        ...(current || {}),
+        entitlement: current?.entitlement || { has_access: true },
+        profile: data?.profile ?? current?.profile ?? {},
+      }))
+      invalidate()
+      await loadSnapshot(true)
+    } catch (err) {
+      setIronQuestError(err?.message || 'Could not update IronQuest mode.')
+    } finally {
+      setIronQuestSubmitting(false)
+    }
+  }
+
+  async function handleRestartIronQuestOnboarding() {
+    if (ironQuestSubmitting || ironQuestResetting) return
+
+    const confirmed = await confirmGlobalAction({
+      title: 'Restart IronQuest onboarding?',
+      message: 'This clears your IronQuest class, motivation, and starter portrait, turns the mode off, and sends you back to the IronQuest intro flow. Quest progression like XP, gold, and unlocked regions stays intact.',
+      confirmLabel: 'Restart IronQuest onboarding',
+      tone: 'danger',
+    })
+    if (!confirmed) return
+
+    setIronQuestResetting(true)
+    setIronQuestError('')
+
+    try {
+      const data = await ironquestApi.restartOnboarding()
+      setExperienceMode('standard')
+      setIronQuest(current => ({
+        ...(current || {}),
+        entitlement: current?.entitlement || { has_access: true },
+        profile: data?.profile ?? current?.profile ?? {},
+      }))
+      invalidate()
+      await loadSnapshot(true)
+      navigate('/onboarding/ironquest', { replace: true })
+    } catch (err) {
+      setIronQuestError(err?.message || 'Could not restart IronQuest onboarding.')
+    } finally {
+      setIronQuestResetting(false)
     }
   }
 
@@ -2024,10 +2111,62 @@ export default function SettingsScreen() {
           eyebrow="Training and app"
           title="Training & App"
           description="Color palette, weekly split order, and quick access to your exercise library."
-          itemCountLabel="3 cards"
+          itemCountLabel="4 cards"
           open={accordionSections.trainingApp}
           onToggle={toggleAccordionSection}
         >
+          <section className="settings-section dash-card">
+            <h3>IronQuest Mode</h3>
+            <p className="settings-subtitle">Switch this account between standard Johnny5k and the IronQuest overlay without rerunning onboarding.</p>
+            {ironQuestLoading ? (
+              <p className="settings-subtitle">Loading IronQuest mode…</p>
+            ) : ironQuest?.entitlement && !ironQuest.entitlement.has_access ? (
+              <p className="settings-subtitle">IronQuest is not available for this account yet.</p>
+            ) : (
+              <>
+                <div className="onboarding-review-list">
+                  <div className="onboarding-review-row"><span>Current mode</span><strong>{ironQuest?.profile?.enabled ? 'IronQuest' : 'Standard Johnny5k'}</strong></div>
+                  <div className="onboarding-review-row"><span>Quest profile</span><strong>{ironQuest?.profile?.class_slug && ironQuest?.profile?.motivation_slug ? 'Configured' : 'Needs identity setup'}</strong></div>
+                </div>
+                <div className="settings-actions">
+                  {ironQuest?.profile?.enabled ? (
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      onClick={() => handleToggleIronQuestMode(false)}
+                      disabled={ironQuestSubmitting || ironQuestResetting}
+                    >
+                      {ironQuestSubmitting ? 'Switching…' : 'Use Standard Johnny5k'}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="btn-primary"
+                      onClick={() => handleToggleIronQuestMode(true)}
+                      disabled={ironQuestSubmitting || ironQuestResetting}
+                    >
+                      {ironQuestSubmitting ? 'Switching…' : 'Use IronQuest'}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="btn-outline"
+                    onClick={() => void handleRestartIronQuestOnboarding()}
+                    disabled={ironQuestSubmitting || ironQuestResetting}
+                  >
+                    {ironQuestResetting ? 'Restarting…' : 'Restart IronQuest onboarding'}
+                  </button>
+                </div>
+                <p className="settings-subtitle">
+                  {ironQuest?.profile?.enabled
+                    ? 'Workouts will attach and resolve IronQuest missions while this mode is on.'
+                    : 'Workouts will stay in standard Johnny5k mode while this is off.'}
+                </p>
+              </>
+            )}
+            {ironQuestError ? <ErrorState className="settings-inline-error" message={ironQuestError} title="Could not update IronQuest mode" /> : null}
+          </section>
+
           <section className="settings-section dash-card">
             <h3>Color Scheme</h3>
             <p className="settings-subtitle">Pick the app palette you want to use everywhere. The current colors stay as the first option.</p>

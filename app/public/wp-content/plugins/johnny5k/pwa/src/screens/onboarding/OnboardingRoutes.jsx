@@ -3,9 +3,11 @@ import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-
 import { dashboardApi } from '../../api/modules/dashboard'
 import { ironquestApi } from '../../api/modules/ironquest'
 import { onboardingApi } from '../../api/modules/onboarding'
+import IronQuestOnboardingFlow from './IronQuestOnboardingFlow'
 import AppLoadingScreen from '../../components/ui/AppLoadingScreen'
 import ClearableInput from '../../components/ui/ClearableInput'
 import ErrorState from '../../components/ui/ErrorState'
+import { resolveExperienceModeFromIronQuestPayload } from '../../lib/experienceMode'
 import { useAuthStore } from '../../store/authStore'
 import {
   bodyFormFromState,
@@ -1130,6 +1132,7 @@ function PhotosStep() {
 function CompleteStep() {
   const navigate = useNavigate()
   const setAuth = useAuthStore(store => store.setAuth)
+  const setExperienceMode = useAuthStore(store => store.setExperienceMode)
   const { loading, state } = useLoadedOnboardingState()
   const [submitting, setSubmitting] = useState(false)
   const [result, setResult] = useState(null)
@@ -1163,6 +1166,7 @@ function CompleteStep() {
     ironquestApi.profile()
       .then((data) => {
         if (!active) return
+        setExperienceMode(resolveExperienceModeFromIronQuestPayload(data))
         applyIronQuestState(data)
       })
       .catch((err) => {
@@ -1202,6 +1206,7 @@ function CompleteStep() {
 
     try {
       const data = await ironquestApi.enable()
+      setExperienceMode('ironquest')
       applyIronQuestState({
         ...ironQuest,
         profile: data?.profile ?? ironQuest?.profile ?? {},
@@ -1222,6 +1227,7 @@ function CompleteStep() {
         class_slug: selectedIronQuestClass,
         motivation_slug: selectedIronQuestMotivation,
       })
+      setExperienceMode('ironquest')
       applyIronQuestState({
         ...ironQuest,
         profile: data?.profile ?? ironQuest?.profile ?? {},
@@ -1238,6 +1244,8 @@ function CompleteStep() {
   if (result) {
     const targets = normalizeTargets(result)
     const hypeMessage = buildOnboardingHypeMessage(state, result)
+    const ironQuestProfile = ironQuest?.profile ?? {}
+    const ironQuestReady = Boolean(ironQuestProfile.enabled && ironQuestProfile.class_slug && ironQuestProfile.motivation_slug)
 
     return (
       <StepLayout
@@ -1273,21 +1281,51 @@ function CompleteStep() {
           <h3>Coach note</h3>
           <p>{result.coach_message}</p>
         </div>
-        <IronQuestSetupCard
-          ironQuest={ironQuest}
-          ironQuestLoading={ironQuestLoading}
-          ironQuestError={ironQuestError}
-          selectedClass={selectedIronQuestClass}
-          selectedMotivation={selectedIronQuestMotivation}
-          onSelectClass={setSelectedIronQuestClass}
-          onSelectMotivation={setSelectedIronQuestMotivation}
-          onEnable={handleEnableIronQuest}
-          onSaveIdentity={handleSaveIronQuestIdentity}
-          submitting={ironQuestSubmitting}
-          navigate={navigate}
-        />
+        {ironQuestLoading ? (
+          <div className="dash-card settings-section ironquest-onboarding-launch-card">
+            <h3>IronQuest</h3>
+            <p className="settings-subtitle">Checking whether your account can add the quest layer on top of your new Johnny5k plan.</p>
+          </div>
+        ) : null}
+        {ironQuestError ? (
+          <div className="dash-card settings-section ironquest-onboarding-launch-card">
+            <h3>IronQuest</h3>
+            <ErrorState className="onboarding-inline-error" message={ironQuestError} title="IronQuest setup could not load" />
+          </div>
+        ) : null}
+        {!ironQuestLoading && !ironQuestError && ironQuest?.entitlement?.has_access ? (
+          <div className="dash-card settings-section ironquest-onboarding-launch-card">
+            <div className="dashboard-card-head">
+              <span className="dashboard-chip workout">Optional add-on</span>
+              <span className="dashboard-chip subtle">Secondary flow</span>
+            </div>
+            <h3>Add IronQuest on top of Johnny5k</h3>
+            <p className="settings-subtitle">
+              Your base plan is already ready. IronQuest is a separate setup pass that layers quest identity, missions, and region progression on top of the same workouts.
+            </p>
+            {ironQuestReady ? (
+              <div className="onboarding-review-list">
+                <div className="onboarding-review-row"><span>Quest identity</span><strong>{formatIronQuestOptionLabel(IRONQUEST_CLASS_OPTIONS, ironQuestProfile.class_slug)} | {formatIronQuestOptionLabel(IRONQUEST_MOTIVATION_OPTIONS, ironQuestProfile.motivation_slug)}</strong></div>
+                <div className="onboarding-review-row"><span>Status</span><strong>Already active</strong></div>
+              </div>
+            ) : (
+              <div className="onboarding-review-list">
+                <div className="onboarding-review-row"><span>Quest status</span><strong>{ironQuestProfile.enabled ? 'Enabled, identity not finished' : 'Not activated yet'}</strong></div>
+                <div className="onboarding-review-row"><span>Start point</span><strong>The Training Grounds</strong></div>
+              </div>
+            )}
+            <div className="settings-actions">
+              <button className="btn-primary" type="button" onClick={() => navigate('/onboarding/ironquest')}>
+                {ironQuestReady ? 'Review IronQuest setup' : 'Continue to IronQuest'}
+              </button>
+              <button className="btn-secondary" type="button" onClick={() => navigate('/dashboard')}>
+                Skip for now
+              </button>
+            </div>
+          </div>
+        ) : null}
         <StepUnlock text="From here, Johnny will use this setup to drive your dashboard, workout suggestions, nutrition guidance, and reminders." />
-        <button className="btn-primary" onClick={() => navigate('/dashboard')}>Open dashboard</button>
+        {!ironQuest?.entitlement?.has_access ? <button className="btn-primary" onClick={() => navigate('/dashboard')}>Open dashboard</button> : null}
       </StepLayout>
     )
   }
@@ -1377,6 +1415,7 @@ export default function OnboardingRoutes() {
       <Route path="habits" element={<HabitsStep />} />
       <Route path="photos" element={<PhotosStep />} />
       <Route path="complete" element={<CompleteStep />} />
+      <Route path="ironquest/*" element={<IronQuestOnboardingFlow />} />
       <Route path="goals" element={<Navigate to="/onboarding/habits" replace />} />
       <Route path="notifications" element={<Navigate to="/onboarding/habits" replace />} />
       <Route path="*" element={<Navigate to="/onboarding/welcome" replace />} />

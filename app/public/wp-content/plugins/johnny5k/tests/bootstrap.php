@@ -823,6 +823,13 @@ if ( ! function_exists( 'get_user_by' ) ) {
 	}
 }
 
+if ( ! function_exists( 'get_userdata' ) ) {
+	function get_userdata( int $user_id ): WP_User|false {
+		$users = $GLOBALS['johnny5k_test_users'] ?? [];
+		return $users[ $user_id ] ?? false;
+	}
+}
+
 if ( ! function_exists( 'wp_signon' ) ) {
 	function wp_signon( array $credentials, bool $secure_cookie = false ): WP_User|WP_Error {
 		$login = strtolower( (string) ( $credentials['user_login'] ?? '' ) );
@@ -841,7 +848,14 @@ if ( ! function_exists( 'wp_signon' ) ) {
 }
 
 if ( ! function_exists( 'user_can' ) ) {
-	function user_can( WP_User $user, string $capability ): bool {
+	function user_can( WP_User|int $user, string $capability ): bool {
+		if ( is_int( $user ) ) {
+			$user = get_userdata( $user );
+		}
+		if ( ! $user instanceof WP_User ) {
+			return false;
+		}
+
 		return ! empty( $user->caps[ $capability ] );
 	}
 }

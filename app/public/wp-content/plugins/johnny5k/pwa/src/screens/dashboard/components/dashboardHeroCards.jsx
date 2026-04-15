@@ -1,6 +1,4 @@
-import AppIcon from '../../../components/ui/AppIcon'
-
-export function DailyFocusHero({ model, onPrimaryAction, onSecondaryAction, onAskJohnny }) {
+export function DailyFocusHero({ model, onPrimaryAction, onSecondaryAction, onAskJohnny, suggestions = [] }) {
   if (!model) return null
 
   return (
@@ -33,43 +31,31 @@ export function DailyFocusHero({ model, onPrimaryAction, onSecondaryAction, onAs
         <button type="button" className="btn-primary" onClick={() => onPrimaryAction?.(model.primaryAction)}>
           {model.primaryAction?.title || 'Start workout'}
         </button>
-        <button type="button" className="btn-outline" onClick={onSecondaryAction}>
-          Log meal
-        </button>
+        {model.secondaryAction ? (
+          <button type="button" className="btn-outline" onClick={() => onSecondaryAction?.(model.secondaryAction)}>
+            {model.secondaryAction.title || model.secondaryAction.actionLabel || 'Open next step'}
+          </button>
+        ) : null}
         <button type="button" className="btn-secondary" onClick={() => onAskJohnny?.(model.askPrompt)}>
           Ask Johnny
         </button>
       </div>
-    </section>
-  )
-}
-
-export function DashboardAskJohnnyBar({ prompt, suggestions = [], onAskJohnny }) {
-  if (!prompt) return null
-
-  return (
-    <section className="dash-card dashboard-johnny-entry-card">
-      <button type="button" className="dashboard-johnny-entry-button" onClick={() => onAskJohnny?.(prompt)}>
-        <span className="dashboard-johnny-entry-icon"><AppIcon name="coach" /></span>
-        <span className="dashboard-johnny-entry-copy">
-          <strong>Ask Johnny</strong>
-          <span>Ask Johnny anything about today&apos;s plan...</span>
-        </span>
-        <span className="dashboard-johnny-entry-arrow" aria-hidden="true">&rarr;</span>
-      </button>
 
       {suggestions.length ? (
-        <div className="dashboard-johnny-entry-suggestions">
-          {suggestions.slice(0, 3).map(promptOption => (
-            <button
-              key={promptOption.id || promptOption.prompt}
-              type="button"
-              className="dashboard-prompt-chip"
-              onClick={() => onAskJohnny?.(promptOption.prompt, promptOption)}
-            >
-              {promptOption.label || promptOption.prompt}
-            </button>
-          ))}
+        <div className="dashboard-daily-focus-followups">
+          <strong>Ask Johnny about:</strong>
+          <div className="dashboard-johnny-entry-suggestions">
+            {suggestions.slice(0, 2).map(promptOption => (
+              <button
+                key={promptOption.id || promptOption.prompt}
+                type="button"
+                className="dashboard-prompt-chip"
+                onClick={() => onAskJohnny?.(promptOption.prompt, promptOption)}
+              >
+                {promptOption.label || promptOption.prompt}
+              </button>
+            ))}
+          </div>
         </div>
       ) : null}
     </section>

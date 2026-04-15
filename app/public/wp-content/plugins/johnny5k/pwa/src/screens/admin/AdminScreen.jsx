@@ -1,4 +1,5 @@
 import { startTransition, useCallback, useEffect, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { adminApi } from '../../api/modules/admin'
 import { mediaApi } from '../../api/modules/media'
 import AppDrawer from '../../components/ui/AppDrawer'
@@ -14,10 +15,13 @@ import { getColorSchemeOptions, setAvailableColorSchemes } from '../../lib/theme
 import { runLabelScanTestSuite } from '../nutrition/labelScanTestSuite'
 import { useAuthStore } from '../../store/authStore'
 
-const TABS = ['invites', 'costs', 'persona', 'users', 'exercises', 'awards', 'recipes', 'support', 'diagnostics', 'settings', 'label-tests']
+const TABS = ['invites', 'costs', 'persona', 'users', 'exercises', 'awards', 'recipes', 'support', 'diagnostics', 'ironquest', 'settings', 'label-tests']
 const AWARD_ICON_OPTIONS = ['award', 'trophy', 'star', 'flame', 'bolt']
 const COLOR_FIELDS = ['bg', 'bg2', 'bg3', 'border', 'text', 'textMuted', 'accent', 'accent2', 'accent3', 'danger', 'success', 'yellow']
 const QA_ONLY_TABS = ['label-tests']
+const IRONQUEST_DAILY_QUEST_OPTIONS = ['meal', 'sleep', 'cardio', 'steps', 'workout']
+const IRONQUEST_MISSION_RESULT_OPTIONS = ['victory', 'partial', 'failure']
+const IRONQUEST_RUN_TYPE_OPTIONS = ['workout', 'cardio', 'recovery', 'mobility']
 const RECIPE_DIETARY_TAG_OPTIONS = [
   { value: 'vegan', label: 'Vegan' },
   { value: 'vegetarian', label: 'Vegetarian' },
@@ -124,16 +128,53 @@ function reorderItems(items, fromIndex, toIndex) {
   return next
 }
 
+function tabFromPathname(pathname, isAdmin) {
+  if (pathname === '/admin/ironquest' && isAdmin) {
+    return 'ironquest'
+  }
+
+  return isAdmin ? 'invites' : 'label-tests'
+}
+
+function routeForAdminTab(tab, isAdmin) {
+  if (!isAdmin) {
+    return '/admin'
+  }
+
+  if (tab === 'ironquest') {
+    return '/admin/ironquest'
+  }
+
+  return '/admin'
+}
+
 export default function AdminScreen() {
+  const location = useLocation()
+  const navigate = useNavigate()
   const { canAccessPwaAdmin, isAdmin } = useAuthStore()
   const availableTabs = isAdmin ? TABS : QA_ONLY_TABS
-  const [tab, setTab] = useState(() => (isAdmin ? 'invites' : 'label-tests'))
+  const [tab, setTab] = useState(() => tabFromPathname(location.pathname, isAdmin))
 
   useEffect(() => {
     if (!availableTabs.includes(tab)) {
       setTab(availableTabs[0] || 'label-tests')
     }
   }, [availableTabs, tab])
+
+  useEffect(() => {
+    const routeTab = tabFromPathname(location.pathname, isAdmin)
+    if (availableTabs.includes(routeTab) && routeTab !== tab) {
+      setTab(routeTab)
+    }
+  }, [availableTabs, isAdmin, location.pathname, tab])
+
+  function handleTabChange(nextTab) {
+    setTab(nextTab)
+    const nextRoute = routeForAdminTab(nextTab, isAdmin)
+    if (location.pathname !== nextRoute) {
+      navigate(nextRoute)
+    }
+  }
 
   if (!canAccessPwaAdmin) {
     return null
@@ -150,7 +191,7 @@ export default function AdminScreen() {
       ) : null}
       <div className="row admin-tab-bar">
         {availableTabs.map((id) => (
-          <button key={id} type="button" className={tab === id ? 'segment active' : 'segment'} onClick={() => setTab(id)}>
+          <button key={id} type="button" className={tab === id ? 'segment active' : 'segment'} onClick={() => handleTabChange(id)}>
             {tabLabel(id)}
           </button>
         ))}
@@ -164,6 +205,7 @@ export default function AdminScreen() {
       {tab === 'recipes' ? <RecipesTab /> : null}
       {tab === 'support' ? <SupportTab /> : null}
       {tab === 'diagnostics' ? <DiagnosticsTab /> : null}
+      {tab === 'ironquest' ? <IronQuestTab /> : null}
       {tab === 'settings' ? <SettingsTab /> : null}
       {tab === 'label-tests' ? <LabelScanQaTab /> : null}
     </div>
@@ -1252,6 +1294,362 @@ function DiagnosticsTab() {
               </div>
             </div>
           ))}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+function IronQuestTab() {
+  const [users, setUsers] = useState([])
+  const [selectedUserId, setSelectedUserId] = useState('')
+  const [payload, setPayload] = useState(null)
+  const [loadingUsers, setLoadingUsers] = useState(true)
+  const [loadingState, setLoadingState] = useState(false)
+  const [actionBusy, setActionBusy] = useState('')
+  const [msg, setMsg] = useState('')
+  const [travelPoints, setTravelPoints] = useState('3')
+  const [travelSource, setTravelSource] = useState('')
+  const [questKey, setQuestKey] = useState('meal')
+  const [locationSlug, setLocationSlug] = useState('')
+  const [missionSlug, setMissionSlug] = useState('')
+  const [runType, setRunType] = useState('workout')
+  const [resultBand, setResultBand] = useState('victory')
+  const [xpOverride, setXpOverride] = useState('')
+  const [goldOverride, setGoldOverride] = useState('')
+
+  const loadState = useCallback(async (userId) => {
+    if (!userId) return
+
+    setLoadingState(true)
+    setMsg('')
+    try {
+      const data = await adminApi.ironQuestState(userId)
+      setPayload(data)
+      const currentLocationSlug = String(data?.state?.profile?.current_location_slug || '')
+      const firstLocationSlug = String(data?.config?.locations?.[0]?.slug || '')
+      setLocationSlug(currentLocationSlug || firstLocationSlug)
+      setMissionSlug(String(data?.state?.active_run?.mission_slug || data?.state?.profile?.active_mission_slug || ''))
+    } catch (error) {
+      handleAdminDiagnostic({
+        source: 'admin_ironquest_state_load',
+        message: 'Could not load IronQuest admin state.',
+        error,
+        setMsg,
+        context: {
+          tab: 'ironquest',
+          userId,
+        },
+      })
+      setPayload(null)
+    } finally {
+      setLoadingState(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    let active = true
+    setLoadingUsers(true)
+    setMsg('')
+
+    adminApi.users()
+      .then(data => {
+        if (!active) return
+        const nextUsers = Array.isArray(data) ? data : []
+        setUsers(nextUsers)
+        setSelectedUserId(current => current || String(nextUsers[0]?.user_id || ''))
+      })
+      .catch(error => {
+        if (!active) return
+        handleAdminDiagnostic({
+          source: 'admin_ironquest_users_load',
+          message: 'Could not load admin users for IronQuest tools.',
+          error,
+          setMsg,
+          context: {
+            tab: 'ironquest',
+          },
+        })
+      })
+      .finally(() => {
+        if (active) setLoadingUsers(false)
+      })
+
+    return () => {
+      active = false
+    }
+  }, [])
+
+  useEffect(() => {
+    void loadState(selectedUserId)
+  }, [loadState, selectedUserId])
+
+  const locations = Array.isArray(payload?.config?.locations) ? payload.config.locations : []
+  const missionsByLocation = payload?.config?.seed?.missions_by_location ?? {}
+  const selectedLocationMissions = Array.isArray(missionsByLocation?.[locationSlug]) ? missionsByLocation[locationSlug] : []
+  const state = payload?.state ?? {}
+  const profile = state?.profile ?? {}
+  const routeState = state?.route_state ?? {}
+  const dailyState = state?.daily_state ?? {}
+  const activeRun = state?.active_run ?? null
+
+  async function runAction(action, extra = {}) {
+    if (!selectedUserId) return
+
+    setActionBusy(action)
+    setMsg('')
+    try {
+      const response = await adminApi.runIronQuestAction({
+        user_id: Number(selectedUserId),
+        action,
+        ...extra,
+      })
+      setPayload(current => (
+        current ? { ...current, state: response?.state ?? current.state } : response
+      ))
+      setMsg(response?.message || 'IronQuest admin action applied.')
+    } catch (error) {
+      handleAdminDiagnostic({
+        source: 'admin_ironquest_action',
+        message: `Could not run IronQuest action "${action}".`,
+        error,
+        setMsg,
+        context: {
+          tab: 'ironquest',
+          action,
+          userId: selectedUserId,
+        },
+      })
+    } finally {
+      setActionBusy('')
+    }
+  }
+
+  return (
+    <div className="admin-tab">
+      <div className="admin-support-toolbar">
+        <div>
+          <h3>IronQuest debug controls</h3>
+          <p>Load a user profile, inspect live route state, then grant travel, complete quests, or force mission and region progression without grinding through the app.</p>
+        </div>
+        <button type="button" className="btn-secondary small" onClick={() => void loadState(selectedUserId)} disabled={!selectedUserId || loadingState}>
+          {loadingState ? 'Refreshing…' : 'Refresh state'}
+        </button>
+      </div>
+
+      {msg ? <p className="success-msg">{msg}</p> : null}
+
+      <div className="admin-stack-form" style={{ marginBottom: 'var(--space-4)' }}>
+        <label>
+          <span>User</span>
+          <select value={selectedUserId} onChange={event => setSelectedUserId(event.target.value)} disabled={loadingUsers || !users.length}>
+            {!users.length ? <option value="">{loadingUsers ? 'Loading users…' : 'No users found'}</option> : null}
+            {users.map(user => (
+              <option key={user.user_id} value={String(user.user_id)}>
+                {user.user_email} (#{user.user_id})
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      {loadingState ? (
+        <AppLoadingScreen
+          eyebrow="IronQuest"
+          title="Loading debug state"
+          message="Johnny is pulling the live quest profile, route state, and unlock history for this user."
+          compact
+          variant="panel"
+          copyStyle="inline"
+        />
+      ) : null}
+
+      {!loadingState && payload ? (
+        <div style={{ display: 'grid', gap: 'var(--space-4)' }}>
+          <div className="admin-list">
+            <div className="admin-card-row">
+              <div>
+                <strong>Access</strong>
+                <p>Entitled: {state?.entitlement?.has_access ? 'Yes' : 'No'} · Enabled: {profile?.enabled ? 'Yes' : 'No'}</p>
+              </div>
+            </div>
+            <div className="admin-card-row">
+              <div>
+                <strong>Profile</strong>
+                <p>Level {profile?.level ?? 1} · XP {profile?.xp ?? 0} · Gold {profile?.gold ?? 0}</p>
+                <p>Current location: {profile?.current_location_slug || 'none'} · Active mission slug: {profile?.active_mission_slug || 'none'}</p>
+              </div>
+            </div>
+            <div className="admin-card-row">
+              <div>
+                <strong>Route</strong>
+                <p>Total travel: {routeState?.total_travel_points ?? 0}</p>
+                <p>Unlocked: {(routeState?.unlocked_locations ?? []).join(', ') || 'none'}</p>
+                <p>Cleared: {(routeState?.cleared_locations ?? []).join(', ') || 'none'}</p>
+              </div>
+            </div>
+            <div className="admin-card-row">
+              <div>
+                <strong>Daily</strong>
+                <p>State date: {dailyState?.state_date || 'n/a'} · Travel today: {dailyState?.travel_points_earned ?? 0}</p>
+                <p>Meal {dailyState?.meal_quest_complete ? 'done' : 'open'} · Sleep {dailyState?.sleep_quest_complete ? 'done' : 'open'} · Cardio {dailyState?.cardio_quest_complete ? 'done' : 'open'} · Steps {dailyState?.steps_quest_complete ? 'done' : 'open'} · Workout {dailyState?.workout_quest_complete ? 'done' : 'open'}</p>
+              </div>
+            </div>
+            <div className="admin-card-row">
+              <div>
+                <strong>Mission</strong>
+                <p>{activeRun ? `Run #${activeRun.id} · ${activeRun.location_slug}/${activeRun.mission_slug} · ${activeRun.run_type} · ${activeRun.status}` : 'No active mission run'}</p>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gap: 'var(--space-4)', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))' }}>
+            <div className="admin-settings-section">
+              <div className="admin-settings-section-head">
+                <h3>Mode</h3>
+              </div>
+              <div className="admin-stack-form">
+                <button type="button" className="btn-primary" onClick={() => void runAction('enable')} disabled={actionBusy === 'enable'}>{actionBusy === 'enable' ? 'Enabling…' : 'Enable IronQuest'}</button>
+                <button type="button" className="btn-outline" onClick={() => void runAction('disable')} disabled={actionBusy === 'disable'}>{actionBusy === 'disable' ? 'Disabling…' : 'Disable IronQuest'}</button>
+              </div>
+            </div>
+
+            <div className="admin-settings-section">
+              <div className="admin-settings-section-head">
+                <h3>Travel</h3>
+              </div>
+              <div className="admin-stack-form">
+                <label>
+                  <span>Travel points</span>
+                  <input type="number" min="0" value={travelPoints} onChange={event => setTravelPoints(event.target.value)} />
+                </label>
+                <label>
+                  <span>Travel source key</span>
+                  <input value={travelSource} onChange={event => setTravelSource(event.target.value)} placeholder="optional manual source key" />
+                </label>
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={() => void runAction('grant_travel', { travel_points: Number(travelPoints) || 0, travel_source: travelSource })}
+                  disabled={actionBusy === 'grant_travel'}
+                >
+                  {actionBusy === 'grant_travel' ? 'Granting…' : 'Grant travel'}
+                </button>
+              </div>
+            </div>
+
+            <div className="admin-settings-section">
+              <div className="admin-settings-section-head">
+                <h3>Daily quest</h3>
+              </div>
+              <div className="admin-stack-form">
+                <label>
+                  <span>Quest</span>
+                  <select value={questKey} onChange={event => setQuestKey(event.target.value)}>
+                    {IRONQUEST_DAILY_QUEST_OPTIONS.map(option => <option key={option} value={option}>{option}</option>)}
+                  </select>
+                </label>
+                <button type="button" className="btn-primary" onClick={() => void runAction('mark_daily_quest', { quest_key: questKey })} disabled={actionBusy === 'mark_daily_quest'}>
+                  {actionBusy === 'mark_daily_quest' ? 'Applying…' : 'Mark complete'}
+                </button>
+              </div>
+            </div>
+
+            <div className="admin-settings-section">
+              <div className="admin-settings-section-head">
+                <h3>Mission</h3>
+              </div>
+              <div className="admin-stack-form">
+                <label>
+                  <span>Location</span>
+                  <select value={locationSlug} onChange={event => { setLocationSlug(event.target.value); setMissionSlug('') }}>
+                    {locations.map(location => <option key={location.slug} value={location.slug}>{location.name || location.slug}</option>)}
+                  </select>
+                </label>
+                <label>
+                  <span>Run type</span>
+                  <select value={runType} onChange={event => setRunType(event.target.value)}>
+                    {IRONQUEST_RUN_TYPE_OPTIONS.map(option => <option key={option} value={option}>{option}</option>)}
+                  </select>
+                </label>
+                <label>
+                  <span>Mission slug</span>
+                  <select value={missionSlug} onChange={event => setMissionSlug(event.target.value)}>
+                    <option value="">Auto-select default</option>
+                    {selectedLocationMissions.map(mission => <option key={mission.slug} value={mission.slug}>{mission.title || mission.slug}</option>)}
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={() => void runAction('start_mission', { location_slug: locationSlug, mission_slug: missionSlug, run_type: runType })}
+                  disabled={actionBusy === 'start_mission' || !locationSlug}
+                >
+                  {actionBusy === 'start_mission' ? 'Starting…' : 'Start mission'}
+                </button>
+                <label>
+                  <span>Resolve result</span>
+                  <select value={resultBand} onChange={event => setResultBand(event.target.value)}>
+                    {IRONQUEST_MISSION_RESULT_OPTIONS.map(option => <option key={option} value={option}>{option}</option>)}
+                  </select>
+                </label>
+                <label>
+                  <span>XP override</span>
+                  <input type="number" min="0" value={xpOverride} onChange={event => setXpOverride(event.target.value)} placeholder="optional" />
+                </label>
+                <label>
+                  <span>Gold override</span>
+                  <input type="number" min="0" value={goldOverride} onChange={event => setGoldOverride(event.target.value)} placeholder="optional" />
+                </label>
+                <button
+                  type="button"
+                  className="btn-outline"
+                  onClick={() => void runAction('resolve_active_mission', { result_band: resultBand, xp_awarded: Number(xpOverride) || 0, gold_awarded: Number(goldOverride) || 0 })}
+                  disabled={actionBusy === 'resolve_active_mission'}
+                >
+                  {actionBusy === 'resolve_active_mission' ? 'Resolving…' : 'Resolve active mission'}
+                </button>
+              </div>
+            </div>
+
+            <div className="admin-settings-section">
+              <div className="admin-settings-section-head">
+                <h3>Route</h3>
+              </div>
+              <div className="admin-stack-form">
+                <label>
+                  <span>Location</span>
+                  <select value={locationSlug} onChange={event => setLocationSlug(event.target.value)}>
+                    {locations.map(location => <option key={location.slug} value={location.slug}>{location.name || location.slug}</option>)}
+                  </select>
+                </label>
+                <button type="button" className="btn-secondary" onClick={() => void runAction('unlock_location', { location_slug: locationSlug })} disabled={actionBusy === 'unlock_location' || !locationSlug}>
+                  {actionBusy === 'unlock_location' ? 'Unlocking…' : 'Unlock location'}
+                </button>
+                <button type="button" className="btn-secondary" onClick={() => void runAction('clear_location_arc', { location_slug: locationSlug })} disabled={actionBusy === 'clear_location_arc' || !locationSlug}>
+                  {actionBusy === 'clear_location_arc' ? 'Clearing…' : 'Clear arc'}
+                </button>
+                <button type="button" className="btn-outline" onClick={() => void runAction('jump_location', { location_slug: locationSlug })} disabled={actionBusy === 'jump_location' || !locationSlug}>
+                  {actionBusy === 'jump_location' ? 'Jumping…' : 'Jump to location'}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="admin-list">
+            <div className="admin-card-row">
+              <div>
+                <strong>Recent unlocks</strong>
+                <p>{(state?.recent_unlocks ?? []).length ? state.recent_unlocks.map(item => `${item.unlock_type}:${item.unlock_key}`).join(', ') : 'No unlocks recorded yet.'}</p>
+              </div>
+            </div>
+            <div className="admin-card-row">
+              <div>
+                <strong>Next unlocks</strong>
+                <p>{(routeState?.next_unlocks ?? []).length ? routeState.next_unlocks.map(item => `${item.location_slug} (${item.travel_remaining} travel remaining${item.required_arc_clear ? `, requires ${item.required_arc_clear}` : ''})`).join(' | ') : 'No pending route unlocks.'}</p>
+              </div>
+            </div>
+          </div>
         </div>
       ) : null}
     </div>

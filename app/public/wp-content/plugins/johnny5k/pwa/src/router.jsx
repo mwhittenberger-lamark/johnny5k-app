@@ -26,6 +26,7 @@ const AdminScreen = lazy(() => import('./screens/admin/AdminScreen'))
 const SettingsScreen = lazy(() => import('./screens/settings/SettingsScreen'))
 const ProgressPhotosScreen = lazy(() => import('./screens/progress/ProgressPhotosScreen'))
 const RewardsScreen = lazy(() => import('./screens/rewards/RewardsScreen'))
+const IronQuestScreen = lazy(() => import('./screens/ironquest/IronQuestScreen'))
 
 function lazyElement(Component) {
   return (
@@ -130,6 +131,11 @@ export const router = createBrowserRouter([
                     errorElement: <RouteErrorScreen area="rewards" />,
                   },
                   {
+                    path: '/ironquest',
+                    element: lazyElement(IronQuestScreen),
+                    errorElement: <RouteErrorScreen area="dashboard" />,
+                  },
+                  {
                     path: '/ai',
                     element: lazyElement(AiScreen),
                     errorElement: <RouteErrorScreen area="app" />,
@@ -153,6 +159,11 @@ export const router = createBrowserRouter([
                 children: [
                   {
                     path: '/admin',
+                    element: lazyElement(AdminScreen),
+                    errorElement: <RouteErrorScreen area="admin" />,
+                  },
+                  {
+                    path: '/admin/ironquest',
                     element: lazyElement(AdminScreen),
                     errorElement: <RouteErrorScreen area="admin" />,
                   },

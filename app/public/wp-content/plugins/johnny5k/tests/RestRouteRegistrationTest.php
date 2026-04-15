@@ -7,6 +7,7 @@ namespace Johnny5k\Tests;
 use Johnny5k\REST\AiChatController;
 use Johnny5k\REST\AiController;
 use Johnny5k\REST\AuthController;
+use Johnny5k\REST\IronQuestController;
 use Johnny5k\REST\NutritionController;
 use Johnny5k\REST\NutritionRecipeController;
 use Johnny5k\REST\Router;
@@ -28,6 +29,13 @@ class RestRouteRegistrationTest extends ServiceTestCase {
 
 		$this->assertRouteRegistered( '/ai/analyse/label', [ AiChatController::class, 'analyse_label' ] );
 		$this->assertRouteNotRegistered( '/nutrition/summary' );
+	}
+
+	public function test_ironquest_controller_registers_fast_travel_and_restart_routes(): void {
+		IronQuestController::register_routes();
+
+		$this->assertRouteRegistered( '/ironquest/route/fast-travel', [ IronQuestController::class, 'fast_travel' ] );
+		$this->assertRouteRegistered( '/ironquest/restart', [ IronQuestController::class, 'restart_onboarding' ] );
 	}
 
 	public function test_router_registers_top_level_and_nested_routes(): void {

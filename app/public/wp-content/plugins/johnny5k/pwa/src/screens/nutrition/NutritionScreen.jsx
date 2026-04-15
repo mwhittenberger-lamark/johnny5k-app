@@ -1,6 +1,7 @@
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { aiApi } from '../../api/modules/ai'
+import { ironquestApi } from '../../api/modules/ironquest'
 import { nutritionApi } from '../../api/modules/nutrition'
 import AppIcon from '../../components/ui/AppIcon'
 import AppToast from '../../components/ui/AppToast'
@@ -14,6 +15,7 @@ import SupportIconButton from '../../components/ui/SupportIconButton'
 import { getAccessibleScrollBehavior } from '../../lib/accessibility'
 import { buildCoachingPromptOptions, buildCoachingSummary, runCoachingAction } from '../../lib/coachingSummary'
 import { trackCoachingPromptOpen } from '../../lib/coaching/coachingAnalytics'
+import { buildIronQuestDailyToast } from '../../lib/ironquestFeedback'
 import { scrollAppToTop } from '../../lib/scrollAppToTop'
 import { openSupportGuide } from '../../lib/supportHelp'
 import { useOnlineStatus } from '../../lib/useOnlineStatus'
@@ -419,6 +421,29 @@ export default function NutritionScreen() {
     }
   }
 
+  async function syncIronQuestDailyProgress(payload) {
+    try {
+      return await ironquestApi.updateDailyProgress(payload)
+    } catch {
+      return null
+    }
+  }
+
+  function revealIronQuestProgress(progress, sourceLabel) {
+    const toast = buildIronQuestDailyToast(progress, {
+      sourceLabel,
+      onOpenHub: () => navigate('/ironquest'),
+    })
+    if (toast) {
+      showToast(toast)
+    }
+  }
+
+  function resolveIronQuestStateDate(value) {
+    const match = String(value || '').trim().match(/^(\d{4}-\d{2}-\d{2})/)
+    return match ? match[1] : today
+  }
+
   const loadWeeklyCaloriesReview = useCallback(async (anchorDate) => {
     const lastSevenDates = getRecentLocalDateStrings(anchorDate, 7)
     const weeklyRows = await Promise.all(lastSevenDates.map(date => nutritionApi.getSummary(date).catch(() => null)))
@@ -768,6 +793,8 @@ export default function NutritionScreen() {
       'Meal logged.',
       {
         onSuccess: async () => {
+          const ironquestProgress = await syncIronQuestDailyProgress({ quest_key: 'meal', state_date: today })
+          revealIronQuestProgress(ironquestProgress, 'Meal logged')
           setAiMealDraft(null)
           invalidate()
           await loadData()
@@ -833,6 +860,8 @@ export default function NutritionScreen() {
       'Saved food logged.',
       {
         onSuccess: async () => {
+          const ironquestProgress = await syncIronQuestDailyProgress({ quest_key: 'meal', state_date: today })
+          revealIronQuestProgress(ironquestProgress, 'Meal logged')
           handleCancelLabelReview()
           invalidate()
           await loadData()
@@ -849,6 +878,8 @@ export default function NutritionScreen() {
       'Saved meal logged.',
       {
         onSuccess: async () => {
+          const ironquestProgress = await syncIronQuestDailyProgress({ quest_key: 'meal', state_date: today })
+          revealIronQuestProgress(ironquestProgress, 'Meal logged')
           invalidate()
           await loadData()
           changeActiveView('today', mealsSectionRef)
@@ -863,6 +894,8 @@ export default function NutritionScreen() {
       'Saved food logged.',
       {
         onSuccess: async () => {
+          const ironquestProgress = await syncIronQuestDailyProgress({ quest_key: 'meal', state_date: today })
+          revealIronQuestProgress(ironquestProgress, 'Meal logged')
           invalidate()
           await loadData()
         },
@@ -1436,6 +1469,7 @@ export default function NutritionScreen() {
     recipeMealFilter,
     recipeSearchQuery,
     recipes,
+    revealIronQuestProgress,
     recipesSectionAnchor: recipesSectionRef,
     refreshPlanning,
     runAction,
@@ -1485,6 +1519,7 @@ export default function NutritionScreen() {
     showSavedFoodForm,
     showSavedMealForm,
     showToast,
+    syncIronQuestDailyProgress,
     summary,
     toggleAddMealFlow,
     handleAddMealMethodSelect,
@@ -1492,6 +1527,7 @@ export default function NutritionScreen() {
     addMealInitialMode,
     todayAccordions,
     today,
+    resolveIronQuestStateDate,
     toggleTodayAccordion: key => {
       setTodayAccordions(current => ({ ...current, [key]: !current[key] }))
     },
@@ -3112,6 +3148,8 @@ function BeverageBoard({ screen, showHeader = true, showShell = true }) {
       'Drink logged.',
       {
         onSuccess: async () => {
+          const ironquestProgress = await screen.syncIronQuestDailyProgress({ quest_key: 'meal', state_date: screen.today })
+          screen.revealIronQuestProgress(ironquestProgress, 'Meal logged')
           screen.invalidate()
           await screen.loadData()
           setQuery('')

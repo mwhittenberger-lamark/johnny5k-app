@@ -1,4 +1,5 @@
 import { formatUsShortDate, formatUsWeekday } from '../../lib/dateFormat'
+import { buildIronQuestWorkoutReveal } from '../../lib/ironquestFeedback'
 import { DEFAULT_CUSTOM_WORKOUT_DAY_TYPE } from '../../lib/trainingDayTypes'
 
 export const ADDED_EXERCISE_PLAN_ID_OFFSET = 900000
@@ -62,6 +63,7 @@ export function buildWorkoutCompletionReview({ result, dayType, sessionLabel }) 
     calorieLabel: estimatedCalories > 0 ? `${estimatedCalories.toLocaleString()} cal` : 'Tracked',
     progressLabel: prCount > 0 ? `${prCount} PR${prCount === 1 ? '' : 's'}` : 'Progress logged',
     prCount,
+    ironQuestReveal: buildIronQuestWorkoutReveal(result?.ironquest),
   }
 }
 

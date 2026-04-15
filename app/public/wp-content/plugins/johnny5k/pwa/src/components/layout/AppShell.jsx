@@ -35,7 +35,18 @@ const tabs = [
 export default function AppShell({ children }) {
   const location = useLocation()
   const navigate = useNavigate()
-  const { appImages, canAccessPwaAdmin, clearAuth, dailyCheckInEntry, email, notificationPrefs, preferenceMeta, setDailyCheckInEntry, setPreferenceMeta } = useAuthStore()
+  const {
+    appImages,
+    canAccessPwaAdmin,
+    clearAuth,
+    dailyCheckInEntry,
+    email,
+    experienceMode,
+    notificationPrefs,
+    preferenceMeta,
+    setDailyCheckInEntry,
+    setPreferenceMeta,
+  } = useAuthStore()
   const openDrawer = useJohnnyAssistantStore(state => state.openDrawer)
   const isDrawerOpen = useJohnnyAssistantStore(state => state.isOpen)
   const [loggingOut, setLoggingOut] = useState(false)
@@ -69,6 +80,14 @@ export default function AppShell({ children }) {
     && !isInstallPromptSnoozed(preferenceMeta)
   const showConnectivityNotice = !isOnline || pendingOfflineWrites > 0
   const hideMobileAdminLink = MOBILE_ADMIN_LINK_HIDDEN_EMAILS.has(String(email || '').trim().toLowerCase())
+  const isIronQuestExperience = experienceMode === 'ironquest'
+  const shellTabs = isIronQuestExperience
+    ? [
+        tabs[0],
+        { to: '/ironquest', icon: 'award', label: 'IronQuest', note: 'Quest hub and progression' },
+        ...tabs.slice(1),
+      ]
+    : tabs
 
   useEffect(() => {
     preferenceMetaRef.current = preferenceMeta && typeof preferenceMeta === 'object' ? preferenceMeta : {}
@@ -542,13 +561,13 @@ export default function AppShell({ children }) {
               <img src={brandmarkImage} alt="Johnny5k brandmark" />
             </span>
             <span className="app-shell-brand-copy">
-              <strong>Johnny5k</strong>
-              <small>Your AI Health Coach</small>
+              <strong>{isIronQuestExperience ? 'Johnny5k: IronQuest' : 'Johnny5k'}</strong>
+              <small>{isIronQuestExperience ? 'Real training. Epic stakes.' : 'Your AI Health Coach'}</small>
             </span>
           </NavLink>
 
           <nav className="app-shell-desktop-nav" aria-label="Primary">
-            {tabs.map(tab => (
+            {shellTabs.map(tab => (
               <NavLink key={tab.to} to={tab.to} className={({ isActive }) => `app-shell-desktop-link ${isActive ? 'active' : ''}`}>
                 <AppIcon name={tab.icon} />
                 <span>{tab.label}</span>
@@ -613,7 +632,7 @@ export default function AppShell({ children }) {
               </div>
 
               <nav className="app-shell-mobile-nav-grid" aria-label="Primary">
-                {tabs.map((tab, index) => (
+                {shellTabs.map((tab, index) => (
                   <NavLink key={tab.to} to={tab.to} ref={index === 0 ? firstMobileLinkRef : undefined} className={({ isActive }) => `app-shell-mobile-link ${isActive ? 'active' : ''}`}>
                     <span className="app-shell-mobile-link-icon">
                       <AppIcon name={tab.icon} />

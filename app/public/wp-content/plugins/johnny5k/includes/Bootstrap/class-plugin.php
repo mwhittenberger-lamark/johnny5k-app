@@ -24,6 +24,7 @@ class Plugin {
 	public static function boot(): void {
 		PluginLifecycle::maybe_upgrade_database();
 		RestBootstrap::init();
+		FrontendBootstrap::init();
 		AdminBootstrap::init();
 		AjaxBootstrap::init();
 		CronBootstrap::init();

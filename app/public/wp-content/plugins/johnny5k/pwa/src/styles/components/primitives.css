@@ -131,6 +131,9 @@
 .state-card-neutral {
   background: linear-gradient(160deg, rgba(255, 255, 255, 0.96), rgba(240, 252, 255, 0.98));
 }
+:root[data-experience-mode='ironquest'] .state-card-neutral {
+  background: rgba(255, 46, 80, 0.12);
+}
 
 .state-card-error {
   border-color: rgba(255, 46, 80, 0.32);

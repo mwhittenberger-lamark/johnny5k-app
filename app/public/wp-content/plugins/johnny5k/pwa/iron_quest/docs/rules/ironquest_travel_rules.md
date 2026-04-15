@@ -2,6 +2,8 @@
 
 ## Travel System Rules (v1)
 
+> Current implementation note: this document reflects the live v1 route logic in the app as of April 2026. If code and older lore docs disagree, this file wins for travel math.
+
 ---
 
 # Overview
@@ -23,16 +25,18 @@ Points** through activity or spending **Gold**.
 
 ## Steps
 
-- 1,000 steps = 1 Travel Point
+- Travel points are awarded from step-equivalent movement chunks.
+- 2,500 step-equivalent = 1 Travel Point
 
 ## Cardio
 
-- 10 minutes of cardio = 1 Travel Point
+- Cardio is converted into step-equivalent movement, then rounded down using the same 2,500 step-equivalent rule.
 
 ## Notes
 
 - Travel Points can be accumulated across multiple days
 - Steps and cardio stack toward total progress
+- The current hub shows travel earned from movement separately from travel purchased with gold
 
 ---
 
@@ -57,6 +61,7 @@ Players can spend gold to skip travel requirements.
 ## Constraint
 
 - Players can only skip up to **50% of the required travel distance**
+- Fast travel only applies after the route gate is cleared for that destination
 
 ### Example
 

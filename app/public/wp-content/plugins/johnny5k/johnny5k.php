@@ -25,5 +25,6 @@ if ( file_exists( $action_scheduler_bootstrap ) ) {
 }
 
 require_once JF_PLUGIN_DIR . 'vendor/autoload.php';
+require_once JF_PLUGIN_DIR . 'includes/Bootstrap/class-frontend-bootstrap.php';
 
 Johnny5k\Bootstrap\Plugin::init();

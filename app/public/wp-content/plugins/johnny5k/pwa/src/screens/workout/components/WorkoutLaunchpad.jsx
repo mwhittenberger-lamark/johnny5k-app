@@ -1,11 +1,12 @@
-import CoachingSummaryPanel from '../../../components/ui/CoachingSummaryPanel'
+import { useMemo, useState } from 'react'
 import ErrorState from '../../../components/ui/ErrorState'
 import AppLoadingScreen from '../../../components/ui/AppLoadingScreen'
 import PlanOverviewAddDrawer from '../../../components/workout/PlanOverviewAddDrawer'
 import SupportIconButton from '../../../components/ui/SupportIconButton'
 import PlanOverviewSwapDrawer from '../../../components/workout/PlanOverviewSwapDrawer'
 import WorkoutSessionConfirmModal from './WorkoutSessionConfirmModal'
-import { formatDayType, formatPreviewSetRepLabel, formatRemoveButtonLabel, getReadinessRepDelta } from '../workoutScreenUtils'
+import WorkoutCustomizeDrawer from './WorkoutCustomizeDrawer'
+import { formatDayType, formatPreviewSetRepLabel, getReadinessRepDelta } from '../workoutScreenUtils'
 
 const READINESS_OPTIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 const TIME_TIER_OPTIONS = [
@@ -13,6 +14,83 @@ const TIME_TIER_OPTIONS = [
   { id: 'medium', label: 'Medium', detail: 'Normal training day' },
   { id: 'full', label: 'Full', detail: 'Longest version today' },
 ]
+
+const TIME_TIER_META = {
+  short: { label: 'Short', minutes: 25 },
+  medium: { label: 'Medium', minutes: 45 },
+  full: { label: 'Full', minutes: 60 },
+}
+
+function getTimeTierMeta(timeTier) {
+  return TIME_TIER_META[timeTier] || TIME_TIER_META.medium
+}
+
+function firstSentence(text) {
+  const normalized = String(text || '').replace(/\s+/g, ' ').trim()
+  if (!normalized) return ''
+
+  const match = normalized.match(/^.*?[.!?](?:\s|$)/)
+  return (match?.[0] || normalized).trim()
+}
+
+function getDisplayWorkoutType(planning) {
+  if (planning.hasCustomWorkoutDraft) {
+    return `${formatDayType(planning.normalizedCustomWorkoutDayType || planning.previewDayType || planning.previewSession?.day_type)} day`
+  }
+
+  if (planning.isRestSelection) return 'Rest day'
+  if (planning.isCardioSelection) return 'Cardio'
+
+  return `${formatDayType(planning.previewSession?.day_type || planning.previewDayType)} day`
+}
+
+function getFocusCopy({ coachingSummary, planning, readinessScore }) {
+  if (coachingSummary?.nextAction?.message) {
+    return firstSentence(coachingSummary.nextAction.message)
+  }
+
+  if (coachingSummary?.summary) {
+    return firstSentence(coachingSummary.summary)
+  }
+
+  if (planning.previewSession?.coach_note) {
+    return firstSentence(planning.previewSession.coach_note)
+  }
+
+  if (planning.johnnyReview?.message) {
+    return firstSentence(planning.johnnyReview.message)
+  }
+
+  const firstExercise = planning.adjustedPreviewExercises?.[0]?.exercise_name || ''
+  const secondExercise = planning.adjustedPreviewExercises?.[1]?.exercise_name || ''
+  const dayType = String(planning.previewSession?.day_type || planning.previewDayType || '').trim()
+
+  if (dayType === 'push' && firstExercise) {
+    return `Own your press early, then beat last time on ${firstExercise}.`
+  }
+
+  if (dayType === 'pull' && firstExercise) {
+    return `Set the tone with ${firstExercise}, then keep the rest of the pull work clean.`
+  }
+
+  if (dayType === 'legs' && firstExercise) {
+    return `Stay honest on ${firstExercise} and keep the lower-body work crisp all the way through.`
+  }
+
+  if (readinessScore >= 8 && firstExercise && secondExercise) {
+    return `Push the top work on ${firstExercise}, then keep ${secondExercise} sharp.`
+  }
+
+  if (readinessScore <= 3) {
+    return 'Keep it crisp today. Good reps, no hero nonsense.'
+  }
+
+  if (firstExercise) {
+    return `Get one clear win on ${firstExercise} today.`
+  }
+
+  return 'Own the main lifts, get one small win, and leave with a good session banked.'
+}
 
 export default function WorkoutLaunchpad({
   error,
@@ -40,227 +118,293 @@ export default function WorkoutLaunchpad({
   resumedSession,
   onResumeSession,
 }) {
+  const [planExpanded, setPlanExpanded] = useState(false)
+  const [adjustExpanded, setAdjustExpanded] = useState(false)
+  const [addOnsExpanded, setAddOnsExpanded] = useState(false)
+  const [customizeOpen, setCustomizeOpen] = useState(false)
   const isMaintenanceMode = readinessScore <= 3
   const readinessRepDelta = getReadinessRepDelta(readinessScore)
   const absQuickPick = planning.absAddOnSuggestions[0] ?? null
   const challengeQuickPick = planning.challengeAddOnSuggestions[0] ?? null
   const hasResumedSession = Boolean(resumedSession?.session?.id)
   const confirmBusy = sessionController.exiting || sessionController.restarting
+  const timeTierMeta = getTimeTierMeta(timeTier)
+  const workoutTypeLabel = getDisplayWorkoutType(planning)
+  const heroMetaLabel = `${timeTierMeta.label} • ${workoutTypeLabel}`
+  const previewCount = planning.adjustedPreviewExercises.length
+  const previewSummary = planning.isRestSelection
+    ? 'Recovery day • no workout build'
+    : planning.isCardioSelection
+      ? `${timeTierMeta.label} cardio block`
+      : `${previewCount} exercise${previewCount === 1 ? '' : 's'} • ~${timeTierMeta.minutes} min`
+  const previewContext = planning.isRestSelection
+    ? 'Today is set as a rest day unless you switch back to cardio or a lifting split.'
+    : planning.isCardioSelection
+      ? 'Conditioning is lined up for today. Hit start when you want to log it.'
+      : `Johnny trimmed this around readiness ${readinessScore}/10 and your ${timeTier} session length.`
+  const focusCopy = useMemo(() => getFocusCopy({ coachingSummary, planning, readinessScore }), [coachingSummary, planning, readinessScore])
+
+  const primaryAction = useMemo(() => {
+    if (hasResumedSession) {
+      return {
+        label: 'Continue current workout',
+        onClick: onResumeSession,
+        disabled: false,
+      }
+    }
+
+    if (planning.isCardioSelection) {
+      return {
+        label: loading ? 'Building session...' : (isMaintenanceMode ? 'Start Maintenance Cardio' : 'Start Cardio Workout'),
+        onClick: sessionController.handleStartSession,
+        disabled: loading,
+      }
+    }
+
+    if (planning.isRestSelection) {
+      return {
+        label: sessionController.takingRestDay ? 'Logging rest day...' : 'Take Rest Day',
+        onClick: sessionController.handleStartSession,
+        disabled: sessionController.takingRestDay,
+      }
+    }
+
+    return {
+      label: loading
+        ? 'Building session...'
+        : planning.hasCustomWorkoutDraft
+          ? `Start ${customWorkoutDraft?.name || 'Custom Workout'}`
+          : isMaintenanceMode
+            ? 'Start Maintenance Workout'
+            : 'Start Workout',
+      onClick: sessionController.handleStartSession,
+      disabled: loading,
+    }
+  }, [customWorkoutDraft?.name, hasResumedSession, isMaintenanceMode, loading, onResumeSession, planning.hasCustomWorkoutDraft, planning.isCardioSelection, planning.isRestSelection, sessionController.handleStartSession, sessionController.takingRestDay])
+
+  const utilityActions = useMemo(() => {
+    if (hasResumedSession) {
+      return [
+        { label: 'Start over / rebuild', pendingLabel: 'Restarting...', variant: 'btn-secondary', onClick: sessionController.requestRestartSession, disabled: sessionController.restarting },
+        { label: 'Exit and discard', pendingLabel: 'Exiting...', variant: 'btn-outline', onClick: sessionController.requestExitSession, disabled: sessionController.exiting },
+      ]
+    }
+
+    if (planning.isCardioSelection) {
+      return [
+        { label: 'Log Cardio in Progress', variant: 'btn-secondary', onClick: sessionController.handleLogCardio },
+        { label: 'Activity Log', variant: 'btn-secondary', onClick: () => navigate('/activity-log') },
+        { label: 'My exercise library', variant: 'btn-outline', onClick: () => navigate('/workout/library') },
+        { label: 'Skip today', variant: 'btn-outline', onClick: sessionController.handleSkip },
+      ]
+    }
+
+    if (planning.isRestSelection) {
+      return [
+        { label: 'Activity Log', variant: 'btn-secondary', onClick: () => navigate('/activity-log') },
+        { label: 'Open Progress', variant: 'btn-secondary', onClick: () => navigate('/body') },
+        { label: 'My exercise library', variant: 'btn-outline', onClick: () => navigate('/workout/library') },
+      ]
+    }
+
+    return [
+      { label: 'Activity Log', variant: 'btn-secondary', onClick: () => navigate('/activity-log') },
+      { label: 'My exercise library', variant: 'btn-outline', onClick: () => navigate('/workout/library') },
+      { label: 'Skip today', variant: 'btn-outline', onClick: sessionController.handleSkip },
+    ]
+  }, [hasResumedSession, navigate, planning.isCardioSelection, planning.isRestSelection, sessionController.exiting, sessionController.handleLogCardio, sessionController.handleSkip, sessionController.restarting, sessionController.requestExitSession, sessionController.requestRestartSession])
+
+  function handleOpenCustomize() {
+    setCustomizeOpen(true)
+  }
+
+  function handleCloseCustomize() {
+    setCustomizeOpen(false)
+  }
+
+  function handleOpenAddFromCustomize() {
+    setCustomizeOpen(false)
+    planning.openAddDrawer()
+  }
+
+  function handleOpenSwapFromCustomize(exercise) {
+    setCustomizeOpen(false)
+    planning.setSwapDrawerExercise(exercise)
+  }
 
   return (
     <div className="screen workout-start workout-launchpad">
-      <div className="dash-card workout-start-card support-icon-anchor">
+      <div className="dash-card workout-start-card workout-launchpad-primary-card support-icon-anchor">
         <SupportIconButton label="Get help with starting today’s workout" onClick={onOpenWorkoutSupport} />
         <p className="dashboard-eyebrow">Training</p>
-        <h1>Start today with a readiness check</h1>
-        <p className="settings-subtitle">Pick your available time, mark how ready you feel, and review the next session before you start.</p>
+        <h1>Today&apos;s Workout</h1>
+        <p className="workout-launchpad-primary-kicker">{heroMetaLabel}</p>
+        <p className="settings-subtitle">
+          {planning.hasCustomWorkoutDraft
+            ? 'Johnny built this around what you asked for and where you are today.'
+            : 'Johnny built this off your readiness and recent work.'}
+        </p>
+        <div className="workout-launchpad-focus-card">
+          <span className="workout-launchpad-focus-label">Johnny&apos;s Focus</span>
+          <p>{focusCopy}</p>
+        </div>
         {offlineStatus}
         {statusNotice ? <p className="settings-subtitle">{statusNotice}</p> : null}
         {statusError ? <ErrorState className="workout-inline-error" eyebrow="Workout status" message={statusError} title="Could not load today’s workout status" /> : null}
         {hasResumedSession ? (
-          <div className="workout-launchpad-section">
+          <div className="workout-launchpad-section workout-launchpad-callout">
             <div className="dashboard-card-head">
               <span className="dashboard-chip coach">Pre-workout screen restored</span>
               <span className="dashboard-chip subtle">Session ready</span>
             </div>
             <p className="settings-subtitle workout-launchpad-helper">
-              Johnny found an in-progress workout and kept this pre-workout screen visible so you can review today before jumping back in.
+              You already started this one. Take a quick look, then jump back in when you&apos;re ready.
             </p>
-            <div className="settings-actions">
-              <button type="button" className="btn-primary" onClick={onResumeSession}>
-                Continue current workout
-              </button>
-              <button type="button" className="btn-secondary" onClick={sessionController.requestRestartSession} disabled={sessionController.restarting}>
-                {sessionController.restarting ? 'Restarting...' : 'Start over / rebuild'}
-              </button>
-              <button type="button" className="btn-outline" onClick={sessionController.requestExitSession} disabled={sessionController.exiting}>
-                {sessionController.exiting ? 'Exiting...' : 'Exit and discard'}
-              </button>
-            </div>
           </div>
         ) : null}
-
-        {!planning.isRestSelection ? (
-          <div className="workout-launchpad-section">
-            <div className="dashboard-card-head">
-              <span className="dashboard-chip subtle">Available time</span>
-              <span className="dashboard-chip subtle">{timeTier} session</span>
-            </div>
-            <div className="workout-daytype-grid">
-              {TIME_TIER_OPTIONS.map(option => (
-                <button
-                  key={option.id}
-                  type="button"
-                  className={`tier-btn${timeTier === option.id ? ' active' : ''}`}
-                  onClick={() => planning.handleSelectTimeTier(option.id)}
-                >
-                  <strong>{option.label}</strong>
-                  <span>{option.detail}</span>
-                </button>
-              ))}
-            </div>
-            {planning.recoveryLoopTierOverride?.tier ? (
-              <p className="settings-subtitle workout-launchpad-helper">
-                Recovery Loop switched this to <strong>{planning.recoveryLoopTierOverride.tier}</strong>. You can switch back to medium or full if you want a longer session.
-              </p>
-            ) : null}
-          </div>
-        ) : null}
-
-        {!planning.isRestSelection ? (
-          <div className="workout-launchpad-section">
-            <div className="dashboard-card-head">
-              <span className="dashboard-chip subtle">Readiness</span>
-              <span className="dashboard-chip subtle">{readinessScore}/10</span>
-            </div>
-            <p className="settings-subtitle workout-launchpad-helper">
-              Pick a number so today&apos;s session matches how ready you actually feel.
-            </p>
-            <div className="readiness-scale" role="group" aria-label="Workout readiness score">
-              {READINESS_OPTIONS.map(score => (
-                <button
-                  key={score}
-                  type="button"
-                  className={`readiness-pill${readinessScore === score ? ' active' : ''}`}
-                  onClick={() => setReadinessScore(score)}
-                  aria-pressed={readinessScore === score}
-                >
-                  {score}
-                </button>
-              ))}
-            </div>
-            {readinessScore <= 3 ? (
-              <p className="settings-subtitle workout-launchpad-helper">
-                Low readiness shifts today into maintenance mode and auto-reduces each set target by {Math.abs(readinessRepDelta)} reps. You can fine-tune reps below.
-              </p>
-            ) : null}
-          </div>
-        ) : null}
-
-        {coachingSummary ? (
-          <div className="workout-launchpad-section">
-            <CoachingSummaryPanel
-              summary={coachingSummary}
-              chipLabel="Pre-workout cue"
-              maxInsights={2}
-              onAction={onCoachingAction}
-              onAskJohnny={onAskJohnny}
-              askJohnnyLabel="Ask Johnny"
-              analyticsContext={{ screen: 'workout', surface: 'workout_pre_summary' }}
-            />
-          </div>
-        ) : null}
-
-        <div className="workout-launchpad-section">
-          <div className="dashboard-card-head">
-            <span className="dashboard-chip workout">Today&apos;s split</span>
-            {planning.hasCustomWorkoutDraft
-              ? <span className="dashboard-chip subtle">Johnny queued this</span>
-              : scheduledDayType
-                ? <span className="dashboard-chip subtle">Scheduled: {formatDayType(scheduledDayType)}</span>
-                : null}
-          </div>
-          {planning.hasCustomWorkoutDraft ? (
-            <div className="daytype-pill active">
-              <strong>{customWorkoutDraft?.name || 'Custom workout'}</strong>
-              <small>
-                {planning.previewExercises.length
-                  ? `${planning.previewExercises.length} exercises queued as a ${formatDayType(planning.normalizedCustomWorkoutDayType)} workout.`
-                  : `Johnny queued a ${formatDayType(planning.normalizedCustomWorkoutDayType)} workout for you.`}
-              </small>
-              {customWorkoutDraft?.coach_note ? <small>{customWorkoutDraft.coach_note}</small> : null}
-              <div className="settings-actions">
-                <button type="button" className="btn-outline small" onClick={planning.handleUseScheduledSplit}>
-                  Use scheduled split instead
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className="workout-daytype-grid">
-              {planning.splitOptions.map(option => {
-                const isActive = planning.previewDayType === option.dayType
-                const isOverride = Boolean(scheduledDayType && option.dayType !== scheduledDayType)
-
-                return (
-                  <button
-                    key={option.dayType}
-                    type="button"
-                    className={`daytype-pill${isActive ? ' active' : ''}`}
-                    onClick={() => setPreviewDayType(option.dayType)}
-                  >
-                    <strong>{option.dayType === 'rest' ? 'Rest day' : formatDayType(option.dayType)}</strong>
-                    <small>
-                      {option.dayType === 'rest'
-                        ? 'Skip the build and recover on purpose.'
-                        : option.dayType === 'cardio'
-                          ? 'Conditioning instead of a lift.'
-                          : isOverride
-                            ? `Override to ${formatDayType(option.dayType)}.`
-                            : `${option.weekdayLabel || todayLabel} split.`}
-                    </small>
-                  </button>
-                )
-              })}
-            </div>
-          )}
-        </div>
-
         {error ? <ErrorState className="workout-inline-error" eyebrow="Workout session" message={error} title="Could not start this workout" /> : null}
-        <div className="settings-actions">
-          {hasResumedSession ? (
-            <>
-              <button className="btn-primary" onClick={onResumeSession}>
-                Continue current workout
-              </button>
-              <button className="btn-secondary" onClick={() => navigate('/activity-log')}>Activity Log</button>
-              <button className="btn-secondary" onClick={() => navigate('/workout/library')}>My exercise library</button>
-              <button className="btn-outline" onClick={sessionController.requestRestartSession} disabled={sessionController.restarting}>
-                {sessionController.restarting ? 'Restarting...' : 'Start over / change split'}
-              </button>
-            </>
-          ) : planning.isCardioSelection ? (
-            <>
-              <button className="btn-primary" onClick={sessionController.handleLogCardio}>
-                Log Cardio in Progress
-              </button>
-              <button className="btn-secondary" onClick={sessionController.handleStartSession} disabled={loading}>
-                {loading ? 'Building session...' : isMaintenanceMode ? 'Start Maintenance Cardio' : 'Start Cardio Workout'}
-              </button>
-              <button className="btn-secondary" onClick={() => navigate('/activity-log')}>Activity Log</button>
-              <button className="btn-outline" onClick={() => navigate('/workout/library')}>My exercise library</button>
-              <button className="btn-outline" onClick={sessionController.handleSkip}>Skip today</button>
-            </>
-          ) : planning.isRestSelection ? (
-            <>
-              <button className="btn-primary" onClick={sessionController.handleStartSession} disabled={sessionController.takingRestDay}>
-                {sessionController.takingRestDay ? 'Logging rest day...' : 'Take Rest Day'}
-              </button>
-              <button className="btn-secondary" onClick={() => navigate('/activity-log')}>Activity Log</button>
-              <button className="btn-secondary" onClick={() => navigate('/body')}>Open Progress</button>
-              <button className="btn-outline" onClick={() => navigate('/workout/library')}>My exercise library</button>
-            </>
-          ) : (
-            <>
-              <button className="btn-primary" onClick={sessionController.handleStartSession} disabled={loading}>
-                {loading
-                  ? 'Building session...'
-                  : planning.hasCustomWorkoutDraft
-                    ? `Start ${customWorkoutDraft?.name || 'Custom Workout'}`
-                    : isMaintenanceMode
-                      ? 'Start Maintenance Workout'
-                      : 'Start Workout'}
-              </button>
-              <button className="btn-secondary" onClick={() => navigate('/activity-log')}>Activity Log</button>
-              <button className="btn-secondary" onClick={() => navigate('/workout/library')}>My exercise library</button>
-              <button className="btn-secondary" onClick={sessionController.handleSkip}>Skip today</button>
-            </>
-          )}
+        <div className="settings-actions workout-launchpad-primary-actions">
+          <button className="btn-primary" onClick={primaryAction.onClick} disabled={primaryAction.disabled}>
+            {primaryAction.label}
+          </button>
         </div>
       </div>
 
-      <div className="dash-card workout-plan-card">
+      <div className="dash-card workout-plan-card workout-launchpad-adjust-card">
         <div className="dashboard-card-head">
-          <span className="dashboard-chip workout">Plan overview</span>
+          <span className="dashboard-chip workout">Adjust today</span>
+        </div>
+        <div className="workout-launchpad-section">
+          <button
+            type="button"
+            className="workout-accordion-toggle workout-launchpad-preview-toggle"
+            onClick={() => setAdjustExpanded(value => !value)}
+            aria-expanded={adjustExpanded}
+          >
+            <span>One-tap changes</span>
+            <span className={`workout-accordion-icon${adjustExpanded ? ' expanded' : ''}`} aria-hidden="true">
+              <span className="workout-accordion-icon-bar horizontal" />
+              <span className="workout-accordion-icon-bar vertical" />
+            </span>
+          </button>
+          <div className={`workout-accordion-panel${adjustExpanded ? ' expanded' : ''}`}>
+            <div className="workout-accordion-panel-inner">
+              {!planning.isRestSelection ? (
+                <div className="workout-launchpad-section">
+                  <div className="dashboard-card-head">
+                    <span className="dashboard-chip subtle">Time</span>
+                    <span className="dashboard-chip subtle">{timeTierMeta.label}</span>
+                  </div>
+                  <div className="workout-daytype-grid">
+                    {TIME_TIER_OPTIONS.map(option => (
+                      <button
+                        key={option.id}
+                        type="button"
+                        className={`tier-btn${timeTier === option.id ? ' active' : ''}`}
+                        onClick={() => planning.handleSelectTimeTier(option.id)}
+                      >
+                        <strong>{option.label}</strong>
+                        <span>{option.detail}</span>
+                      </button>
+                    ))}
+                  </div>
+                  {planning.recoveryLoopTierOverride?.tier ? (
+                    <p className="settings-subtitle workout-launchpad-helper">
+                      Recovery Loop switched this to <strong>{planning.recoveryLoopTierOverride.tier}</strong>. You can switch back if you want a longer session.
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {!planning.isRestSelection ? (
+                <div className="workout-launchpad-section">
+                  <div className="dashboard-card-head">
+                    <span className="dashboard-chip subtle">Readiness</span>
+                    <span className="dashboard-chip subtle">{readinessScore}/10</span>
+                  </div>
+                  <p className="settings-subtitle workout-launchpad-helper">How ready do you feel?</p>
+                  <div className="readiness-scale" role="group" aria-label="Workout readiness score">
+                    {READINESS_OPTIONS.map(score => (
+                      <button
+                        key={score}
+                        type="button"
+                        className={`readiness-pill${readinessScore === score ? ' active' : ''}`}
+                        onClick={() => setReadinessScore(score)}
+                        aria-pressed={readinessScore === score}
+                      >
+                        {score}
+                      </button>
+                    ))}
+                  </div>
+                  {readinessScore <= 3 ? (
+                    <p className="settings-subtitle workout-launchpad-helper">
+                      Low readiness shifts today into maintenance mode and trims each set target by {Math.abs(readinessRepDelta)} reps.
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
+
+              <div className="workout-launchpad-section">
+                <div className="dashboard-card-head">
+                  <span className="dashboard-chip subtle">Split</span>
+                  {planning.hasCustomWorkoutDraft
+                    ? <span className="dashboard-chip subtle">Johnny queued this</span>
+                    : scheduledDayType
+                      ? <span className="dashboard-chip subtle">Recommended: {formatDayType(scheduledDayType)}</span>
+                      : null}
+                </div>
+                {planning.hasCustomWorkoutDraft ? (
+                  <div className="daytype-pill active">
+                    <strong>{customWorkoutDraft?.name || 'Custom workout'}</strong>
+                    <small>
+                      {planning.previewExercises.length
+                        ? `${planning.previewExercises.length} exercises queued as a ${formatDayType(planning.normalizedCustomWorkoutDayType)} workout.`
+                        : `Johnny queued a ${formatDayType(planning.normalizedCustomWorkoutDayType)} workout for you.`}
+                    </small>
+                    {customWorkoutDraft?.coach_note ? <small>{customWorkoutDraft.coach_note}</small> : null}
+                    <div className="settings-actions">
+                      <button type="button" className="btn-outline small" onClick={planning.handleUseScheduledSplit}>
+                        Use scheduled split instead
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="workout-daytype-grid">
+                    {planning.splitOptions.map(option => {
+                      const isActive = planning.previewDayType === option.dayType
+                      const isOverride = Boolean(scheduledDayType && option.dayType !== scheduledDayType)
+
+                      return (
+                        <button
+                          key={option.dayType}
+                          type="button"
+                          className={`daytype-pill${isActive ? ' active' : ''}`}
+                          onClick={() => setPreviewDayType(option.dayType)}
+                        >
+                          <strong>{option.dayType === 'rest' ? 'Rest day' : formatDayType(option.dayType)}</strong>
+                          <small>
+                            {option.dayType === 'rest'
+                              ? 'Skip the build and recover on purpose.'
+                              : option.dayType === 'cardio'
+                                ? 'Conditioning instead of a lift.'
+                                : isOverride
+                                  ? `Change to ${formatDayType(option.dayType)}.`
+                                  : `${option.weekdayLabel || todayLabel} split.`}
+                          </small>
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="dash-card workout-plan-card workout-launchpad-preview-card">
+        <div className="dashboard-card-head">
+          <span className="dashboard-chip workout">Today&apos;s Plan</span>
           {plan?.plan?.name ? <span className="dashboard-chip subtle">{plan.plan.name}</span> : null}
         </div>
         {planLoading ? (
@@ -277,37 +421,72 @@ export default function WorkoutLaunchpad({
         {!planLoading && !planError && planning.previewSession ? (
           <>
             <h3>{planning.displaySessionTitle || `${todayLabel} • ${formatDayType(planning.previewSession.day_type)} day`}</h3>
-            <p>
-              {planning.isRestSelection
-                ? 'Today is being treated as a recovery day. No workout will be built unless you switch back to cardio or a lifting split.'
-                : planning.isCardioSelection
-                  ? 'Today is set up as cardio. Use the Progress screen to log your conditioning, or override to a lift day if you want a full strength session instead.'
-                  : planning.hasCustomWorkoutDraft
-                    ? `${planning.adjustedPreviewExercises.length} exercises are queued in this Johnny-built custom workout. Start it as-is when you are ready.`
-                    : `${planning.adjustedPreviewExercises.length} exercises will actually be built for this ${planning.previewSession.time_tier} session. Drag to reorder, swap, add, or remove before you start.`}
-            </p>
-            {!planning.isCardioSelection && !planning.isRestSelection && planning.plannedRepTotals ? (
-              <p className="settings-subtitle workout-plan-helper">
-                Planned total volume: {planning.plannedRepTotals.min}-{planning.plannedRepTotals.max} reps.
-              </p>
-            ) : null}
-            {planning.previewSession?.coach_note ? <p className="settings-subtitle workout-plan-helper">{planning.previewSession.coach_note}</p> : null}
-            {!planning.isCardioSelection && !planning.isRestSelection && planning.previewSession.plan_exercise_count > planning.previewExercises.length ? (
-              <p className="settings-subtitle workout-plan-helper">Johnny trimmed this session from {planning.previewSession.plan_exercise_count} programmed slots based on your current time tier and readiness.</p>
-            ) : null}
-            {!planning.isCardioSelection && !planning.isRestSelection && planning.previewBonusFillCount > 0 ? (
-              <p className="settings-subtitle workout-plan-helper">
-                Johnny added {planning.previewBonusFillCount} {planning.previewBonusFillCount === 1 ? 'bonus movement' : 'bonus movements'} to make this full session feel meaningfully fuller.
-              </p>
-            ) : null}
+            <p className="workout-launchpad-preview-summary">{previewSummary}</p>
+            <p className="settings-subtitle workout-plan-helper">{previewContext}</p>
+            {!planning.isCardioSelection && !planning.isRestSelection && planning.previewLoading ? <p className="settings-subtitle">Refreshing preview...</p> : null}
+            {!planning.isCardioSelection && !planning.isRestSelection && planning.previewError ? <ErrorState className="workout-inline-error" eyebrow="Workout preview" message={planning.previewError} title="Could not refresh the preview" /> : null}
             {!planning.isCardioSelection && !planning.isRestSelection ? (
               <div className="workout-launchpad-section">
-                <div className="dashboard-card-head">
-                  <span className="dashboard-chip coach">Optional add-ons</span>
-                  <span className="dashboard-chip subtle">Easy add</span>
+                <button
+                  type="button"
+                  className="workout-accordion-toggle workout-launchpad-preview-toggle"
+                  onClick={() => setPlanExpanded(value => !value)}
+                  aria-expanded={planExpanded}
+                >
+                  <span>{planExpanded ? 'Hide plan' : 'Tap to expand'}</span>
+                  <span className={`workout-accordion-icon${planExpanded ? ' expanded' : ''}`} aria-hidden="true">
+                    <span className="workout-accordion-icon-bar horizontal" />
+                    <span className="workout-accordion-icon-bar vertical" />
+                  </span>
+                </button>
+                <div className={`workout-accordion-panel${planExpanded ? ' expanded' : ''}`}>
+                  <div className="workout-accordion-panel-inner">
+                    {planning.adjustedPreviewExercises.length ? (
+                      <div className="workout-plan-list workout-launchpad-preview-simple-list">
+                        {planning.adjustedPreviewExercises.map(exercise => (
+                          <div key={exercise.plan_exercise_id} className="workout-plan-row workout-launchpad-preview-simple-row">
+                            <span className="workout-launchpad-preview-simple-copy">
+                              <strong>{exercise.exercise_name}</strong>
+                              <small>{formatPreviewSetRepLabel(exercise)}</small>
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="settings-subtitle">No strength movements are queued for this selection yet.</p>
+                    )}
+                  </div>
                 </div>
+              </div>
+            ) : null}
+          </>
+        ) : !planLoading && !planError && planning.previewError ? (
+          <ErrorState className="workout-inline-error" eyebrow="Workout preview" message={planning.previewError} title="Could not build today’s workout preview" />
+        ) : null}
+      </div>
+
+      {!planning.isCardioSelection && !planning.isRestSelection ? (
+        <div className="dash-card workout-plan-card workout-launchpad-addon-card">
+          <div className="dashboard-card-head">
+            <span className="dashboard-chip subtle">Add extra work (optional)</span>
+          </div>
+          <div className="workout-launchpad-section">
+            <button
+              type="button"
+              className="workout-accordion-toggle workout-launchpad-preview-toggle"
+              onClick={() => setAddOnsExpanded(value => !value)}
+              aria-expanded={addOnsExpanded}
+            >
+              <span>Add extra work</span>
+              <span className={`workout-accordion-icon${addOnsExpanded ? ' expanded' : ''}`} aria-hidden="true">
+                <span className="workout-accordion-icon-bar horizontal" />
+                <span className="workout-accordion-icon-bar vertical" />
+              </span>
+            </button>
+            <div className={`workout-accordion-panel${addOnsExpanded ? ' expanded' : ''}`}>
+              <div className="workout-accordion-panel-inner">
                 <p className="settings-subtitle workout-plan-helper">
-                  Add an abs slot or a challenge slot before you start. Search is still available below if you want something more specific.
+                  If you want a little extra work, add it here. If not, leave it alone and get moving.
                 </p>
                 <div className="workout-quickadd-grid">
                   <button
@@ -359,143 +538,57 @@ export default function WorkoutLaunchpad({
                     ))}
                   </div>
                 ) : null}
-              </div>
-            ) : null}
-            {!planning.isCardioSelection && !planning.isRestSelection ? (
-              <div className="workout-launchpad-section">
-                <div className="dashboard-card-head">
-                  <span className="dashboard-chip subtle">Add exercise</span>
-                  <span className="dashboard-chip subtle">{planning.previewAddedExercises.length} added</span>
-                </div>
-                <p className="settings-subtitle workout-plan-helper">
-                  Open the exercise drawer to add something the same way you handle a custom swap, then Johnny5k will drop it into today&apos;s plan.
-                </p>
                 <div className="settings-actions">
                   <button type="button" className="btn-outline" onClick={planning.openAddDrawer}>
-                    Browse and add exercise
-                  </button>
-                </div>
-                <div className="settings-actions">
-                  <button type="button" className="btn-secondary" onClick={planning.handleSwitchItUp} disabled={!planning.adjustedPreviewExercises.length || planning.previewLoading}>
-                    Switch it up
+                    Browse more
                   </button>
                 </div>
               </div>
-            ) : null}
-            {!planning.isCardioSelection && !planning.isRestSelection && planning.previewLoading ? <p className="settings-subtitle">Refreshing preview...</p> : null}
-            {!planning.isCardioSelection && !planning.isRestSelection && planning.previewError ? <ErrorState className="workout-inline-error" eyebrow="Workout preview" message={planning.previewError} title="Could not refresh the preview" /> : null}
-            {!planning.isCardioSelection && !planning.isRestSelection ? (
-              planning.adjustedPreviewExercises.length ? (
-                <div className="workout-plan-list workout-preview-list">
-                  {planning.adjustedPreviewExercises.map((exercise, index) => (
-                    <div
-                      key={exercise.plan_exercise_id}
-                      ref={node => planning.registerPreviewExerciseRow(exercise.plan_exercise_id, node)}
-                      className={`workout-plan-row workout-preview-row ${planning.draggedPlanExerciseId === exercise.plan_exercise_id ? 'dragging' : ''}`}
-                      tabIndex={-1}
-                      draggable={!planning.hasCustomWorkoutDraft}
-                      onDragStart={() => !planning.hasCustomWorkoutDraft && planning.handlePreviewDragStart(exercise.plan_exercise_id)}
-                      onDragOver={event => !planning.hasCustomWorkoutDraft && event.preventDefault()}
-                      onDrop={() => !planning.hasCustomWorkoutDraft && planning.handlePreviewDrop(exercise.plan_exercise_id)}
-                      onDragEnd={() => !planning.hasCustomWorkoutDraft && planning.handlePreviewDragCancel()}
-                    >
-                      {exercise.primary_muscle ? <small className="workout-preview-muscle">{exercise.primary_muscle.replace(/_/g, ' ')}</small> : null}
-                      <div className="workout-preview-row-main">
-                        <span className="workout-preview-copy">
-                          <span className="workout-preview-copy-top">
-                            <strong className="workout-preview-name">{exercise.exercise_name}</strong>
-                            {exercise.was_swapped && exercise.original_exercise_name ? (
-                              <span className="workout-plan-chip equipment-adjusted">Equipment-adjusted</span>
-                            ) : null}
-                            {exercise.is_bonus_fill ? (
-                              <span className="workout-plan-chip bonus-fill">Full bonus {formatDayType(exercise.slot_type)}</span>
-                            ) : null}
-                          </span>
-                          {exercise.was_swapped && exercise.original_exercise_name ? <small className="workout-plan-detail">Replacing {exercise.original_exercise_name}</small> : null}
-                          {exercise.is_bonus_fill ? <small className="workout-plan-detail">Added automatically because your plan day did not have enough exercises to distinguish full from medium.</small> : null}
-                          <small className="workout-plan-detail">
-                            {formatPreviewSetRepLabel(exercise)}
-                          </small>
-                        </span>
-                      </div>
-                      <div className="workout-preview-actions">
-                        {!planning.hasCustomWorkoutDraft ? (
-                          <div className="workout-preview-order-buttons">
-                            <button type="button" className="btn-ghost small" onClick={() => planning.handlePreviewMove(exercise.plan_exercise_id, -1)} disabled={index === 0}>↑</button>
-                            <button type="button" className="btn-ghost small" onClick={() => planning.handlePreviewMove(exercise.plan_exercise_id, 1)} disabled={index === planning.adjustedPreviewExercises.length - 1}>↓</button>
-                          </div>
-                        ) : null}
-                        <div className="workout-preview-order-buttons">
-                          <button
-                            type="button"
-                            className="btn-ghost small"
-                            onClick={() => planning.handleAdjustExerciseReps(exercise.plan_exercise_id, -1)}
-                            disabled={Number(exercise.rep_min || 0) <= 3}
-                          >
-                            -1 rep
-                          </button>
-                          <button
-                            type="button"
-                            className="btn-ghost small"
-                            onClick={() => planning.handleAdjustExerciseReps(exercise.plan_exercise_id, 1)}
-                            disabled={Number(planning.effectiveRepAdjustmentsByExercise[exercise.plan_exercise_id] || 0) >= 6}
-                          >
-                            +1 rep
-                          </button>
-                        </div>
-                        <div className="workout-preview-order-buttons workout-preview-primary-actions">
-                          {!planning.hasCustomWorkoutDraft ? (
-                            <button type="button" className="btn-outline small" onClick={() => planning.setSwapDrawerExercise(exercise)}>Swap</button>
-                          ) : null}
-                          <button
-                            type="button"
-                            className="btn-secondary small"
-                            onClick={() => sessionController.handleOpenExerciseDemo(exercise.exercise_name)}
-                          >
-                            Demo
-                          </button>
-                          <button
-                            type="button"
-                            className="btn-outline small"
-                            onClick={() => planning.handleToggleExerciseRemoval(exercise.plan_exercise_id)}
-                          >
-                            {formatRemoveButtonLabel(exercise)}
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="settings-subtitle">No strength movements are queued for this selection yet.</p>
-              )
-            ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
-            <div className="workout-johnny-review">
-              <div className="dashboard-card-head">
-                <span className="dashboard-chip coach">Johnny&apos;s review</span>
-                {planning.hasCustomWorkoutDraft
-                  ? <span className="dashboard-chip subtle">Custom workout</span>
-                  : planning.previewDayType && scheduledDayType && planning.previewDayType !== scheduledDayType
-                    ? <span className="dashboard-chip subtle">Override active</span>
-                    : null}
-              </div>
-              <p>{planning.hasCustomWorkoutDraft ? `Johnny built ${planning.displaySessionTitle || 'a custom workout'} for exactly what you asked for. Start it now, or clear it and go back to your scheduled split.` : planning.johnnyReview.message}</p>
-              {!planning.hasCustomWorkoutDraft && planning.johnnyReview.lastSessionLabel ? <p className="settings-subtitle">{planning.johnnyReview.lastSessionLabel}</p> : null}
-              {!planning.hasCustomWorkoutDraft && planning.johnnyReview.exerciseLines.length ? (
-                <div className="workout-history-list">
-                  {planning.johnnyReview.exerciseLines.map(line => (
-                    <div key={line} className="workout-plan-row">
-                      <span>{line}</span>
-                    </div>
-                  ))}
-                </div>
-              ) : null}
+      <div className="dash-card workout-plan-card workout-launchpad-customize-card">
+        <div className="dashboard-card-head">
+          <span className="dashboard-chip subtle">Customize workout</span>
+          {!planning.isCardioSelection && !planning.isRestSelection
+            ? <span className="dashboard-chip subtle">Power users</span>
+            : <span className="dashboard-chip subtle">Utilities</span>}
+        </div>
+        {!planning.isCardioSelection && !planning.isRestSelection ? (
+          <>
+            <p className="settings-subtitle workout-plan-helper">
+              Want to tinker? Do it here, not in the main flow.
+            </p>
+            <div className="settings-actions">
+              <button type="button" className="btn-outline" onClick={handleOpenCustomize}>
+                Open full editor
+              </button>
             </div>
           </>
-        ) : !planLoading && !planError && planning.previewError ? (
-          <ErrorState className="workout-inline-error" eyebrow="Workout preview" message={planning.previewError} title="Could not build today’s workout preview" />
-        ) : null}
+        ) : (
+          <p className="settings-subtitle workout-plan-helper">
+            Use the utility actions below if you want to leave this screen or log something else first.
+          </p>
+        )}
+        <div className="settings-actions workout-launchpad-utility-actions">
+          {utilityActions.map(action => (
+            <button key={action.label} type="button" className={action.variant} onClick={action.onClick} disabled={action.disabled}>
+              {action.disabled ? action.pendingLabel || action.label : action.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="workout-launchpad-stickybar" role="region" aria-label="Start workout actions">
+        <div className="workout-launchpad-stickybar-copy">
+          <strong>{planning.displaySessionTitle || 'Today’s workout'}</strong>
+          <span>{previewSummary}</span>
+        </div>
+        <button type="button" className="btn-primary" onClick={primaryAction.onClick} disabled={primaryAction.disabled}>
+          {primaryAction.label}
+        </button>
       </div>
 
       <PlanOverviewSwapDrawer
@@ -512,6 +605,18 @@ export default function WorkoutLaunchpad({
         existingExerciseIds={planning.existingPlanningExerciseIds}
         onClose={planning.closeAddDrawer}
         onAdd={planning.handleAddExerciseCandidate}
+      />
+      <WorkoutCustomizeDrawer
+        open={customizeOpen}
+        onClose={handleCloseCustomize}
+        onOpenAddDrawer={handleOpenAddFromCustomize}
+        onOpenSwapDrawer={handleOpenSwapFromCustomize}
+        onStartWorkout={primaryAction.onClick}
+        startLabel={primaryAction.label}
+        startDisabled={primaryAction.disabled}
+        planning={planning}
+        sessionController={sessionController}
+        customWorkoutDraft={customWorkoutDraft}
       />
       <WorkoutSessionConfirmModal
         action={hasResumedSession ? sessionController.pendingSessionAction : null}

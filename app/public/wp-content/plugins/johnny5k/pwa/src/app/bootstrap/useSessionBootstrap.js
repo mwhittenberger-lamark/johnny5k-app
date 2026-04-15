@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { reportClientDiagnostic } from '../../lib/clientDiagnostics'
+import { applyExperienceMode, getStoredExperienceMode } from '../../lib/experienceMode'
 import { applyColorScheme, getStoredColorScheme } from '../../lib/theme'
 import { useAuthStore } from '../../store/authStore'
 import { useStartupStatusStore } from '../../store/startupStatusStore'
@@ -22,6 +23,7 @@ export function useSessionBootstrap() {
 
   useEffect(() => {
     applyColorScheme(getStoredColorScheme())
+    applyExperienceMode(getStoredExperienceMode())
   }, [])
 
   useEffect(() => {

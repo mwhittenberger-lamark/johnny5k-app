@@ -1,9 +1,8 @@
 import { useState } from 'react'
 import AppLoadingScreen from '../../components/ui/AppLoadingScreen'
+import AppIcon from '../../components/ui/AppIcon'
 import OfflineState from '../../components/ui/OfflineState'
-import { groupDashboardCardsByBucket } from './dashboardLayoutUtils'
-import { DashboardAskJohnnyBar, DashboardIconBadge, DailyFocusHero } from './components/DashboardCards'
-import { DASHBOARD_BUCKET_META } from './dashboardCardRegistry'
+import { DailyFocusHero } from './components/DashboardCards'
 import { useDashboardViewModel } from './hooks/useDashboardViewModel.jsx'
 
 export default function DashboardScreen() {
@@ -28,7 +27,6 @@ export default function DashboardScreen() {
     loading,
     moveDashboardCard,
     openDashboardJohnny,
-    openNutrition,
     primaryDashboardAction,
     quickPrompts,
     resetDashboardLayout,
@@ -145,21 +143,12 @@ export default function DashboardScreen() {
           <section className="dashboard-command-center">
             <DailyFocusHero
               model={dailyFocus ? { ...dailyFocus, askPrompt: coachStarterPrompt } : null}
+              suggestions={quickPrompts}
               onPrimaryAction={handleDashboardAction}
-              onSecondaryAction={openNutrition}
+              onSecondaryAction={handleDashboardAction}
               onAskJohnny={(prompt) => openDashboardJohnny(prompt || coachStarterPrompt, {
                 surface: 'dashboard_daily_focus',
                 promptKind: 'starter_prompt',
-              })}
-            />
-            <DashboardAskJohnnyBar
-              prompt={coachStarterPrompt}
-              suggestions={quickPrompts}
-              onAskJohnny={(prompt, promptMeta) => openDashboardJohnny(prompt, {
-                surface: 'dashboard_command_bar',
-                promptKind: promptMeta?.id ? 'follow_up_prompt' : 'starter_prompt',
-                promptId: promptMeta?.id,
-                promptLabel: promptMeta?.label,
               })}
             />
           </section>

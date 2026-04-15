@@ -18,6 +18,8 @@ export default function WorkoutActiveSession({
   displayDayType,
   displaySessionTitle,
   isMaintenanceMode,
+  starterPortraitSrc,
+  starterPortraitAlt,
   offlineStatus,
   onOpenWorkoutSupport,
   liveWorkoutFrames,
@@ -58,6 +60,27 @@ export default function WorkoutActiveSession({
           </button>
         </div>
       </header>
+
+      {sessionController.missionIntro ? (
+        <section className="dash-card workout-ironquest-moment">
+          <div className="dashboard-card-head">
+            <span className="dashboard-chip awards">IronQuest</span>
+            <span className="dashboard-chip subtle">{sessionController.missionIntro.locationLabel}</span>
+          </div>
+          <div className="workout-ironquest-moment-body">
+            {starterPortraitSrc ? (
+              <div className="workout-ironquest-portrait-frame">
+                <img src={starterPortraitSrc} alt={starterPortraitAlt || 'Starter portrait'} />
+              </div>
+            ) : null}
+            <div className="workout-ironquest-moment-copy">
+              <h2>{sessionController.missionIntro.title}</h2>
+              <p>{sessionController.missionIntro.message}</p>
+              {sessionController.missionIntro.objective ? <p className="workout-ironquest-moment-detail">{sessionController.missionIntro.objective}</p> : null}
+            </div>
+          </div>
+        </section>
+      ) : null}
 
       <div className="ex-tabs">
         {exercises.map((exercise, index) => (

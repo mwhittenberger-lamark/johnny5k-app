@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
+import { ironquestApi } from '../../api/modules/ironquest'
 import { onboardingApi } from '../../api/modules/onboarding'
 import { reportClientDiagnostic } from '../../lib/clientDiagnostics'
 import { normalizeDailyCheckInEntry } from '../../lib/dailyCheckIn'
+import { resolveExperienceModeFromIronQuestPayload } from '../../lib/experienceMode'
 import { normalizePushPromptStatus } from '../../lib/onboarding'
 import { applyColorScheme, setAvailableColorSchemes } from '../../lib/theme'
 import { useAuthStore } from '../../store/authStore'
@@ -14,6 +16,7 @@ export function useOnboardingBootstrap(session) {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated)
   const setAppImages = useAuthStore((state) => state.setAppImages)
   const setDailyCheckInEntry = useAuthStore((state) => state.setDailyCheckInEntry)
+  const setExperienceMode = useAuthStore((state) => state.setExperienceMode)
   const setNotificationPrefs = useAuthStore((state) => state.setNotificationPrefs)
   const setPreferenceMeta = useAuthStore((state) => state.setPreferenceMeta)
   const setIssue = useStartupStatusStore((state) => state.setIssue)
@@ -41,8 +44,11 @@ export function useOnboardingBootstrap(session) {
 
     setStatus(STARTUP_STATUS.loading)
 
-    onboardingApi.getState()
-      .then((data) => {
+    Promise.all([
+      onboardingApi.getState(),
+      ironquestApi.profile().catch(() => null),
+    ])
+      .then(([data, ironQuest]) => {
         if (!active) {
           return
         }
@@ -54,6 +60,7 @@ export function useOnboardingBootstrap(session) {
         setNotificationPrefs({
           pushPromptStatus: normalizePushPromptStatus(preferenceMeta?.push_prompt_status),
         })
+        setExperienceMode(resolveExperienceModeFromIronQuestPayload(ironQuest))
         setAvailableColorSchemes(data?.color_schemes)
         applyColorScheme(preferenceMeta?.color_scheme)
         clearIssue(STARTUP_ISSUE_KEYS.authBootstrap)
@@ -93,6 +100,7 @@ export function useOnboardingBootstrap(session) {
     session?.restored,
     setAppImages,
     setDailyCheckInEntry,
+    setExperienceMode,
     setIssue,
     setNotificationPrefs,
     setPreferenceMeta,

@@ -1,12 +1,14 @@
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { bodyApi } from '../../api/modules/body'
+import { ironquestApi } from '../../api/modules/ironquest'
 import { workoutApi } from '../../api/modules/workout'
 import ClearableInput from '../../components/ui/ClearableInput'
 import CoachingSummaryPanel from '../../components/ui/CoachingSummaryPanel'
 import SupportIconButton from '../../components/ui/SupportIconButton'
 import { getAccessibleScrollBehavior } from '../../lib/accessibility'
 import { formatUsShortDate } from '../../lib/dateFormat'
+import { buildIronQuestDailyToast } from '../../lib/ironquestFeedback'
 import { buildCoachingPromptOptions, buildCoachingSummary, runCoachingAction } from '../../lib/coachingSummary'
 import { openSupportGuide } from '../../lib/supportHelp'
 import { scrollAppToTop } from '../../lib/scrollAppToTop'
@@ -16,6 +18,14 @@ import { useDashboardStore } from '../../store/dashboardStore'
 import { useJohnnyAssistantStore } from '../../store/johnnyAssistantStore'
 
 const EXERCISE_CALORIE_MULTIPLIER = 0.6
+
+async function syncIronQuestDailyProgress(payload) {
+  try {
+    return await ironquestApi.updateDailyProgress(payload)
+  } catch {
+    return null
+  }
+}
 
 export default function BodyScreen() {
   const scrollBehavior = getAccessibleScrollBehavior()
@@ -223,6 +233,17 @@ export default function BodyScreen() {
       resetSleepForm()
       invalidate()
       if (!result?.queued) {
+        const ironquestProgress = await syncIronQuestDailyProgress({
+          quest_key: 'sleep',
+          state_date: sleepDate,
+        })
+        const ironQuestToast = buildIronQuestDailyToast(ironquestProgress, {
+          sourceLabel: 'Sleep logged',
+          onOpenHub: () => navigate('/ironquest'),
+        })
+        if (ironQuestToast) {
+          showGlobalToast(ironQuestToast)
+        }
         loadSnapshot(true)
         await refreshBodyData()
       }
@@ -268,6 +289,19 @@ export default function BodyScreen() {
       resetStepsForm()
       invalidate()
       if (!result?.queued) {
+        const ironquestProgress = await syncIronQuestDailyProgress({
+          quest_key: +stepsInput > 0 ? 'steps' : '',
+          state_date: stepsDate,
+          travel_source: `steps_${stepsDate}`,
+          steps: +stepsInput,
+        })
+        const ironQuestToast = buildIronQuestDailyToast(ironquestProgress, {
+          sourceLabel: 'Movement logged',
+          onOpenHub: () => navigate('/ironquest'),
+        })
+        if (ironQuestToast) {
+          showGlobalToast(ironQuestToast)
+        }
         loadSnapshot(true)
         await refreshBodyData()
       }
@@ -821,6 +855,8 @@ export default function BodyScreen() {
           currentWeight={Number(latestWeight)}
           onRangeChange={days => setRange('cardio', days)}
           onLogged={refreshBodyData}
+          onIronQuestProgress={syncIronQuestDailyProgress}
+          onOpenIronQuest={() => navigate('/ironquest')}
           onQueuedMutation={handleQueuedCardioMutation}
           onRefreshSnapshot={() => loadSnapshot(true)}
           onFlash={setFlash}
@@ -1060,7 +1096,7 @@ function WorkoutHistoryTab({ workoutLogs, currentWeight, invalidate, onRefreshSn
   )
 }
 
-function CardioTab({ invalidate, cardioLogs, cardioSeries, cardioRange, currentWeight, onRangeChange, onLogged, onQueuedMutation, onRefreshSnapshot, onFlash, focusRequestKey = '', onFocusHandled = null }) {
+function CardioTab({ invalidate, cardioLogs, cardioSeries, cardioRange, currentWeight, onRangeChange, onLogged, onIronQuestProgress, onOpenIronQuest, onQueuedMutation, onRefreshSnapshot, onFlash, focusRequestKey = '', onFocusHandled = null }) {
   const scrollBehavior = getAccessibleScrollBehavior()
   const [form, setForm] = useState({ cardio_type: 'running', duration_minutes: '', intensity: 'moderate', estimated_calories: '', notes: '', date: todayInputValue() })
   const [editingCardioId, setEditingCardioId] = useState(null)
@@ -1140,6 +1176,22 @@ function CardioTab({ invalidate, cardioLogs, cardioSeries, cardioRange, currentW
       resetCardioForm(form.cardio_type, form.intensity)
       invalidate()
       if (!result?.queued) {
+        const cardioEntryId = Number(result?.id || editingCardioId || 0)
+        const ironquestProgress = await onIronQuestProgress?.({
+          quest_key: 'cardio',
+          state_date: form.date,
+          travel_source: cardioEntryId > 0 ? `cardio_${cardioEntryId}` : `cardio_${form.date}`,
+          cardio_duration_minutes: Number(form.duration_minutes) || 0,
+          cardio_type: form.cardio_type,
+          cardio_intensity: form.intensity,
+        })
+        const ironQuestToast = buildIronQuestDailyToast(ironquestProgress, {
+          sourceLabel: 'Cardio logged',
+          onOpenHub: onOpenIronQuest,
+        })
+        if (ironQuestToast) {
+          showGlobalToast(ironQuestToast)
+        }
         onRefreshSnapshot?.()
         await onLogged?.()
       }

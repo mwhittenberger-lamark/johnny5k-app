@@ -31,4 +31,6 @@ export const adminApi = {
   personaFollowUps: (userId) => api.get(userId ? `/admin/persona/follow-ups?user_id=${userId}` : '/admin/persona/follow-ups'),
   testPush: (data) => api.post('/admin/push/test', data),
   diagnostics: (limit = 50) => api.get(`/admin/diagnostics?limit=${limit}`),
+  ironQuestState: (userId) => api.get(`/admin/ironquest/state?user_id=${userId}`),
+  runIronQuestAction: (data) => api.post('/admin/ironquest/action', data),
 }

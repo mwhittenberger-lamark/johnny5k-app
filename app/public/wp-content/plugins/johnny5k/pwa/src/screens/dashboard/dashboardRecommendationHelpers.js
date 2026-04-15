@@ -232,29 +232,29 @@ export function buildDailyFocusModel(snapshot) {
   let support = 'Keep the day simple and decisive.'
 
   if (timing.lateNight) {
-    instruction = proteinRemaining > 0 ? `Hit the last ${proteinRemaining}g protein and shut the day down.` : 'Shut the day down and protect sleep.'
+    instruction = proteinRemaining > 0 ? `Close ${proteinRemaining}g protein, then get to bed.` : 'Shut the day down and get to bed.'
     support = training?.recorded
-      ? 'The main work is already on the board. Recovery is the only real job left tonight.'
-      : 'Skip extra cleanup, close what actually matters, and protect tomorrow.'
+      ? 'The work is logged. Sleep is the only real win left tonight.'
+      : 'Skip extra cleanup. Close what matters and leave the rest for tomorrow.'
   } else if (scheduledType === 'rest' || training?.recorded_type === 'rest') {
-    instruction = proteinRemaining > 0 ? `Hit the last ${proteinRemaining}g protein and protect recovery.` : 'Protect recovery and keep movement easy.'
-    support = 'Rest day is scheduled. Use it to make the next training day easier, not noisier.'
+    instruction = proteinRemaining > 0 ? `Hit ${proteinRemaining}g protein and recover.` : 'Keep recovery clean today.'
+    support = 'Rest day is scheduled. Make the next training day easier, not noisier.'
   } else if (scheduledType === 'cardio' && !training?.recorded) {
-    instruction = proteinRemaining > 0 ? `Log cardio and hit the last ${proteinRemaining}g protein.` : 'Log cardio before the day gets away from you.'
+    instruction = proteinRemaining > 0 ? `Log cardio and close ${proteinRemaining}g protein.` : 'Log cardio today.'
     support = recoveryMode === 'normal'
       ? 'Recovery is normal. Get the conditioning work logged and keep the rest clean.'
-      : 'Recovery is a little soft. Keep the conditioning work crisp and recover on purpose.'
+      : 'Recovery is soft. Keep the conditioning work crisp and recover on purpose.'
   } else if (!training?.recorded) {
-    instruction = proteinRemaining > 0 ? `Complete your workout and hit the last ${proteinRemaining}g protein.` : 'Complete your workout before the day gets noisy.'
+    instruction = proteinRemaining > 0 ? `Complete today’s workout and close ${proteinRemaining}g protein.` : 'Complete today’s workout.'
     support = recoveryMode === 'normal'
       ? 'Recovery is normal. You are good to push.'
-      : 'Recovery is a little soft. Keep the work crisp instead of heroic.'
+      : 'Recovery is soft. Keep the work crisp instead of heroic.'
   } else if (proteinRemaining > 0) {
-    instruction = `Close the last ${proteinRemaining}g protein and protect recovery.`
-    support = 'Training is already handled. The rest of the win is food quality, sleep, and avoiding cleanup.'
+    instruction = `Close ${proteinRemaining}g protein and recover.`
+    support = 'Training is handled. Food and sleep finish the job.'
   } else {
-    instruction = 'Recovery is the job now. Close the day cleanly.'
-    support = 'The main work is already logged. Keep the finish boring and repeatable.'
+    instruction = 'Recovery is the job now.'
+    support = 'The main work is logged. Keep the finish boring and repeatable.'
   }
 
   const improvementItems = scoreContributorItems.length ? scoreContributorItems : []
@@ -270,7 +270,7 @@ export function buildDailyFocusModel(snapshot) {
       improvementItems.push(`+ ${Math.ceil(stepGap / 1000)}k steps`)
     }
     if (!improvementItems.length) {
-      improvementItems.push('+ Keep recovery clean')
+      improvementItems.push('Keep recovery clean')
     }
   }
 
@@ -278,9 +278,53 @@ export function buildDailyFocusModel(snapshot) {
     instruction,
     support,
     primaryAction,
+    secondaryAction: buildDailyFocusSecondaryAction({ proteinRemaining, scheduledType, timing, training }),
     scoreLabel: weeklyScore > 0 ? `${weeklyScore} score` : '',
     streakLabel: currentStreak > 0 ? `${currentStreak}-day streak` : '',
-    improvementItems: improvementItems.slice(0, 3),
+    improvementItems: improvementItems.map(item => String(item || '').replace(/^\+\s*/, '')).slice(0, 3),
+  }
+}
+
+function buildDailyFocusSecondaryAction({ proteinRemaining, scheduledType, timing, training }) {
+  if (timing?.lateNight) {
+    return {
+      title: 'Open sleep',
+      actionLabel: 'Open sleep',
+      href: '/body',
+      state: { focusTab: 'sleep' },
+    }
+  }
+
+  if (proteinRemaining > 0) {
+    return {
+      title: 'Log meal',
+      actionLabel: 'Log meal',
+      href: '/nutrition',
+    }
+  }
+
+  if (scheduledType === 'cardio' && !training?.recorded) {
+    return {
+      title: 'Log cardio',
+      actionLabel: 'Log cardio',
+      href: '/body',
+      state: { focusTab: 'cardio' },
+    }
+  }
+
+  if (scheduledType === 'rest' || training?.recorded) {
+    return {
+      title: 'Open recovery',
+      actionLabel: 'Open recovery',
+      href: '/body',
+      state: { focusTab: 'sleep' },
+    }
+  }
+
+  return {
+    title: 'Open nutrition',
+    actionLabel: 'Open nutrition',
+    href: '/nutrition',
   }
 }
 
@@ -293,7 +337,7 @@ function getScoreContributorMeta(key, remaining = 0, value = 0, target = 0) {
         label: 'Movement days',
         detail: `${value}/${target} days`,
         action: remaining <= 1 ? 'Get today\'s workout/cardio in' : `Add ${remaining} movement days this week`,
-        dailyFocus: remaining <= 1 ? '+ Get today\'s workout/cardio in' : `+ Add ${remaining} movement days this week`,
+        dailyFocus: remaining <= 1 ? 'Get today\'s workout/cardio in' : `Add ${remaining} movement days this week`,
         impact: 'Movement is still one of the fastest lifts for score and momentum.',
       }
     case 'meal_days':
@@ -301,7 +345,7 @@ function getScoreContributorMeta(key, remaining = 0, value = 0, target = 0) {
         label: 'Meal days',
         detail: `${value}/${target} days`,
         action: remaining <= 1 ? 'Log meals cleanly today' : `Add ${remaining} logged meal days this week`,
-        dailyFocus: remaining <= 1 ? '+ Log meals cleanly today' : `+ Add ${remaining} logged meal days this week`,
+        dailyFocus: remaining <= 1 ? 'Log meals cleanly today' : `Add ${remaining} logged meal days this week`,
         impact: 'Meal rhythm is the easiest way to stabilize the board without adding more complexity.',
       }
     case 'sleep_days':
@@ -309,7 +353,7 @@ function getScoreContributorMeta(key, remaining = 0, value = 0, target = 0) {
         label: 'Sleep-goal nights',
         detail: `${value}/${target} nights`,
         action: remaining <= 1 ? 'Hit your sleep goal tonight' : `Add ${remaining} sleep-goal nights this week`,
-        dailyFocus: remaining <= 1 ? '+ Hit your sleep goal tonight' : `+ Add ${remaining} sleep-goal nights this week`,
+        dailyFocus: remaining <= 1 ? 'Hit your sleep goal tonight' : `Add ${remaining} sleep-goal nights this week`,
         impact: 'Sleep closes the recovery loop and keeps tomorrow from turning into cleanup.',
       }
     case 'cardio_days':
@@ -317,7 +361,7 @@ function getScoreContributorMeta(key, remaining = 0, value = 0, target = 0) {
         label: 'Cardio days',
         detail: `${value}/${target} days`,
         action: remaining <= 1 ? 'Log cardio today' : `+ Add ${remaining} cardio days this week`,
-        dailyFocus: remaining <= 1 ? '+ Log cardio today' : `+ Add ${remaining} cardio days this week`,
+        dailyFocus: remaining <= 1 ? 'Log cardio today' : `Add ${remaining} cardio days this week`,
         impact: 'Cardio is still a clean way to add signal if training momentum is thin.',
       }
     case 'training_sessions':
@@ -325,7 +369,7 @@ function getScoreContributorMeta(key, remaining = 0, value = 0, target = 0) {
         label: 'Training sessions',
         detail: `${value}/${target} sessions`,
         action: remaining <= 1 ? 'Finish one more session' : `Add ${remaining} sessions this week`,
-        dailyFocus: remaining <= 1 ? '+ Finish one more session' : `+ Add ${remaining} sessions this week`,
+        dailyFocus: remaining <= 1 ? 'Finish one more session' : `Add ${remaining} sessions this week`,
         impact: 'Sessions keep the week from relying on one perfect day.',
       }
     default:
@@ -333,7 +377,7 @@ function getScoreContributorMeta(key, remaining = 0, value = 0, target = 0) {
         label: 'Score',
         detail: target > 0 ? `${value}/${target}` : 'Open',
         action: target > 0 ? `Improve score progress ${value}/${target}` : 'Improve score',
-        dailyFocus: target > 0 ? `+ Improve score progress ${value}/${target}` : '+ Improve score',
+        dailyFocus: target > 0 ? `Improve score progress ${value}/${target}` : 'Improve score',
         impact: 'The score needs another clean rep in the basics.',
       }
   }
@@ -417,18 +461,18 @@ export function buildMomentumScoreModel(snapshot) {
   const topOpenItem = remainingItems[0] || null
   const toneClass = weeklyScore >= 80 ? 'success' : weeklyScore >= 50 ? 'subtle' : 'awards'
 
-  let title = 'The score still needs a few clean reps'
-  let body = 'This score is not a passive badge. It moves when meals, movement, sleep, and cardio keep showing up across the week.'
+  let title = 'The score needs another clean rep'
+  let body = 'This score moves when meals, movement, sleep, and cardio keep showing up across the week.'
 
   if (!remainingItems.length && items.length) {
-    title = 'The score is being protected by repeatable basics'
-    body = 'The main score drivers are already represented. The job now is to keep the pattern alive instead of adding noise.'
+    title = 'The score is protected by repeatable basics'
+    body = 'The main score drivers are already represented. Keep the pattern alive instead of adding noise.'
   } else if (weeklyScore >= 80) {
     title = 'The score is strong, but it still needs protection'
-    body = 'The week has real traction. A clean rep in the weakest open bucket keeps momentum from slipping.'
+    body = 'The week has traction. One clean rep in the weakest open bucket keeps momentum from slipping.'
   } else if (weeklyScore >= 50) {
-    title = 'The score is building, and the gaps are explainable'
-    body = 'You do not need a perfect day. You need another clean entry in the weakest bucket so the week stops depending on one big effort.'
+    title = 'The score is building, and the gaps are clear'
+    body = 'You do not need a perfect day. You need one more clean entry in the weakest bucket.'
   }
 
   return {
@@ -436,11 +480,11 @@ export function buildMomentumScoreModel(snapshot) {
     toneClass,
     title,
     body,
-    whyToday: topOpenItem?.impact || 'The score updates when you log the basics. The board should explain the next rep, not just show the number.',
+    whyToday: topOpenItem?.impact || 'The score updates when you log the basics. The board should explain the next rep, not just the number.',
     completedItems,
     remainingItems,
     nextAction: topOpenItem ? buildScoreContributorAction(topOpenItem) : null,
-    footerLabel: remainingItems.length ? 'The score updates as soon as you log one of the open drivers.' : 'The score is already supported by the current week pattern.',
+    footerLabel: remainingItems.length ? 'Log one open driver and the score moves.' : 'The current week pattern is already supporting the score.',
   }
 }
 

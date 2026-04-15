@@ -58,6 +58,28 @@ class IronQuestProfileService {
 		return self::get_profile( $user_id ) ?? [];
 	}
 
+	public static function disable_for_user( int $user_id ): array {
+		self::ensure_profile( $user_id );
+		self::update_profile_fields( $user_id, [ 'enabled' => 0 ] );
+
+		return self::get_profile( $user_id ) ?? [];
+	}
+
+	public static function reset_onboarding_for_user( int $user_id ): array {
+		self::ensure_profile( $user_id );
+		self::update_profile_fields(
+			$user_id,
+			[
+				'enabled'                        => 0,
+				'class_slug'                     => '',
+				'motivation_slug'                => '',
+				'starter_portrait_attachment_id' => 0,
+			]
+		);
+
+		return self::get_profile( $user_id ) ?? [];
+	}
+
 	public static function update_identity( int $user_id, array $identity ): array {
 		self::ensure_profile( $user_id );
 

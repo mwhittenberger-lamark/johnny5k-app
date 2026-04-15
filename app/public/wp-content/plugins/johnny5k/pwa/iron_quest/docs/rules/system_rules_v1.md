@@ -148,8 +148,8 @@
 
 | Activity      | Travel Points  |
 | ------------- | -------------- |
-| 1000 steps    | 1 travel point |
-| 10 min cardio | 1 travel point |
+| 2500 step-equivalent movement | 1 travel point |
+| Cardio        | Converted to step-equivalent, then rounded down by the same 2500-step rule |
 
 ### Mission Requirements
 
@@ -169,6 +169,7 @@
 | ------------- | ---------------------------------------------------- |
 | Gold exchange | 1 travel point = 10 gold                             |
 | Skip cap      | Up to 50% of travel distance can be skipped via gold |
+| Route gate    | Destination arc requirements must be cleared first   |
 
 ## Map System
 

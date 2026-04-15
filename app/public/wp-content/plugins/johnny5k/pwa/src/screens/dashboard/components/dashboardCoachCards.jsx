@@ -24,6 +24,23 @@ export function CoachingSummaryCard({
 }) {
   if (!summary) return null
 
+  const priorityPrompt = pendingFollowUps?.[0]?.prompt || quickPrompts?.[0]?.prompt || null
+  const priorityPromptMeta = pendingFollowUps?.[0]
+    ? {
+        promptKind: 'follow_up_prompt',
+        promptId: 'coach_queue',
+        promptLabel: 'Coach queue',
+        surface: 'dashboard_coach_queue',
+      }
+    : quickPrompts?.[0]
+      ? {
+          promptKind: 'follow_up_prompt',
+          promptId: quickPrompts[0].id,
+          promptLabel: quickPrompts[0].label,
+          surface: 'dashboard_coaching_followups',
+        }
+      : null
+
   return (
     <article className="dash-card dashboard-coach-card dashboard-coaching-summary-card">
       <div className="dashboard-card-head">
@@ -56,7 +73,7 @@ export function CoachingSummaryCard({
         className="dashboard-coaching-summary-panel"
         chipLabel="Coaching summary"
         titleTag="h2"
-        maxInsights={2}
+        maxInsights={1}
         onAction={onAction}
         onAskJohnny={onAskJohnny}
         askJohnnyLabel={null}
@@ -80,88 +97,53 @@ export function CoachingSummaryCard({
         </div>
       ) : null}
 
-      {coachBackupStep || pendingFollowUps?.length || johnnyReview?.encouragement || johnnyReviewError ? (
+      {coachBackupStep || pendingFollowUps?.length || johnnyReview?.encouragement || johnnyReviewError || coachBackupAction || priorityPrompt ? (
         <div className="dashboard-johnny-zone dashboard-johnny-action-zone">
           {coachBackupStep ? (
             <div className="dashboard-johnny-backup-step">
               <strong>Backup move</strong>
               <span>{coachBackupStep}</span>
-              {coachBackupAction ? (
-                <button type="button" className="btn-outline small" onClick={() => onAction?.(coachBackupAction)}>
-                  {coachBackupAction.actionLabel}
-                </button>
-              ) : null}
             </div>
           ) : null}
           {pendingFollowUps?.length ? (
             <div className="dashboard-johnny-backup-step">
               <strong>Coach queue</strong>
-              <span>{pendingFollowUps[0]?.prompt}</span>
-              <small>{followUpOverview?.pending_count ?? pendingFollowUps.length} pending follow-up{(followUpOverview?.pending_count ?? pendingFollowUps.length) === 1 ? '' : 's'} in Johnny.</small>
-              <button type="button" className="btn-outline small" onClick={() => {
-                const prompt = 'Show me my current Johnny follow-ups and what matters most right now.'
-                trackCoachingPromptOpen(summary, prompt, {
-                  screen: 'dashboard',
-                  surface: 'dashboard_coach_queue',
-                  promptKind: 'follow_up_prompt',
-                  promptId: 'coach_queue',
-                })
-                onAskJohnny?.(
-                  prompt,
-                  buildCoachingPromptOptions(summary, {
+              <span>{followUpOverview?.pending_count ?? pendingFollowUps.length} pending follow-up{(followUpOverview?.pending_count ?? pendingFollowUps.length) === 1 ? '' : 's'} waiting in Johnny.</span>
+            </div>
+          ) : null}
+          {coachBackupAction || priorityPrompt ? (
+            <div className="dashboard-optional-actions">
+              {coachBackupAction ? (
+                <button type="button" className="btn-outline small" onClick={() => onAction?.(coachBackupAction)}>
+                  {coachBackupAction.actionLabel}
+                </button>
+              ) : null}
+              {priorityPrompt ? (
+                <button type="button" className="btn-secondary small" onClick={() => {
+                  trackCoachingPromptOpen(summary, priorityPrompt, {
                     screen: 'dashboard',
-                    surface: 'dashboard_coach_queue',
-                    promptKind: 'follow_up_prompt',
-                    promptId: 'coach_queue',
-                  }),
-                )
-              }}>
-                Open queue
-              </button>
+                    surface: priorityPromptMeta?.surface || 'dashboard_coaching_card',
+                    promptKind: priorityPromptMeta?.promptKind || 'follow_up_prompt',
+                    promptId: priorityPromptMeta?.promptId,
+                  })
+                  onAskJohnny?.(
+                    priorityPrompt,
+                    buildCoachingPromptOptions(summary, {
+                      screen: 'dashboard',
+                      surface: priorityPromptMeta?.surface || 'dashboard_coaching_card',
+                      promptKind: priorityPromptMeta?.promptKind || 'follow_up_prompt',
+                      promptId: priorityPromptMeta?.promptId,
+                      promptLabel: priorityPromptMeta?.promptLabel,
+                    }),
+                  )
+                }}>
+                  Ask Johnny
+                </button>
+              ) : null}
             </div>
           ) : null}
           {johnnyReview?.encouragement ? <p className="dashboard-johnny-encouragement">{johnnyReview.encouragement}</p> : null}
           {johnnyReviewError ? <p className="dashboard-johnny-status">Johnny review is using the fallback summary right now.</p> : null}
-        </div>
-      ) : null}
-
-      {quickPrompts?.length ? (
-        <div className="dashboard-johnny-zone dashboard-johnny-followups">
-          <div className="dashboard-johnny-followups-head">
-            <div>
-              <strong>More ways to ask</strong>
-              <p>{quickPrompts.length} focused follow-up{quickPrompts.length === 1 ? '' : 's'} based on your board right now.</p>
-            </div>
-            <button type="button" className="btn-ghost small dashboard-johnny-followups-toggle" onClick={onTogglePrompts}>
-              {coachPromptsOpen ? 'Hide prompts' : 'Show prompts'}
-            </button>
-          </div>
-          {coachPromptsOpen ? (
-            <div className="dashboard-prompt-list dashboard-prompt-list-secondary">
-              {quickPrompts.map(prompt => (
-                <button key={prompt.id} className="dashboard-prompt-chip" type="button" onClick={() => {
-                  trackCoachingPromptOpen(summary, prompt.prompt, {
-                    screen: 'dashboard',
-                    surface: 'dashboard_coaching_followups',
-                    promptKind: 'follow_up_prompt',
-                    promptId: prompt.id,
-                  })
-                  onAskJohnny?.(
-                    prompt.prompt,
-                    buildCoachingPromptOptions(summary, {
-                      screen: 'dashboard',
-                      surface: 'dashboard_coaching_followups',
-                      promptKind: 'follow_up_prompt',
-                      promptId: prompt.id,
-                      promptLabel: prompt.label,
-                    }),
-                  )
-                }}>
-                  {prompt.prompt}
-                </button>
-              ))}
-            </div>
-          ) : null}
         </div>
       ) : null}
     </article>

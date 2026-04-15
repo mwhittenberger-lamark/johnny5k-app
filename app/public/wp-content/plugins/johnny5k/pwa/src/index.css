@@ -20,4 +20,5 @@
 @import './styles/screens/workout.css' layer(screens);
 @import './styles/screens/nutrition.css' layer(screens);
 @import './styles/screens/settings.css' layer(screens);
+@import './styles/screens/ironquest.css' layer(screens);
 @import './styles/legacy.css' layer(legacy);
