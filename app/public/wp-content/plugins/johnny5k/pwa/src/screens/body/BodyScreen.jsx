@@ -1,15 +1,18 @@
-import { startTransition, useCallback, useEffect, useRef, useState } from 'react'
+import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { bodyApi } from '../../api/modules/body'
 import { ironquestApi } from '../../api/modules/ironquest'
+import { onboardingApi } from '../../api/modules/onboarding'
 import { workoutApi } from '../../api/modules/workout'
 import ClearableInput from '../../components/ui/ClearableInput'
 import SupportIconButton from '../../components/ui/SupportIconButton'
 import { getAccessibleScrollBehavior } from '../../lib/accessibility'
 import { formatUsShortDate } from '../../lib/dateFormat'
 import { buildIronQuestDailyToast } from '../../lib/ironquestFeedback'
+import { settingsFormFromState } from '../../lib/onboarding'
 import { openSupportGuide } from '../../lib/supportHelp'
 import { scrollAppToTop } from '../../lib/scrollAppToTop'
+import { buildThirtyDayPrediction } from '../../lib/thirtyDayPrediction'
 import { DAY_TYPE_OPTIONS } from '../../lib/trainingDayTypes'
 import { confirmGlobalAction, showGlobalToast } from '../../lib/uiFeedback'
 import { useDashboardStore } from '../../store/dashboardStore'
@@ -51,6 +54,11 @@ export default function BodyScreen() {
   const [saving, setSaving]     = useState(false)
   const [pendingScrollTarget, setPendingScrollTarget] = useState('')
   const [pendingRouteFocus, setPendingRouteFocus] = useState(null)
+  const [predictionContext, setPredictionContext] = useState({
+    current_goal: '',
+    goal_rate: '',
+    timezone: '',
+  })
   const weightFormRef = useRef(null)
   const sleepFormRef = useRef(null)
   const stepsFormRef = useRef(null)
@@ -117,6 +125,32 @@ export default function BodyScreen() {
 
     return () => window.cancelAnimationFrame(frameId)
   }, [loadSnapshot, refreshBodyData])
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadPredictionContext() {
+      try {
+        const state = await onboardingApi.getState()
+        if (cancelled) return
+        const form = settingsFormFromState(state?.profile, state?.prefs, state?.goal)
+        setPredictionContext({
+          current_goal: form.current_goal || '',
+          goal_rate: form.goal_rate || '',
+          timezone: form.timezone || '',
+        })
+      } catch {
+        if (cancelled) return
+        setPredictionContext(current => current)
+      }
+    }
+
+    void loadPredictionContext()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   useEffect(() => {
     const focusTab = String(location.state?.focusTab || '').trim()
@@ -384,6 +418,14 @@ export default function BodyScreen() {
   const sleepTarget = Number(snapshot?.goal?.target_sleep_hours ?? 8)
   const stepPct = stepTarget ? Math.min(100, Math.round((todayMovement / stepTarget) * 100)) : 0
   const lastSleep = sleepLogs[0]?.hours_sleep ?? snapshot?.sleep?.hours_sleep ?? '—'
+  const thirtyDayPrediction = useMemo(() => buildThirtyDayPrediction({
+    latestWeight: Number(latestWeight ?? 0),
+    targetCalories: snapshot?.goal?.target_calories,
+    loggedCalories: snapshot?.nutrition_totals?.calories,
+    goal: predictionContext.current_goal,
+    pace: predictionContext.goal_rate,
+    timezone: predictionContext.timezone,
+  }), [latestWeight, predictionContext.current_goal, predictionContext.goal_rate, predictionContext.timezone, snapshot?.goal?.target_calories, snapshot?.nutrition_totals?.calories])
 
   function handleQueuedCardioMutation(nextForm, editingId, result) {
     const nextEntry = buildLocalCardioEntry({ ...nextForm, id: editingId || 0 }, result)
@@ -557,6 +599,40 @@ export default function BodyScreen() {
         <SummaryCard label="Latest weight" value={latestWeight} suffix=" lbs" meta={weightTrend} accent="orange" />
         <SummaryCard label="Avg sleep" value={avgSleep ? avgSleep.toFixed(1) : '—'} suffix=" h" meta={lastSleep !== '—' ? `Last night ${lastSleep}h` : 'Log sleep to see recovery trends'} accent="teal" />
         <SummaryCard label="Movement today" value={Number(todayMovement).toLocaleString()} meta={`Target ${Number(stepTarget).toLocaleString()} • ${stepPct}%`} accent="pink" />
+      </section>
+
+      <section className="dash-card settings-prediction-card body-thirty-day-prediction-card">
+        <div className="settings-prediction-head">
+          <div>
+            <span className="dashboard-chip awards">30-day prediction</span>
+            <h3>If every day looked like today</h3>
+          </div>
+          <button type="button" className="btn-outline small" onClick={() => navigate('/nutrition')}>
+            Open nutrition
+          </button>
+        </div>
+        {thirtyDayPrediction ? (
+          <>
+            <p className="settings-prediction-summary">{thirtyDayPrediction.summary}</p>
+            <div className="settings-prediction-stats">
+              <div className="settings-prediction-stat">
+                <span>Projected weight</span>
+                <strong>{thirtyDayPrediction.projectedWeightLabel}</strong>
+              </div>
+              <div className="settings-prediction-stat">
+                <span>30-day change</span>
+                <strong>{thirtyDayPrediction.changeLabel}</strong>
+              </div>
+              <div className="settings-prediction-stat">
+                <span>Daily pace</span>
+                <strong>{thirtyDayPrediction.dailyDeltaLabel}</strong>
+              </div>
+            </div>
+            <p className="settings-subtitle">{thirtyDayPrediction.note}</p>
+          </>
+        ) : (
+          <p className="settings-subtitle">Log at least one meal today to unlock a 30-day pace projection. This card uses today&apos;s calorie pace against your current maintenance estimate.</p>
+        )}
       </section>
 
       <section className="dash-card progress-photos-entry-card">

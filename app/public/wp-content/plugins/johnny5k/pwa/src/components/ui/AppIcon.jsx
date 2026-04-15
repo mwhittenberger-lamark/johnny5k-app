@@ -65,6 +65,62 @@ export default function AppIcon({ name, className = '' }) {
           <path d="M8 9h7M8 13h8M8 17h5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
         </svg>
       )
+    case 'chest':
+      return (
+        <svg viewBox="0 0 24 24" className={classes} aria-hidden="true">
+          <path d="M12 6 8.5 9.2 8 15l4 3 4-3-.5-5.8L12 6Z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+          <path d="M12 7.2V18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+        </svg>
+      )
+    case 'back':
+      return (
+        <svg viewBox="0 0 24 24" className={classes} aria-hidden="true">
+          <path d="M9 5.5c.7 1.8 1.8 3 3 3s2.3-1.2 3-3" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+          <path d="M9.2 8.5 7.8 18h2.8l1.4-5 1.4 5h2.8l-1.4-9.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+        </svg>
+      )
+    case 'shoulders':
+      return (
+        <svg viewBox="0 0 24 24" className={classes} aria-hidden="true">
+          <path d="M6 15c1.1-3 3.2-4.5 6-4.5s4.9 1.5 6 4.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+          <path d="M8 9.5a2 2 0 1 1 0-4 2 2 0 0 1 0 4Zm8 0a2 2 0 1 1 0-4 2 2 0 0 1 0 4Z" fill="none" stroke="currentColor" strokeWidth="1.8" />
+        </svg>
+      )
+    case 'arms':
+      return (
+        <svg viewBox="0 0 24 24" className={classes} aria-hidden="true">
+          <path d="M8 15.5c.5-2.9 1.8-4.8 3.9-5.6l1.6 1.3c1.3 1 2.5 2.4 2.5 4.2 0 1.7-1.4 3.1-3.2 3.1H10.8A2.8 2.8 0 0 1 8 15.5Z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+          <path d="M10.2 9.2 9.4 6.8" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+        </svg>
+      )
+    case 'legs':
+      return (
+        <svg viewBox="0 0 24 24" className={classes} aria-hidden="true">
+          <path d="M10 4.5 9 10l1.2 3.8L8.5 20M14 4.5l1 5.5-1.2 3.8 1.7 6.2" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M10 10h4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+        </svg>
+      )
+    case 'glutes':
+      return (
+        <svg viewBox="0 0 24 24" className={classes} aria-hidden="true">
+          <path d="M9 7.5c0 2-.8 3.4-1.8 4.6A4.8 4.8 0 0 0 11 19h2a4.8 4.8 0 0 0 3.8-6.9C15.8 10.9 15 9.5 15 7.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M12 8v11" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+        </svg>
+      )
+    case 'core':
+      return (
+        <svg viewBox="0 0 24 24" className={classes} aria-hidden="true">
+          <path d="M10 4.5h4l1.2 4.5-.9 9H9.7l-.9-9L10 4.5Z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+          <path d="M9 10h6M9.4 14h5.2" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+        </svg>
+      )
+    case 'full-body':
+      return (
+        <svg viewBox="0 0 24 24" className={classes} aria-hidden="true">
+          <circle cx="12" cy="5.5" r="2" fill="none" stroke="currentColor" strokeWidth="1.8" />
+          <path d="M12 7.5v5M7.5 10l4.5 2.5 4.5-2.5M9.5 20l2.5-4 2.5 4M10 12.5 8.5 17M14 12.5l1.5 4.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      )
     case 'plus':
       return (
         <svg viewBox="0 0 24 24" className={classes} aria-hidden="true">

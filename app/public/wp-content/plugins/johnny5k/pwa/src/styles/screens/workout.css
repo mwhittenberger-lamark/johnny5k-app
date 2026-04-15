@@ -327,6 +327,76 @@
 .workout-customize-drawer-actions .btn-primary {
   width: 100%;
 }
+.workout-prebuilt-library-drawer .ui-drawer-body {
+  gap: var(--space-3);
+}
+.workout-prebuilt-library-current {
+  background: rgba(239, 250, 250, 0.92);
+  border-color: rgba(47, 164, 169, 0.2);
+}
+.workout-prebuilt-library-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.workout-prebuilt-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3-5);
+  border-radius: 16px;
+  background: rgba(249, 246, 240, 0.9);
+  border: 1px solid rgba(21, 29, 38, 0.08);
+}
+.workout-prebuilt-card.mismatched {
+  background: rgba(255, 244, 214, 0.62);
+  border-color: rgba(168, 120, 22, 0.2);
+}
+.workout-prebuilt-card-copy {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.workout-prebuilt-card-copy h4 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+.workout-prebuilt-card-copy p {
+  margin: var(--space-1-5) 0 0;
+  color: var(--text-muted);
+}
+.workout-prebuilt-card-meta {
+  white-space: nowrap;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+.workout-prebuilt-icon-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.workout-prebuilt-icon-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(21, 29, 38, 0.08);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+.workout-prebuilt-icon {
+  width: 18px;
+  height: 18px;
+}
+.workout-prebuilt-exercise-list {
+  margin-top: 0;
+}
+.workout-prebuilt-exercise-row {
+  padding: var(--space-2-5) var(--space-3);
+}
 .workout-launchpad-helper {
   margin: 0;
 }

@@ -217,6 +217,9 @@
 .body-progress-header p {
   text-align: left;
 }
+.body-thirty-day-prediction-card {
+  margin-bottom: 12px;
+}
 .body-chart-card {
   overflow: hidden;
 }

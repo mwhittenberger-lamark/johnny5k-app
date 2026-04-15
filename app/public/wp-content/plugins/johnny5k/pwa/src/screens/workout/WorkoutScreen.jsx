@@ -353,6 +353,12 @@ export default function WorkoutScreen() {
     })
   }
 
+  async function handlePrebuiltQueued(workout) {
+    setStatusError('')
+    setStatusNotice(`Queued ${workout?.title || workout?.name || 'that workout'}. Review it below and start when you're ready.`)
+    await bootstrapSession()
+  }
+
   if (!bootstrapped || loading) {
     return (
       <AppLoadingScreen
@@ -421,17 +427,8 @@ export default function WorkoutScreen() {
         statusError={statusError}
         offlineStatus={<WorkoutOfflineStatusCard {...workoutOfflineStatus} />}
         coachingSummary={launchpadCoachingSummary?.primaryType === 'recovery' ? launchpadCoachingSummary : null}
-        onCoachingAction={(action, summary) => runCoachingAction(
-          action,
-          { navigate, openDrawer },
-          summary ? buildCoachingPromptOptions(summary, {
-            screen: 'workout',
-            surface: 'workout_pre_summary',
-            promptKind: 'next_action_prompt',
-          }) : null,
-        )}
-        onAskJohnny={(prompt, options) => openDrawer(prompt, options)}
         onOpenWorkoutSupport={handleOpenWorkoutSupport}
+        onPrebuiltQueued={handlePrebuiltQueued}
         planning={planning}
         sessionController={sessionController}
         resumedSession={session}

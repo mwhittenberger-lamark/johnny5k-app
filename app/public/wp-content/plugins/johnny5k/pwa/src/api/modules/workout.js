@@ -4,6 +4,8 @@ export const workoutApi = {
   current: () => api.get('/workout/current'),
   saveCustomDraft: (data) => api.post('/workout/custom-draft', data),
   clearCustomDraft: () => api.del('/workout/custom-draft', {}),
+  getPrebuiltLibrary: () => api.get('/workout/prebuilt-library'),
+  queuePrebuiltWorkout: (id, data) => api.post(`/workout/prebuilt-library/${id}/queue`, data),
   getHistory: (days = 3, limit = 10) => api.get(`/workout/history?days=${days}&limit=${limit}`),
   preview: (data) => api.post('/workout/preview', data),
   start: (data) => api.post('/workout/start', data),

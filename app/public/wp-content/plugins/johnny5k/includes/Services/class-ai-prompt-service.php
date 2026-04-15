@@ -318,12 +318,17 @@ RULES;
 		$current_set      = max( 0, (int) ( $context_overrides['current_set_number'] ?? 0 ) );
 		$rest_seconds     = max( 0, (int) ( $context_overrides['last_rest_seconds'] ?? 0 ) );
 		$rep_target       = sanitize_text_field( (string) ( $context_overrides['active_target_reps'] ?? '' ) );
+		$event_saved_set  = is_array( $context_overrides['event_saved_set'] ?? null ) ? $context_overrides['event_saved_set'] : [];
+		$event_review     = is_array( $event_saved_set['review'] ?? null ) ? $event_saved_set['review'] : [];
+		$review_summary   = sanitize_text_field( (string) ( $event_review['summary'] ?? '' ) );
+		$review_next_step = sanitize_text_field( (string) ( $event_review['recommendation'] ?? '' ) );
 
 		$base = 'Mode: Live workout coaching. You are inside an active training session with the user right now. Respond like a coach in the room, not like a general advice chat. Keep replies to 1 or 2 short sentences unless the user explicitly asks for more. Every reply should either give a useful cue, a pacing instruction, a progression note, a recovery reminder, or a brief shot of encouragement grounded in the current workout state. You can give form and setup cues, but you cannot see the user, so never claim to have visually confirmed technique or say things like "great form," "that looked clean," or similar visual judgments unless the user explicitly reported that themselves. Never give broad lifestyle advice here unless the user explicitly asks for it. Do not restate the entire session context back to the user. Treat timing as real: between sets aim to keep rest around 30 to 60 seconds; between exercises aim to keep transitions around 2 to 3 minutes unless safety or a heavy compound lift clearly justifies longer.';
 
 		$event_instruction = match ( $event_type ) {
 			'set_saved' => 'The user just saved a set. Comment on the logged performance directly. If reps, load, or RiR suggest they are overshooting or sandbagging, say it plainly and give one adjustment for the next set.',
 			'set_changed' => 'The user changed sets without logging yet. Give a fast cue about what to focus on for the upcoming set.',
+			'exercise_completed' => 'The user just saved the last planned set for the exercise. Review the whole exercise, not just the last set. Tell them what to try next time. When the data supports it, explicitly recommend a concrete progression move such as a small weight increase, an extra set, holding the load steady, or reducing weight because the rep target slipped.',
 			'exercise_changed' => 'The user changed exercises. Re-orient them quickly to the new movement and setup. If transition time is dragging, tell them to get moving.',
 			'user_question' => 'The user asked a direct question mid-session. Answer clearly and briefly. If they ask about how to perform or demo the movement, prefer returning an open_exercise_demo action tied to the current exercise.',
 			'session_opened' => 'The user just entered live workout mode. Set the tone, make it feel live, and point them at the next immediate move.',
@@ -337,6 +342,8 @@ RULES;
 			$current_set > 0 ? sprintf( 'Current set: %d.', $current_set ) : '',
 			'' !== $rep_target ? sprintf( 'Target reps: %s.', $rep_target ) : '',
 			$rest_seconds > 0 ? sprintf( 'Rest elapsed: %d seconds.', $rest_seconds ) : '',
+			'' !== $review_summary ? sprintf( 'Exercise review summary: %s.', $review_summary ) : '',
+			'' !== $review_next_step ? sprintf( 'Suggested next-time adjustment: %s.', $review_next_step ) : '',
 		] );
 
 		return trim( implode( ' ', array_filter( [

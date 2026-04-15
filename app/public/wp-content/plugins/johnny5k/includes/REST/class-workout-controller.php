@@ -5,6 +5,7 @@ defined( 'ABSPATH' ) || exit;
 
 use Johnny5k\Services\TrainingEngine;
 use Johnny5k\Services\ExerciseLibraryService;
+use Johnny5k\Services\PrebuiltWorkoutLibraryService;
 use Johnny5k\Services\UserTime;
 use Johnny5k\Services\AiService;
 use Johnny5k\Services\AwardEngine;
@@ -72,6 +73,22 @@ class WorkoutController {
 				'methods'             => 'DELETE',
 				'callback'            => [ __CLASS__, 'delete_custom_draft' ],
 				'permission_callback' => $auth,
+			],
+		] );
+
+		register_rest_route( $ns, '/workout/prebuilt-library', [
+			'methods'             => 'GET',
+			'callback'            => [ __CLASS__, 'get_prebuilt_workout_library' ],
+			'permission_callback' => $auth,
+		] );
+
+		register_rest_route( $ns, '/workout/prebuilt-library/(?P<id>\d+)/queue', [
+			'methods'             => 'POST',
+			'callback'            => [ __CLASS__, 'queue_prebuilt_workout' ],
+			'permission_callback' => $auth,
+			'args'                => [
+				'id'        => [ 'required' => true, 'type' => 'integer' ],
+				'time_tier' => [ 'required' => false, 'type' => 'string', 'sanitize_callback' => 'sanitize_text_field', 'validate_callback' => [ __CLASS__, 'validate_time_tier' ] ],
 			],
 		] );
 
@@ -496,6 +513,50 @@ class WorkoutController {
 		return new \WP_REST_Response( [
 			'saved' => true,
 			'custom_workout_draft' => $result,
+		], 200 );
+	}
+
+	public static function get_prebuilt_workout_library( \WP_REST_Request $req ): \WP_REST_Response {
+		return new \WP_REST_Response( PrebuiltWorkoutLibraryService::get_library_for_user( get_current_user_id() ) );
+	}
+
+	public static function queue_prebuilt_workout( \WP_REST_Request $req ): \WP_REST_Response {
+		$user_id = get_current_user_id();
+		$id      = (int) $req->get_param( 'id' );
+		$workout = PrebuiltWorkoutLibraryService::get_item( $id );
+
+		if ( empty( $workout ) ) {
+			return new \WP_REST_Response( [ 'message' => 'That prebuilt workout is no longer available.' ], 404 );
+		}
+
+		$user_equipment = PrebuiltWorkoutLibraryService::get_user_equipment_selection( $user_id );
+		if ( ! PrebuiltWorkoutLibraryService::matches_user_setup( $workout, $user_equipment ) ) {
+			return new \WP_REST_Response( [
+				'message' => sprintf(
+					'%s is built for %s. Your onboarding setup is %s.',
+					(string) ( $workout['title'] ?? 'That workout' ),
+					(string) ( $workout['required_gym_setup'] ?? 'Full gym' ),
+					implode( ', ', $user_equipment )
+				),
+			], 400 );
+		}
+
+		$result = self::save_custom_workout_draft_for_user(
+			$user_id,
+			PrebuiltWorkoutLibraryService::build_custom_draft_payload(
+				$workout,
+				(string) ( $req->get_param( 'time_tier' ) ?: 'medium' )
+			)
+		);
+
+		if ( is_wp_error( $result ) ) {
+			return new \WP_REST_Response( [ 'message' => $result->get_error_message() ], 400 );
+		}
+
+		return new \WP_REST_Response( [
+			'saved'               => true,
+			'prebuilt_workout'    => $workout,
+			'custom_workout_draft'=> $result,
 		], 200 );
 	}
 
@@ -966,6 +1027,11 @@ class WorkoutController {
 			'day_type'   => $day_type,
 			'time_tier'  => self::normalize_time_tier( $draft['time_tier'] ?? '' ) ?: 'medium',
 			'coach_note' => $coach_note,
+			'source_type' => sanitize_key( (string) ( $draft['source_type'] ?? '' ) ),
+			'source_id'   => isset( $draft['source_id'] ) ? (int) $draft['source_id'] : 0,
+			'description' => sanitize_textarea_field( (string) ( $draft['description'] ?? '' ) ),
+			'required_gym_setup' => sanitize_text_field( (string) ( $draft['required_gym_setup'] ?? '' ) ),
+			'body_part_icons'    => array_values( array_filter( array_map( 'sanitize_key', is_array( $draft['body_part_icons'] ?? null ) ? $draft['body_part_icons'] : [] ) ) ),
 			'created_at' => $created_at,
 			'exercises'  => $items,
 		];
@@ -1006,9 +1072,15 @@ class WorkoutController {
 
 		return [
 			'id'         => sanitize_text_field( (string) ( $payload['id'] ?? 'custom_' . wp_generate_uuid4() ) ),
+			'name'       => $name,
 			'day_type'   => $day_type,
 			'time_tier'  => self::normalize_time_tier( $payload['time_tier'] ?? '' ) ?: 'medium',
 			'coach_note' => $coach_note,
+			'source_type' => sanitize_key( (string) ( $payload['source_type'] ?? '' ) ),
+			'source_id'   => isset( $payload['source_id'] ) ? (int) $payload['source_id'] : 0,
+			'description' => sanitize_textarea_field( (string) ( $payload['description'] ?? '' ) ),
+			'required_gym_setup' => sanitize_text_field( (string) ( $payload['required_gym_setup'] ?? '' ) ),
+			'body_part_icons'    => array_values( array_filter( array_map( 'sanitize_key', is_array( $payload['body_part_icons'] ?? null ) ? $payload['body_part_icons'] : [] ) ) ),
 			'created_at' => current_time( 'mysql', true ),
 			'exercises'  => $resolved_exercises,
 		];

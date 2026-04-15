@@ -2499,9 +2499,9 @@ function SavedFoodRow({ food, onLog, onSave, onDelete, onError }) {
         {food.micros?.length ? <p>{formatMicroList(food.micros, 3)}</p> : null}
       </div>
       <div className="nutrition-row-actions saved-food-actions-stack">
-        <button className="btn-secondary small" onClick={() => onLog(food.id)}>Log</button>
-        <button className="btn-secondary small" onClick={() => setEditing(true)}>Edit</button>
-        <button className="btn-ghost small" onClick={onDelete}>Delete</button>
+        <button type="button" className="btn-secondary small" onClick={() => onLog(food.id)}>Log</button>
+        <button type="button" className="btn-secondary small" onClick={() => setEditing(true)}>Edit</button>
+        <button type="button" className="btn-ghost small" onClick={onDelete}>Delete</button>
       </div>
     </div>
   )
@@ -2540,7 +2540,7 @@ function SavedMealRow({ meal, savedFoods, onLog, onSave, onDelete, onError }) {
   }
 
   return (
-    <div ref={rowRef} className="nutrition-item-row editing saved-meal-row">
+    <div ref={rowRef} className="nutrition-item-row saved-meal-row">
       <div>
         <strong>{meal.name}</strong>
         <p>{meal.meal_type} · {Math.round(Number(meal.calories || 0) * multiplier)} Calories · {Math.round(Number(meal.protein_g || 0) * multiplier)}g protein</p>
@@ -2551,9 +2551,9 @@ function SavedMealRow({ meal, savedFoods, onLog, onSave, onDelete, onError }) {
           <span>Servings</span>
           <input type="number" min="0.1" step="0.01" inputMode="decimal" value={servingMultiplier} onChange={event => setServingMultiplier(event.target.value)} aria-label="Saved meal servings" />
         </label>
-        <button className="btn-secondary small" onClick={() => onLog(meal.id, multiplier)}>Log</button>
-        <button className="btn-secondary small" onClick={() => setEditing(true)}>Edit</button>
-        <button className="btn-ghost small" onClick={onDelete}>Delete</button>
+        <button type="button" className="btn-secondary small" onClick={() => onLog(meal.id, multiplier)}>Log</button>
+        <button type="button" className="btn-secondary small" onClick={() => setEditing(true)}>Edit</button>
+        <button type="button" className="btn-ghost small" onClick={onDelete}>Delete</button>
       </div>
     </div>
   )

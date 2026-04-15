@@ -2,7 +2,7 @@
 
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import JohnnyAssistantDrawer from './JohnnyAssistantDrawer'
 
@@ -115,6 +115,18 @@ async function pressKey(key) {
   })
 }
 
+function LocationProbe() {
+  const location = useLocation()
+
+  return (
+    <div
+      data-testid="location-probe"
+      data-pathname={location.pathname}
+      data-state={JSON.stringify(location.state ?? null)}
+    />
+  )
+}
+
 describe('JohnnyAssistantDrawer', () => {
   beforeEach(() => {
     vi.useFakeTimers()
@@ -225,5 +237,90 @@ describe('JohnnyAssistantDrawer', () => {
     expect(document.body.textContent).toContain('High-protein dinner with straightforward prep.')
     expect(document.querySelector('img[src="https://example.com/salmon-rice-bowl.jpg"]')).not.toBeNull()
     expect(Array.from(document.querySelectorAll('summary')).some(node => node.textContent?.includes('Show details'))).toBe(true)
+  })
+
+  it('opens recipe review and cookbook destinations with Johnny route state', async () => {
+    aiApiMock.getThread.mockResolvedValueOnce({
+      messages: [{
+        role: 'assistant',
+        message_text: 'I found a recipe and saved one you liked.',
+        action_results: [
+          {
+            action: 'show_recipe_catalog',
+            summary: 'Johnny found 1 recipe recommendation.',
+            recipe_count: 1,
+            recipes: [{
+              key: 'dinner-salmon-bowl',
+              recipe_name: 'Salmon Rice Bowl',
+              meal_type: 'dinner',
+              estimated_calories: 620,
+              estimated_protein_g: 42,
+              estimated_carbs_g: 48,
+              estimated_fat_g: 20,
+            }],
+          },
+          {
+            action: 'add_recipe_to_cookbook',
+            summary: 'Johnny added Salmon Rice Bowl to My Cookbook.',
+            added: true,
+            cookbook_count: 3,
+            recipe: {
+              key: 'dinner-salmon-bowl',
+              recipe_name: 'Salmon Rice Bowl',
+              meal_type: 'dinner',
+              is_in_cookbook: true,
+              estimated_calories: 620,
+              estimated_protein_g: 42,
+              estimated_carbs_g: 48,
+              estimated_fat_g: 20,
+            },
+          },
+        ],
+      }],
+      follow_ups: [],
+      durable_memory: { bullets: [] },
+    })
+
+    await renderComponent(
+      <MemoryRouter initialEntries={['/dashboard']}>
+        <Routes>
+          <Route
+            path="*"
+            element={(
+              <>
+                <JohnnyAssistantDrawer />
+                <LocationProbe />
+              </>
+            )}
+          />
+        </Routes>
+      </MemoryRouter>,
+    )
+    await flushPendingWork()
+
+    const actionButtons = Array.from(document.querySelectorAll('button.johnny-action-link'))
+    const openRecipesButton = actionButtons.find(button => button.textContent?.includes('Open recipes'))
+    const openCookbookButton = actionButtons.find(button => button.textContent?.includes('Open My Cookbook'))
+    const locationProbe = () => document.querySelector('[data-testid="location-probe"]')
+
+    expect(openRecipesButton).not.toBeUndefined()
+    expect(openCookbookButton).not.toBeUndefined()
+
+    await click(openRecipesButton)
+
+    expect(locationProbe()?.getAttribute('data-pathname')).toBe('/nutrition')
+    expect(JSON.parse(locationProbe()?.getAttribute('data-state') || 'null')).toEqual({
+      focusSection: 'recipes',
+      johnnyActionNotice: 'Johnny opened recipe ideas so you can review the latest recommendations.',
+    })
+
+    await click(openCookbookButton)
+
+    expect(locationProbe()?.getAttribute('data-pathname')).toBe('/nutrition')
+    expect(JSON.parse(locationProbe()?.getAttribute('data-state') || 'null')).toEqual({
+      focusSection: 'recipes',
+      recipeCollectionFilter: 'cookbook',
+      johnnyActionNotice: 'Johnny saved that recipe to My Cookbook.',
+    })
   })
 })

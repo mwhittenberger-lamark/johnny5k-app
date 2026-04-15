@@ -6,6 +6,7 @@ import SupportIconButton from '../../../components/ui/SupportIconButton'
 import PlanOverviewSwapDrawer from '../../../components/workout/PlanOverviewSwapDrawer'
 import WorkoutSessionConfirmModal from './WorkoutSessionConfirmModal'
 import WorkoutCustomizeDrawer from './WorkoutCustomizeDrawer'
+import WorkoutPrebuiltLibraryDrawer from './WorkoutPrebuiltLibraryDrawer'
 import { formatDayType, formatPreviewSetRepLabel, getReadinessRepDelta } from '../workoutScreenUtils'
 
 const READINESS_OPTIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
@@ -110,9 +111,8 @@ export default function WorkoutLaunchpad({
   statusError,
   offlineStatus,
   coachingSummary,
-  onCoachingAction,
-  onAskJohnny,
   onOpenWorkoutSupport,
+  onPrebuiltQueued,
   planning,
   sessionController,
   resumedSession,
@@ -122,6 +122,7 @@ export default function WorkoutLaunchpad({
   const [adjustExpanded, setAdjustExpanded] = useState(false)
   const [addOnsExpanded, setAddOnsExpanded] = useState(false)
   const [customizeOpen, setCustomizeOpen] = useState(false)
+  const [prebuiltOpen, setPrebuiltOpen] = useState(false)
   const isMaintenanceMode = readinessScore <= 3
   const readinessRepDelta = getReadinessRepDelta(readinessScore)
   const absQuickPick = planning.absAddOnSuggestions[0] ?? null
@@ -220,6 +221,14 @@ export default function WorkoutLaunchpad({
 
   function handleCloseCustomize() {
     setCustomizeOpen(false)
+  }
+
+  function handleOpenPrebuiltLibrary() {
+    setPrebuiltOpen(true)
+  }
+
+  function handleClosePrebuiltLibrary() {
+    setPrebuiltOpen(false)
   }
 
   function handleOpenAddFromCustomize() {
@@ -565,12 +574,22 @@ export default function WorkoutLaunchpad({
               <button type="button" className="btn-outline" onClick={handleOpenCustomize}>
                 Open full editor
               </button>
+              <button type="button" className="btn-secondary" onClick={handleOpenPrebuiltLibrary}>
+                Browse prebuilt library
+              </button>
             </div>
           </>
         ) : (
-          <p className="settings-subtitle workout-plan-helper">
-            Use the utility actions below if you want to leave this screen or log something else first.
-          </p>
+          <>
+            <p className="settings-subtitle workout-plan-helper">
+              Use the utility actions below if you want to leave this screen or log something else first.
+            </p>
+            <div className="settings-actions">
+              <button type="button" className="btn-secondary" onClick={handleOpenPrebuiltLibrary}>
+                Browse prebuilt library
+              </button>
+            </div>
+          </>
         )}
         <div className="settings-actions workout-launchpad-utility-actions">
           {utilityActions.map(action => (
@@ -616,6 +635,13 @@ export default function WorkoutLaunchpad({
         startDisabled={primaryAction.disabled}
         planning={planning}
         sessionController={sessionController}
+        customWorkoutDraft={customWorkoutDraft}
+      />
+      <WorkoutPrebuiltLibraryDrawer
+        open={prebuiltOpen}
+        onClose={handleClosePrebuiltLibrary}
+        onQueued={onPrebuiltQueued}
+        timeTier={timeTier}
         customWorkoutDraft={customWorkoutDraft}
       />
       <WorkoutSessionConfirmModal

@@ -22,8 +22,10 @@ import {
 import { useAuthStore } from '../../store/authStore'
 import { getPausedTimerNowValue } from '../../screens/workout/workoutScreenUtils'
 import {
+  buildCompletedExerciseReview,
   buildCoachPrompt,
   buildLiveExerciseSnapshot,
+  buildNextSetCoachMessage,
   buildSavedSetSummary,
   formatRepRange,
   normalizeLiveWorkoutCoachingCues,
@@ -721,6 +723,12 @@ export default function LiveWorkoutMode({
     const nextIndex = clampNumber(currentSetIdx + direction, 0, Math.max(0, totalSetCount - 1))
     if (nextIndex === currentSetIdx) return
 
+    if (restToastTimerRef.current) {
+      window.clearTimeout(restToastTimerRef.current)
+      restToastTimerRef.current = null
+    }
+    restGuidanceMessageKeyRef.current = ''
+    setRestToast(null)
     setCurrentSetIdx(nextIndex)
     const nextSetNumber = nextIndex + 1
     setLastTransition({
@@ -732,12 +740,7 @@ export default function LiveWorkoutMode({
     })
     appendCoachMessage({
       role: 'assistant',
-      text: buildSetNavigationCoachMessage({
-        exercise: activeExercise,
-        setNumber: nextSetNumber,
-        totalSetCount,
-        restGuidance,
-      }),
+      text: buildNextSetCoachMessage(activeExercise, nextSetNumber, totalSetCount, restTiming),
       eventType: 'set_changed',
       createdAt: Date.now(),
       actions: [],
@@ -773,9 +776,13 @@ export default function LiveWorkoutMode({
       rir: currentDraft.rir !== '' ? parseFloat(currentDraft.rir) : currentSet?.rir ?? null,
       completed: true,
     }
+    const completedExerciseReview = completedExercise
+      ? buildCompletedExerciseReview(activeExercise, currentSetIdx, payload, { totalSetCount })
+      : null
     const savedSummary = buildSavedSetSummary(activeExercise, currentSetIdx, payload, {
       totalSetCount,
       completedExercise,
+      review: completedExerciseReview,
     })
 
     setLastTransition({
@@ -812,6 +819,8 @@ export default function LiveWorkoutMode({
           setNumber,
           totalSetCount,
           completedExercise,
+          isLastSet: completedExercise,
+          review: completedExerciseReview,
           ...payload,
         },
       })
@@ -1466,14 +1475,6 @@ function buildSessionOpenedCoachMessage({ activeExercise, displayDayType, totalE
   return `Live mode is on for this ${workoutLabel} session. Open with ${exerciseName} for ${repRange}, and get moving early so the pace stays tight. ${queueLabel}`
 }
 
-function buildSetNavigationCoachMessage({ exercise, setNumber, totalSetCount, restGuidance }) {
-  const exerciseName = exercise?.exercise_name || 'the current exercise'
-  const repRange = formatRepRange(exercise)
-  const totalSetsLabel = totalSetCount > 0 ? `Set ${setNumber} of ${totalSetCount}` : `Set ${setNumber}`
-
-  return `${totalSetsLabel} is up for ${exerciseName}. Stay inside ${repRange} and keep rest in the ${restGuidance.windowLabel} range so the next set does not go stale.`
-}
-
 function buildRestCoachMessage({ exerciseName, kind, restGuidance }) {
   const movementLabel = exerciseName || 'the current lift'
 
@@ -1501,6 +1502,7 @@ function buildLiveWorkoutContext({
   timerLabel,
 }) {
   const activeExercise = exercises?.[activeExerciseIdx] ?? null
+  const totalSetCount = getLiveTotalSetCount(activeExercise)
 
   return {
     surface: 'live_workout_mode',
@@ -1520,6 +1522,7 @@ function buildLiveWorkoutContext({
     active_recent_history: normalizeLiveWorkoutHistory(activeExercise?.recent_history),
     active_planned_sets: Number(activeExercise?.planned_sets || 0),
     completed_sets_for_exercise: activeExercise?.sets?.filter(set => set.completed).length || 0,
+    current_set_is_last_planned: totalSetCount > 0 ? currentSetIdx + 1 >= totalSetCount : false,
     current_set_number: currentSetIdx + 1,
     current_set_logged: Boolean(currentSet?.id),
     current_set_values: {

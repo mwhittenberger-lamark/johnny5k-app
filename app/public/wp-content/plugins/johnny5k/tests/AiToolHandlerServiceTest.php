@@ -135,6 +135,149 @@ class AiToolHandlerServiceTest extends ServiceTestCase {
 		$this->assertSame( 'Bananas', $captured_request->get_param( 'items' )[0]['item_name'] ?? null );
 	}
 
+	public function test_get_recipe_catalog_returns_recipe_library_items_with_cookbook_status(): void {
+		$GLOBALS['johnny5k_test_current_user_id'] = 7;
+		$this->setOption( 'jf_recipe_library', [
+			[
+				'recipe_name' => 'Chicken Rice Bowl',
+				'meal_type' => 'dinner',
+				'ingredients' => [ 'Chicken', 'Rice', 'Broccoli' ],
+				'instructions' => [ 'Cook chicken', 'Assemble bowls' ],
+				'estimated_calories' => 540,
+				'estimated_protein_g' => 99,
+				'estimated_carbs_g' => 48,
+				'estimated_fat_g' => 14,
+				'dietary_tags' => [ 'high_protein' ],
+				'why_this_works' => 'Balanced dinner with strong protein.',
+			],
+			[
+				'recipe_name' => 'Greek Yogurt Parfait',
+				'meal_type' => 'breakfast',
+				'ingredients' => [ 'Greek Yogurt', 'Berries' ],
+				'instructions' => [ 'Layer yogurt and berries' ],
+				'estimated_calories' => 320,
+				'estimated_protein_g' => 24,
+				'estimated_carbs_g' => 28,
+				'estimated_fat_g' => 8,
+				'dietary_tags' => [ 'vegetarian' ],
+				'why_this_works' => 'Simple protein-forward breakfast.',
+			],
+		] );
+		\update_user_meta( 7, 'johnny5k_recipe_cookbook', [
+			[
+				'key' => 'admin-library-dinner-chicken-rice-bowl',
+				'recipe_name' => 'Chicken Rice Bowl',
+				'meal_type' => 'dinner',
+				'ingredients' => [ 'Chicken', 'Rice', 'Broccoli' ],
+				'instructions' => [ 'Cook chicken', 'Assemble bowls' ],
+				'estimated_calories' => 540,
+				'estimated_protein_g' => 99,
+				'estimated_carbs_g' => 48,
+				'estimated_fat_g' => 14,
+			],
+		] );
+
+		$db = $this->wpdb();
+		$db->expectGetVar( 'SELECT COUNT(*) FROM wp_fit_recipe_suggestions WHERE user_id = 7 AND is_cookbook = 1', 0 );
+		$db->expectGetResults( 'FROM wp_fit_recipe_suggestions', [
+			[
+				'recipe_key' => 'admin-library-dinner-chicken-rice-bowl',
+				'meal_type' => 'dinner',
+				'recipe_name' => 'Chicken Rice Bowl',
+				'ingredients_json' => wp_json_encode( [ 'Chicken', 'Rice', 'Broccoli' ] ),
+				'instructions_json' => wp_json_encode( [ 'Cook chicken', 'Assemble bowls' ] ),
+				'estimated_calories' => 540,
+				'estimated_protein_g' => 99,
+				'estimated_carbs_g' => 48,
+				'estimated_fat_g' => 14,
+				'dietary_tags_json' => wp_json_encode( [ 'high_protein' ] ),
+				'why_this_works' => '',
+				'source' => 'admin_library',
+				'image_url' => '',
+			],
+		] );
+		$db->expectGetResults( 'SELECT item_name FROM wp_fit_pantry_items WHERE user_id = 7 ORDER BY updated_at DESC, id DESC LIMIT 12', [
+			(object) [ 'item_name' => 'Chicken' ],
+			(object) [ 'item_name' => 'Rice' ],
+		] );
+		$db->expectGetRow( 'SELECT food_preferences_json, food_dislikes_json, common_breakfasts_json', [
+			'food_preferences_json' => '[]',
+			'food_dislikes_json' => '[]',
+			'common_breakfasts_json' => '[]',
+		] );
+
+		$result = AiToolHandlerService::execute( 7, 'get_recipe_catalog', [
+			'meal_type' => 'dinner',
+			'minimum_protein_g' => 30,
+			'limit' => 5,
+		] );
+
+		$this->assertTrue( $result['ok'] ?? false );
+		$this->assertSame( 'show_recipe_catalog', $result['action'] ?? '' );
+		$this->assertGreaterThanOrEqual( 1, (int) ( $result['recipe_count'] ?? 0 ) );
+		$this->assertNotEmpty( $result['recipes'] ?? [] );
+		$matched_recipe = null;
+		foreach ( (array) ( $result['recipes'] ?? [] ) as $recipe ) {
+			if ( 'Chicken Rice Bowl' === ( $recipe['recipe_name'] ?? null ) ) {
+				$matched_recipe = $recipe;
+				break;
+			}
+		}
+		$this->assertIsArray( $matched_recipe );
+		$this->assertTrue( $matched_recipe['is_in_cookbook'] ?? false );
+		$catalog_inserts = array_values( array_filter( $db->inserted, static fn( array $row ): bool => 0 === (int) ( $row['data']['is_cookbook'] ?? -1 ) ) );
+		$this->assertNotEmpty( $catalog_inserts );
+		$this->assertSame( 'admin_library', $catalog_inserts[0]['data']['source'] ?? null );
+	}
+
+	public function test_add_recipe_to_cookbook_persists_selected_recipe_from_library(): void {
+		$GLOBALS['johnny5k_test_current_user_id'] = 7;
+		$this->setOption( 'jf_recipe_library', [
+			[
+				'recipe_name' => 'Salmon Couscous Bowl',
+				'meal_type' => 'dinner',
+				'ingredients' => [ 'Salmon', 'Couscous', 'Cucumber' ],
+				'instructions' => [ 'Bake salmon', 'Build bowl' ],
+				'estimated_calories' => 610,
+				'estimated_protein_g' => 44,
+				'estimated_carbs_g' => 46,
+				'estimated_fat_g' => 22,
+				'dietary_tags' => [ 'mediterranean', 'high_protein' ],
+				'why_this_works' => 'High-protein dinner with practical prep.',
+			],
+		] );
+
+		$db = $this->wpdb();
+		$db->expectGetResults( 'FROM wp_fit_recipe_suggestions', [] );
+		$db->expectGetVar( "SELECT id FROM wp_fit_recipe_suggestions WHERE user_id = 7 AND recipe_key = 'admin-library-dinner-salmon-couscous-bowl' AND is_cookbook = 1", 0 );
+		$db->expectGetResults( 'SELECT item_name FROM wp_fit_pantry_items WHERE user_id = 7 ORDER BY updated_at DESC, id DESC LIMIT 12', [
+			(object) [ 'item_name' => 'Salmon' ],
+		] );
+		$db->expectGetRow( 'SELECT food_preferences_json, food_dislikes_json, common_breakfasts_json', [
+			'food_preferences_json' => '[]',
+			'food_dislikes_json' => '[]',
+			'common_breakfasts_json' => '[]',
+		] );
+		$db->expectGetResults( 'SELECT item_name FROM wp_fit_pantry_items WHERE user_id = 7 ORDER BY item_name', [
+			(object) [ 'item_name' => 'Salmon' ],
+		] );
+
+		$result = AiToolHandlerService::execute( 7, 'add_recipe_to_cookbook', [
+			'recipe_name' => 'Salmon Couscous Bowl',
+			'meal_type' => 'dinner',
+		] );
+		$cookbook_inserts = array_values( array_filter( $db->inserted, static fn( array $row ): bool => 1 === (int) ( $row['data']['is_cookbook'] ?? 0 ) ) );
+
+		$this->assertTrue( $result['ok'] ?? false );
+		$this->assertSame( 'add_recipe_to_cookbook', $result['action'] ?? '' );
+		$this->assertTrue( $result['added'] ?? false );
+		$this->assertSame( 'Salmon Couscous Bowl', $result['recipe']['recipe_name'] ?? null );
+		$this->assertTrue( $result['recipe']['is_in_cookbook'] ?? false );
+		$this->assertCount( 1, $cookbook_inserts );
+		$this->assertSame( 'Salmon Couscous Bowl', $cookbook_inserts[0]['data']['recipe_name'] ?? null );
+		$this->assertSame( 'admin-library-dinner-salmon-couscous-bowl', $cookbook_inserts[0]['data']['recipe_key'] ?? null );
+	}
+
 	public function test_clear_follow_ups_can_dismiss_all_pending_items(): void {
 		$result = AiToolHandlerService::execute( 7, 'clear_follow_ups', [
 			'clear_all' => true,
