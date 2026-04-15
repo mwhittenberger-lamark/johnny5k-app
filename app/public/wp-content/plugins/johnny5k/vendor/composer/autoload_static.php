@@ -177,6 +177,7 @@ class ComposerStaticInitd8c9d6ad36a7cb08a90658324e8bb9aa
         'Johnny5k\\Services\\CoachDeliveryService' => __DIR__ . '/../..' . '/includes/Services/class-coach-delivery-service.php',
         'Johnny5k\\Services\\CostTracker' => __DIR__ . '/../..' . '/includes/Services/class-cost-tracker.php',
         'Johnny5k\\Services\\ExerciseCalorieService' => __DIR__ . '/../..' . '/includes/Services/class-exercise-calorie-service.php',
+        'Johnny5k\\Services\\ExerciseDemoImageService' => __DIR__ . '/../..' . '/includes/Services/class-exercise-demo-image-service.php',
         'Johnny5k\\Services\\ExerciseLibraryService' => __DIR__ . '/../..' . '/includes/Services/class-exercise-library-service.php',
         'Johnny5k\\Services\\GeminiImageService' => __DIR__ . '/../..' . '/includes/Services/class-gemini-image-service.php',
         'Johnny5k\\Services\\InternalDiagnosticsLogger' => __DIR__ . '/../..' . '/includes/Services/class-internal-diagnostics-logger.php',

@@ -68,6 +68,7 @@ return array(
     'Johnny5k\\Services\\CoachDeliveryService' => $baseDir . '/includes/Services/class-coach-delivery-service.php',
     'Johnny5k\\Services\\CostTracker' => $baseDir . '/includes/Services/class-cost-tracker.php',
     'Johnny5k\\Services\\ExerciseCalorieService' => $baseDir . '/includes/Services/class-exercise-calorie-service.php',
+    'Johnny5k\\Services\\ExerciseDemoImageService' => $baseDir . '/includes/Services/class-exercise-demo-image-service.php',
     'Johnny5k\\Services\\ExerciseLibraryService' => $baseDir . '/includes/Services/class-exercise-library-service.php',
     'Johnny5k\\Services\\GeminiImageService' => $baseDir . '/includes/Services/class-gemini-image-service.php',
     'Johnny5k\\Services\\InternalDiagnosticsLogger' => $baseDir . '/includes/Services/class-internal-diagnostics-logger.php',

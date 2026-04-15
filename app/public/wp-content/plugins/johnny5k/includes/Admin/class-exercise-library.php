@@ -4,6 +4,7 @@ namespace Johnny5k\Admin;
 defined( 'ABSPATH' ) || exit;
 
 use Johnny5k\Services\AiService;
+use Johnny5k\Services\ExerciseDemoImageService;
 use Johnny5k\Support\TrainingDayTypes;
 
 class ExerciseLibrary {
@@ -51,6 +52,7 @@ class ExerciseLibrary {
 		$exercise      = self::get_requested_exercise();
 		$exercise      = ! empty( $state['form'] ) ? $state['form'] : $exercise;
 		$all_exercises = self::get_exercises();
+		$demo_images   = ExerciseDemoImageService::get_demo_images();
 		$list_state    = self::get_list_state();
 		$exercises     = self::filter_exercises( $all_exercises, $list_state );
 
@@ -69,14 +71,14 @@ class ExerciseLibrary {
 
 		echo '<div class="jf-exercise-library__layout">';
 		echo '<div class="jf-exercise-library__sidebar">';
-		self::render_form( $exercise );
+		self::render_form( $exercise, $demo_images[ (int) ( $exercise['id'] ?? 0 ) ] ?? [] );
 		self::render_discovery_form( $state['finder'] );
 		echo '</div>';
 		echo '<div class="jf-exercise-library__content">';
 		if ( ! empty( $state['discoveries'] ) ) {
 			self::render_discoveries( $state['discoveries'] );
 		}
-		self::render_list( $exercises, $list_state, self::get_filter_options( $all_exercises ), count( $all_exercises ) );
+		self::render_list( $exercises, $list_state, self::get_filter_options( $all_exercises ), count( $all_exercises ), $demo_images );
 		echo '</div>';
 		echo '</div>';
 		echo '</div>';
@@ -244,6 +246,51 @@ class ExerciseLibrary {
 					$state['messages'][] = $active ? 'Exercise restored.' : 'Exercise archived.';
 				}
 				return $state;
+
+			case 'generate_demo_image':
+				$id = (int) ( $_POST['exercise_id'] ?? 0 );
+				check_admin_referer( 'jf_exercise_library_generate_demo_' . $id );
+				if ( $id <= 0 ) {
+					$state['errors'][] = 'Choose a saved exercise before generating a demo image.';
+					return $state;
+				}
+
+				$exercise = self::get_exercise_by_id( $id );
+				if ( empty( $exercise['id'] ) ) {
+					$state['errors'][] = 'Exercise not found.';
+					return $state;
+				}
+
+				$demo_image = ExerciseDemoImageService::generate_demo_image( get_current_user_id(), $exercise );
+				if ( is_wp_error( $demo_image ) ) {
+					$state['errors'][] = $demo_image->get_error_message();
+					return $state;
+				}
+
+				$state['messages'][] = sprintf( 'Generated demo image for %s.', $exercise['name'] );
+				return $state;
+
+			case 'clear_demo_image':
+				$id = (int) ( $_POST['exercise_id'] ?? 0 );
+				check_admin_referer( 'jf_exercise_library_clear_demo_' . $id );
+				if ( $id <= 0 ) {
+					$state['errors'][] = 'Choose a saved exercise before clearing its demo image.';
+					return $state;
+				}
+
+				$exercise = self::get_exercise_by_id( $id );
+				if ( empty( $exercise['id'] ) ) {
+					$state['errors'][] = 'Exercise not found.';
+					return $state;
+				}
+
+				if ( ! ExerciseDemoImageService::delete_demo_image( $id ) ) {
+					$state['errors'][] = 'No demo image was available to clear.';
+					return $state;
+				}
+
+				$state['messages'][] = sprintf( 'Cleared demo image for %s.', $exercise['name'] );
+				return $state;
 		}
 
 		return $state;
@@ -283,13 +330,19 @@ class ExerciseLibrary {
 			.jf-exercise-library__discovery label{display:flex;gap:10px;align-items:flex-start}
 			.jf-exercise-library__discovery input[type="checkbox"]{margin-top:2px}
 			.jf-exercise-library__discovery-body{min-width:0;flex:1}
+			.jf-exercise-library__demo-preview{margin-top:18px;padding-top:18px;border-top:1px solid #f0f0f1}
+			.jf-exercise-library__demo-thumb{display:block;width:100%;max-width:240px;aspect-ratio:1 / 1;object-fit:cover;border-radius:14px;border:1px solid #dcdcde;background:#f6f7f7}
+			.jf-exercise-library__demo-thumb--small{width:72px;height:72px;max-width:none;border-radius:10px}
+			.jf-exercise-library__demo-placeholder{display:flex;align-items:center;justify-content:center;color:#50575e;font-size:12px;line-height:1.4;text-align:center;padding:10px}
+			.jf-exercise-library__exercise-meta{display:grid;grid-template-columns:72px minmax(0,1fr);gap:14px;align-items:start}
 			@media (max-width: 1200px){.jf-exercise-library__layout{grid-template-columns:1fr}.jf-exercise-library__filters{grid-template-columns:repeat(3,minmax(0,1fr))}}
-			@media (max-width: 782px){.jf-exercise-library__filters{grid-template-columns:1fr}.jf-exercise-library__list-toolbar{align-items:flex-start}}
+			@media (max-width: 782px){.jf-exercise-library__filters{grid-template-columns:1fr}.jf-exercise-library__list-toolbar{align-items:flex-start}.jf-exercise-library__exercise-meta{grid-template-columns:1fr}}
 		</style>';
 	}
 
-	private static function render_form(array $exercise): void {
+	private static function render_form(array $exercise, array $demo_image = []): void {
 		$is_edit = ! empty( $exercise['id'] );
+		$demo_image = array_merge( ExerciseDemoImageService::get_demo_image( (int) ( $exercise['id'] ?? 0 ) ), $demo_image );
 
 		echo '<form method="post" class="jf-exercise-library__card">';
 		echo '<h2 style="margin-top:0">' . esc_html( $is_edit ? 'Edit Exercise' : 'Add Exercise' ) . '</h2>';
@@ -323,8 +376,27 @@ class ExerciseLibrary {
 		echo '<button type="submit" class="button button-secondary" name="jf_exercise_action" value="fill_exercise">AI Fill Empty Fields</button>';
 		if ( $is_edit ) {
 			echo '<a class="button button-secondary" href="' . esc_url( admin_url( 'admin.php?page=jf-exercise-library' ) ) . '">Add Another</a>';
+			echo '<button type="submit" class="button button-secondary" name="jf_exercise_action" value="generate_demo_image">Generate demo image</button>';
+			if ( '' !== (string) ( $demo_image['image_url'] ?? '' ) ) {
+				echo '<button type="submit" class="button button-secondary" name="jf_exercise_action" value="clear_demo_image">Clear demo image</button>';
+			}
 		}
 		echo '</div>';
+
+		if ( $is_edit ) {
+			echo '<div class="jf-exercise-library__demo-preview">';
+			echo '<h3 style="margin:0 0 10px">Johnny Demo Image</h3>';
+			if ( '' !== (string) ( $demo_image['image_url'] ?? '' ) ) {
+				echo '<img class="jf-exercise-library__demo-thumb" src="' . esc_url( (string) $demo_image['image_url'] ) . '" alt="' . esc_attr( $exercise['name'] . ' demo image' ) . '">';
+				if ( '' !== (string) ( $demo_image['generated_at'] ?? '' ) ) {
+					echo '<p class="jf-exercise-library__meta">Generated ' . esc_html( (string) $demo_image['generated_at'] ) . '</p>';
+				}
+			} else {
+				echo '<div class="jf-exercise-library__demo-thumb jf-exercise-library__demo-placeholder">No demo image yet</div>';
+			}
+			echo '<p class="description">Generates a single motion-based Johnny coaching image for this saved exercise using the Gemini image model and the Johnny reference image from Settings.</p>';
+			echo '</div>';
+		}
 		echo '</form>';
 	}
 
@@ -399,7 +471,7 @@ class ExerciseLibrary {
 		echo '</div>';
 	}
 
-	private static function render_list(array $exercises, array $list_state, array $filter_options, int $total_exercises): void {
+	private static function render_list(array $exercises, array $list_state, array $filter_options, int $total_exercises, array $demo_images = []): void {
 		echo '<div class="jf-exercise-library__card">';
 		echo '<h2 style="margin-top:0">Saved Exercises</h2>';
 		self::render_list_filters( $list_state, $filter_options, count( $exercises ), $total_exercises );
@@ -419,6 +491,7 @@ class ExerciseLibrary {
 		echo '<th>Actions</th>';
 		echo '</tr></thead><tbody>';
 		foreach ( $exercises as $exercise ) {
+			$demo_image = $demo_images[ (int) ( $exercise['id'] ?? 0 ) ] ?? [];
 			$edit_url = add_query_arg(
 				[
 					'page'        => 'jf-exercise-library',
@@ -429,12 +502,21 @@ class ExerciseLibrary {
 
 			echo '<tr>';
 			echo '<td>';
+			echo '<div class="jf-exercise-library__exercise-meta">';
+			if ( '' !== (string) ( $demo_image['image_url'] ?? '' ) ) {
+				echo '<img class="jf-exercise-library__demo-thumb jf-exercise-library__demo-thumb--small" src="' . esc_url( (string) $demo_image['image_url'] ) . '" alt="' . esc_attr( $exercise['name'] . ' demo image' ) . '">';
+			} else {
+				echo '<div class="jf-exercise-library__demo-thumb jf-exercise-library__demo-thumb--small jf-exercise-library__demo-placeholder">No image</div>';
+			}
+			echo '<div>';
 			echo '<strong>' . esc_html( $exercise['name'] ) . '</strong><br>';
 			echo '<span class="jf-exercise-library__meta">' . esc_html( $exercise['slug'] ) . '</span>';
 			if ( '' !== $exercise['description'] ) {
 				echo '<p style="margin:8px 0 0;">' . esc_html( $exercise['description'] ) . '</p>';
 			}
 			echo '<p class="jf-exercise-library__meta">' . esc_html( ucfirst( $exercise['difficulty'] ) . ' · ' . $exercise['equipment'] . ' · ' . $exercise['movement_pattern'] ) . '</p>';
+			echo '</div>';
+			echo '</div>';
 			echo '</td>';
 			echo '<td>';
 			echo esc_html( implode( ', ', array_map( [ __CLASS__, 'format_label' ], $exercise['day_types'] ) ) ?: 'None assigned' );
@@ -456,7 +538,22 @@ class ExerciseLibrary {
 			echo '<p class="jf-exercise-library__meta">' . esc_html( ucfirst( $exercise['difficulty'] ) ) . '</p>';
 			echo '</td>';
 			echo '<td>';
+			echo '<div class="jf-exercise-library__actions">';
 			echo '<p><a class="button button-small" href="' . esc_url( $edit_url ) . '">Edit</a></p>';
+			echo '<form method="post">';
+			echo '<input type="hidden" name="jf_exercise_action" value="generate_demo_image">';
+			echo '<input type="hidden" name="exercise_id" value="' . esc_attr( (string) $exercise['id'] ) . '">';
+			wp_nonce_field( 'jf_exercise_library_generate_demo_' . (int) $exercise['id'] );
+			submit_button( '' !== (string) ( $demo_image['image_url'] ?? '' ) ? 'Regenerate demo' : 'Generate demo', 'secondary small', '', false );
+			echo '</form>';
+			if ( '' !== (string) ( $demo_image['image_url'] ?? '' ) ) {
+				echo '<form method="post">';
+				echo '<input type="hidden" name="jf_exercise_action" value="clear_demo_image">';
+				echo '<input type="hidden" name="exercise_id" value="' . esc_attr( (string) $exercise['id'] ) . '">';
+				wp_nonce_field( 'jf_exercise_library_clear_demo_' . (int) $exercise['id'] );
+				submit_button( 'Clear demo', 'secondary small', '', false );
+				echo '</form>';
+			}
 			echo '<form method="post">';
 			echo '<input type="hidden" name="jf_exercise_action" value="toggle_exercise">';
 			echo '<input type="hidden" name="exercise_id" value="' . esc_attr( (string) $exercise['id'] ) . '">';
@@ -464,6 +561,7 @@ class ExerciseLibrary {
 			wp_nonce_field( 'jf_exercise_library_toggle_' . (int) $exercise['id'] );
 			submit_button( ! empty( $exercise['active'] ) ? 'Archive' : 'Restore', ! empty( $exercise['active'] ) ? 'secondary small' : 'primary small', '', false );
 			echo '</form>';
+			echo '</div>';
 			echo '</td>';
 			echo '</tr>';
 		}
@@ -473,6 +571,14 @@ class ExerciseLibrary {
 
 	private static function get_requested_exercise(): array {
 		$id = (int) ( $_GET['exercise_id'] ?? 0 );
+		if ( $id <= 0 ) {
+			return self::empty_exercise();
+		}
+
+		return self::get_exercise_by_id( $id );
+	}
+
+	private static function get_exercise_by_id(int $id): array {
 		if ( $id <= 0 ) {
 			return self::empty_exercise();
 		}

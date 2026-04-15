@@ -808,6 +808,12 @@ if ( ! function_exists( 'sanitize_file_name' ) ) {
 	}
 }
 
+if ( ! function_exists( 'trailingslashit' ) ) {
+	function trailingslashit( string $value ): string {
+		return rtrim( $value, '/\\' ) . '/';
+	}
+}
+
 if ( ! function_exists( 'get_user_by' ) ) {
 	function get_user_by( string $field, string|int $value ): WP_User|false {
 		foreach ( $GLOBALS['johnny5k_test_users'] ?? [] as $user ) {
@@ -1020,6 +1026,20 @@ if ( ! function_exists( 'wp_delete_attachment' ) ) {
 		unset( $GLOBALS['johnny5k_test_posts'][ $attachment_id ] );
 		unset( $GLOBALS['johnny5k_test_post_meta'][ $attachment_id ] );
 		return true;
+	}
+}
+
+if ( ! function_exists( 'wp_upload_dir' ) ) {
+	function wp_upload_dir(): array {
+		$base_dir = sys_get_temp_dir() . '/johnny5k-test-uploads';
+		if ( ! is_dir( $base_dir ) ) {
+			wp_mkdir_p( $base_dir );
+		}
+
+		return [
+			'basedir' => $base_dir,
+			'baseurl' => 'https://example.test/wp-content/uploads',
+		];
 	}
 }
 
