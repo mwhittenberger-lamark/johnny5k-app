@@ -53,12 +53,13 @@ export function CoachingSummaryCard({
 
       <CoachingSummaryPanel
         summary={summary}
+        className="dashboard-coaching-summary-panel"
         chipLabel="Coaching summary"
         titleTag="h2"
-        maxInsights={3}
+        maxInsights={2}
         onAction={onAction}
         onAskJohnny={onAskJohnny}
-        askJohnnyLabel="Ask Johnny why"
+        askJohnnyLabel={null}
         analyticsContext={{ screen: 'dashboard', surface: 'dashboard_coaching_card' }}
       />
 

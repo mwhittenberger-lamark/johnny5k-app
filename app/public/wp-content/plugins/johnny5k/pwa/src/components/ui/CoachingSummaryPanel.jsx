@@ -173,7 +173,7 @@ export default function CoachingSummaryPanel({
             {summary.nextAction.ctaLabel}
           </button>
         ) : null}
-        {summary.starterPrompt ? (
+        {summary.starterPrompt && askJohnnyLabel ? (
           <button type="button" className="btn-outline small" onClick={() => {
             trackCoachingPromptOpen(summary, summary.starterPrompt, {
               screen: analyticsContext?.screen || 'app',

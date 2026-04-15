@@ -1,8 +1,9 @@
 export const DASHBOARD_CARD_DEFS = [
-  { id: 'beginner_education', bucket: 'primary_main', label: 'Beginner Education', description: 'FAQs, videos, and foundational learning resources for users still building workout confidence.', optional: true, iconName: 'coach', iconTone: 'teal' },
+  { id: 'beginner_education', bucket: 'story', label: 'Beginner Education', description: 'FAQs, videos, and foundational learning resources for users still building workout confidence.', optional: true, iconName: 'coach', iconTone: 'teal', governance: 'guided_extra' },
   { id: 'coaching_summary', bucket: 'primary_main', label: 'Coaching summary', description: 'Cross-screen coaching summary with the top trend read and next action.', iconName: 'coach', iconTone: 'teal' },
   { id: 'today_intake', bucket: 'primary_main', label: 'Today\'s intake', description: 'Calories, macros, and meal count for today.', iconName: 'nutrition', iconTone: 'teal' },
   { id: 'recovery_loop', bucket: 'primary_main', label: 'Recovery Loop', description: 'Recovery mode, sleep, and recovery flags.', iconName: 'star', iconTone: 'slate' },
+  { id: 'momentum_score', bucket: 'primary_side', label: 'Momentum score', description: 'Explains what is driving the week rhythm score and the fastest way to improve it today.', iconName: 'award', iconTone: 'gold' },
   { id: 'quick_log_meal', bucket: 'quick_actions', label: 'Quick action · Log meal', description: 'Jump straight into nutrition logging.', iconName: 'nutrition', iconTone: 'teal' },
   { id: 'quick_training', bucket: 'quick_actions', label: 'Quick action · Training', description: 'Open the current workout or cardio action.', iconName: 'workout', iconTone: 'pink' },
   { id: 'quick_ask_johnny', bucket: 'quick_actions', label: 'Quick action · Ask Johnny', description: 'Open Johnny with a dashboard-aware prompt.', iconName: 'coach', iconTone: 'teal' },
@@ -19,15 +20,15 @@ export const DASHBOARD_CARD_DEFS = [
   { id: 'training_tomorrow', bucket: 'training_side', label: 'Tomorrow preview', description: 'Tomorrow\'s queued training preview.', iconName: 'label', iconTone: 'amber' },
   { id: 'training_momentum', bucket: 'training_side', label: 'Momentum', description: 'Current streaks, awards, and momentum summary.', iconName: 'flame', iconTone: 'amber' },
   { id: 'story_card', bucket: 'story', label: 'Inspirational thoughts', description: 'Rotating thought set or editorial coaching card.', iconName: 'label', iconTone: 'amber' },
-  { id: 'real_success_stories', bucket: 'story', label: 'Real Success Stories', description: 'A recent transformation story from Men\'s Health, Women\'s Health, or a similar publication.', optional: true, iconName: 'award', iconTone: 'green' },
-  { id: 'protein_runway', bucket: 'primary_main', label: 'Protein runway', description: 'How much protein is left and what the next meal should carry.', optional: true, iconName: 'nutrition', iconTone: 'teal' },
-  { id: 'meal_rhythm', bucket: 'primary_main', label: 'Meal rhythm', description: 'Which meal windows are logged and what meal slot is next.', optional: true, iconName: 'nutrition', iconTone: 'amber' },
-  { id: 'sleep_debt', bucket: 'snapshot_detail', label: 'Sleep debt', description: 'Your recent sleep deficit versus target and what it means for recovery.', optional: true, iconName: 'star', iconTone: 'slate' },
-  { id: 'step_finish_forecast', bucket: 'snapshot_detail', label: 'Step finish forecast', description: 'Projected end-of-day step total and how much movement is still needed.', optional: true, iconName: 'bolt', iconTone: 'gold' },
-  { id: 'grocery_gap_spotlight', bucket: 'snapshot_detail', label: 'Grocery gap spotlight', description: 'A short list of the missing staples or recipe items most worth fixing next.', optional: true, iconName: 'award', iconTone: 'green' },
-  { id: 'reminder_queue', bucket: 'snapshot_detail', label: 'Reminder queue', description: 'The next scheduled Johnny reminder and a quick jump into reminder management.', optional: true, iconName: 'profile', iconTone: 'pink' },
-  { id: 'weekly_trend', bucket: 'snapshot_detail', label: 'Weekly trend', description: 'The 7-day weight trend card from your profile screen.', optional: true, iconName: 'progress', iconTone: 'teal' },
-  { id: 'johnny_image_gallery', bucket: 'snapshot_detail', label: 'Johnny image gallery', description: 'Recent generated Johnny + You images and favorites for Live Workout mode.', optional: true, iconName: 'photos', iconTone: 'pink' },
+  { id: 'real_success_stories', bucket: 'story', label: 'Real Success Stories', description: 'A recent transformation story from Men\'s Health, Women\'s Health, or a similar publication.', optional: true, iconName: 'award', iconTone: 'green', governance: 'extra' },
+  { id: 'protein_runway', bucket: 'primary_main', label: 'Protein runway', description: 'How much protein is left and what the next meal should carry.', optional: true, iconName: 'nutrition', iconTone: 'teal', governance: 'contextual' },
+  { id: 'meal_rhythm', bucket: 'primary_main', label: 'Meal rhythm', description: 'Which meal windows are logged and what meal slot is next.', optional: true, iconName: 'nutrition', iconTone: 'amber', governance: 'contextual' },
+  { id: 'sleep_debt', bucket: 'snapshot_detail', label: 'Sleep debt', description: 'Your recent sleep deficit versus target and what it means for recovery.', optional: true, iconName: 'star', iconTone: 'slate', governance: 'contextual' },
+  { id: 'step_finish_forecast', bucket: 'snapshot_detail', label: 'Step finish forecast', description: 'Projected end-of-day step total and how much movement is still needed.', optional: true, iconName: 'bolt', iconTone: 'gold', governance: 'contextual' },
+  { id: 'grocery_gap_spotlight', bucket: 'snapshot_detail', label: 'Grocery gap spotlight', description: 'A short list of the missing staples or recipe items most worth fixing next.', optional: true, iconName: 'award', iconTone: 'green', governance: 'contextual' },
+  { id: 'reminder_queue', bucket: 'snapshot_detail', label: 'Reminder queue', description: 'The next scheduled Johnny reminder and a quick jump into reminder management.', optional: true, iconName: 'profile', iconTone: 'pink', governance: 'extra' },
+  { id: 'weekly_trend', bucket: 'snapshot_detail', label: 'Weekly trend', description: 'The 7-day weight trend card from your profile screen.', optional: true, iconName: 'progress', iconTone: 'teal', governance: 'extra' },
+  { id: 'johnny_image_gallery', bucket: 'snapshot_detail', label: 'Johnny image gallery', description: 'Recent generated Johnny + You images and favorites for Live Workout mode.', optional: true, iconName: 'photos', iconTone: 'pink', governance: 'off_dashboard' },
 ]
 
 export const DASHBOARD_CARD_DEF_MAP = new Map(DASHBOARD_CARD_DEFS.map(card => [card.id, card]))
@@ -62,8 +63,8 @@ export const DASHBOARD_BUCKET_META = {
     description: 'Tomorrow preview and momentum support cards.',
   },
   story: {
-    label: 'Inspirational thoughts',
-    description: 'Story and inspiration cards.',
+    label: 'Inspiration and learning',
+    description: 'Story, inspiration, and learning cards.',
   },
 }
 

@@ -21,7 +21,7 @@ export function TodayIntakeCard({ caloriesRemaining, mealCount, nt, goal, calPct
   )
 }
 
-export function ProteinRunwayCard({ model, onOpenNutrition, onAskJohnny }) {
+export function ProteinRunwayCard({ model, onOpenNutrition }) {
   if (!model) return null
 
   return (
@@ -46,7 +46,6 @@ export function ProteinRunwayCard({ model, onOpenNutrition, onAskJohnny }) {
       <div className="dashboard-card-support-text">{model.helper}</div>
       <div className="dashboard-optional-actions">
         <button type="button" className="btn-outline small" onClick={onOpenNutrition}>Open nutrition</button>
-        <button type="button" className="btn-primary small" onClick={() => onAskJohnny(model.prompt)}>Ask Johnny</button>
       </div>
     </section>
   )
@@ -106,7 +105,7 @@ export function GroceryGapSpotlightCard({ model, onOpenGroceryGap }) {
   )
 }
 
-export function ReminderQueueCard({ model, onOpenProfile, onAskJohnny }) {
+export function ReminderQueueCard({ model, onOpenProfile }) {
   if (!model) return null
 
   return (
@@ -126,7 +125,6 @@ export function ReminderQueueCard({ model, onOpenProfile, onAskJohnny }) {
         </div>
       ) : null}
       <div className="dashboard-optional-actions">
-        <button type="button" className="btn-outline small" onClick={onAskJohnny}>Ask Johnny</button>
         <button type="button" className="btn-primary small" onClick={onOpenProfile}>Open profile</button>
       </div>
     </section>

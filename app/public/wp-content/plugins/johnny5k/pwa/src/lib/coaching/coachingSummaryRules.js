@@ -441,17 +441,17 @@ function buildMomentumSummary(input) {
     period: input.surface === 'workout_post' ? 'day' : 'week',
     contextLabel: input.surface === 'workout_post' ? 'Post-workout' : 'Last 7 days',
     status: 'improving',
-    statusLabel: 'Momentum holding',
+    statusLabel: 'Momentum',
     headline: input.surface === 'workout_post'
       ? 'Session logged. Keep the run clean.'
       : input.weeklyScore >= 80
-        ? 'Momentum is holding.'
-        : 'You have enough signal to keep building.',
+        ? 'Protect the run today.'
+        : 'Keep the day moving.',
     summary: input.surface === 'workout_post'
       ? 'The workout counts now. The next win is making recovery and nutrition support it instead of wasting the session.'
       : input.trainingRecorded
-        ? `${focusLabel.charAt(0).toUpperCase()}${focusLabel.slice(1)} work is logged in the last 7 days. Keep the rest of the board simple and repeatable.`
-        : 'Nothing major is broken, but the board still needs one decisive action to stay clean.',
+        ? `${focusLabel.charAt(0).toUpperCase()}${focusLabel.slice(1)} work is logged this week. Keep today simple and repeatable.`
+        : 'The board still needs one decisive move today.',
     wins: [
       input.currentStreak > 0 ? `You are carrying a ${input.currentStreak}-day consistency run.` : '',
       input.weeklyScore > 0 ? `Weekly score is ${input.weeklyScore} right now.` : '',

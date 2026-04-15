@@ -3,7 +3,7 @@ import AppIcon from '../../components/ui/AppIcon'
 import AppLoadingScreen from '../../components/ui/AppLoadingScreen'
 import OfflineState from '../../components/ui/OfflineState'
 import { groupDashboardCardsByBucket } from './dashboardLayoutUtils'
-import { DashboardIconBadge, WeekRhythmDrawer } from './components/DashboardCards'
+import { DashboardAskJohnnyBar, DashboardIconBadge, DailyFocusHero, WeekRhythmDrawer } from './components/DashboardCards'
 import { DASHBOARD_BUCKET_META } from './dashboardCardRegistry'
 import { buildWeekRhythmDrawerCopy } from './dashboardRecommendationHelpers'
 import { useDashboardViewModel } from './hooks/useDashboardViewModel.jsx'
@@ -14,11 +14,14 @@ export default function DashboardScreen() {
     addDashboardCard,
     buildVisibleBucketOrder,
     canMoveDashboardCardAcrossBuckets,
+    coachStarterPrompt,
     coachLine,
     customizeOpen,
+    dailyFocus,
     dashboardCardsByBucket,
     dateLabel,
     greetingName,
+    handleDashboardAction,
     hiddenDashboardCards,
     isOnline,
     johnnyActionNotice,
@@ -26,8 +29,12 @@ export default function DashboardScreen() {
     loadSnapshot,
     loading,
     moveDashboardCard,
+    openDashboardJohnny,
+    openNutrition,
     openRewards,
     openSettings,
+    primaryDashboardAction,
+    quickPrompts,
     resetDashboardLayout,
     setCustomizeOpen,
     showSnapshotSectionRow,
@@ -45,6 +52,11 @@ export default function DashboardScreen() {
   } = useDashboardViewModel()
   const [dismissedTargetsNoticeKey, setDismissedTargetsNoticeKey] = useState('')
   const [dismissedActionNoticeKey, setDismissedActionNoticeKey] = useState('')
+  const [moreActionsOpen, setMoreActionsOpen] = useState(false)
+  const [snapshotOpen, setSnapshotOpen] = useState(false)
+  const [trainingExtrasOpen, setTrainingExtrasOpen] = useState(false)
+  const [storyOpen, setStoryOpen] = useState(false)
+  const supplementalQuickActions = (dashboardCardsByBucket.quick_actions || []).filter(card => !['quick_log_meal', 'quick_training', 'quick_ask_johnny'].includes(card.id))
 
   if (!snapshot && !isOnline) {
     return (
@@ -129,6 +141,28 @@ export default function DashboardScreen() {
 
       {visibleDashboardCards.length ? (
         <>
+          <section className="dashboard-command-center">
+            <DailyFocusHero
+              model={dailyFocus ? { ...dailyFocus, askPrompt: coachStarterPrompt } : null}
+              onPrimaryAction={handleDashboardAction}
+              onSecondaryAction={openNutrition}
+              onAskJohnny={(prompt) => openDashboardJohnny(prompt || coachStarterPrompt, {
+                surface: 'dashboard_daily_focus',
+                promptKind: 'starter_prompt',
+              })}
+            />
+            <DashboardAskJohnnyBar
+              prompt={coachStarterPrompt}
+              suggestions={quickPrompts}
+              onAskJohnny={(prompt, promptMeta) => openDashboardJohnny(prompt, {
+                surface: 'dashboard_command_bar',
+                promptKind: promptMeta?.id ? 'follow_up_prompt' : 'starter_prompt',
+                promptId: promptMeta?.id,
+                promptLabel: promptMeta?.label,
+              })}
+            />
+          </section>
+
           {(dashboardCardsByBucket.primary_main?.length || dashboardCardsByBucket.primary_side?.length) ? (
             <section className="dashboard-primary-grid">
               {dashboardCardsByBucket.primary_main?.length ? (
@@ -144,19 +178,28 @@ export default function DashboardScreen() {
             </section>
           ) : null}
 
-          {dashboardCardsByBucket.quick_actions?.length ? (
-            <section className="dashboard-section">
-              <div className="dashboard-section-title-row dashboard-section-title-row-tight">
-                <h2>Do this now</h2>
+          {supplementalQuickActions.length ? (
+            <DashboardDisclosureSection
+              title="More actions"
+              caption="Secondary shortcuts for logging and profile tasks"
+              open={customizeOpen || moreActionsOpen}
+              onToggle={() => setMoreActionsOpen(open => !open)}
+              actionLabel={customizeOpen || moreActionsOpen ? 'Hide' : 'Show'}
+            >
+              <div className="dashboard-action-grid compact dashboard-action-grid-secondary">
+                {supplementalQuickActions.map(card => renderDashboardCardSlot(card, buildVisibleBucketOrder(supplementalQuickActions)))}
               </div>
-              <div className="dashboard-action-grid compact">
-                {dashboardCardsByBucket.quick_actions.map(card => renderDashboardCardSlot(card, buildVisibleBucketOrder(dashboardCardsByBucket.quick_actions)))}
-              </div>
-            </section>
+            </DashboardDisclosureSection>
           ) : null}
 
           {(dashboardCardsByBucket.snapshot_stats?.length || dashboardCardsByBucket.snapshot_detail?.length) ? (
-            <section className="dashboard-section">
+            <DashboardDisclosureSection
+              title="Today&apos;s snapshot"
+              caption="Score, steps, sleep, weight, and lower-priority detail"
+              open={customizeOpen || snapshotOpen}
+              onToggle={() => setSnapshotOpen(open => !open)}
+              actionLabel={customizeOpen || snapshotOpen ? 'Hide' : 'Show'}
+            >
               {showSnapshotSectionRow ? (
                 <div className="dashboard-section-title-row">
                   {!snapshotSectionTitleHidden ? (
@@ -209,7 +252,7 @@ export default function DashboardScreen() {
                 onClose={() => setWeekRhythmOpen(false)}
                 onOpenRewards={openRewards}
               />
-            </section>
+            </DashboardDisclosureSection>
           ) : null}
 
           {(dashboardCardsByBucket.training_main?.length || dashboardCardsByBucket.training_side?.length) ? (
@@ -221,22 +264,34 @@ export default function DashboardScreen() {
               ) : null}
               {dashboardCardsByBucket.training_side?.length ? (
                 <div className="dashboard-side-stack">
-                  {dashboardCardsByBucket.training_side.map(card => renderDashboardCardSlot(card, buildVisibleBucketOrder(dashboardCardsByBucket.training_side)))}
+                  <DashboardDisclosureSection
+                    title="Training extras"
+                    caption="Momentum and tomorrow planning"
+                    open={customizeOpen || trainingExtrasOpen}
+                    onToggle={() => setTrainingExtrasOpen(open => !open)}
+                    actionLabel={customizeOpen || trainingExtrasOpen ? 'Hide' : 'Show'}
+                  >
+                    <div className="dashboard-side-stack">
+                      {dashboardCardsByBucket.training_side.map(card => renderDashboardCardSlot(card, buildVisibleBucketOrder(dashboardCardsByBucket.training_side)))}
+                    </div>
+                  </DashboardDisclosureSection>
                 </div>
               ) : null}
             </section>
           ) : null}
 
           {dashboardCardsByBucket.story?.length ? (
-            <section className="dashboard-section">
-              <div className="dashboard-section-title-row dashboard-section-title-row-tight">
-                <h2>Inspirational thoughts</h2>
-                <span className="dashboard-section-caption">Editorial coaching plus real-world transformation inspiration</span>
-              </div>
+            <DashboardDisclosureSection
+              title="Inspiration and stories"
+              caption="Editorial coaching and transformation stories"
+              open={customizeOpen || storyOpen}
+              onToggle={() => setStoryOpen(open => !open)}
+              actionLabel={customizeOpen || storyOpen ? 'Hide' : 'Show'}
+            >
               <div className="dashboard-story-stack">
                 {dashboardCardsByBucket.story.map(card => renderDashboardCardSlot(card, buildVisibleBucketOrder(dashboardCardsByBucket.story)))}
               </div>
-            </section>
+            </DashboardDisclosureSection>
           ) : null}
         </>
       ) : (
@@ -251,6 +306,14 @@ export default function DashboardScreen() {
         </section>
       )}
 
+      {!customizeOpen && dailyFocus?.primaryAction ? (
+        <DashboardMobileActionBar
+          instruction={dailyFocus.instruction}
+          action={dailyFocus.primaryAction}
+          onAction={handleDashboardAction}
+        />
+      ) : null}
+
       {customizeOpen ? <DashboardAddCardsSection cards={hiddenDashboardCards} onAddCard={addDashboardCard} /> : null}
 
       <div className="dashboard-bottom-actions">
@@ -260,6 +323,37 @@ export default function DashboardScreen() {
         {customizeOpen ? <button type="button" className="btn-secondary small dashboard-customize-trigger" onClick={resetDashboardLayout}>Reset layout</button> : null}
       </div>
     </div>
+  )
+}
+
+function DashboardMobileActionBar({ instruction, action, onAction }) {
+  return (
+    <section className="dashboard-mobile-action-bar" aria-label="Today's primary action">
+      <div className="dashboard-mobile-action-copy">
+        <span>Today&apos;s move</span>
+        <strong>{instruction}</strong>
+      </div>
+      <button type="button" className="btn-primary" onClick={() => onAction?.(action)}>
+        {action?.title || 'Take action'}
+      </button>
+    </section>
+  )
+}
+
+function DashboardDisclosureSection({ title, caption, open, onToggle, actionLabel, children }) {
+  return (
+    <section className="dashboard-section dashboard-disclosure-section">
+      <div className="dashboard-section-title-row dashboard-section-title-row-tight">
+        <div>
+          <h2>{title}</h2>
+          {caption ? <span className="dashboard-section-caption">{caption}</span> : null}
+        </div>
+        <button type="button" className="btn-ghost small dashboard-section-toggle" onClick={onToggle}>
+          {actionLabel}
+        </button>
+      </div>
+      {open ? children : null}
+    </section>
   )
 }
 

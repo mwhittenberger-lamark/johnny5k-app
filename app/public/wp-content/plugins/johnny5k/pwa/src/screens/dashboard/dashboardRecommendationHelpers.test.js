@@ -5,8 +5,12 @@ import {
   buildBestNextMove,
   buildCoachBackupAction,
   buildCoachBackupStep,
+  buildDashboardContextualVisibility,
+  buildMealRhythmModel,
+  buildProteinRunwayModel,
   buildQuickPrompts,
   buildReminderQueueModel,
+  buildStepForecastModel,
   buildTrainingCardModel,
   dedupeSecondaryDashboardAction,
   getInspirationalThoughtWindow,
@@ -157,5 +161,83 @@ describe('dashboardRecommendationHelpers', () => {
       prompt: 'It is late here. Based on my dashboard, tell me what to close quickly tonight and what to leave for tomorrow so I can get to bed.',
     })
     expect(prompts.some(prompt => /dinner/i.test(prompt.label))).toBe(false)
+  })
+
+  it('hides protein runway when the remaining gap is small enough to be noise', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 3, 14, 13, 0))
+
+    const visibility = buildDashboardContextualVisibility({
+      proteinRunway: buildProteinRunwayModel({
+        goal: { target_protein_g: 180 },
+        nutrition_totals: { protein_g: 156 },
+        meals_today: [{ meal_type: 'breakfast' }, { meal_type: 'lunch' }],
+      }),
+    })
+
+    expect(visibility.protein_runway).toBe(false)
+  })
+
+  it('shows protein runway when the protein gap is still structurally meaningful', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 3, 14, 13, 0))
+
+    const visibility = buildDashboardContextualVisibility({
+      proteinRunway: buildProteinRunwayModel({
+        goal: { target_protein_g: 180 },
+        nutrition_totals: { protein_g: 90 },
+        meals_today: [{ meal_type: 'breakfast' }],
+      }),
+    })
+
+    expect(visibility.protein_runway).toBe(true)
+  })
+
+  it('keeps meal rhythm hidden early when the current meal anchor is not overdue yet', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 3, 14, 7, 15))
+
+    const visibility = buildDashboardContextualVisibility({
+      mealRhythm: buildMealRhythmModel({ meals_today: [] }),
+    })
+
+    expect(visibility.meal_rhythm).toBe(false)
+  })
+
+  it('shows meal rhythm once the current anchor is the real next decision', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 3, 14, 12, 30))
+
+    const visibility = buildDashboardContextualVisibility({
+      mealRhythm: buildMealRhythmModel({ meals_today: [{ meal_type: 'breakfast' }] }),
+    })
+
+    expect(visibility.meal_rhythm).toBe(true)
+  })
+
+  it('waits to show step forecast until the day has enough signal', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 3, 14, 8, 0))
+
+    const visibility = buildDashboardContextualVisibility({
+      stepForecast: buildStepForecastModel({
+        steps: { today: 400, target: 8000 },
+      }),
+    })
+
+    expect(visibility.step_finish_forecast).toBe(false)
+  })
+
+  it('shows step forecast when the afternoon pace is clearly behind', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 3, 14, 16, 30))
+
+    const visibility = buildDashboardContextualVisibility({
+      stepForecast: buildStepForecastModel({
+        steps: { today: 2100, target: 8000 },
+      }),
+    })
+
+    expect(visibility.step_finish_forecast).toBe(true)
   })
 })

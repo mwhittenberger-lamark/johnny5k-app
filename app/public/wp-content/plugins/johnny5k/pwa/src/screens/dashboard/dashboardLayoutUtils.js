@@ -2,9 +2,11 @@ export function getDefaultDashboardLayout(cardDefs, options = {}) {
   const defaultVisibleCardIds = new Set(Array.isArray(options.defaultVisibleCardIds) ? options.defaultVisibleCardIds : [])
   const prependCardOrder = Array.isArray(options.prependCardOrder) ? options.prependCardOrder : []
   const hidden = {}
+  const touched = {}
 
   for (const card of cardDefs) {
     hidden[card.id] = Boolean(card.optional && !defaultVisibleCardIds.has(card.id))
+    touched[card.id] = false
   }
 
   const orderedIds = cardDefs.map(card => card.id)
@@ -13,6 +15,7 @@ export function getDefaultDashboardLayout(cardDefs, options = {}) {
   return {
     order: [...prependedIds, ...orderedIds.filter(id => !prependedIds.includes(id))],
     hidden,
+    touched,
     bucketOverrides: {},
   }
 }
@@ -34,10 +37,12 @@ export function normalizeDashboardLayoutPreference(value, cardDefs, options = {}
     ...defaults.order.filter(id => !nextOrder.includes(id) && !prependMissingIds.includes(id)),
   ]
   const nextHidden = {}
+  const nextTouched = {}
   const nextBucketOverrides = {}
 
   for (const cardId of defaults.order) {
     nextHidden[cardId] = next.hidden?.[cardId] == null ? defaults.hidden[cardId] : Boolean(next.hidden?.[cardId])
+    nextTouched[cardId] = next.touched?.[cardId] == null ? defaults.touched[cardId] : Boolean(next.touched?.[cardId])
 
     const bucketOverride = next.bucketOverrides?.[cardId]
     if (
@@ -52,6 +57,7 @@ export function normalizeDashboardLayoutPreference(value, cardDefs, options = {}
   return {
     order: mergedOrder,
     hidden: nextHidden,
+    touched: nextTouched,
     bucketOverrides: nextBucketOverrides,
   }
 }

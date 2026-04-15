@@ -23,6 +23,8 @@ import {
   buildCoachMetricGrid,
   buildCoachNextStepMeta,
   buildCoachStarterPrompt,
+  buildDashboardContextualVisibility,
+  buildDailyFocusModel,
   buildDashboardReviewTrigger,
   buildDashboardSleepMeta,
   buildEditorialCard,
@@ -32,6 +34,7 @@ import {
   buildInspirationalStories,
   buildJohnnyDashboardReview,
   buildMealRhythmModel,
+  buildMomentumScoreModel,
   buildMomentumCard,
   buildProteinRunwayModel,
   buildQuickPrompts,
@@ -61,6 +64,7 @@ import {
   GroceryGapSpotlightCard,
   JohnnyImageGalleryCard,
   MealRhythmCard,
+  MomentumScoreCard,
   MomentumDashboardCard,
   ProteinRunwayCard,
   QuickActionCard,
@@ -171,6 +175,7 @@ export function useDashboardViewModel() {
   const editorialCard = useMemo(() => buildEditorialCard(s), [s])
   const inspirationalStories = useMemo(() => buildInspirationalStories(s, thoughtWindowKey), [s, thoughtWindowKey])
   const momentumCard = useMemo(() => buildMomentumCard(s, awards?.earned ?? []), [awards?.earned, s])
+  const momentumScore = useMemo(() => buildMomentumScoreModel(s), [s])
   const proteinRunway = useMemo(() => buildProteinRunwayModel(s), [s])
   const mealRhythm = useMemo(() => buildMealRhythmModel(s), [s])
   const sleepDebt = useMemo(() => buildSleepDebtModel(s), [s])
@@ -221,6 +226,15 @@ export function useDashboardViewModel() {
     () => coachingSummary?.starterPrompt || buildCoachStarterPrompt(johnnyReview, coachNextStepMeta),
     [coachNextStepMeta, coachingSummary, johnnyReview],
   )
+  const dailyFocus = useMemo(() => buildDailyFocusModel(s), [s])
+  const dashboardContextualVisibility = useMemo(() => buildDashboardContextualVisibility({
+    showBeginnerEducationCard,
+    proteinRunway,
+    mealRhythm,
+    sleepDebt,
+    stepForecast,
+    groceryGapSpotlight,
+  }), [groceryGapSpotlight, mealRhythm, proteinRunway, showBeginnerEducationCard, sleepDebt, stepForecast])
 
   const goal = s?.goal
   const nt = s?.nutrition_totals
@@ -276,6 +290,25 @@ export function useDashboardViewModel() {
     }
   }
 
+  function openDashboardJohnny(prompt, promptMeta = {}) {
+    const resolvedPrompt = String(prompt || '').trim()
+    if (!resolvedPrompt) return
+
+    const context = {
+      screen: 'dashboard',
+      surface: promptMeta.surface || 'dashboard_command_bar',
+      promptKind: promptMeta.promptKind || 'starter_prompt',
+      promptId: String(promptMeta.promptId || '').trim(),
+      promptLabel: promptMeta.promptLabel,
+    }
+
+    if (coachingSummary) {
+      trackCoachingPromptOpen(coachingSummary, resolvedPrompt, context)
+    }
+
+    openDrawer(resolvedPrompt, coachingSummary ? buildCoachingPromptOptions(coachingSummary, context) : undefined)
+  }
+
   function handleRecoveryQuickAction() {
     routeRecoveryAction(recoverySummary, navigate)
   }
@@ -302,16 +335,25 @@ export function useDashboardViewModel() {
     const cardDef = DASHBOARD_CARD_DEF_MAP.get(cardId)
 
     setDashboardLayout(current => {
+      const nextTouched = {
+        ...(current.touched || {}),
+        [cardId]: true,
+      }
+
       if (cardDef?.optional) {
         const nextLayout = moveOptionalDashboardCardAnywhere(current, cardId, direction, visibleBucketIds, DASHBOARD_CARD_DEF_MAP, DASHBOARD_BUCKET_ORDER)
         if (nextLayout !== current) {
-          return nextLayout
+          return {
+            ...nextLayout,
+            touched: nextTouched,
+          }
         }
       }
 
       const hasVisibleBucketOrder = Array.isArray(visibleBucketIds) && visibleBucketIds.length > 1
       return {
         ...current,
+        touched: nextTouched,
         order: hasVisibleBucketOrder
           ? moveDashboardCardsWithinVisibleBucket(current.order, cardId, direction, visibleBucketIds)
           : moveDashboardCardsWithinBucket(current.order, cardId, bucket, direction, current, DASHBOARD_CARD_DEF_MAP),
@@ -326,6 +368,10 @@ export function useDashboardViewModel() {
         ...current.hidden,
         [cardId]: !current.hidden?.[cardId],
       },
+      touched: {
+        ...(current.touched || {}),
+        [cardId]: true,
+      },
     }))
   }
 
@@ -336,7 +382,25 @@ export function useDashboardViewModel() {
         ...current.hidden,
         [cardId]: false,
       },
+      touched: {
+        ...(current.touched || {}),
+        [cardId]: true,
+      },
     }))
+  }
+
+  function isGovernanceHidden(card) {
+    const cardDef = DASHBOARD_CARD_DEF_MAP.get(card.id)
+    const governance = cardDef?.governance || card.governance || ''
+    const userHidden = Boolean(dashboardLayout.hidden?.[card.id])
+    const touched = Boolean(dashboardLayout.touched?.[card.id])
+
+    if (governance === 'off_dashboard') return true
+    if (governance === 'contextual' || governance === 'guided_extra') {
+      return touched ? userHidden : !dashboardContextualVisibility[card.id]
+    }
+
+    return userHidden
   }
 
   function handleBeginnerEducationAction(action) {
@@ -409,7 +473,8 @@ export function useDashboardViewModel() {
         onQuickAction={handleRecoveryQuickAction}
       />
     )),
-    makeDashboardCard('protein_runway', <ProteinRunwayCard model={proteinRunway} onOpenNutrition={() => navigate('/nutrition')} onAskJohnny={openDrawer} />),
+    makeDashboardCard('momentum_score', <MomentumScoreCard model={momentumScore} onAction={handleDashboardAction} />),
+    makeDashboardCard('protein_runway', <ProteinRunwayCard model={proteinRunway} onOpenNutrition={() => navigate('/nutrition')} />),
     makeDashboardCard('meal_rhythm', <MealRhythmCard model={mealRhythm} onOpenNutrition={() => navigate('/nutrition')} />),
     makeDashboardCard('quick_log_meal', <QuickActionCard title="Log meal" meta="Nutrition" icon="meal" onClick={() => navigate('/nutrition')} />),
     makeDashboardCard('quick_training', <QuickActionCard title={trainingQuickAction.title} meta={trainingQuickAction.meta} icon="workout" onClick={() => handleDashboardAction(trainingQuickAction)} />),
@@ -456,7 +521,7 @@ export function useDashboardViewModel() {
     makeDashboardCard('sleep_debt', <SleepDebtCard model={sleepDebt} onOpenRecovery={() => navigate('/body', { state: { focusTab: 'sleep' } })} />),
     makeDashboardCard('step_finish_forecast', <StepForecastCard model={stepForecast} onOpenSteps={() => navigate('/body', { state: { focusTab: 'steps' } })} />),
     makeDashboardCard('grocery_gap_spotlight', <GroceryGapSpotlightCard model={groceryGapSpotlight} onOpenGroceryGap={() => navigate('/nutrition', { state: { focusSection: 'groceryGap' } })} />),
-    makeDashboardCard('reminder_queue', <ReminderQueueCard model={reminderQueue} onOpenProfile={() => navigate('/settings')} onAskJohnny={() => openDrawer('Show me my scheduled SMS reminders and help me manage them.')} />),
+    makeDashboardCard('reminder_queue', <ReminderQueueCard model={reminderQueue} onOpenProfile={() => navigate('/settings')} />),
     makeDashboardCard('weekly_trend', <WeeklyTrendCard weights={weeklyWeights} onOpenProgress={() => navigate('/body', { state: { focusTab: 'weight' } })} />),
     makeDashboardCard('johnny_image_gallery', <JohnnyImageGalleryCard images={generatedImageGallery} onOpenProfile={() => navigate('/settings')} />),
   ].filter(card => card.content).map(card => ({
@@ -471,8 +536,8 @@ export function useDashboardViewModel() {
       content: null,
     }))
   const orderedDashboardCards = orderDashboardCards([...dashboardCards, ...dashboardSectionControls], dashboardLayout)
-  const visibleDashboardCards = orderedDashboardCards.filter(card => !dashboardLayout.hidden?.[card.id] && !card.sectionControl)
-  const hiddenDashboardCards = orderedDashboardCards.filter(card => dashboardLayout.hidden?.[card.id])
+  const visibleDashboardCards = orderedDashboardCards.filter(card => !card.sectionControl && !isGovernanceHidden(card))
+  const hiddenDashboardCards = orderedDashboardCards.filter(card => !card.sectionControl && isGovernanceHidden(card) && DASHBOARD_CARD_DEF_MAP.get(card.id)?.governance !== 'off_dashboard')
   const dashboardCardsByBucket = groupDashboardCardsByBucket(visibleDashboardCards)
   const snapshotSectionTitleHidden = Boolean(dashboardLayout.hidden?.snapshot_section_title)
   const snapshotEditTargetsHidden = Boolean(dashboardLayout.hidden?.snapshot_edit_targets)
@@ -506,6 +571,13 @@ export function useDashboardViewModel() {
     weeklyRhythmBreakdown,
     setWeekRhythmOpen,
     dateLabel,
+    coachStarterPrompt,
+    dailyFocus,
+    handleDashboardAction,
+    openDashboardJohnny,
+    openNutrition: () => navigate('/nutrition'),
+    primaryDashboardAction: trainingQuickAction,
+    quickPrompts,
     canMoveDashboardCardAcrossBuckets: (cardId, direction) => canMoveDashboardCardAcrossBuckets(cardId, dashboardLayout, direction, DASHBOARD_CARD_DEF_MAP, DASHBOARD_BUCKET_ORDER),
     buildVisibleBucketOrder: cards => cards.map(card => card.id),
     openSettings: () => navigate('/settings'),

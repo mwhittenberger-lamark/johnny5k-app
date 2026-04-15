@@ -19,6 +19,7 @@ describe('dashboardLayoutUtils', () => {
     })
 
     expect(layout.hidden.beginner_education).toBe(false)
+    expect(layout.touched.beginner_education).toBe(false)
     expect(layout.order[0]).toBe('beginner_education')
   })
 
@@ -36,11 +37,13 @@ describe('dashboardLayoutUtils', () => {
 
     expect(layout.order[0]).toBe('beginner_education')
     expect(layout.hidden.beginner_education).toBe(false)
+    expect(layout.touched.beginner_education).toBe(false)
   })
 
   it('keeps beginner education hidden for users who are already comfortable lifting', () => {
     const layout = getDefaultDashboardLayout(CARD_DEFS)
 
     expect(layout.hidden.beginner_education).toBe(true)
+    expect(layout.touched.beginner_education).toBe(false)
   })
 })

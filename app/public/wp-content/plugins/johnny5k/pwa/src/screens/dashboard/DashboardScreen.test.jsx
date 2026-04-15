@@ -79,8 +79,17 @@ function createViewModel() {
     addDashboardCard: vi.fn(),
     buildVisibleBucketOrder: cards => cards.map(card => card.id),
     canMoveDashboardCardAcrossBuckets: () => false,
+    coachStarterPrompt: 'Tell me what to do next today.',
     coachLine: 'Here is the fastest read on today.',
     customizeOpen: false,
+    dailyFocus: {
+      instruction: 'Complete your workout and hit the last 40g protein.',
+      support: 'Recovery is normal. You are good to push.',
+      scoreLabel: '74 score',
+      streakLabel: '4-day streak',
+      improvementItems: ['+ Workout', '+ 40g protein'],
+      primaryAction: { title: 'Start workout', href: '/workout' },
+    },
     dashboardCardsByBucket: {
       primary_main: [coachCard],
       primary_side: [],
@@ -93,6 +102,7 @@ function createViewModel() {
     },
     dateLabel: 'Apr 14',
     greetingName: 'Mike',
+    handleDashboardAction: vi.fn(),
     hiddenDashboardCards: [],
     isOnline: true,
     johnnyActionNotice: '',
@@ -100,8 +110,14 @@ function createViewModel() {
     loadSnapshot: vi.fn(),
     loading: false,
     moveDashboardCard: vi.fn(),
+    openDashboardJohnny: vi.fn(),
+    openNutrition: vi.fn(),
     openRewards: vi.fn(),
     openSettings: vi.fn(),
+    primaryDashboardAction: { title: 'Start workout', href: '/workout' },
+    quickPrompts: [
+      { id: 'highest_impact', label: 'Highest-impact move', prompt: 'What is my highest-impact move right now?' },
+    ],
     resetDashboardLayout: vi.fn(),
     setCustomizeOpen: vi.fn(),
     showSnapshotSectionRow: false,
@@ -140,14 +156,18 @@ describe('DashboardScreen', () => {
 
   it('renders the coaching card copy from the view-model card bucket', async () => {
     const summary = viewModelState.value.dashboardCardsByBucket.primary_main[0].content.props.summary
-    const loadingInsight = summary.insights.find(insight => /still loading/i.test(insight.message))
+    const nextActionTitle = summary.nextAction?.title
 
     await renderComponent(<DashboardScreen />)
 
     expect(container.textContent).toContain('Hi, Mike')
+    expect(container.textContent).toContain('Today\'s Focus')
+    expect(container.textContent).toContain('Complete your workout and hit the last 40g protein.')
+    expect(container.textContent).toContain('Ask Johnny anything about today\'s plan')
+    expect(container.textContent).toContain('Today\'s move')
     expect(container.textContent).toContain(summary.headline)
     expect(container.textContent).toContain(summary.summary)
-    expect(container.textContent).toContain(loadingInsight.message)
+    expect(container.textContent).toContain(nextActionTitle)
     expect(container.textContent).toContain('Fallback coach read')
   })
 })

@@ -204,6 +204,246 @@ export function buildTrainingQuickAction(snapshot) {
     : { title: training?.has_active_session ? 'Resume workout' : 'Start workout', meta: 'Training', href: '/workout' }
 }
 
+export function buildDailyFocusModel(snapshot) {
+  if (!snapshot) return null
+
+  const training = getTrainingStatus(snapshot)
+  const scheduledType = getScheduledTrainingType(snapshot)
+  const primaryAction = buildTrainingQuickAction(snapshot)
+  const proteinTarget = Number(snapshot?.goal?.target_protein_g ?? 0)
+  const protein = Number(snapshot?.nutrition_totals?.protein_g ?? 0)
+  const proteinRemaining = Math.max(0, Math.round(proteinTarget - protein))
+  const stepsTarget = Number(snapshot?.steps?.target ?? 8000)
+  const stepsToday = Number(snapshot?.steps?.today ?? 0)
+  const stepGap = Math.max(0, stepsTarget - stepsToday)
+  const weeklyScore = Number(snapshot?.score_7d ?? 0)
+  const streaks = snapshot?.streaks || {}
+  const currentStreak = Math.max(
+    Number(streaks?.logging_days ?? 0),
+    Number(streaks?.training_days ?? 0),
+    Number(streaks?.sleep_days ?? 0),
+    Number(streaks?.cardio_days ?? 0),
+  )
+  const recoveryMode = String(snapshot?.recovery_summary?.mode || 'normal').trim().toLowerCase()
+  const timing = getLocalDayTimingContext()
+  const scoreContributorItems = buildDailyFocusScoreContributors(snapshot)
+
+  let instruction = 'Handle the next clean action early.'
+  let support = 'Keep the day simple and decisive.'
+
+  if (timing.lateNight) {
+    instruction = proteinRemaining > 0 ? `Hit the last ${proteinRemaining}g protein and shut the day down.` : 'Shut the day down and protect sleep.'
+    support = training?.recorded
+      ? 'The main work is already on the board. Recovery is the only real job left tonight.'
+      : 'Skip extra cleanup, close what actually matters, and protect tomorrow.'
+  } else if (scheduledType === 'rest' || training?.recorded_type === 'rest') {
+    instruction = proteinRemaining > 0 ? `Hit the last ${proteinRemaining}g protein and protect recovery.` : 'Protect recovery and keep movement easy.'
+    support = 'Rest day is scheduled. Use it to make the next training day easier, not noisier.'
+  } else if (scheduledType === 'cardio' && !training?.recorded) {
+    instruction = proteinRemaining > 0 ? `Log cardio and hit the last ${proteinRemaining}g protein.` : 'Log cardio before the day gets away from you.'
+    support = recoveryMode === 'normal'
+      ? 'Recovery is normal. Get the conditioning work logged and keep the rest clean.'
+      : 'Recovery is a little soft. Keep the conditioning work crisp and recover on purpose.'
+  } else if (!training?.recorded) {
+    instruction = proteinRemaining > 0 ? `Complete your workout and hit the last ${proteinRemaining}g protein.` : 'Complete your workout before the day gets noisy.'
+    support = recoveryMode === 'normal'
+      ? 'Recovery is normal. You are good to push.'
+      : 'Recovery is a little soft. Keep the work crisp instead of heroic.'
+  } else if (proteinRemaining > 0) {
+    instruction = `Close the last ${proteinRemaining}g protein and protect recovery.`
+    support = 'Training is already handled. The rest of the win is food quality, sleep, and avoiding cleanup.'
+  } else {
+    instruction = 'Recovery is the job now. Close the day cleanly.'
+    support = 'The main work is already logged. Keep the finish boring and repeatable.'
+  }
+
+  const improvementItems = scoreContributorItems.length ? scoreContributorItems : []
+
+  if (!improvementItems.length) {
+    if (!training?.recorded && scheduledType && scheduledType !== 'rest') {
+      improvementItems.push(scheduledType === 'cardio' ? '+ Cardio' : '+ Workout')
+    }
+    if (proteinRemaining > 0) {
+      improvementItems.push(`+ ${proteinRemaining}g protein`)
+    }
+    if (stepGap > Math.max(1200, stepsTarget * 0.2)) {
+      improvementItems.push(`+ ${Math.ceil(stepGap / 1000)}k steps`)
+    }
+    if (!improvementItems.length) {
+      improvementItems.push('+ Keep recovery clean')
+    }
+  }
+
+  return {
+    instruction,
+    support,
+    primaryAction,
+    scoreLabel: weeklyScore > 0 ? `${weeklyScore} score` : '',
+    streakLabel: currentStreak > 0 ? `${currentStreak}-day streak` : '',
+    improvementItems: improvementItems.slice(0, 3),
+  }
+}
+
+const SCORE_CONTRIBUTOR_ORDER = ['movement_days', 'meal_days', 'sleep_days', 'cardio_days']
+
+function getScoreContributorMeta(key, remaining = 0, value = 0, target = 0) {
+  switch (String(key || '').trim()) {
+    case 'movement_days':
+      return {
+        label: 'Movement days',
+        detail: `${value}/${target} days`,
+        action: remaining <= 1 ? 'Get today\'s workout/cardio in' : `Add ${remaining} movement days this week`,
+        dailyFocus: remaining <= 1 ? '+ Get today\'s workout/cardio in' : `+ Add ${remaining} movement days this week`,
+        impact: 'Movement is still one of the fastest lifts for score and momentum.',
+      }
+    case 'meal_days':
+      return {
+        label: 'Meal days',
+        detail: `${value}/${target} days`,
+        action: remaining <= 1 ? 'Log meals cleanly today' : `Add ${remaining} logged meal days this week`,
+        dailyFocus: remaining <= 1 ? '+ Log meals cleanly today' : `+ Add ${remaining} logged meal days this week`,
+        impact: 'Meal rhythm is the easiest way to stabilize the board without adding more complexity.',
+      }
+    case 'sleep_days':
+      return {
+        label: 'Sleep-goal nights',
+        detail: `${value}/${target} nights`,
+        action: remaining <= 1 ? 'Hit your sleep goal tonight' : `Add ${remaining} sleep-goal nights this week`,
+        dailyFocus: remaining <= 1 ? '+ Hit your sleep goal tonight' : `+ Add ${remaining} sleep-goal nights this week`,
+        impact: 'Sleep closes the recovery loop and keeps tomorrow from turning into cleanup.',
+      }
+    case 'cardio_days':
+      return {
+        label: 'Cardio days',
+        detail: `${value}/${target} days`,
+        action: remaining <= 1 ? 'Log cardio today' : `+ Add ${remaining} cardio days this week`,
+        dailyFocus: remaining <= 1 ? '+ Log cardio today' : `+ Add ${remaining} cardio days this week`,
+        impact: 'Cardio is still a clean way to add signal if training momentum is thin.',
+      }
+    case 'training_sessions':
+      return {
+        label: 'Training sessions',
+        detail: `${value}/${target} sessions`,
+        action: remaining <= 1 ? 'Finish one more session' : `Add ${remaining} sessions this week`,
+        dailyFocus: remaining <= 1 ? '+ Finish one more session' : `+ Add ${remaining} sessions this week`,
+        impact: 'Sessions keep the week from relying on one perfect day.',
+      }
+    default:
+      return {
+        label: 'Score',
+        detail: target > 0 ? `${value}/${target}` : 'Open',
+        action: target > 0 ? `Improve score progress ${value}/${target}` : 'Improve score',
+        dailyFocus: target > 0 ? `+ Improve score progress ${value}/${target}` : '+ Improve score',
+        impact: 'The score needs another clean rep in the basics.',
+      }
+  }
+}
+
+function buildScoreContributorItems(snapshot) {
+  const breakdown = snapshot?.score_7d_breakdown || {}
+
+  return SCORE_CONTRIBUTOR_ORDER
+    .map((key) => {
+      const item = breakdown?.[key]
+      if (!item || typeof item !== 'object') return null
+
+      const value = Number(item.value ?? item.current ?? 0)
+      const target = Number(item.target ?? 0)
+      if (!target) return null
+
+      const remaining = Math.max(0, target - value)
+      const meta = getScoreContributorMeta(key, remaining, value, target)
+
+      return {
+        key,
+        value,
+        target,
+        remaining,
+        done: value >= target,
+        progress: value / target,
+        ...meta,
+      }
+    })
+    .filter(Boolean)
+}
+
+function buildDailyFocusScoreContributors(snapshot) {
+  return buildScoreContributorItems(snapshot)
+    .filter(item => !item.done)
+    .filter(Boolean)
+    .sort((left, right) => {
+      if (left.progress !== right.progress) {
+        return left.progress - right.progress
+      }
+
+      return right.remaining - left.remaining
+    })
+    .slice(0, 3)
+    .map((item) => item.dailyFocus)
+}
+
+function buildScoreContributorAction(item) {
+  switch (item?.key) {
+    case 'movement_days':
+    case 'cardio_days':
+      return { title: 'Open workout', actionLabel: 'Open workout', href: '/workout' }
+    case 'meal_days':
+      return { title: 'Log meal', actionLabel: 'Log meal', href: '/nutrition' }
+    case 'sleep_days':
+      return { title: 'Open recovery', actionLabel: 'Open recovery', href: '/body', state: { focusTab: 'sleep' } }
+    default:
+      return null
+  }
+}
+
+export function buildMomentumScoreModel(snapshot) {
+  if (!snapshot) return null
+
+  const weeklyScore = Number(snapshot?.score_7d ?? 0)
+  const items = buildScoreContributorItems(snapshot)
+  const completedItems = items
+    .filter(item => item.done)
+    .sort((left, right) => right.progress - left.progress)
+    .slice(0, 3)
+    .map(item => ({ label: item.label, detail: item.detail }))
+  const remainingItems = items
+    .filter(item => !item.done)
+    .sort((left, right) => {
+      if (left.progress !== right.progress) return left.progress - right.progress
+      return right.remaining - left.remaining
+    })
+    .slice(0, 3)
+    .map(item => ({ label: item.label, action: item.action, impact: item.impact, key: item.key }))
+  const topOpenItem = remainingItems[0] || null
+  const toneClass = weeklyScore >= 80 ? 'success' : weeklyScore >= 50 ? 'subtle' : 'awards'
+
+  let title = 'The score still needs a few clean reps'
+  let body = 'This score is not a passive badge. It moves when meals, movement, sleep, and cardio keep showing up across the week.'
+
+  if (!remainingItems.length && items.length) {
+    title = 'The score is being protected by repeatable basics'
+    body = 'The main score drivers are already represented. The job now is to keep the pattern alive instead of adding noise.'
+  } else if (weeklyScore >= 80) {
+    title = 'The score is strong, but it still needs protection'
+    body = 'The week has real traction. A clean rep in the weakest open bucket keeps momentum from slipping.'
+  } else if (weeklyScore >= 50) {
+    title = 'The score is building, and the gaps are explainable'
+    body = 'You do not need a perfect day. You need another clean entry in the weakest bucket so the week stops depending on one big effort.'
+  }
+
+  return {
+    scoreLabel: `${weeklyScore} score`,
+    toneClass,
+    title,
+    body,
+    whyToday: topOpenItem?.impact || 'The score updates when you log the basics. The board should explain the next rep, not just show the number.',
+    completedItems,
+    remainingItems,
+    nextAction: topOpenItem ? buildScoreContributorAction(topOpenItem) : null,
+    footerLabel: remainingItems.length ? 'The score updates as soon as you log one of the open drivers.' : 'The score is already supported by the current week pattern.',
+  }
+}
+
 export function buildInspirationalStories(snapshot, thoughtWindowKey = 'morning') {
   const caloriesRemaining = Math.max(0, Number(snapshot?.goal?.target_calories ?? 0) - Number(snapshot?.nutrition_totals?.calories ?? 0))
   const stepGap = Math.max(0, Number(snapshot?.steps?.target ?? 0) - Number(snapshot?.steps?.today ?? 0))
@@ -357,14 +597,14 @@ export function buildCoachLine(snapshot) {
   const training = getTrainingStatus(snapshot)
   const scheduledType = getScheduledTrainingType(snapshot)
 
-  if (training?.recorded_type === 'cardio') return 'Cardio is logged. Close food and recovery cleanly so the conditioning work actually pays off tomorrow.'
-  if (training?.recorded_type === 'rest') return 'Recovery is the assignment today. Keep the basics clean and let the rest day actually do its job.'
-  if (training?.recorded) return 'Workout logged. Tighten up meals and recovery to turn today into a complete win.'
-  if (scheduledType === 'rest') return 'Rest day on the schedule. Keep movement easy, hit protein, and use the extra margin to improve recovery.'
-  if (scheduledType === 'cardio') return 'Cardio is scheduled today. Get it logged before the day gets away so the week stays honest.'
-  if (sleep != null && sleep < 7) return 'Recovery is a little light. Keep training crisp and let nutrition do more of the work today.'
-  if (todaySteps < targetSteps * 0.4) return 'Movement is still open. A short walk plus a clean meal would move the whole day forward.'
-  return 'You have enough signal for a strong day. Hit the next action early and keep momentum simple.'
+  if (training?.recorded_type === 'cardio') return 'Cardio is logged. Close food and recovery cleanly.'
+  if (training?.recorded_type === 'rest') return 'Recovery is the assignment today. Keep the basics clean.'
+  if (training?.recorded) return 'Workout logged. Close protein and protect recovery.'
+  if (scheduledType === 'rest') return 'Rest day is scheduled. Hit protein and keep movement easy.'
+  if (scheduledType === 'cardio') return 'Cardio is scheduled today. Log it before the day gets noisy.'
+  if (sleep != null && sleep < 7) return 'Recovery is light. Keep training crisp and let nutrition do more of the work.'
+  if (todaySteps < targetSteps * 0.4) return 'Movement is still open. A short walk plus a clean meal would move the day forward.'
+  return 'You have enough signal for a strong day. Hit the next action early.'
 }
 
 export function buildCoachMetricGrid(metrics) {
@@ -1486,6 +1726,11 @@ export function buildProteinRunwayModel(snapshot) {
       body: 'Once your protein target is saved, this card will tell you how much runway is left for the day.',
       remainingLabel: '—',
       nextMealProteinLabel: '—',
+      targetGrams: 0,
+      currentProteinGrams: Math.round(protein),
+      remainingGrams: 0,
+      mealSlotsLeft,
+      loggedMeals,
       helper: 'Open Profile if you want to recalculate targets.',
       prompt: 'My protein target is not showing on the dashboard. Help me check whether my targets need to be recalculated.',
     }
@@ -1498,6 +1743,13 @@ export function buildProteinRunwayModel(snapshot) {
       body: `You are at ${Math.round(protein)} of ${Math.round(target)} grams. The goal now is to finish calories cleanly without adding noise late tonight.`,
       remainingLabel: '0g left',
       nextMealProteinLabel: 'Optional',
+      targetGrams: Math.round(target),
+      currentProteinGrams: Math.round(protein),
+      remainingGrams: 0,
+      mealSlotsLeft,
+      loggedMeals,
+      currentAnchorLogged: mealTiming.currentAnchorLogged,
+      daypartKey: mealTiming.daypartKey,
       helper: 'If you still eat later, keep it easy to recover from.',
       prompt: 'I already hit my protein target today. Based on the dashboard, what is the smartest way to finish the day cleanly?',
     }
@@ -1509,6 +1761,14 @@ export function buildProteinRunwayModel(snapshot) {
     body: `You have logged ${Math.round(protein)} of ${Math.round(target)} grams so far. If the rest of the day stays structured, protein can still close without a late scramble.`,
     remainingLabel: `${remaining}g left`,
     nextMealProteinLabel: `${nextMealProtein}g`,
+    targetGrams: Math.round(target),
+    currentProteinGrams: Math.round(protein),
+    remainingGrams: remaining,
+    mealSlotsLeft,
+    loggedMeals,
+    currentAnchorLogged: mealTiming.currentAnchorLogged,
+    daypartKey: mealTiming.daypartKey,
+    lateNight: mealTiming.lateNight,
     helper: mealSlotsLeft > 1
       ? `Spread the remaining protein across about ${mealSlotsLeft} meal windows so the night does not need a rescue move.`
       : `Make ${mealTiming.nextAnchorLabel.toLowerCase()} a clear protein anchor so the gap does not roll later into the day.`,
@@ -1519,7 +1779,9 @@ export function buildProteinRunwayModel(snapshot) {
 export function buildMealRhythmModel(snapshot) {
   const windows = getRemainingMealWindows(snapshot?.meals_today)
   const loggedCount = windows.filter(window => window.logged).length
+  const openAnchorCount = windows.filter(window => !window.logged && window.isAnchor).length
   const nextWindow = getNextMealWindow(windows)
+  const mealTiming = getCoachMealTimingContext(snapshot)
 
   if (!windows.length) {
     return {
@@ -1527,6 +1789,11 @@ export function buildMealRhythmModel(snapshot) {
       title: 'The day still needs its first food anchor',
       body: 'Once meals are logged, this card will show the day rhythm and what slot is still open.',
       windows: [],
+      openAnchorCount: 0,
+      loggedAnchorCount: 0,
+      currentAnchorLogged: false,
+      lateNight: mealTiming.lateNight,
+      daypartKey: mealTiming.daypartKey,
       helper: 'Open nutrition and log the next meal on purpose.',
     }
   }
@@ -1538,6 +1805,13 @@ export function buildMealRhythmModel(snapshot) {
       ? `The day has ${loggedCount} anchor meal${loggedCount === 1 ? '' : 's'} logged. Keep the next meal window deliberate so the board stays easy to steer.`
       : 'Breakfast, lunch, and dinner are already represented. If you eat again, let it support recovery instead of turning into drift.',
     windows,
+    openAnchorCount,
+    loggedAnchorCount: windows.filter(window => window.logged && window.isAnchor).length,
+    currentAnchorLogged: mealTiming.currentAnchorLogged,
+    nextAnchorKey: mealTiming.nextAnchorKey,
+    nextAnchorLabel: mealTiming.nextAnchorLabel,
+    lateNight: mealTiming.lateNight,
+    daypartKey: mealTiming.daypartKey,
     helper: nextWindow
       ? `Next clean move: make ${nextWindow.label.toLowerCase()} the planned meal instead of a catch-up choice.`
       : 'The core meal structure is already there. Only add more if it helps the plan.',
@@ -1579,6 +1853,11 @@ export function buildStepForecastModel(snapshot) {
       body: 'Set a step target and this card will forecast whether the day is on pace or drifting late.',
       projectedLabel: '—',
       remainingLabel: '—',
+      target,
+      today,
+      projected,
+      remaining,
+      elapsedFraction,
     }
   }
 
@@ -1589,6 +1868,11 @@ export function buildStepForecastModel(snapshot) {
       body: 'The step target is already checked off. Additional movement is extra credit, not cleanup.',
       projectedLabel: `${projected.toLocaleString()} steps`,
       remainingLabel: '0 left',
+      target,
+      today,
+      projected,
+      remaining,
+      elapsedFraction,
     }
   }
 
@@ -1600,6 +1884,66 @@ export function buildStepForecastModel(snapshot) {
       : `At the current pace you are tracking toward about ${projected.toLocaleString()} steps. A short movement block now will do more than hoping the gap disappears later.`,
     projectedLabel: `${projected.toLocaleString()}`,
     remainingLabel: `${remaining.toLocaleString()} left`,
+    target,
+    today,
+    projected,
+    remaining,
+    elapsedFraction,
+  }
+}
+
+export function buildDashboardContextualVisibility({
+  showBeginnerEducationCard = false,
+  proteinRunway = null,
+  mealRhythm = null,
+  sleepDebt = null,
+  stepForecast = null,
+  groceryGapSpotlight = null,
+} = {}) {
+  const timing = getLocalDayTimingContext()
+  const proteinRemaining = Number(proteinRunway?.remainingGrams ?? 0)
+  const proteinTarget = Number(proteinRunway?.targetGrams ?? 0)
+  const proteinGapMeaningful = proteinRemaining >= Math.max(25, Math.round(proteinTarget * 0.15))
+  const proteinUrgent = proteinGapMeaningful && (
+    Number(proteinRunway?.mealSlotsLeft ?? 0) <= 2
+    || Number(proteinRunway?.loggedMeals ?? 0) === 0
+    || proteinRemaining >= 45
+    || proteinRunway?.currentAnchorLogged === false
+  )
+
+  const mealRhythmRelevant = Boolean(
+    mealRhythm
+    && !mealRhythm.lateNight
+    && mealRhythm.openAnchorCount > 0
+    && (
+      (timing.daypartKey === 'morning' && timing.currentHour >= 9 && mealRhythm.currentAnchorLogged === false)
+      || (timing.daypartKey !== 'morning' && mealRhythm.currentAnchorLogged === false)
+      || (timing.daypartKey === 'midday' && mealRhythm.loggedAnchorCount < 1)
+      || (timing.daypartKey === 'evening' && mealRhythm.loggedAnchorCount < 2)
+    )
+  )
+
+  const stepRemaining = Number(stepForecast?.remaining ?? 0)
+  const stepProjected = Number(stepForecast?.projected ?? 0)
+  const stepTarget = Number(stepForecast?.target ?? 0)
+  const stepElapsed = Number(stepForecast?.elapsedFraction ?? 0)
+  const stepForecastRelevant = Boolean(
+    stepTarget > 0
+    && stepRemaining > 0
+    && (
+      (stepElapsed >= 0.4 && stepProjected < stepTarget * 0.92)
+      || (timing.daypartKey === 'evening' && stepRemaining >= 1500)
+      || (timing.lateNight && stepRemaining >= 1000)
+    )
+  )
+
+  return {
+    beginner_education: showBeginnerEducationCard,
+    protein_runway: Boolean(proteinRunway && proteinGapMeaningful && proteinUrgent && !proteinRunway.lateNight),
+    meal_rhythm: mealRhythmRelevant,
+    sleep_debt: Boolean(sleepDebt && (sleepDebt.debtLabel !== 'No debt' || sleepDebt.modeClass !== 'success')),
+    step_finish_forecast: stepForecastRelevant,
+    grocery_gap_spotlight: Boolean(groceryGapSpotlight?.items?.length && !timing.lateNight),
   }
 }
 
