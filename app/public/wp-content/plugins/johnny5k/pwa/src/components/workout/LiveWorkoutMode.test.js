@@ -108,7 +108,7 @@ describe('LiveWorkoutMode helpers', () => {
 
     expect(message).toContain('Set 3 of 4 is up for Incline Dumbbell Press')
     expect(message).toContain('8-10 reps')
-    expect(message).toContain('45 sec to 75 sec between sets')
+    expect(message).not.toContain('between sets')
     expect(message).not.toContain('sweet spot')
     expect(message).not.toContain('drifting long')
   })

@@ -179,11 +179,8 @@ export function buildNextSetCoachMessage(exercise, setNumber, totalSetCount, res
   const exerciseName = exercise?.exercise_name || 'the current exercise'
   const repRange = formatRepRange(exercise)
   const totalSetsLabel = totalSetCount > 0 ? `Set ${setNumber} of ${totalSetCount}` : `Set ${setNumber}`
-  const minSeconds = normalizePositiveNumber(restTiming?.setMinSeconds, 30)
-  const maxSeconds = Math.max(minSeconds, normalizePositiveNumber(restTiming?.setMaxSeconds, 60))
-  const windowLabel = `${formatDurationRange(minSeconds, maxSeconds)} between sets`
 
-  return `${totalSetsLabel} is up for ${exerciseName}. Stay inside ${repRange} and keep rest in the ${windowLabel} range so the next set does not go stale.`
+  return `${totalSetsLabel} is up for ${exerciseName}. Stay inside ${repRange}.`
 }
 
 function buildLoadGuidancePromptFragment(exerciseContext) {
