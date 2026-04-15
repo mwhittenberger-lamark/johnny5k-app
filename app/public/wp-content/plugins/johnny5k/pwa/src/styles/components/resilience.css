@@ -137,6 +137,52 @@
   text-underline-offset: 0.14em;
 }
 
+.startup-pending-panel {
+  width: min(100%, 760px);
+  margin: 18px auto 0;
+  display: grid;
+  gap: 10px;
+  padding: 18px 20px;
+  border-radius: 24px;
+  border: 1px solid rgba(39, 82, 119, 0.16);
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 14px 30px rgba(12, 30, 57, 0.08);
+}
+
+.startup-pending-panel p,
+.startup-pending-panel strong {
+  margin: 0;
+}
+
+.startup-pending-panel > p {
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.startup-pending-panel > strong {
+  font-family: 'Exo 2', system-ui, sans-serif;
+  font-size: 1rem;
+}
+
+.startup-pending-list {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 10px;
+}
+
+.startup-pending-list li {
+  color: var(--text);
+}
+
+.startup-pending-list li span {
+  display: block;
+  margin-top: 3px;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
 @media (max-width: 720px) {
   .startup-issue-card {
     flex-direction: column;
@@ -150,5 +196,9 @@
   .startup-issue-actions > *,
   .resilience-actions > * {
     flex: 1 1 0;
+  }
+
+  .startup-pending-panel {
+    padding: 16px;
   }
 }

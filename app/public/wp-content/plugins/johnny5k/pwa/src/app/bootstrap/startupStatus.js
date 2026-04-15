@@ -33,13 +33,23 @@ export function deriveStartupReadiness({ publicConfig, session, onboarding, push
   }
 
   const requiredSteps = [publicConfig, session, onboarding]
-  const hasPendingRequiredStep = requiredSteps.some((step) => !isStartupStatusResolved(step?.status))
+  const pendingRequiredSteps = requiredSteps
+    .filter((step) => !isStartupStatusResolved(step?.status))
+    .map((step) => ({
+      key: String(step?.key || '').trim(),
+      label: String(step?.label || '').trim(),
+      requestLabel: String(step?.requestLabel || '').trim(),
+      status: step?.status || STARTUP_STATUS.idle,
+    }))
+
+  const hasPendingRequiredStep = pendingRequiredSteps.length > 0
 
   if (hasPendingRequiredStep) {
     return {
       status: STARTUP_STATUS.loading,
       ready: false,
       blockingIssue: null,
+      pendingRequiredSteps,
     }
   }
 
@@ -50,6 +60,7 @@ export function deriveStartupReadiness({ publicConfig, session, onboarding, push
     status,
     ready: true,
     blockingIssue: null,
+    pendingRequiredSteps: [],
     pushStatus: push?.status ?? STARTUP_STATUS.idle,
   }
 }

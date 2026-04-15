@@ -93,6 +93,9 @@ export function useSessionBootstrap() {
   }, [clearIssue, revalidate, requiresBootstrap, setIssue])
 
   return createStartupStep(status, {
+    key: 'session',
+    label: 'Session restore',
+    requestLabel: 'GET /wp-admin/admin-ajax.php?action=rest-nonce, then GET /wp-json/fit/v1/auth/validate',
     requiresBootstrap,
     isAuthenticated,
     restored: Boolean(restoreResult?.ok),

@@ -106,5 +106,9 @@ export function useOnboardingBootstrap(session) {
     setPreferenceMeta,
   ])
 
-  return createStartupStep(status)
+  return createStartupStep(status, {
+    key: 'onboarding',
+    label: 'Authenticated bootstrap',
+    requestLabel: 'GET /wp-json/fit/v1/onboarding plus GET /wp-json/fit/v1/ironquest/profile',
+  })
 }

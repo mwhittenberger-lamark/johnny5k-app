@@ -37,7 +37,11 @@ describe('startupStatus', () => {
 
   it('keeps startup loading while a required step is unresolved', () => {
     const result = deriveStartupReadiness({
-      publicConfig: createStartupStep(STARTUP_STATUS.loading),
+      publicConfig: createStartupStep(STARTUP_STATUS.loading, {
+        key: 'public-config',
+        label: 'Public config',
+        requestLabel: 'GET /wp-json/fit/v1/auth/public-config',
+      }),
       session: createStartupStep(STARTUP_STATUS.ready),
       onboarding: createStartupStep(STARTUP_STATUS.skipped),
       push: createStartupStep(STARTUP_STATUS.skipped),
@@ -47,6 +51,14 @@ describe('startupStatus', () => {
     expect(result).toMatchObject({
       status: STARTUP_STATUS.loading,
       ready: false,
+      pendingRequiredSteps: [
+        {
+          key: 'public-config',
+          label: 'Public config',
+          requestLabel: 'GET /wp-json/fit/v1/auth/public-config',
+          status: STARTUP_STATUS.loading,
+        },
+      ],
     })
   })
 

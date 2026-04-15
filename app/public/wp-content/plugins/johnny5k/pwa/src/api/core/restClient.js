@@ -5,6 +5,7 @@ const AUTH_KEY = 'jf_auth'
 const NONCE_ENDPOINT = '/wp-admin/admin-ajax.php?action=rest-nonce'
 const OFFLINE_WRITE_QUEUE_KEY = 'jf_offline_write_queue_v1'
 const OFFLINE_WRITE_QUEUE_LIMIT = 100
+const STARTUP_INTERRUPT_KEY = 'jf_startup_interrupt'
 
 let queueFlushPromise = null
 let queueSyncing = false
@@ -20,6 +21,21 @@ function storeNonce(nonce) {
     localStorage.setItem(NONCE_KEY, nonce)
   } else {
     localStorage.removeItem(NONCE_KEY)
+  }
+}
+
+function storeStartupInterrupt(details) {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  try {
+    window.sessionStorage.setItem(STARTUP_INTERRUPT_KEY, JSON.stringify({
+      at: Date.now(),
+      ...details,
+    }))
+  } catch {
+    // Ignore storage failures in diagnostics.
   }
 }
 
@@ -175,6 +191,12 @@ async function performRequest(method, url, body = null, isFormData = false, redi
 
   if (!res.ok) {
     if (!options.skipAuthRedirect && authFailure && !redirectPath.startsWith('/auth/login') && !redirectPath.startsWith('/auth/register')) {
+      storeStartupInterrupt({
+        type: 'auth-failure',
+        status: res.status,
+        url,
+        redirectPath,
+      })
       clearPersistedAuth()
       window.location.replace('/login')
     }
@@ -373,6 +395,12 @@ async function requestBlob(method, path) {
     const authFailure = res.status === 401 || invalidNonce
 
     if (authFailure) {
+      storeStartupInterrupt({
+        type: 'auth-failure',
+        status: res.status,
+        url: `${BASE}${path}`,
+        redirectPath: path,
+      })
       clearPersistedAuth()
       window.location.replace('/login')
     }

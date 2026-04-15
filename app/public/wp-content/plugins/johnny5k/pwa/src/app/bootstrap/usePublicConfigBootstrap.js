@@ -52,5 +52,9 @@ export function usePublicConfigBootstrap() {
     }
   }, [clearIssue, setAppImages, setIssue])
 
-  return createStartupStep(status)
+  return createStartupStep(status, {
+    key: 'public-config',
+    label: 'Public config',
+    requestLabel: 'GET /wp-json/fit/v1/auth/public-config',
+  })
 }

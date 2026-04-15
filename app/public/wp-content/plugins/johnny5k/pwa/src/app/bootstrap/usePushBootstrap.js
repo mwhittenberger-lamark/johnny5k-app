@@ -140,5 +140,9 @@ export function usePushBootstrap(session, onboarding) {
     }
   }, [canBootstrap, clearIssue, isAuthenticated, onboarding?.ready, session?.ready, setIssue, setNotificationPrefs])
 
-  return createStartupStep(status)
+  return createStartupStep(status, {
+    key: 'push',
+    label: 'Push bootstrap',
+    requestLabel: 'GET /wp-json/fit/v1/push/config and current browser subscription',
+  })
 }
