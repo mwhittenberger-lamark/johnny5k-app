@@ -618,6 +618,9 @@ export default function IronQuestOnboardingFlow() {
       const data = await onboardingApi.generateImages({
         prompt: generationPrompt.trim(),
         count: generationCount,
+        generation_context: 'ironquest',
+        ironquest_class_slug: selectedClass,
+        ironquest_motivation_slug: selectedMotivation,
       })
       const nextImages = Array.isArray(data?.generated_images) ? data.generated_images : []
       setGeneratedImages(nextImages)

@@ -306,6 +306,56 @@ class AiService {
 		];
 	}
 
+	/**
+	 * Run a one-off preview prompt that must return a JSON object.
+	 *
+	 * @return array{data:array<string,mixed>,reply:string,tokens_in:int,tokens_out:int,sources:array<int,array{url:string,title:string}>,used_web_search:bool,model:string,system_prompt:string,context:array<string,mixed>}|WP_Error
+	 */
+	public static function preview_json( int $user_id, string $user_message, string $mode = 'general', array $context_overrides = [] ) {
+		$api_key = get_option( 'jf_openai_api_key', '' );
+		if ( ! is_string( $api_key ) || '' === trim( $api_key ) ) {
+			return new \WP_Error( 'no_api_key', 'OpenAI API key not configured.' );
+		}
+
+		$system_prompt = self::build_system_prompt( $user_id, $mode, array_merge( $context_overrides, [ 'latest_user_message' => $user_message ] ) );
+
+		$result = self::call_openai(
+			[
+				[
+					'role'    => 'system',
+					'content' => $system_prompt,
+				],
+				[
+					'role'    => 'user',
+					'content' => $user_message,
+				],
+			],
+			self::DEFAULT_MODEL,
+			[ 'web_search' => false ]
+		);
+
+		if ( is_wp_error( $result ) ) {
+			return $result;
+		}
+
+		$parsed = self::decode_json_reply( (string) $result['reply'] );
+		if ( ! is_array( $parsed ) ) {
+			return new \WP_Error( 'ai_parse_error', 'Could not parse AI JSON response.' );
+		}
+
+		return [
+			'data'            => $parsed,
+			'reply'           => (string) $result['reply'],
+			'tokens_in'       => $result['tokens_in'],
+			'tokens_out'      => $result['tokens_out'],
+			'sources'         => $result['sources'],
+			'used_web_search' => $result['used_web_search'],
+			'model'           => $result['model'],
+			'system_prompt'   => $system_prompt,
+			'context'         => self::get_user_context( $user_id, $context_overrides ),
+		];
+	}
+
 	// ── One-shot context-aware analysis ──────────────────────────────────────
 
 	/**
@@ -2705,6 +2755,9 @@ PROMPT;
 	}
 
 	private static function normalise_tool_arguments_from_user_message( int $user_id, string $tool_name, array $arguments, string $user_message ): array {
+		if ( 'set_training_schedule' === $tool_name ) {
+			$arguments = self::hydrate_training_schedule_arguments_from_message( $arguments, $user_message );
+		}
 		if ( 'create_custom_workout' === $tool_name ) {
 			$arguments = self::hydrate_custom_workout_arguments_from_message( $user_id, $arguments, $user_message );
 		}
@@ -2733,6 +2786,216 @@ PROMPT;
 		}
 
 		return $arguments;
+	}
+
+	private static function hydrate_training_schedule_arguments_from_message( array $arguments, string $user_message ): array {
+		$schedule_keys = [ 'preferred_workout_days_json', 'weekly_schedule', 'week_split', 'schedule' ];
+		$raw_schedule  = [];
+
+		foreach ( $schedule_keys as $key ) {
+			if ( isset( $arguments[ $key ] ) ) {
+				$raw_schedule = is_array( $arguments[ $key ] ) ? $arguments[ $key ] : [];
+				break;
+			}
+		}
+
+		$normalized_schedule = self::normalize_training_schedule_argument_entries( $raw_schedule );
+		$parsed_schedule     = self::extract_training_schedule_entries_from_message( $user_message );
+
+		if ( ! empty( $parsed_schedule ) ) {
+			$normalized_schedule = $parsed_schedule;
+		}
+
+		if ( empty( $normalized_schedule ) ) {
+			return $arguments;
+		}
+
+		$arguments['preferred_workout_days_json'] = $normalized_schedule;
+		unset( $arguments['weekly_schedule'], $arguments['week_split'], $arguments['schedule'] );
+
+		return $arguments;
+	}
+
+	private static function normalize_training_schedule_argument_entries( array $raw_schedule ): array {
+		if ( empty( $raw_schedule ) ) {
+			return [];
+		}
+
+		if ( is_string( $raw_schedule[0] ?? null ) ) {
+			$days = [];
+			foreach ( $raw_schedule as $day ) {
+				$weekday = self::normalize_schedule_weekday_label( (string) $day );
+				if ( '' !== $weekday ) {
+					$days[] = $weekday;
+				}
+			}
+
+			return self::build_default_schedule_entries( $days );
+		}
+
+		$entries = [];
+		foreach ( $raw_schedule as $entry ) {
+			if ( ! is_array( $entry ) ) {
+				continue;
+			}
+
+			$weekday = self::normalize_schedule_weekday_label(
+				(string) ( $entry['day'] ?? $entry['weekday'] ?? $entry['weekday_label'] ?? '' )
+			);
+			if ( '' === $weekday ) {
+				continue;
+			}
+
+			$entries[ $weekday ] = [
+				'day'      => $weekday,
+				'day_type' => self::normalize_schedule_day_type(
+					(string) ( $entry['day_type'] ?? $entry['type'] ?? $entry['split'] ?? $entry['training_type'] ?? '' )
+				),
+			];
+		}
+
+		if ( empty( $entries ) ) {
+			return [];
+		}
+
+		$ordered_days   = array_keys( $entries );
+		$default_cycle  = TrainingDayTypes::default_cycle();
+		$cycle_position = 0;
+
+		usort( $ordered_days, static fn( string $a, string $b ): int => self::weekday_sort_index( $a ) <=> self::weekday_sort_index( $b ) );
+
+		$normalized = [];
+		foreach ( $ordered_days as $weekday ) {
+			$day_type = (string) ( $entries[ $weekday ]['day_type'] ?? '' );
+			if ( '' === $day_type ) {
+				$day_type = $default_cycle[ min( $cycle_position, count( $default_cycle ) - 1 ) ];
+			}
+
+			$normalized[] = [
+				'day'      => $weekday,
+				'day_type' => $day_type,
+			];
+			$cycle_position += 1;
+		}
+
+		return $normalized;
+	}
+
+	private static function extract_training_schedule_entries_from_message( string $user_message ): array {
+		$message = strtolower( $user_message );
+		if ( '' === trim( $message ) ) {
+			return [];
+		}
+
+		$pattern = '/\b(monday|mon|tuesday|tue|tues|wednesday|wed|thursday|thu|thurs|friday|fri|saturday|sat|sunday|sun)\b/i';
+		if ( 1 !== preg_match_all( $pattern, $user_message, $matches, PREG_OFFSET_CAPTURE ) ) {
+			return [];
+		}
+
+		$entries = [];
+		foreach ( $matches[1] as $index => $match ) {
+			$weekday = self::normalize_schedule_weekday_label( (string) ( $match[0] ?? '' ) );
+			if ( '' === $weekday ) {
+				continue;
+			}
+
+			$offset      = (int) ( $match[1] ?? 0 );
+			$next_offset = isset( $matches[1][ $index + 1 ][1] ) ? (int) $matches[1][ $index + 1 ][1] : strlen( $user_message );
+			$segment     = substr( $message, max( 0, $offset - 24 ), max( 0, ( $next_offset - $offset ) + 48 ) );
+
+			$entries[ $weekday ] = [
+				'day'      => $weekday,
+				'day_type' => self::normalize_schedule_day_type( $segment ),
+			];
+		}
+
+		return self::normalize_training_schedule_argument_entries( array_values( $entries ) );
+	}
+
+	private static function normalize_schedule_weekday_label( string $value ): string {
+		$key = sanitize_key( strtolower( trim( $value ) ) );
+
+		return match ( $key ) {
+			'mon', 'monday' => 'Mon',
+			'tue', 'tues', 'tuesday' => 'Tue',
+			'wed', 'wednesday' => 'Wed',
+			'thu', 'thurs', 'thursday' => 'Thu',
+			'fri', 'friday' => 'Fri',
+			'sat', 'saturday' => 'Sat',
+			'sun', 'sunday' => 'Sun',
+			default => '',
+		};
+	}
+
+	private static function normalize_schedule_day_type( string $value ): string {
+		$normalized = TrainingDayTypes::normalize( $value );
+		if ( null !== $normalized ) {
+			return $normalized;
+		}
+
+		$message = strtolower( $value );
+		$aliases = [
+			'full body' => 'full_body',
+			'arms and shoulders' => 'arms_shoulders',
+			'shoulders and arms' => 'arms_shoulders',
+			'legs' => 'legs',
+			'leg day' => 'legs',
+			'lower body' => 'legs',
+			'push' => 'push',
+			'pull' => 'pull',
+			'cardio' => 'cardio',
+			'stretch' => 'stretching',
+			'stretching' => 'stretching',
+			'core' => 'abs',
+			'abs' => 'abs',
+			'chest' => 'chest',
+			'back' => 'back',
+			'shoulders' => 'shoulders',
+			'arms' => 'arms',
+			'rest' => 'rest',
+		];
+
+		foreach ( $aliases as $needle => $day_type ) {
+			if ( false !== strpos( $message, $needle ) ) {
+				return $day_type;
+			}
+		}
+
+		return '';
+	}
+
+	private static function build_default_schedule_entries( array $days ): array {
+		$days = array_values( array_unique( array_filter( array_map( [ __CLASS__, 'normalize_schedule_weekday_label' ], $days ) ) ) );
+		if ( empty( $days ) ) {
+			return [];
+		}
+
+		usort( $days, static fn( string $a, string $b ): int => self::weekday_sort_index( $a ) <=> self::weekday_sort_index( $b ) );
+
+		$default_cycle = TrainingDayTypes::default_cycle();
+		$result        = [];
+		foreach ( array_values( $days ) as $index => $weekday ) {
+			$result[] = [
+				'day'      => $weekday,
+				'day_type' => $default_cycle[ min( $index, count( $default_cycle ) - 1 ) ],
+			];
+		}
+
+		return $result;
+	}
+
+	private static function weekday_sort_index( string $weekday ): int {
+		static $order = [
+			'Mon' => 1,
+			'Tue' => 2,
+			'Wed' => 3,
+			'Thu' => 4,
+			'Fri' => 5,
+			'Sat' => 6,
+			'Sun' => 7,
+		];
+
+		return $order[ $weekday ] ?? 99;
 	}
 
 	private static function should_redirect_personal_exercise_to_custom_workout( string $user_message ): bool {

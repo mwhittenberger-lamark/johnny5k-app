@@ -135,6 +135,114 @@ class AiToolHandlerServiceTest extends ServiceTestCase {
 		$this->assertSame( 'Bananas', $captured_request->get_param( 'items' )[0]['item_name'] ?? null );
 	}
 
+	public function test_set_training_schedule_uses_onboarding_controller_path(): void {
+		$GLOBALS['johnny5k_test_current_user_id'] = 7;
+		$captured_request = null;
+
+		$result = AiToolHandlerService::execute( 7, 'set_training_schedule', [
+			'preferred_workout_days_json' => [
+				[ 'day' => 'Mon', 'day_type' => 'push' ],
+				[ 'day' => 'Wed', 'day_type' => 'pull' ],
+				[ 'day' => 'Fri', 'day_type' => 'legs' ],
+			],
+		], [
+			'onboarding_update_training_schedule' => static function( \WP_REST_Request $request ) use ( &$captured_request ): \WP_REST_Response {
+				$captured_request = $request;
+				return new \WP_REST_Response( [
+					'saved' => true,
+					'week_split' => [
+						[ 'weekday_label' => 'Mon', 'day_type' => 'push', 'time_tier' => 'medium' ],
+						[ 'weekday_label' => 'Tue', 'day_type' => 'rest', 'time_tier' => 'medium' ],
+						[ 'weekday_label' => 'Wed', 'day_type' => 'pull', 'time_tier' => 'medium' ],
+						[ 'weekday_label' => 'Thu', 'day_type' => 'rest', 'time_tier' => 'medium' ],
+						[ 'weekday_label' => 'Fri', 'day_type' => 'legs', 'time_tier' => 'medium' ],
+						[ 'weekday_label' => 'Sat', 'day_type' => 'rest', 'time_tier' => 'medium' ],
+						[ 'weekday_label' => 'Sun', 'day_type' => 'rest', 'time_tier' => 'medium' ],
+					],
+				], 200 );
+			},
+		] );
+
+		$this->assertTrue( $result['ok'] ?? false );
+		$this->assertSame( 'set_training_schedule', $result['action'] ?? '' );
+		$this->assertSame( 3, $result['active_day_count'] ?? null );
+		$this->assertSame( [ 'Mon Push', 'Wed Pull', 'Fri Legs' ], $result['active_day_labels'] ?? [] );
+		$this->assertInstanceOf( \WP_REST_Request::class, $captured_request );
+		$this->assertSame( 'Mon', $captured_request->get_param( 'preferred_workout_days_json' )[0]['day'] ?? null );
+		$this->assertSame( 'push', $captured_request->get_param( 'preferred_workout_days_json' )[0]['day_type'] ?? null );
+	}
+
+	public function test_set_training_schedule_accepts_weekday_string_arrays(): void {
+		$GLOBALS['johnny5k_test_current_user_id'] = 7;
+		$captured_request = null;
+
+		$result = AiToolHandlerService::execute( 7, 'set_training_schedule', [
+			'preferred_workout_days_json' => [ 'Mon', 'Wed', 'Fri' ],
+		], [
+			'onboarding_update_training_schedule' => static function( \WP_REST_Request $request ) use ( &$captured_request ): \WP_REST_Response {
+				$captured_request = $request;
+				return new \WP_REST_Response( [
+					'saved' => true,
+					'week_split' => [
+						[ 'weekday_label' => 'Mon', 'day_type' => 'push', 'time_tier' => 'medium' ],
+						[ 'weekday_label' => 'Tue', 'day_type' => 'rest', 'time_tier' => 'medium' ],
+						[ 'weekday_label' => 'Wed', 'day_type' => 'pull', 'time_tier' => 'medium' ],
+						[ 'weekday_label' => 'Thu', 'day_type' => 'rest', 'time_tier' => 'medium' ],
+						[ 'weekday_label' => 'Fri', 'day_type' => 'legs', 'time_tier' => 'medium' ],
+						[ 'weekday_label' => 'Sat', 'day_type' => 'rest', 'time_tier' => 'medium' ],
+						[ 'weekday_label' => 'Sun', 'day_type' => 'rest', 'time_tier' => 'medium' ],
+					],
+				], 200 );
+			},
+		] );
+
+		$this->assertTrue( $result['ok'] ?? false );
+		$this->assertSame( 'set_training_schedule', $result['action'] ?? '' );
+		$this->assertSame(
+			[
+				[ 'day' => 'Mon', 'day_type' => 'push' ],
+				[ 'day' => 'Wed', 'day_type' => 'pull' ],
+				[ 'day' => 'Fri', 'day_type' => 'legs' ],
+			],
+			$captured_request->get_param( 'preferred_workout_days_json' ) ?? []
+		);
+	}
+
+	public function test_set_training_schedule_allows_full_body_day_types(): void {
+		$GLOBALS['johnny5k_test_current_user_id'] = 7;
+		$captured_request = null;
+
+		$result = AiToolHandlerService::execute( 7, 'set_training_schedule', [
+			'preferred_workout_days_json' => [
+				[ 'day' => 'Wed', 'day_type' => 'full_body' ],
+			],
+		], [
+			'onboarding_update_training_schedule' => static function( \WP_REST_Request $request ) use ( &$captured_request ): \WP_REST_Response {
+				$captured_request = $request;
+				return new \WP_REST_Response( [
+					'saved' => true,
+					'week_split' => [
+						[ 'weekday_label' => 'Mon', 'day_type' => 'rest', 'time_tier' => 'medium' ],
+						[ 'weekday_label' => 'Tue', 'day_type' => 'rest', 'time_tier' => 'medium' ],
+						[ 'weekday_label' => 'Wed', 'day_type' => 'full_body', 'time_tier' => 'medium' ],
+						[ 'weekday_label' => 'Thu', 'day_type' => 'rest', 'time_tier' => 'medium' ],
+						[ 'weekday_label' => 'Fri', 'day_type' => 'rest', 'time_tier' => 'medium' ],
+						[ 'weekday_label' => 'Sat', 'day_type' => 'rest', 'time_tier' => 'medium' ],
+						[ 'weekday_label' => 'Sun', 'day_type' => 'rest', 'time_tier' => 'medium' ],
+					],
+				], 200 );
+			},
+		] );
+
+		$this->assertTrue( $result['ok'] ?? false );
+		$this->assertSame(
+			[
+				[ 'day' => 'Wed', 'day_type' => 'full_body' ],
+			],
+			$captured_request->get_param( 'preferred_workout_days_json' ) ?? []
+		);
+	}
+
 	public function test_get_recipe_catalog_returns_recipe_library_items_with_cookbook_status(): void {
 		$GLOBALS['johnny5k_test_current_user_id'] = 7;
 		$this->setOption( 'jf_recipe_library', [

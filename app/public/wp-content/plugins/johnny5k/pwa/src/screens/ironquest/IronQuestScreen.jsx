@@ -26,8 +26,10 @@ export default function IronQuestScreen() {
   const [activating, setActivating] = useState(false)
   const [selectingMissionSlug, setSelectingMissionSlug] = useState('')
   const [fastTraveling, setFastTraveling] = useState(false)
+  const [travelingLocationSlug, setTravelingLocationSlug] = useState('')
   const [routeNotice, setRouteNotice] = useState(null)
   const [error, setError] = useState('')
+  const [openMissionSlug, setOpenMissionSlug] = useState('')
 
   const loadIronQuestHub = useCallback(async ({ background = false } = {}) => {
     if (background) {
@@ -207,6 +209,24 @@ export default function IronQuestScreen() {
     complete: Boolean(dailyState?.[item.key]),
   }))
 
+  useEffect(() => {
+    if (!missionBoard.length) {
+      setOpenMissionSlug('')
+      return
+    }
+
+    setOpenMissionSlug(current => {
+      if (current && missionBoard.some(mission => mission.slug === current)) {
+        return current
+      }
+
+      return missionBoard.find(mission => mission.isActive)?.slug
+        || missionBoard.find(mission => mission.isSelected)?.slug
+        || missionBoard[0]?.slug
+        || ''
+    })
+  }, [missionBoard])
+
   const handleSelectMission = useCallback(async (mission) => {
     if (!mission?.slug || selectingMissionSlug) return
 
@@ -261,6 +281,31 @@ export default function IronQuestScreen() {
       setFastTraveling(false)
     }
   }, [loadIronQuestHub, locations, nextUnlock?.location_slug])
+
+  const handleTravelToLocation = useCallback(async (locationSlug) => {
+    const destinationSlug = String(locationSlug || '').trim()
+    if (!destinationSlug || travelingLocationSlug) return
+
+    setTravelingLocationSlug(destinationSlug)
+    setError('')
+    setRouteNotice(null)
+
+    try {
+      const result = await ironquestApi.travelToLocation({
+        location_slug: destinationSlug,
+      })
+      setHub(result)
+      setRouteNotice({
+        title: 'Region changed',
+        message: result?.message || 'Region changed.',
+        activeLocationChanged: true,
+      })
+    } catch (travelError) {
+      setError(travelError?.data?.message || travelError?.message || 'Could not travel to that region.')
+    } finally {
+      setTravelingLocationSlug('')
+    }
+  }, [travelingLocationSlug])
 
   if (loading && !hub) {
     return (
@@ -392,50 +437,14 @@ export default function IronQuestScreen() {
               ) : null}
               <div className="ironquest-mission-list">
                 {missionBoard.map(mission => (
-                  <div key={mission.slug} className={`ironquest-mission-card ${mission.isActive ? 'active' : ''} ${mission.isSelected ? 'selected' : ''}`}>
-                    <div className="dashboard-card-head">
-                      <span className="dashboard-chip subtle">Mission {mission.mission_number || 'X'}</span>
-                      <div className="ironquest-chip-row">
-                        <span className={`dashboard-chip ${boardRoleChipTone(mission.board_role)}`}>{boardRoleLabel(mission.board_role)}</span>
-                        {mission.is_boss ? <span className="dashboard-chip awards">Boss</span> : null}
-                        {mission.isActive ? <span className="dashboard-chip success">Active now</span> : null}
-                        {!mission.isActive && mission.isSelected ? <span className="dashboard-chip workout">Selected next</span> : null}
-                      </div>
-                    </div>
-                    <strong>{mission.name}</strong>
-                    <p>{mission.narrative || mission.goal || 'No mission briefing yet.'}</p>
-                    <div className="ironquest-detail-list">
-                      <DetailRow label="Threat" value={mission.threat || 'No threat card yet'} />
-                      <DetailRow label="Feel" value={mission.workout_feel || 'Standard training session'} />
-                      <DetailRow label="Run type" value={humanizeSlug(mission.run_type || 'workout')} />
-                      <DetailRow label="XP bias" value={mission.reward_preview?.xp_multiplier > 1 ? `${Math.round((mission.reward_preview.xp_multiplier - 1) * 100)}% bonus` : 'Standard'} />
-                      <DetailRow label="Gold bias" value={mission.reward_preview?.gold_multiplier > 1 ? `${Math.round((mission.reward_preview.gold_multiplier - 1) * 100)}% bonus` : 'Standard'} />
-                      <DetailRow label="Travel effect" value={mission.reward_preview?.travel_points_bonus ? `+${mission.reward_preview.travel_points_bonus} route point` : 'None'} />
-                    </div>
-                    {Array.isArray(mission.effect_tags) && mission.effect_tags.length ? (
-                      <div className="ironquest-hero-meta">
-                        {mission.effect_tags.map(tag => (
-                          <span key={tag} className="dashboard-chip subtle">{humanizeSlug(tag)}</span>
-                        ))}
-                      </div>
-                    ) : null}
-                    <div className="ironquest-actions">
-                      <button
-                        type="button"
-                        className={mission.isActive || mission.isSelected ? 'btn-secondary small' : 'btn-outline small'}
-                        onClick={() => void handleSelectMission(mission)}
-                        disabled={mission.isSelected || selectingMissionSlug === mission.slug}
-                      >
-                        {mission.isActive
-                          ? 'In progress'
-                          : selectingMissionSlug === mission.slug
-                            ? 'Selecting…'
-                            : mission.isSelected
-                              ? 'Selected for next run'
-                              : 'Set as next mission'}
-                      </button>
-                    </div>
-                  </div>
+                  <MissionAccordionCard
+                    key={mission.slug}
+                    mission={mission}
+                    open={openMissionSlug === mission.slug}
+                    onToggle={() => setOpenMissionSlug(current => current === mission.slug ? '' : mission.slug)}
+                    onSelectMission={handleSelectMission}
+                    selectingMissionSlug={selectingMissionSlug}
+                  />
                 ))}
               </div>
               {bossMission ? <p className="ironquest-panel-footnote">Boss of this arc: {bossMission.name}</p> : null}
@@ -481,6 +490,18 @@ export default function IronQuestScreen() {
                             ? 'Unlocked'
                             : 'Locked'}
                     </span>
+                    {card.unlocked && !card.current ? (
+                      <div className="ironquest-item-actions">
+                        <button
+                          type="button"
+                          className="btn-outline small"
+                          onClick={() => handleTravelToLocation(card.slug)}
+                          disabled={Boolean(travelingLocationSlug)}
+                        >
+                          {travelingLocationSlug === card.slug ? 'Traveling…' : 'Travel here'}
+                        </button>
+                      </div>
+                    ) : null}
                   </div>
                 ))}
               </div>
@@ -552,7 +573,7 @@ export default function IronQuestScreen() {
                     </small>
                     {routeNotice ? (
                       <div className="ironquest-route-notice-card">
-                        <strong>{routeNotice.unlockedLocations?.length ? 'New region unlocked' : 'Route advanced'}</strong>
+                        <strong>{routeNotice.title || (routeNotice.unlockedLocations?.length ? 'New region unlocked' : 'Route advanced')}</strong>
                         <p className="ironquest-route-notice">{routeNotice.message}</p>
                         {routeNotice.unlockedLocations?.length ? (
                           <div className="ironquest-hero-meta">
@@ -601,7 +622,19 @@ export default function IronQuestScreen() {
                             <strong>{item.title}</strong>
                             <p>{item.subtitle}</p>
                           </div>
-                          <small>{item.current ? 'Current' : item.cleared ? 'Cleared' : 'Unlocked'}</small>
+                          <div className="ironquest-item-meta">
+                            <small>{item.current ? 'Current' : item.cleared ? 'Cleared' : 'Unlocked'}</small>
+                            {!item.current ? (
+                              <button
+                                type="button"
+                                className="btn-outline small"
+                                onClick={() => handleTravelToLocation(item.slug)}
+                                disabled={Boolean(travelingLocationSlug)}
+                              >
+                                {travelingLocationSlug === item.slug ? 'Traveling…' : 'Travel here'}
+                              </button>
+                            ) : null}
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -738,6 +771,79 @@ function StatCard({ icon, label, value }) {
       <span>{label}</span>
       <strong>{value}</strong>
     </div>
+  )
+}
+
+function MissionAccordionCard({ mission, open, onToggle, onSelectMission, selectingMissionSlug }) {
+  const panelId = `ironquest-mission-panel-${mission.slug}`
+
+  return (
+    <section className={`ironquest-mission-accordion ironquest-mission-card ${mission.isActive ? 'active' : ''} ${mission.isSelected ? 'selected' : ''}`}>
+      <button
+        type="button"
+        className="workout-accordion-toggle ironquest-mission-accordion-trigger"
+        aria-expanded={open}
+        aria-controls={panelId}
+        onClick={onToggle}
+      >
+        <div className="ironquest-mission-accordion-copy">
+          <div className="ironquest-mission-accordion-kicker">
+            <span className="dashboard-chip subtle">Mission {mission.mission_number || 'X'}</span>
+            <span className={`dashboard-chip ${boardRoleChipTone(mission.board_role)}`}>{boardRoleLabel(mission.board_role)}</span>
+            {mission.is_boss ? <span className="dashboard-chip awards">Boss</span> : null}
+            {mission.isActive ? <span className="dashboard-chip success">Active now</span> : null}
+            {!mission.isActive && mission.isSelected ? <span className="dashboard-chip workout">Selected next</span> : null}
+          </div>
+          <div className="ironquest-mission-accordion-title-row">
+            <strong>{mission.name}</strong>
+            <span className="ironquest-mission-accordion-status">{open ? 'Hide briefing' : 'Open briefing'}</span>
+          </div>
+          <p className="ironquest-mission-accordion-subtitle">
+            {mission.goal || mission.threat || 'Open the briefing for full mission details and rewards.'}
+          </p>
+        </div>
+        <span className={`workout-accordion-icon ${open ? 'expanded' : ''}`} aria-hidden="true">
+          <span className="workout-accordion-icon-bar horizontal" />
+          <span className="workout-accordion-icon-bar vertical" />
+        </span>
+      </button>
+      <div id={panelId} className={`workout-accordion-panel ironquest-mission-accordion-panel ${open ? 'expanded' : ''}`}>
+        <div className="workout-accordion-panel-inner ironquest-mission-accordion-panel-inner">
+          <p>{mission.narrative || mission.goal || 'No mission briefing yet.'}</p>
+          <div className="ironquest-detail-list">
+            <DetailRow label="Threat" value={mission.threat || 'No threat card yet'} />
+            <DetailRow label="Feel" value={mission.workout_feel || 'Standard training session'} />
+            <DetailRow label="Run type" value={humanizeSlug(mission.run_type || 'workout')} />
+            <DetailRow label="XP bias" value={mission.reward_preview?.xp_multiplier > 1 ? `${Math.round((mission.reward_preview.xp_multiplier - 1) * 100)}% bonus` : 'Standard'} />
+            <DetailRow label="Gold bias" value={mission.reward_preview?.gold_multiplier > 1 ? `${Math.round((mission.reward_preview.gold_multiplier - 1) * 100)}% bonus` : 'Standard'} />
+            <DetailRow label="Travel effect" value={mission.reward_preview?.travel_points_bonus ? `+${mission.reward_preview.travel_points_bonus} route point` : 'None'} />
+          </div>
+          {Array.isArray(mission.effect_tags) && mission.effect_tags.length ? (
+            <div className="ironquest-hero-meta">
+              {mission.effect_tags.map(tag => (
+                <span key={tag} className="dashboard-chip subtle">{humanizeSlug(tag)}</span>
+              ))}
+            </div>
+          ) : null}
+          <div className="ironquest-actions">
+            <button
+              type="button"
+              className={mission.isActive || mission.isSelected ? 'btn-secondary small' : 'btn-outline small'}
+              onClick={() => void onSelectMission(mission)}
+              disabled={mission.isSelected || selectingMissionSlug === mission.slug}
+            >
+              {mission.isActive
+                ? 'In progress'
+                : selectingMissionSlug === mission.slug
+                  ? 'Selecting…'
+                  : mission.isSelected
+                    ? 'Selected for next run'
+                    : 'Set as next mission'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
   )
 }
 

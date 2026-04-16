@@ -12,7 +12,13 @@
       "mission_type": "easy_workout",
       "goal": "Learn the basic Johnny5k rhythm",
       "threat": "Training dummies and instructor prompts",
-      "workout_feel": "3 exercises only"
+      "narrative": "Johnny starts you in the soft end of the yard, where every correction matters more than raw force and every clean rep earns trust.",
+      "workout_feel": "3 exercises only",
+      "outcomes": {
+        "victory": "The yard settles behind you and {encounter_proof}",
+        "partial": "You keep the lesson alive, but the {encounter_label} still wants cleaner timing before it fully belongs to you.",
+        "failure": "The basics get away from you this time before you can {encounter_objective}."
+      }
     },
     {
       "slug": "marker_run",
@@ -25,7 +31,13 @@
       "run_type": "cardio",
       "goal": "Visit the outer flags and return before the bell",
       "threat": "Short practice loop",
-      "workout_feel": "Cardio challenge"
+      "narrative": "The yard master points to the outer flags and sends you before the dust has even settled. The lesson is simple: return with your pace still under your control.",
+      "workout_feel": "Cardio challenge",
+      "outcomes": {
+        "victory": "You beat the bell and make the loop look smaller than it felt. {encounter_proof}",
+        "partial": "You make it back with the route still mostly yours, but the {encounter_label} nearly steals the finish.",
+        "failure": "The bell wins the yard and the {encounter_label} closes before you can {encounter_objective}."
+      }
     },
     {
       "slug": "first_steel",
@@ -37,7 +49,13 @@
       "mission_type": "intro_combat",
       "goal": "Turn exercise into adventure fantasy",
       "threat": "Straw soldiers and light sparring partners",
-      "workout_feel": "Controlled starter effort"
+      "narrative": "Wooden weapons, straw armor, and shouted cues make the yard feel like a first battlefield. It is not dangerous yet, but it is real enough to demand conviction.",
+      "workout_feel": "Controlled starter effort",
+      "outcomes": {
+        "victory": "The straw line collapses and the whole exercise finally starts to feel like a mission. The {encounter_label} turns in your favor because you {encounter_objective}.",
+        "partial": "You land enough to make the fantasy stick, but the {encounter_label} still pushes back harder than you want.",
+        "failure": "The first clash overwhelms your timing before you can {encounter_objective}."
+      }
     },
     {
       "slug": "cadence_yard",
@@ -49,7 +67,13 @@
       "mission_type": "structured_progression",
       "goal": "Learn pacing, rests, and mission completion",
       "threat": "Drill captains and timed circuits",
-      "workout_feel": "Moderate mixed output"
+      "narrative": "Now the yard stops forgiving wasted breath. Drill captains watch the clock, the rests, and the way you carry yourself between efforts.",
+      "workout_feel": "Moderate mixed output",
+      "outcomes": {
+        "victory": "You finish the circuit with the pace still under your command. The {encounter_label} never fully settles because you {encounter_objective}.",
+        "partial": "You complete the work, but the {encounter_label} exposes every place where your rest rhythm still leaks control.",
+        "failure": "The captains keep the pressure on and the {encounter_label} turns before you can {encounter_objective}."
+      }
     },
     {
       "slug": "captain_of_the_yard",
@@ -70,9 +94,9 @@
       "narrative": "The captain does not want to break you. They want to know if you'll keep moving once your first confidence runs out.",
       "workout_feel": "Short-form full workout with clear instruction and low punishment",
       "outcomes": {
-        "victory": "You earn your place beyond the yard and unlock the road to Grim Hollow Village.",
-        "partial": "The captain sends you back for one more round of preparation, but your path remains open.",
-        "failure": "You recover, regroup, and try again with no major setback."
+        "victory": "You earn your place beyond the yard. In {mission_name}, the {encounter_label} breaks your way and you {encounter_objective}.",
+        "partial": "The captain sends you back for one more round of preparation, but the {encounter_label} bends just enough for your path to remain open.",
+        "failure": "You recover, regroup, and try again after the {encounter_label} turns before you can {encounter_objective}."
       }
     },
     {
@@ -86,7 +110,12 @@
       "goal": "Establish tone",
       "narrative": "The streets are silent. Too silent. Then... movement. Shapes emerge from the fog.",
       "threat": "Shamblers and weak but numerous undead",
-      "workout_feel": "Steady effort and controlled pacing"
+      "workout_feel": "Steady effort and controlled pacing",
+      "outcomes": {
+        "victory": "The first wave falls away and Grim Hollow finally sees that someone is willing to answer the dead. The {encounter_label} breaks because you {encounter_objective}.",
+        "partial": "You clear just enough street to breathe, but the {encounter_label} still hangs in the fog around the next corner.",
+        "failure": "The dead take the street back before you can {encounter_objective}."
+      }
     },
     {
       "slug": "the_burning_chapel",
@@ -99,7 +128,12 @@
       "goal": "Raise urgency",
       "narrative": "Flames consume the chapel. Something inside refuses to burn.",
       "threat": "Faster undead with aggressive behavior",
-      "workout_feel": "Higher intensity with shorter rest"
+      "workout_feel": "Higher intensity with shorter rest",
+      "outcomes": {
+        "victory": "The fire stops being their cover and starts looking like your warning to the village. The {encounter_label} stays yours because you {encounter_objective}.",
+        "partial": "You blunt the rush inside the chapel, but the {encounter_label} keeps snapping back whenever the flames surge.",
+        "failure": "The burning pressure swallows your timing before you can {encounter_objective}."
+      }
     },
     {
       "slug": "the_graveyard_watcher",
@@ -112,7 +146,12 @@
       "goal": "Build fatigue pressure",
       "narrative": "Graves have been disturbed. Something watches from beyond the stones.",
       "threat": "Lurking entity, slow and persistent",
-      "workout_feel": "Endurance and fatigue management"
+      "workout_feel": "Endurance and fatigue management",
+      "outcomes": {
+        "victory": "The watcher loses its patience before you lose yours. In {mission_name}, the {encounter_label} gives way because you {encounter_objective}.",
+        "partial": "You hold through the graveyard drag, but the {encounter_label} remains heavy and unfinished among the stones.",
+        "failure": "Fatigue lets the graveyard settle against you before you can {encounter_objective}."
+      }
     },
     {
       "slug": "the_hollow_well",
@@ -125,7 +164,12 @@
       "goal": "Build toward the boss reveal",
       "narrative": "The well at the village center descends into darkness. The source is below.",
       "threat": "Corrupted villagers and environmental pressure",
-      "workout_feel": "Mixed intensity with clear buildup"
+      "workout_feel": "Mixed intensity with clear buildup",
+      "outcomes": {
+        "victory": "You reach the lip of the real descent with your nerve intact. The {encounter_label} opens and the source can no longer hide beneath the village.",
+        "partial": "You force a path to the well, but the {encounter_label} still closes around the descent in ugly bursts.",
+        "failure": "The pressure around the well buckles your progress before you can {encounter_objective}."
+      }
     },
     {
       "slug": "the_necromancer_of_hollow",
@@ -146,9 +190,9 @@
       "narrative": "You descend into the well... and find him waiting. The one who commands the dead. The one who will not yield.",
       "workout_feel": "Full workout structure with buildup sets leading into a final confrontation",
       "outcomes": {
-        "victory": "The Necromancer falls. The dead collapse. Silence returns... for now.",
-        "partial": "He retreats into shadow. The village is not yet free.",
-        "failure": "You survive, but barely. The darkness remains."
+        "victory": "The Necromancer falls. The {encounter_label} finally breaks, and you {encounter_objective}.",
+        "partial": "He retreats into shadow. The {encounter_label} bends, but the village is not yet free.",
+        "failure": "You survive, but barely. The {encounter_label} slips away before you can {encounter_objective}."
       }
     },
     {
@@ -161,7 +205,12 @@
       "mission_type": "easy_workout",
       "goal": "Learn the forge rhythm",
       "threat": "Overheated machinery and worker strain",
-      "workout_feel": "3 exercises only, low complexity"
+      "workout_feel": "3 exercises only, low complexity",
+      "outcomes": {
+        "victory": "The bellows answer cleanly and {encounter_proof}",
+        "partial": "You keep the station alive, but the {encounter_label} still asks for cleaner control.",
+        "failure": "Heat and strain win this round before you can {encounter_objective}."
+      }
     },
     {
       "slug": "coal_run_to_the_lower_kiln",
@@ -174,7 +223,12 @@
       "run_type": "cardio",
       "goal": "Deliver fuel before the flame fades",
       "threat": "Timed route through heat vents",
-      "workout_feel": "Cardio challenge"
+      "workout_feel": "Cardio challenge",
+      "outcomes": {
+        "victory": "The kiln takes the charge in time. {encounter_proof}",
+        "partial": "The fuel arrives late, but the {encounter_label} stays alive long enough for the forge to keep breathing.",
+        "failure": "The vents steal your tempo and the {encounter_label} closes before you can {encounter_objective}."
+      }
     },
     {
       "slug": "sparks_on_the_anvil_line",
@@ -186,7 +240,13 @@
       "mission_type": "pressure_combat",
       "goal": "Hold output under heat",
       "threat": "Molten husks and forge-wraiths",
-      "workout_feel": "Mid-intensity intervals"
+      "narrative": "The anvil line spits sparks across the whole chamber while half-formed things crawl out of the heat to test whether you can keep working under pressure.",
+      "workout_feel": "Mid-intensity intervals",
+      "outcomes": {
+        "victory": "The line keeps moving and the forge creatures lose their chance to break the rhythm. The {encounter_label} gives because you {encounter_objective}.",
+        "partial": "You hold the anvil line together, but the {encounter_label} still surges every time the chamber flares.",
+        "failure": "The heat wins the tempo and the {encounter_label} turns before you can {encounter_objective}."
+      }
     },
     {
       "slug": "the_cracked_crucible",
@@ -198,7 +258,13 @@
       "mission_type": "pre_boss_escalation",
       "goal": "Stop a forge core rupture",
       "threat": "Living slag and collapsing platforms",
-      "workout_feel": "Mixed intensity with rising stakes"
+      "narrative": "Each crack in the crucible throws hotter light across the chamber. The forge wants to split open before you are ready to face what waits behind it.",
+      "workout_feel": "Mixed intensity with rising stakes",
+      "outcomes": {
+        "victory": "The crucible holds long enough for the deeper confrontation to begin on your terms. The {encounter_label} stays open because you {encounter_objective}.",
+        "partial": "You delay the rupture, but the {encounter_label} remains unstable and angry under every step.",
+        "failure": "The forge breaks its own floor before you can {encounter_objective}."
+      }
     },
     {
       "slug": "the_forgemaster_unbound",
@@ -219,9 +285,9 @@
       "narrative": "Deep in the master forge, the smith who once ruled the city has fused with iron and flame. He strikes the anvil once, and the whole chamber answers.",
       "workout_feel": "Full workout with rhythm-based intensity waves",
       "outcomes": {
-        "victory": "The forge stabilizes and the city glows with disciplined fire once more.",
-        "partial": "The master withdraws into the furnace heart and the city survives on borrowed time.",
-        "failure": "The chamber forces you back and the forge remains dangerously unstable."
+        "victory": "The forge stabilizes and the city glows with disciplined fire once more. In {mission_name}, the {encounter_label} stays yours because you {encounter_objective}.",
+        "partial": "The master withdraws into the furnace heart and the city survives on borrowed time while the {encounter_label} remains contested.",
+        "failure": "The chamber forces you back and the {encounter_label} breaks against you before you can {encounter_objective}."
       }
     },
     {
@@ -234,7 +300,13 @@
       "mission_type": "easy_workout",
       "goal": "Establish stealth rhythm",
       "threat": "Tripwires, lookouts, pressure to stay clean",
-      "workout_feel": "3 exercises only"
+      "narrative": "The Wilds do not care how strong you are if you cannot move without announcing yourself. Quiet hands, light steps, and clean breathing matter first here.",
+      "workout_feel": "3 exercises only",
+      "outcomes": {
+        "victory": "The lookouts never get a clean read on you and {encounter_proof}",
+        "partial": "You stay mostly hidden, but the {encounter_label} still catches small mistakes in your rhythm.",
+        "failure": "The Wilds hear too much from you before you can {encounter_objective}."
+      }
     },
     {
       "slug": "message_through_the_bramble",
@@ -247,7 +319,12 @@
       "run_type": "cardio",
       "goal": "Carry an intercepted note to the safehouse",
       "threat": "Fast-moving forest route",
-      "workout_feel": "Cardio challenge"
+      "workout_feel": "Cardio challenge",
+      "outcomes": {
+        "victory": "The message reaches the safehouse and the route stays yours. {encounter_proof}",
+        "partial": "The note gets through, but the {encounter_label} narrows behind you before the Wilds truly quiet down.",
+        "failure": "The forest cuts your line and the {encounter_label} closes before you can {encounter_objective}."
+      }
     },
     {
       "slug": "lanterns_in_the_leaves",
@@ -259,7 +336,13 @@
       "mission_type": "ambush_control",
       "goal": "Turn the hunters into the hunted",
       "threat": "Hidden archers and mimic lights",
-      "workout_feel": "Quick bursts with sharp rests"
+      "narrative": "False lanterns swing between the trees while arrows wait for the first careless step. The only way through is to seize the ambush before it fully forms.",
+      "workout_feel": "Quick bursts with sharp rests",
+      "outcomes": {
+        "victory": "The lights stop dictating the route and the archers lose the upper hand. The {encounter_label} snaps in your favor because you {encounter_objective}.",
+        "partial": "You break part of the trap, but the {encounter_label} still shifts in the canopy whenever you pause.",
+        "failure": "The hidden line closes around you before you can {encounter_objective}."
+      }
     },
     {
       "slug": "the_thornveil_nest",
@@ -271,7 +354,13 @@
       "mission_type": "pre_boss_escalation",
       "goal": "Cut into the Wilds' command center",
       "threat": "Assassins, poison vines, collapsing platforms",
-      "workout_feel": "Fast mixed-intensity flow"
+      "narrative": "Every step deeper into the nest feels like permission for the Wilds to reveal a sharper layer. The Matron is close enough now that the whole forest moves like an extension of her will.",
+      "workout_feel": "Fast mixed-intensity flow",
+      "outcomes": {
+        "victory": "You carve a line into the nest and force the real duel into the open. The {encounter_label} stays broken because you {encounter_objective}.",
+        "partial": "You reach the inner canopy, but the {encounter_label} remains tangled and hostile around the final approach.",
+        "failure": "The nest folds in on itself before you can {encounter_objective}."
+      }
     },
     {
       "slug": "the_thornveil_matron",
@@ -292,9 +381,9 @@
       "narrative": "Beneath a canopy of hanging blades and woven roots, the Matron smiles before anyone sees her move.",
       "workout_feel": "Full workout built around repeated burst phases",
       "outcomes": {
-        "victory": "The hidden paths belong to you and the Wilds finally whisper your name with respect.",
-        "partial": "The Matron fades into deeper forest and the Wilds remain divided.",
-        "failure": "The forest closes behind you and escape becomes the only victory left."
+        "victory": "The hidden paths belong to you and the Wilds finally whisper your name with respect. The {encounter_label} breaks because you {encounter_objective}.",
+        "partial": "The Matron fades into deeper forest and the {encounter_label} stays unresolved beneath the canopy.",
+        "failure": "The forest closes behind you and the {encounter_label} turns escape into the only victory left."
       }
     }
   ]

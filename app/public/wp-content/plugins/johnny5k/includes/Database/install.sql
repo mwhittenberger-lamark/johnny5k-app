@@ -205,7 +205,7 @@ CREATE TABLE IF NOT EXISTS `wp_fit_program_templates` (
 CREATE TABLE IF NOT EXISTS `wp_fit_program_template_days` (
   `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
   `program_template_id` bigint(20) unsigned NOT NULL,
-  `day_type` enum('push','pull','legs','arms_shoulders','chest','back','shoulders','arms','cardio','rest') NOT NULL,
+  `day_type` enum('push','pull','legs','full_body','arms_shoulders','chest','back','shoulders','arms','stretching','abs','cardio','rest') NOT NULL,
   `default_order` int(11) NOT NULL DEFAULT 1,
   `time_tier` enum('short','medium','full') NOT NULL DEFAULT 'medium',
   `notes` text DEFAULT NULL,
@@ -338,7 +338,7 @@ CREATE TABLE IF NOT EXISTS `wp_fit_user_training_plans` (
 CREATE TABLE IF NOT EXISTS `wp_fit_user_training_days` (
   `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
   `training_plan_id` bigint(20) unsigned NOT NULL,
-  `day_type` enum('push','pull','legs','arms_shoulders','chest','back','shoulders','arms','cardio','rest') NOT NULL,
+  `day_type` enum('push','pull','legs','full_body','arms_shoulders','chest','back','shoulders','arms','stretching','abs','cardio','rest') NOT NULL,
   `day_order` int(11) NOT NULL DEFAULT 1,
   `time_tier` enum('short','medium','full') NOT NULL DEFAULT 'medium',
   `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -369,8 +369,8 @@ CREATE TABLE IF NOT EXISTS `wp_fit_workout_sessions` (
   `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
   `user_id` bigint(20) unsigned NOT NULL,
   `session_date` date NOT NULL,
-  `planned_day_type` enum('push','pull','legs','arms_shoulders','chest','back','shoulders','arms','cardio','rest') NOT NULL,
-  `actual_day_type` enum('push','pull','legs','arms_shoulders','chest','back','shoulders','arms','cardio','rest') DEFAULT NULL,
+  `planned_day_type` enum('push','pull','legs','full_body','arms_shoulders','chest','back','shoulders','arms','stretching','abs','cardio','rest') NOT NULL,
+  `actual_day_type` enum('push','pull','legs','full_body','arms_shoulders','chest','back','shoulders','arms','stretching','abs','cardio','rest') DEFAULT NULL,
   `time_tier` enum('short','medium','full') NOT NULL DEFAULT 'medium',
   `readiness_score` tinyint(3) unsigned DEFAULT NULL,
   `started_at` datetime DEFAULT NULL,

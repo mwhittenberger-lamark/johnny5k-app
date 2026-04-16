@@ -6,6 +6,7 @@ defined( 'ABSPATH' ) || exit;
 use Johnny5k\Services\IronQuestDailyStateService;
 use Johnny5k\Services\IronQuestEntitlementService;
 use Johnny5k\Services\IronQuestMissionService;
+use Johnny5k\Services\IronQuestNarrativeService;
 use Johnny5k\Services\IronQuestProfileService;
 use Johnny5k\Services\IronQuestProgressionService;
 use Johnny5k\Services\IronQuestRegistryService;
@@ -135,6 +136,26 @@ class IronQuestController extends RestController {
 
 		register_rest_route(
 			$ns,
+			'/ironquest/missions/story/choice',
+			[
+				'methods'             => 'POST',
+				'callback'            => [ __CLASS__, 'choose_story_opening' ],
+				'permission_callback' => self::auth_callback(),
+			]
+		);
+
+		register_rest_route(
+			$ns,
+			'/ironquest/missions/story/progress',
+			[
+				'methods'             => 'POST',
+				'callback'            => [ __CLASS__, 'progress_story' ],
+				'permission_callback' => self::auth_callback(),
+			]
+		);
+
+		register_rest_route(
+			$ns,
 			'/ironquest/daily/refresh',
 			[
 				'methods'             => 'POST',
@@ -159,6 +180,16 @@ class IronQuestController extends RestController {
 			[
 				'methods'             => 'POST',
 				'callback'            => [ __CLASS__, 'fast_travel' ],
+				'permission_callback' => self::auth_callback(),
+			]
+		);
+
+		register_rest_route(
+			$ns,
+			'/ironquest/route/travel',
+			[
+				'methods'             => 'POST',
+				'callback'            => [ __CLASS__, 'travel_to_location' ],
 				'permission_callback' => self::auth_callback(),
 			]
 		);
@@ -277,6 +308,7 @@ class IronQuestController extends RestController {
 		return self::response(
 			[
 				'active_run' => $active,
+				'story_state' => self::get_story_state_for_run( $user_id, $active ),
 				'profile'    => $profile,
 				'location'   => $location_slug ? IronQuestRegistryService::get_location( $location_slug ) : null,
 				'missions'   => $location_slug ? IronQuestRegistryService::get_location_missions( $location_slug ) : [],
@@ -321,6 +353,7 @@ class IronQuestController extends RestController {
 		return self::response(
 			[
 				'run'      => $run,
+				'story_state' => self::get_story_state_for_run( $user_id, $run ),
 				'profile'  => IronQuestProfileService::get_profile( $user_id ),
 				'location' => IronQuestRegistryService::get_location( $location_slug ),
 				'mission'  => self::find_location_mission( $location_slug, $mission_slug ),
@@ -394,6 +427,82 @@ class IronQuestController extends RestController {
 		}
 
 		return self::response( $result );
+	}
+
+	public static function choose_story_opening( \WP_REST_Request $req ): \WP_REST_Response {
+		$user_id = get_current_user_id();
+		$run_id  = (int) ( $req->get_param( 'run_id' ) ?: 0 );
+
+		if ( $run_id <= 0 ) {
+			return self::message( 'A mission run id is required.', 400 );
+		}
+
+		$run = IronQuestMissionService::get_run( $run_id, $user_id );
+		if ( empty( $run ) ) {
+			return self::message( 'IronQuest mission run not found.', 404 );
+		}
+
+		$story_state = IronQuestNarrativeService::choose_opening_action(
+			$user_id,
+			$run,
+			(string) ( $req->get_param( 'choice_id' ) ?: '' ),
+			(string) ( $req->get_param( 'stance' ) ?: 'steady' )
+		);
+		$updated_run = self::sync_story_phase_on_run( $run, $user_id, $story_state );
+
+		return self::response(
+			[
+				'run'         => $updated_run,
+				'story_state' => $story_state,
+				'mission'     => self::find_location_mission( (string) ( $run['location_slug'] ?? '' ), (string) ( $run['mission_slug'] ?? '' ) ),
+				'location'    => IronQuestRegistryService::get_location( (string) ( $run['location_slug'] ?? '' ) ),
+			]
+		);
+	}
+
+	public static function progress_story( \WP_REST_Request $req ): \WP_REST_Response {
+		$user_id = get_current_user_id();
+		$run_id  = (int) ( $req->get_param( 'run_id' ) ?: 0 );
+
+		if ( $run_id <= 0 ) {
+			return self::message( 'A mission run id is required.', 400 );
+		}
+
+		$run = IronQuestMissionService::get_run( $run_id, $user_id );
+		if ( empty( $run ) ) {
+			return self::message( 'IronQuest mission run not found.', 404 );
+		}
+
+		$story_state = IronQuestNarrativeService::advance_story_after_set(
+			$user_id,
+			$run,
+			[
+				'event_type'         => (string) ( $req->get_param( 'event_type' ) ?: 'set_saved' ),
+				'exercise_name'      => (string) ( $req->get_param( 'exercise_name' ) ?: '' ),
+				'slot_type'          => (string) ( $req->get_param( 'slot_type' ) ?: '' ),
+				'exercise_order'     => (int) ( $req->get_param( 'exercise_order' ) ?: 0 ),
+				'exercise_count'     => (int) ( $req->get_param( 'exercise_count' ) ?: 0 ),
+				'set_number'         => (int) ( $req->get_param( 'set_number' ) ?: 0 ),
+				'sets_total'         => (int) ( $req->get_param( 'sets_total' ) ?: 0 ),
+				'rep_target_min'     => (int) ( $req->get_param( 'rep_target_min' ) ?: 0 ),
+				'rep_target_max'     => (int) ( $req->get_param( 'rep_target_max' ) ?: 0 ),
+				'reps_completed'     => (int) ( $req->get_param( 'reps_completed' ) ?: 0 ),
+				'current_rir'        => '' !== (string) $req->get_param( 'current_rir' ) ? (float) $req->get_param( 'current_rir' ) : null,
+				'completed_exercise' => ! empty( $req->get_param( 'completed_exercise' ) ),
+				'has_next_exercise'  => ! empty( $req->get_param( 'has_next_exercise' ) ),
+				'next_exercise_name' => (string) ( $req->get_param( 'next_exercise_name' ) ?: '' ),
+				'next_slot_type'     => (string) ( $req->get_param( 'next_slot_type' ) ?: '' ),
+				'stance'             => (string) ( $req->get_param( 'stance' ) ?: 'steady' ),
+			]
+		);
+		$updated_run = self::sync_story_phase_on_run( $run, $user_id, $story_state );
+
+		return self::response(
+			[
+				'run'         => $updated_run,
+				'story_state' => $story_state,
+			]
+		);
 	}
 
 	public static function refresh_daily_state( \WP_REST_Request $req ): \WP_REST_Response {
@@ -601,6 +710,54 @@ class IronQuestController extends RestController {
 		);
 	}
 
+	public static function travel_to_location( \WP_REST_Request $req ): \WP_REST_Response {
+		$user_id = get_current_user_id();
+
+		if ( ! IronQuestEntitlementService::user_has_access( $user_id ) ) {
+			return self::message( 'IronQuest is not enabled for this account.', 403 );
+		}
+
+		$profile = IronQuestProfileService::ensure_profile( $user_id );
+		if ( empty( $profile['enabled'] ) ) {
+			return self::message( 'IronQuest mode is turned off for this profile.', 409 );
+		}
+
+		$location_slug = sanitize_key( (string) ( $req->get_param( 'location_slug' ) ?: '' ) );
+		if ( '' === $location_slug ) {
+			return self::message( 'A destination location is required.', 400 );
+		}
+
+		$location = IronQuestRegistryService::get_location( $location_slug );
+		if ( empty( $location ) ) {
+			return self::message( 'That IronQuest region does not exist.', 404 );
+		}
+
+		$route_state        = self::build_route_state( $user_id, $profile );
+		$unlocked_locations = array_values( array_filter( array_map( 'sanitize_key', (array) ( $route_state['unlocked_locations'] ?? [] ) ) ) );
+		if ( ! in_array( $location_slug, $unlocked_locations, true ) ) {
+			return self::message( 'That region is not unlocked yet.', 409 );
+		}
+
+		$current_location_slug = sanitize_key( (string) ( $profile['current_location_slug'] ?? '' ) );
+		$mission_slug          = $current_location_slug === $location_slug
+			? sanitize_key( (string) ( $profile['active_mission_slug'] ?? '' ) )
+			: '';
+
+		if ( '' === $mission_slug || empty( self::find_location_mission( $location_slug, $mission_slug ) ) ) {
+			$mission_slug = self::resolve_default_mission_slug( $location_slug, '' );
+		}
+
+		IronQuestProfileService::set_location_and_mission( $user_id, $location_slug, $mission_slug );
+
+		return self::response(
+			[
+				'traveled'      => true,
+				'location_slug' => $location_slug,
+				'message'       => sprintf( 'Traveled to %s.', (string) ( $location['name'] ?? $location_slug ) ),
+			] + self::build_profile_payload( $user_id )
+		);
+	}
+
 	public static function admin_grant_travel_points( int $user_id, int $travel_points, string $travel_source = '', ?string $state_date = null ): array {
 		$travel_points  = max( 0, $travel_points );
 		$travel_source  = sanitize_key( $travel_source );
@@ -733,6 +890,7 @@ class IronQuestController extends RestController {
 			'missions'    => $missions,
 			'mission_board' => self::build_mission_board( $profile, $missions, $daily_state, $active_run ),
 			'active_run'  => $active_run,
+			'story_state' => self::get_story_state_for_run( $user_id, $active_run ),
 			'daily_state' => $daily_state,
 			'recent_unlocks' => array_slice( $unlock_history, 0, 6 ),
 			'unlock_history' => $unlock_history,
@@ -1629,6 +1787,7 @@ class IronQuestController extends RestController {
 		return [
 			'run'           => $completed,
 			'awards'        => $awards,
+			'story_state'   => IronQuestNarrativeService::complete_story( $user_id, $completed, $result_band, $awards ),
 			'progression'   => $progression,
 			'daily_state'   => $daily_state,
 			'changes'       => self::build_daily_progress_changes( $previous_daily_state, $daily_state ),
@@ -1638,5 +1797,27 @@ class IronQuestController extends RestController {
 			'route_changes' => $route_sync['route_changes'],
 			'profile'       => IronQuestProfileService::get_profile( $user_id ),
 		];
+	}
+
+	private static function get_story_state_for_run( int $user_id, ?array $run ): ?array {
+		if ( empty( $run['id'] ) || 'active' !== (string) ( $run['status'] ?? 'active' ) ) {
+			return null;
+		}
+
+		return IronQuestNarrativeService::get_or_create_story_state( $user_id, $run );
+	}
+
+	private static function sync_story_phase_on_run( array $run, int $user_id, array $story_state ): array {
+		$phase = sanitize_key( (string) ( $story_state['encounter_phase'] ?? '' ) );
+		if ( '' === $phase || $phase === sanitize_key( (string) ( $run['encounter_phase'] ?? '' ) ) ) {
+			return $run;
+		}
+
+		$updated = IronQuestMissionService::set_encounter_phase( (int) ( $run['id'] ?? 0 ), $user_id, $phase );
+		if ( is_wp_error( $updated ) || empty( $updated ) ) {
+			return $run;
+		}
+
+		return $updated;
 	}
 }

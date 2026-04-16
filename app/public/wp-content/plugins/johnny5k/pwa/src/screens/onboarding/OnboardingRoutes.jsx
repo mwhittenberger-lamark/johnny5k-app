@@ -1,4 +1,4 @@
-import { startTransition, useEffect, useMemo, useState } from 'react'
+import { startTransition, useEffect, useMemo, useRef, useState } from 'react'
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { dashboardApi } from '../../api/modules/dashboard'
 import { ironquestApi } from '../../api/modules/ironquest'
@@ -8,7 +8,9 @@ import AppLoadingScreen from '../../components/ui/AppLoadingScreen'
 import ClearableInput from '../../components/ui/ClearableInput'
 import ErrorState from '../../components/ui/ErrorState'
 import { resolveExperienceModeFromIronQuestPayload } from '../../lib/experienceMode'
+import { scrollAppToTop } from '../../lib/scrollAppToTop'
 import { useAuthStore } from '../../store/authStore'
+import { useJohnnyAssistantStore } from '../../store/johnnyAssistantStore'
 import {
   bodyFormFromState,
   buildHeightCm,
@@ -27,7 +29,7 @@ import {
   reminderHourOptions,
   trainingFormFromState,
 } from '../../lib/onboarding'
-import { DAY_TYPE_OPTIONS } from '../../lib/trainingDayTypes'
+import { DAY_TYPE_OPTIONS, formatTrainingDayType } from '../../lib/trainingDayTypes'
 
 const WORKOUT_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const BODY_AREAS = ['Shoulders', 'Knees', 'Back', 'Elbows', 'Hips', 'Neck']
@@ -56,6 +58,18 @@ const IRONQUEST_MOTIVATION_OPTIONS = [
   { value: 'transformation', label: 'Transformation', detail: 'You want the quest framed around visible physical change.' },
   { value: 'redemption', label: 'Redemption', detail: 'You want a comeback arc and a harder-edged story tone.' },
 ]
+const ACTIVITY_LEVEL_GUIDE = [
+  { value: 'sedentary', label: 'Sedentary', detail: 'Desk job or mostly seated days. Very little walking outside normal errands.' },
+  { value: 'light', label: 'Light', detail: 'Mostly seated, but you get some walking or standing during the day.' },
+  { value: 'moderate', label: 'Moderate', detail: 'A balanced default. You move around regularly, walk a fair amount, or stay on your feet part of the day.' },
+  { value: 'high', label: 'High', detail: 'Active job, lots of daily walking, or long stretches on your feet most days.' },
+  { value: 'athlete', label: 'Athlete', detail: 'Very high overall output. Think sport practice, endurance work, two-a-days, or manual labor plus hard training.' },
+]
+const SESSION_LENGTH_LABELS = {
+  short: 'Short (30-45 min)',
+  medium: 'Medium (45-60 min)',
+  full: 'Full (60-90 min)',
+}
 const ONBOARDING_STEPS = [
   { key: 'welcome', label: 'Welcome' },
   { key: 'profile', label: 'Body basics' },
@@ -199,6 +213,43 @@ function buildIronQuestMissionLabel(ironQuest) {
   const activeMissionSlug = String(ironQuest?.profile?.active_mission_slug || '').trim()
   const activeMission = (ironQuest?.missions ?? []).find(mission => mission.slug === activeMissionSlug)
   return activeMission?.name || ironQuest?.active_run?.mission_slug || 'Awaiting first mission'
+}
+
+function formatSessionLengthLabel(value) {
+  return SESSION_LENGTH_LABELS[String(value || '').trim()] || String(value || '').trim() || 'medium'
+}
+
+function buildBlankWeeklySchedule(schedule = []) {
+  return (Array.isArray(schedule) ? schedule : []).map((entry) => ({
+    day: entry?.day || '',
+    day_type: 'rest',
+  }))
+}
+
+function buildScheduleHelpPrompt(state) {
+  const profile = state?.profile ?? {}
+  const prefs = state?.prefs ?? {}
+  const healthFlags = Array.isArray(state?.health_flags)
+    ? state.health_flags.filter((flag) => flag?.active).map((flag) => ({
+        body_area: flag.body_area,
+        severity: flag.severity,
+      }))
+    : []
+
+  const equipment = Array.isArray(prefs?.equipment_available_json) ? prefs.equipment_available_json : []
+  const preferredFoods = prefs?.food_preferences_json?.preferred_foods || ''
+
+  const details = [
+    `experience: ${profile.training_experience || 'beginner'}`,
+    `typical session length: ${formatSessionLengthLabel(profile.available_time_default)}`,
+    `current goal: ${profile.current_goal || 'recomp'}`,
+    `workout confidence: ${prefs?.exercise_preferences_json?.workout_confidence || 'building'}`,
+    equipment.length ? `equipment: ${equipment.join(', ')}` : '',
+    healthFlags.length ? `active injury areas: ${healthFlags.map((flag) => `${flag.body_area} (${flag.severity})`).join(', ')}` : '',
+    preferredFoods ? `food context: ${preferredFoods}` : '',
+  ].filter(Boolean)
+
+  return `I just finished onboarding and I am not sure how to structure my workout week yet. Ask me the questions you need, one at a time, to build a realistic Monday-through-Sunday training schedule for me. Please cover which days I can train, which days need to stay rest, whether I want cardio or recovery days, and how hard each day should feel. Context: ${details.join('; ')}.`
 }
 
 function IronQuestSetupCard({
@@ -498,6 +549,18 @@ function BodyStep() {
             <option value="high">High</option>
             <option value="athlete">Athlete</option>
           </select>
+          <details className="onboarding-inline-help">
+            <summary>Help me pick an activity level</summary>
+            <p>Choose based on your average full week, not your hardest workout day. This should reflect how much you move outside the gym too.</p>
+            <ul className="onboarding-inline-help-list">
+              {ACTIVITY_LEVEL_GUIDE.map((option) => (
+                <li key={option.value}>
+                  <strong>{option.label}</strong>
+                  <span>{option.detail}</span>
+                </li>
+              ))}
+            </ul>
+          </details>
         </label>
         {error && <ErrorState className="onboarding-inline-error" message={error} title="Could not save this step" />}
         <StepUnlock text="Next, Johnny will build a realistic training week around your schedule and experience." />
@@ -532,15 +595,23 @@ function TrainingStep() {
     }))
   }
 
+  function updateScheduleHelpRequested(value) {
+    setForm(current => ({
+      ...current,
+      schedule_help_requested: value,
+    }))
+  }
+
   async function next(event) {
     event.preventDefault()
     setError('')
 
     try {
       const existingMeta = state?.prefs?.exercise_preferences_json ?? {}
-      const scheduledDays = form.weekly_schedule.filter(entry => entry.day_type !== 'rest')
+      const savedSchedule = form.schedule_help_requested ? buildBlankWeeklySchedule(form.weekly_schedule) : form.weekly_schedule
+      const scheduledDays = savedSchedule.filter(entry => entry.day_type !== 'rest')
 
-      if (!scheduledDays.length) {
+      if (!form.schedule_help_requested && !scheduledDays.length) {
         setError('Assign at least one training or cardio day before continuing.')
         return
       }
@@ -550,10 +621,11 @@ function TrainingStep() {
         available_time_default: form.available_time_default,
       })
       await onboardingApi.savePrefs({
-        preferred_workout_days_json: form.weekly_schedule,
+        preferred_workout_days_json: savedSchedule,
         exercise_preferences_json: {
           ...existingMeta,
           workout_confidence: form.workout_confidence,
+          schedule_help_requested: Boolean(form.schedule_help_requested),
         },
       })
       navigate('/onboarding/injuries')
@@ -581,9 +653,9 @@ function TrainingStep() {
         </label>
         <label>Typical session length
           <select value={form.available_time_default} onChange={e => setForm(current => ({ ...current, available_time_default: e.target.value }))}>
-            <option value="short">Short</option>
-            <option value="medium">Medium</option>
-            <option value="full">Full</option>
+            <option value="short">{SESSION_LENGTH_LABELS.short}</option>
+            <option value="medium">{SESSION_LENGTH_LABELS.medium}</option>
+            <option value="full">{SESSION_LENGTH_LABELS.full}</option>
           </select>
         </label>
         <label>Confidence with lifting
@@ -594,15 +666,33 @@ function TrainingStep() {
           </select>
         </label>
         <div className="dash-card settings-section onboarding-split-card">
-          <strong>Set your week</strong>
-          <p className="settings-subtitle">Choose what each day should do. Use rest on days you want protected off-days.</p>
-          <div className="onboarding-schedule-list">
+          <div className="onboarding-schedule-head">
+            <div>
+              <strong>Set your week</strong>
+              <p className="settings-subtitle">Choose what each day should do. Use rest on days you want protected off-days.</p>
+            </div>
+            <button
+              type="button"
+              className={`btn-outline small onboarding-schedule-help-toggle${form.schedule_help_requested ? ' active' : ''}`}
+              aria-pressed={form.schedule_help_requested}
+              onClick={() => updateScheduleHelpRequested(!form.schedule_help_requested)}
+            >
+              {form.schedule_help_requested ? 'Johnny will help me' : "I need Johnny's help"}
+            </button>
+          </div>
+          {form.schedule_help_requested ? (
+            <div className="onboarding-schedule-help-card">
+              <strong>Not sure yet is fine</strong>
+              <p>Finish onboarding and Johnny will open automatically to ask the follow-up questions needed to build your weekly schedule with you.</p>
+            </div>
+          ) : null}
+          <div className={`onboarding-schedule-list${form.schedule_help_requested ? ' disabled' : ''}`}>
             {WORKOUT_DAYS.map(day => {
               const scheduled = form.weekly_schedule.find(entry => entry.day === day) || { day, day_type: 'rest' }
               return (
                 <label key={day} className="onboarding-schedule-row onboarding-schedule-field">
                   <span>{day}</span>
-                  <select value={scheduled.day_type} onChange={e => updateSchedule(day, e.target.value)}>
+                  <select value={scheduled.day_type} onChange={e => updateSchedule(day, e.target.value)} disabled={form.schedule_help_requested}>
                     {DAY_TYPE_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                   </select>
                 </label>
@@ -769,10 +859,14 @@ function InjuriesStep() {
             </div>
           ) : null}
         </div>
-        <div className="onboarding-chip-grid">
-          {BODY_AREAS.map(area => (
-            <button key={area} type="button" className={`onboarding-chip ${flagMap.get(area)?.active ? 'active' : ''}`} onClick={() => toggleFlag(area)}>{area}</button>
-          ))}
+        <div className="dash-card settings-section">
+          <strong>Body areas with injuries or pain</strong>
+          <p className="settings-subtitle">Click the body parts where you have an injury, pain point, or limitation Johnny should protect in your plan.</p>
+          <div className="onboarding-chip-grid">
+            {BODY_AREAS.map(area => (
+              <button key={area} type="button" className={`onboarding-chip ${flagMap.get(area)?.active ? 'active' : ''}`} onClick={() => toggleFlag(area)}>{area}</button>
+            ))}
+          </div>
         </div>
         {form.flags.filter(flag => flag.active).map(flag => (
           <div key={flag.body_area} className="dash-card settings-section">
@@ -1133,6 +1227,7 @@ function CompleteStep() {
   const navigate = useNavigate()
   const setAuth = useAuthStore(store => store.setAuth)
   const setExperienceMode = useAuthStore(store => store.setExperienceMode)
+  const openDrawer = useJohnnyAssistantStore(state => state.openDrawer)
   const { loading, state } = useLoadedOnboardingState()
   const [submitting, setSubmitting] = useState(false)
   const [result, setResult] = useState(null)
@@ -1140,10 +1235,22 @@ function CompleteStep() {
   const [ironQuest, setIronQuest] = useState(null)
   const [ironQuestLoading, setIronQuestLoading] = useState(false)
   const [ironQuestError, setIronQuestError] = useState('')
+  const scheduleHelpOpenedRef = useRef(false)
+
+  const scheduleHelpRequested = Boolean(state?.prefs?.exercise_preferences_json?.schedule_help_requested)
 
   function applyIronQuestState(payload) {
     setIronQuest(payload)
   }
+
+  useEffect(() => {
+    scrollAppToTop({ behavior: 'auto' })
+  }, [])
+
+  useEffect(() => {
+    if (!result) return
+    scrollAppToTop({ behavior: 'auto' })
+  }, [result])
 
   useEffect(() => {
     if (!result) return undefined
@@ -1173,6 +1280,27 @@ function CompleteStep() {
     }
   }, [result, setExperienceMode])
 
+  useEffect(() => {
+    if (!result || !scheduleHelpRequested || scheduleHelpOpenedRef.current) return
+
+    scheduleHelpOpenedRef.current = true
+    openDrawer(buildScheduleHelpPrompt(state), {
+      context: {
+        source: 'onboarding_complete_schedule_help',
+        onboarding_schedule_help: true,
+        training_experience: state?.profile?.training_experience || 'beginner',
+        available_time_default: state?.profile?.available_time_default || 'medium',
+        workout_confidence: state?.prefs?.exercise_preferences_json?.workout_confidence || 'building',
+        health_flags: Array.isArray(state?.health_flags) ? state.health_flags.filter((flag) => flag?.active) : [],
+        equipment_available: Array.isArray(state?.prefs?.equipment_available_json) ? state.prefs.equipment_available_json : [],
+      },
+      meta: {
+        source: 'onboarding_complete_schedule_help',
+        route: '/onboarding/complete',
+      },
+    })
+  }, [openDrawer, result, scheduleHelpRequested, state])
+
   async function finish() {
     setSubmitting(true)
     setError('')
@@ -1201,9 +1329,15 @@ function CompleteStep() {
       <StepLayout
         stepKey="complete"
         title="Start your plan"
-        subtitle="Your targets and first-week split are ready."
+        subtitle={scheduleHelpRequested ? 'Your targets are ready, and Johnny is helping you build the right week.' : 'Your targets and first-week split are ready.'}
         why="This is the personalized starting point Johnny built from the information you just gave him."
       >
+        {scheduleHelpRequested ? (
+          <div className="dash-card settings-section onboarding-schedule-help-card onboarding-schedule-help-card-result">
+            <h3>Johnny is helping with your week</h3>
+            <p>The chat drawer opened automatically so Johnny can ask the follow-up questions needed to build a realistic Monday-through-Sunday schedule with you.</p>
+          </div>
+        ) : null}
         <div className="dash-card settings-section">
           <h3>Johnny&apos;s message</h3>
           <p>{hypeMessage}</p>
@@ -1214,10 +1348,12 @@ function CompleteStep() {
           <div className="target-preview-row"><span>Carbs</span><strong>{targets.target_carbs_g}g</strong></div>
           <div className="target-preview-row"><span>Fat</span><strong>{targets.target_fat_g}g</strong></div>
         </div>
-        <div className="dash-card settings-section">
-          <h3>First week split</h3>
-          {(result.week_split ?? []).map(day => <p key={`${day.day_order}-${day.day_type}`}>{day.day_order}. {String(day.day_type).replaceAll('_', ' ')} ({day.time_tier})</p>)}
-        </div>
+        {!scheduleHelpRequested ? (
+          <div className="dash-card settings-section">
+            <h3>First week split</h3>
+            {(result.week_split ?? []).map(day => <p key={`${day.day_order}-${day.day_type}`}>{day.day_order}. {formatTrainingDayType(day.day_type)} ({day.time_tier})</p>)}
+          </div>
+        ) : null}
         <div className="dash-card settings-section">
           <h3>Suggested meals</h3>
           {(result.suggested_meals ?? []).map(meal => (
@@ -1312,8 +1448,8 @@ function CompleteStep() {
           </div>
           <div className="onboarding-review-list">
             <div className="onboarding-review-row"><span>Experience</span><strong>{state?.profile?.training_experience || 'beginner'}</strong></div>
-            <div className="onboarding-review-row"><span>Session length</span><strong>{state?.profile?.available_time_default || 'medium'}</strong></div>
-            <div className="onboarding-review-row"><span>Week</span><strong>{preferredSchedule.length ? preferredSchedule.map(entry => `${entry.day} ${String(entry.day_type).replaceAll('_', ' ')}`).join(', ') : 'Not set'}</strong></div>
+            <div className="onboarding-review-row"><span>Session length</span><strong>{formatSessionLengthLabel(state?.profile?.available_time_default)}</strong></div>
+            <div className="onboarding-review-row"><span>Week</span><strong>{scheduleHelpRequested ? 'Johnny will help build this after onboarding' : preferredSchedule.length ? preferredSchedule.map(entry => `${entry.day} ${formatTrainingDayType(entry.day_type)}`).join(', ') : 'Not set'}</strong></div>
           </div>
         </div>
         <div className="dash-card settings-section onboarding-review-card">

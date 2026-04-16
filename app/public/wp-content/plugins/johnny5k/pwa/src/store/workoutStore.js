@@ -799,13 +799,34 @@ export const useWorkoutStore = create(persist((set, get) => ({
 
 async function startIronQuestMissionForSession(sessionData) {
   const sessionId = Number(sessionData?.session?.id || 0)
-  const runType = normalizeIronQuestRunType(sessionData?.session?.day_type)
+  const runType = normalizeIronQuestRunType(
+    sessionData?.session?.actual_day_type
+      || sessionData?.session?.planned_day_type
+      || sessionData?.session?.day_type
+  )
 
   if (!sessionId || !runType) {
     return null
   }
 
   try {
+    const activeMissionState = await ironquestApi.activeMission()
+    const activeRun = activeMissionState?.active_run ?? null
+
+    if (activeRun && String(activeRun?.source_session_id || '') === String(sessionId) && String(activeRun?.status || '') === 'active') {
+      const missionSlug = String(activeRun?.mission_slug || '').trim()
+      const matchingMission = Array.isArray(activeMissionState?.missions)
+        ? activeMissionState.missions.find((mission) => String(mission?.slug || '').trim() === missionSlug) ?? null
+        : null
+
+      return {
+        run: activeRun,
+        profile: activeMissionState?.profile ?? null,
+        location: activeMissionState?.location ?? null,
+        mission: matchingMission,
+      }
+    }
+
     return await ironquestApi.startMission({
       run_type: runType,
       source_session_id: String(sessionId),

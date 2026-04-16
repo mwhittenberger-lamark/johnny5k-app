@@ -162,6 +162,7 @@ export default function WorkoutScreen() {
     takeRestDay,
     previewDayType: planning.previewDayType,
     customWorkoutDraft,
+    readinessScore,
     scheduledDayType,
     displayDayType: planning.displayDayType,
     displaySessionTitle: planning.displaySessionTitle,
@@ -448,6 +449,7 @@ export default function WorkoutScreen() {
       wasResumed={wasResumed}
       readinessScore={readinessScore}
       scheduledDayType={scheduledDayType}
+      statusNotice={statusNotice}
       statusError={statusError}
       todayLabel={todayLabel}
       displayDayType={planning.displayDayType}

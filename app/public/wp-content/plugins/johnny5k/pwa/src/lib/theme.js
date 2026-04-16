@@ -1,5 +1,6 @@
 export const COLOR_SCHEME_STORAGE_KEY = 'jf_color_scheme'
 export const DEFAULT_COLOR_SCHEME = 'classic'
+export const DEFAULT_IRONQUEST_COLOR_SCHEME = 'ironquest-codex'
 
 export const DEFAULT_COLOR_SCHEMES = [
   {
@@ -117,7 +118,82 @@ export const DEFAULT_COLOR_SCHEMES = [
       yellow: '#E2B93B',
     },
   },
+  {
+    id: 'ironquest-codex',
+    label: 'IronQuest Codex',
+    description: 'Warm parchment, ink-dark copy, and brass accents for a readable quest journal look.',
+    colors: {
+      bg: '#F3E9D7',
+      bg2: '#FFF9EF',
+      bg3: '#E5D4B5',
+      text: '#2D2418',
+      textMuted: '#6B5943',
+      text2: '#2D2418',
+      textMuted2: '#6B5943',
+      text3: '#2D2418',
+      textMuted3: '#6B5943',
+      border: '#C8AB78',
+      accent: '#A9562E',
+      accent2: '#59703B',
+      accent3: '#B98A20',
+      danger: '#B94A43',
+      success: '#4F7D46',
+      yellow: '#D8AE3B',
+    },
+  },
+  {
+    id: 'ironquest-ember',
+    label: 'IronQuest Ember',
+    description: 'Charcoal panels, bone text, and ember-metal accents for a darker war-room look.',
+    colors: {
+      bg: '#17131A',
+      bg2: '#241D25',
+      bg3: '#352B33',
+      text: '#F5EEDF',
+      textMuted: '#C8B9A4',
+      text2: '#F5EEDF',
+      textMuted2: '#C8B9A4',
+      text3: '#F5EEDF',
+      textMuted3: '#C8B9A4',
+      border: '#7C6752',
+      accent: '#C5673A',
+      accent2: '#D0A73A',
+      accent3: '#7E8FB2',
+      danger: '#DA6A61',
+      success: '#6FA66B',
+      yellow: '#E0BE59',
+    },
+  },
+  {
+    id: 'ironquest-grove',
+    label: 'IronQuest Grove',
+    description: 'Mossy paper tones, deep forest text, and copper highlights for a field-map look.',
+    colors: {
+      bg: '#E6EEE5',
+      bg2: '#F7FBF3',
+      bg3: '#D1DDD1',
+      text: '#213127',
+      textMuted: '#55685D',
+      text2: '#213127',
+      textMuted2: '#55685D',
+      text3: '#213127',
+      textMuted3: '#55685D',
+      border: '#9EB19F',
+      accent: '#A35A39',
+      accent2: '#467663',
+      accent3: '#B49A53',
+      danger: '#B4554C',
+      success: '#3F8559',
+      yellow: '#CFB85D',
+    },
+  },
 ]
+
+export const IRONQUEST_COLOR_SCHEME_IDS = new Set([
+  'ironquest-codex',
+  'ironquest-ember',
+  'ironquest-grove',
+])
 
 let availableColorSchemes = DEFAULT_COLOR_SCHEMES
 
@@ -195,13 +271,25 @@ function normalizeScheme(option, index) {
 }
 
 export function setAvailableColorSchemes(schemes) {
-  const source = Array.isArray(schemes) && schemes.length ? schemes : DEFAULT_COLOR_SCHEMES
-  availableColorSchemes = source.map((option, index) => normalizeScheme(option, index))
+  const provided = Array.isArray(schemes) && schemes.length ? schemes : DEFAULT_COLOR_SCHEMES
+  const providedIds = new Set(provided.map((option) => String(option?.id || '').trim()).filter(Boolean))
+  const merged = [
+    ...provided,
+    ...DEFAULT_COLOR_SCHEMES.filter((option) => !providedIds.has(option.id)),
+  ]
+
+  availableColorSchemes = merged.map((option, index) => normalizeScheme(option, index))
   return availableColorSchemes
 }
 
 export function getDefaultColorSchemeId() {
   return availableColorSchemes[0]?.id || DEFAULT_COLOR_SCHEME
+}
+
+export function getDefaultIronQuestColorSchemeId() {
+  return availableColorSchemes.some((option) => option.id === DEFAULT_IRONQUEST_COLOR_SCHEME)
+    ? DEFAULT_IRONQUEST_COLOR_SCHEME
+    : getDefaultColorSchemeId()
 }
 
 export function getColorSchemeOptions() {
@@ -210,6 +298,10 @@ export function getColorSchemeOptions() {
 
 export function normalizeColorScheme(value) {
   return availableColorSchemes.some(option => option.id === value) ? value : getDefaultColorSchemeId()
+}
+
+export function isIronQuestColorScheme(value) {
+  return IRONQUEST_COLOR_SCHEME_IDS.has(normalizeColorScheme(value))
 }
 
 export function getColorScheme(value) {
@@ -222,26 +314,22 @@ export function getStoredColorScheme() {
   return normalizeColorScheme(window.localStorage.getItem(COLOR_SCHEME_STORAGE_KEY))
 }
 
-export function applyColorScheme(value) {
+export function applyColorScheme(value, options = {}) {
   const scheme = getColorScheme(value)
   const themeMode = getThemeMode(scheme.colors)
 
   if (typeof document !== 'undefined') {
     const root = document.documentElement
-    const ironQuestActive = root.dataset.experienceMode === 'ironquest'
-
-    if (!ironQuestActive) {
-      root.style.setProperty('--bg', scheme.colors.bg)
-      root.style.setProperty('--bg2', scheme.colors.bg2)
-      root.style.setProperty('--bg3', scheme.colors.bg3)
-      root.style.setProperty('--border', scheme.colors.border)
-      root.style.setProperty('--text', scheme.colors.text)
-      root.style.setProperty('--text-muted', scheme.colors.textMuted)
-      root.style.setProperty('--text2', scheme.colors.text2)
-      root.style.setProperty('--text-muted2', scheme.colors.textMuted2)
-      root.style.setProperty('--text3', scheme.colors.text3)
-      root.style.setProperty('--text-muted3', scheme.colors.textMuted3)
-    }
+    root.style.setProperty('--bg', scheme.colors.bg)
+    root.style.setProperty('--bg2', scheme.colors.bg2)
+    root.style.setProperty('--bg3', scheme.colors.bg3)
+    root.style.setProperty('--border', scheme.colors.border)
+    root.style.setProperty('--text', scheme.colors.text)
+    root.style.setProperty('--text-muted', scheme.colors.textMuted)
+    root.style.setProperty('--text2', scheme.colors.text2)
+    root.style.setProperty('--text-muted2', scheme.colors.textMuted2)
+    root.style.setProperty('--text3', scheme.colors.text3)
+    root.style.setProperty('--text-muted3', scheme.colors.textMuted3)
 
     root.style.setProperty('--accent', scheme.colors.accent)
     root.style.setProperty('--accent2', scheme.colors.accent2)
@@ -250,11 +338,11 @@ export function applyColorScheme(value) {
     root.style.setProperty('--success', scheme.colors.success)
     root.style.setProperty('--yellow', scheme.colors.yellow)
     root.dataset.colorScheme = scheme.id
-    root.dataset.themeMode = ironQuestActive ? 'dark' : themeMode
-    root.style.colorScheme = ironQuestActive ? 'dark' : themeMode
+    root.dataset.themeMode = themeMode
+    root.style.colorScheme = themeMode
   }
 
-  if (typeof window !== 'undefined') {
+  if (typeof window !== 'undefined' && options.persist !== false) {
     window.localStorage.setItem(COLOR_SCHEME_STORAGE_KEY, scheme.id)
   }
 

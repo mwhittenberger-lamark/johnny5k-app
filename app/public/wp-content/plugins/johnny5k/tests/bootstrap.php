@@ -10,7 +10,7 @@ if ( ! defined( 'JF_VERSION' ) ) {
 }
 
 if ( ! defined( 'JF_DB_VERSION' ) ) {
-	define( 'JF_DB_VERSION', '1.1.12' );
+	define( 'JF_DB_VERSION', '1.1.14' );
 }
 
 if ( ! defined( 'JF_PLUGIN_FILE' ) ) {
@@ -289,6 +289,16 @@ if ( ! function_exists( 'add_action' ) ) {
 if ( ! function_exists( 'add_filter' ) ) {
 	function add_filter( string $hook, callable|array|string $callback, int $priority = 10, int $accepted_args = 1 ): bool {
 		return johnny5k_test_store_hook( 'filters', $hook, $callback, $priority, $accepted_args );
+	}
+}
+
+if ( ! function_exists( 'remove_all_filters' ) ) {
+	function remove_all_filters( string $hook ): bool {
+		if ( isset( $GLOBALS['johnny5k_test_hooks']['filters'][ $hook ] ) ) {
+			unset( $GLOBALS['johnny5k_test_hooks']['filters'][ $hook ] );
+		}
+
+		return true;
 	}
 }
 
@@ -1082,6 +1092,7 @@ require_once dirname( __DIR__ ) . '/includes/Services/class-support-guide-servic
 require_once dirname( __DIR__ ) . '/includes/Services/class-ai-prompt-service.php';
 require_once dirname( __DIR__ ) . '/includes/Services/class-cost-tracker.php';
 require_once dirname( __DIR__ ) . '/includes/Services/class-ai-service.php';
+require_once dirname( __DIR__ ) . '/includes/Services/class-ironquest-ai-narrative-service.php';
 require_once dirname( __DIR__ ) . '/includes/Services/class-coach-delivery-service.php';
 require_once dirname( __DIR__ ) . '/includes/Services/class-behavior-analytics-service.php';
 require_once dirname( __DIR__ ) . '/includes/Services/class-workout-action-service.php';

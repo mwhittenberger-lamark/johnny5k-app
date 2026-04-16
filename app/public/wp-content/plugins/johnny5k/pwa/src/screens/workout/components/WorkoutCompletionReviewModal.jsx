@@ -65,6 +65,8 @@ export default function WorkoutCompletionReviewModal({ completionReview, starter
               <div className="workout-ironquest-moment-copy">
                 <h3>{completionReview.ironQuestReveal.title}</h3>
                 <p>{completionReview.ironQuestReveal.outcome.charAt(0).toUpperCase()}{completionReview.ironQuestReveal.outcome.slice(1)}. The quest payout is locked in.</p>
+                {completionReview.ironQuestReveal.storyConclusion ? <p>{completionReview.ironQuestReveal.storyConclusion}</p> : null}
+                {completionReview.ironQuestReveal.storyEpilogue ? <p>{completionReview.ironQuestReveal.storyEpilogue}</p> : null}
               </div>
             </div>
             <div className="workout-complete-review-stats">

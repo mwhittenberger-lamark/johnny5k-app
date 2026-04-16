@@ -6,6 +6,8 @@ defined( 'ABSPATH' ) || exit;
 use Johnny5k\Services\CalorieEngine;
 use Johnny5k\Services\AwardEngine;
 use Johnny5k\Services\BehaviorAnalyticsService;
+use Johnny5k\Services\IronQuestProfileService;
+use Johnny5k\Services\IronQuestRegistryService;
 use Johnny5k\Services\TrainingEngine;
 use Johnny5k\Services\UserTime;
 use Johnny5k\Support\PrivateMediaService;
@@ -119,8 +121,11 @@ class OnboardingController {
 				'callback'            => [ __CLASS__, 'generate_personalized_images' ],
 				'permission_callback' => $auth,
 				'args'                => [
-					'prompt' => [ 'required' => false, 'type' => 'string', 'sanitize_callback' => 'sanitize_textarea_field' ],
-					'count'  => [ 'required' => false, 'type' => 'integer' ],
+					'prompt'                    => [ 'required' => false, 'type' => 'string', 'sanitize_callback' => 'sanitize_textarea_field' ],
+					'count'                     => [ 'required' => false, 'type' => 'integer' ],
+					'generation_context'        => [ 'required' => false, 'type' => 'string', 'sanitize_callback' => 'sanitize_key' ],
+					'ironquest_class_slug'      => [ 'required' => false, 'type' => 'string', 'sanitize_callback' => 'sanitize_key' ],
+					'ironquest_motivation_slug' => [ 'required' => false, 'type' => 'string', 'sanitize_callback' => 'sanitize_key' ],
 				],
 			],
 		] );
@@ -188,6 +193,64 @@ class OnboardingController {
 			'completion_ready'    => empty( $missing_fields ),
 			'missing_profile_fields' => $missing_fields,
 		] );
+	}
+
+	public static function repair_active_training_plan_from_preferences( int $user_id ): bool {
+		if ( $user_id <= 0 ) {
+			return false;
+		}
+
+		global $wpdb;
+		$p = $wpdb->prefix;
+
+		$plan = $wpdb->get_row( $wpdb->prepare(
+			"SELECT * FROM {$p}fit_user_training_plans WHERE user_id = %d AND active = 1 ORDER BY created_at DESC LIMIT 1",
+			$user_id
+		) );
+		if ( ! $plan ) {
+			return false;
+		}
+
+		$current_days = $wpdb->get_results( $wpdb->prepare(
+			"SELECT id, day_type, day_order, time_tier FROM {$p}fit_user_training_days WHERE training_plan_id = %d ORDER BY day_order",
+			(int) $plan->id
+		) ) ?: [];
+		if ( empty( $current_days ) ) {
+			return false;
+		}
+
+		$needs_repair = false;
+		foreach ( $current_days as $day ) {
+			if ( ! TrainingDayTypes::is_valid( $day->day_type ?? '' ) ) {
+				$needs_repair = true;
+				break;
+			}
+		}
+
+		if ( ! $needs_repair ) {
+			return false;
+		}
+
+		$preferences = $wpdb->get_row( $wpdb->prepare(
+			"SELECT preferred_workout_days_json FROM {$p}fit_user_preferences WHERE user_id = %d",
+			$user_id
+		) );
+		$schedule = self::normalize_preferred_schedule( json_decode( (string) ( $preferences->preferred_workout_days_json ?? '' ), true ) );
+		if ( empty( $schedule ) ) {
+			return false;
+		}
+
+		$profile = $wpdb->get_row( $wpdb->prepare(
+			"SELECT * FROM {$p}fit_user_profiles WHERE user_id = %d",
+			$user_id
+		) );
+		if ( ! $profile ) {
+			return false;
+		}
+
+		self::rebuild_training_plan_days( (int) $plan->id, (int) ( $plan->program_template_id ?? 0 ), $profile, $schedule );
+
+		return true;
 	}
 
 	public static function upload_headshot( \WP_REST_Request $req ): \WP_REST_Response {
@@ -304,7 +367,8 @@ class OnboardingController {
 		if ( $generation_count > $remaining_generation_count ) {
 			return new \WP_REST_Response( [ 'message' => sprintf( 'You can generate %d more image%s today. Lower this run to %d.', $remaining_generation_count, 1 === $remaining_generation_count ? '' : 's', $remaining_generation_count ) ], 400 );
 		}
-		$scenarios = self::get_generation_scenarios();
+		$image_context = self::get_image_generation_context( $req, $user_id );
+		$scenarios = self::get_generation_scenarios( $image_context );
 		$scenarios = array_slice( $scenarios, 0, $generation_count );
 		$progress_photo_data_urls = self::get_latest_progress_photo_data_urls( $user_id, 3 );
 		$headshot_data_url = self::attachment_to_ai_data_url( $headshot_attachment_id );
@@ -321,7 +385,7 @@ class OnboardingController {
 		$created_items = [];
 
 		foreach ( $scenarios as $scenario ) {
-			$prompt = self::build_personalized_image_prompt( $custom_prompt, $scenario, $user_id );
+			$prompt = self::build_personalized_image_prompt( $custom_prompt, $scenario, $user_id, $image_context );
 			$result = \Johnny5k\Services\GeminiImageService::generate_image( $user_id, $prompt, $reference_images, [
 				'aspect_ratio' => '1:1',
 				'image_size'   => '2K',
@@ -836,7 +900,11 @@ class OnboardingController {
 		return $normalized;
 	}
 
-	private static function get_generation_scenarios(): array {
+	private static function get_generation_scenarios( array $image_context = [] ): array {
+		if ( self::is_ironquest_image_context( $image_context ) ) {
+			return self::get_ironquest_generation_scenarios( $image_context );
+		}
+
 		$defaults = [
 			[ 'label' => 'Gym dumbbell session', 'prompt' => 'Johnny and the user training side by side with dumbbells in a modern gym.' ],
 			[ 'label' => 'Park run', 'prompt' => 'Johnny and the user running together through a bright city park trail.' ],
@@ -866,6 +934,121 @@ class OnboardingController {
 		return $scenarios;
 	}
 
+	private static function get_ironquest_generation_scenarios( array $image_context ): array {
+		$class_slug = sanitize_key( (string) ( $image_context['class_slug'] ?? '' ) );
+		$location_name = sanitize_text_field( (string) ( $image_context['location_name'] ?? 'The Training Grounds' ) );
+		$location_theme = sanitize_text_field( (string) ( $image_context['location_theme'] ?? 'open training yard, banners, wooden dummies, early adventure gear' ) );
+
+		$scenarios_by_class = [
+			'warrior' => [
+				[
+					'label'  => 'Banner Yard Vanguard',
+					'prompt' => "Johnny and the user stand in {$location_name} as a banner-lined proving yard with {$location_theme}, heavy armor accents, scarred weapons, and a direct heroic stance.",
+				],
+				[
+					'label'  => 'Forge Oath Portrait',
+					'prompt' => "Johnny and the user pause beside a brazier-lit war camp near {$location_name}, layered in practical steel, worn cloaks, and oath-bound warrior imagery.",
+				],
+				[
+					'label'  => 'Shieldwall Arrival',
+					'prompt' => "Johnny guides the user through the gates of {$location_name}, surrounded by recruits, shields, standards, and the energy of a first campaign.",
+				],
+				[
+					'label'  => 'Dawn Champion',
+					'prompt' => "Johnny and the user face first light over {$location_name}, dust in the air, weapon-ready posture, and the look of a disciplined champion preparing for the day.",
+				],
+			],
+			'ranger' => [
+				[
+					'label'  => 'Dawn Trail Scout',
+					'prompt' => "Johnny and the user move through the edge of {$location_name} at dawn, with {$location_theme}, travel cloaks, survival gear, and the calm precision of a ranger pair.",
+				],
+				[
+					'label'  => 'Wayfinder Overlook',
+					'prompt' => "Johnny and the user stand on a stone overlook above {$location_name}, wind pulling at layered gear, map straps, and a vigilant long-range scouting posture.",
+				],
+				[
+					'label'  => 'Lantern Patrol',
+					'prompt' => "Johnny and the user patrol a twilight route around {$location_name} with lantern glow, rugged leather, bows, and quiet expedition energy.",
+				],
+				[
+					'label'  => 'Greenpath Oath',
+					'prompt' => "Johnny and the user rest in a wild camp just beyond {$location_name}, surrounded by bedrolls, travel gear, and a grounded heroic-adventure mood.",
+				],
+			],
+			'mage' => [
+				[
+					'label'  => 'Arcane Proving Ground',
+					'prompt' => "Johnny and the user stand in {$location_name} as a spell-lit proving ground with {$location_theme}, floating sigils, disciplined posture, and controlled blue-gold arcane energy.",
+				],
+				[
+					'label'  => 'Stormglass Ritual',
+					'prompt' => "Johnny and the user hold a ritual stance on a stone overlook above {$location_name}, with runes, ember-light, drifting cloth, and focused magical power gathering around the user.",
+				],
+				[
+					'label'  => 'Runesmith Hall',
+					'prompt' => "Johnny mentors the user inside a fortified chamber linked to {$location_name}, surrounded by glyphs, tomes, ward-lines, and high-fantasy magical instrumentation.",
+				],
+				[
+					'label'  => 'Aether March',
+					'prompt' => "Johnny and the user stride through {$location_name} with faint runic trails in the air, ceremonial gear, and the feeling of a mage stepping into destiny.",
+				],
+			],
+			'rogue' => [
+				[
+					'label'  => 'Lantern Court Shadow',
+					'prompt' => "Johnny and the user move through a lantern-lit training court in {$location_name} with {$location_theme}, fitted leather layers, hidden blades, and agile confidence.",
+				],
+				[
+					'label'  => 'Silent Alley Pact',
+					'prompt' => "Johnny and the user pause in a narrow stone passage off {$location_name}, dramatic side-light cutting across cloaks, daggers, and a tense stealth-mission mood.",
+				],
+				[
+					'label'  => 'Rooftop Watch',
+					'prompt' => "Johnny and the user crouch above {$location_name} on tiled rooftops at blue hour, wrapped in travel gear, shadow, and elegant rogue precision.",
+				],
+				[
+					'label'  => 'Night Market Ghost',
+					'prompt' => "Johnny and the user thread through a crowded fantasy market near {$location_name}, with coded signals, hidden tools, and a sharp underworld energy.",
+				],
+			],
+		];
+
+		$scenarios = $scenarios_by_class[ $class_slug ] ?? [
+			[
+				'label'  => 'Questbound Arrival',
+				'prompt' => "Johnny and the user arrive in {$location_name} with {$location_theme}, early adventure gear, a heroic fantasy tone, and the feeling of a first quest beginning.",
+			],
+			[
+				'label'  => 'Companion Portrait',
+				'prompt' => "Johnny stands beside the user in {$location_name}, posed like mentor and hero at the start of a fantasy campaign, with atmospheric detail and grounded adventure styling.",
+			],
+			[
+				'label'  => 'Campfire Oath',
+				'prompt' => "Johnny and the user hold a quiet pre-mission moment outside {$location_name}, surrounded by travel gear, banners, and a cinematic fantasy atmosphere.",
+			],
+			[
+				'label'  => 'First Mission Briefing',
+				'prompt' => "Johnny and the user prepare for a first mission in {$location_name}, with quest-board details, layered costumes, and a dramatic high-fantasy introduction.",
+			],
+		];
+
+		return array_map(
+			static function( array $scenario, int $index ): array {
+				$label = sanitize_text_field( (string) ( $scenario['label'] ?? '' ) );
+				$prompt = sanitize_textarea_field( (string) ( $scenario['prompt'] ?? '' ) );
+
+				return [
+					'slug'   => self::build_generation_scenario_slug( $label, $index ),
+					'label'  => $label,
+					'prompt' => $prompt,
+				];
+			},
+			$scenarios,
+			array_keys( $scenarios )
+		);
+	}
+
 	private static function build_generation_scenario_slug( string $label, int $index ): string {
 		$slug = sanitize_title( $label );
 		if ( '' === $slug ) {
@@ -875,7 +1058,7 @@ class OnboardingController {
 		return $slug;
 	}
 
-	private static function build_personalized_image_prompt( string $custom_prompt, array $scenario, int $user_id ): string {
+	private static function build_personalized_image_prompt( string $custom_prompt, array $scenario, int $user_id, array $image_context = [] ): string {
 		global $wpdb;
 		$profile = $wpdb->get_row( $wpdb->prepare(
 			"SELECT first_name, current_goal FROM {$wpdb->prefix}fit_user_profiles WHERE user_id = %d",
@@ -885,6 +1068,28 @@ class OnboardingController {
 		$goal = sanitize_text_field( (string) ( $profile->current_goal ?? 'recomp' ) );
 		$scenario_prompt = sanitize_text_field( (string) ( $scenario['prompt'] ?? '' ) );
 		$custom_prompt = trim( $custom_prompt );
+
+		if ( self::is_ironquest_image_context( $image_context ) ) {
+			$class_profile = self::describe_ironquest_class( (string) ( $image_context['class_slug'] ?? '' ) );
+			$motivation_profile = self::describe_ironquest_motivation( (string) ( $image_context['motivation_slug'] ?? '' ) );
+			$location_name = sanitize_text_field( (string) ( $image_context['location_name'] ?? 'The Training Grounds' ) );
+			$location_theme = sanitize_text_field( (string) ( $image_context['location_theme'] ?? 'open training yard, banners, wooden dummies, early adventure gear' ) );
+			$location_tone = sanitize_text_field( (string) ( $image_context['location_tone'] ?? 'hopeful, structured, heroic beginnings' ) );
+
+			$base_prompt = "Create a square cinematic fantasy portrait for IronQuest featuring Johnny and {$first_name}. The user must match the uploaded headshot and progress-photo references. Johnny must match the uploaded Johnny reference image. Keep both faces faithful, recognizable, and flattering without changing identity. Present the user as the central quest hero and Johnny as a seasoned guide within {$location_name}. The user's class identity is {$class_profile['label']} with {$class_profile['direction']}. Their motivation arc is {$motivation_profile['label']} with {$motivation_profile['direction']}. Build the environment around {$location_theme}. Tone: {$location_tone}. The user's real fitness goal is {$goal}.";
+
+			if ( '' !== $custom_prompt ) {
+				$base_prompt .= ' Primary user direction (highest priority): ' . $custom_prompt . '.';
+			}
+
+			$base_prompt .= ' Scenario anchor: ' . $scenario_prompt . '.';
+			$base_prompt .= ' This must read as IronQuest fantasy artwork, not a modern gym photo, sports ad, or standard workout snapshot.';
+			$base_prompt .= ' Use grounded high-fantasy wardrobe, props, and environmental storytelling. Avoid dumbbells, benches, treadmills, gym mats, and modern fitness equipment unless the user explicitly asks for them.';
+			$base_prompt .= ' Do not use or resemble Keanu Reeves. Keep both faces faithful to the provided reference images only.';
+			$base_prompt .= ' Use premium cinematic-fantasy portrait styling, atmospheric depth, dramatic but coherent lighting, no text, no watermark overlays, and no collage layout.';
+
+			return $base_prompt;
+		}
 
 		$base_prompt = "Create a photorealistic square image featuring Johnny and {$first_name}. The user must match the uploaded headshot and progress-photo references. Johnny must match the uploaded Johnny reference image. Show both people together in the same scene, with realistic anatomy, natural skin texture, and believable gym or outdoor sports photography. Keep the user recognizable and flattering without changing identity. The user's fitness goal is {$goal}.";
 
@@ -897,6 +1102,93 @@ class OnboardingController {
 		$base_prompt .= ' Use a premium editorial fitness-photo style, crisp detail, energetic but realistic lighting, no text, no watermark overlays, and no collage layout.';
 
 		return $base_prompt;
+	}
+
+	private static function get_image_generation_context( \WP_REST_Request $req, int $user_id ): array {
+		$generation_context = sanitize_key( (string) ( $req->get_param( 'generation_context' ) ?? '' ) );
+		$mode = 'ironquest' === $generation_context ? 'ironquest' : 'default';
+		$class_slug = sanitize_key( (string) ( $req->get_param( 'ironquest_class_slug' ) ?? '' ) );
+		$motivation_slug = sanitize_key( (string) ( $req->get_param( 'ironquest_motivation_slug' ) ?? '' ) );
+
+		if ( 'ironquest' === $mode && ( '' === $class_slug || '' === $motivation_slug ) ) {
+			$profile = IronQuestProfileService::get_profile( $user_id ) ?? [];
+			if ( '' === $class_slug ) {
+				$class_slug = sanitize_key( (string) ( $profile['class_slug'] ?? '' ) );
+			}
+			if ( '' === $motivation_slug ) {
+				$motivation_slug = sanitize_key( (string) ( $profile['motivation_slug'] ?? '' ) );
+			}
+		}
+
+		$location = [];
+		if ( 'ironquest' === $mode ) {
+			$launch_graph = IronQuestRegistryService::get_launch_graph_config();
+			$start_node = sanitize_key( (string) ( $launch_graph['start_node'] ?? '' ) );
+			$location = $start_node ? ( IronQuestRegistryService::get_location( $start_node ) ?? [] ) : [];
+		}
+
+		return [
+			'mode'            => $mode,
+			'class_slug'      => $class_slug,
+			'motivation_slug' => $motivation_slug,
+			'location_name'   => sanitize_text_field( (string) ( $location['name'] ?? 'The Training Grounds' ) ),
+			'location_theme'  => sanitize_text_field( (string) ( $location['ai_prompt_anchor']['theme'] ?? '' ) ),
+			'location_tone'   => sanitize_text_field( (string) ( $location['ai_prompt_anchor']['tone'] ?? '' ) ),
+		];
+	}
+
+	private static function is_ironquest_image_context( array $image_context ): bool {
+		return 'ironquest' === sanitize_key( (string) ( $image_context['mode'] ?? '' ) );
+	}
+
+	private static function describe_ironquest_class( string $class_slug ): array {
+		return match ( sanitize_key( $class_slug ) ) {
+			'warrior' => [
+				'label'     => 'Warrior',
+				'direction' => 'direct, durable, melee-focused heroic presence',
+			],
+			'ranger' => [
+				'label'     => 'Ranger',
+				'direction' => 'nimble travel gear, fieldcraft, and vigilant pathfinder energy',
+			],
+			'mage' => [
+				'label'     => 'Mage',
+				'direction' => 'controlled arcane rituals, runic detail, and cerebral spellcaster focus',
+			],
+			'rogue' => [
+				'label'     => 'Rogue',
+				'direction' => 'agile stealth gear, hidden tools, and sharp underworld precision',
+			],
+			default => [
+				'label'     => 'Adventurer',
+				'direction' => 'grounded heroic fantasy styling and a clear quest identity',
+			],
+		};
+	}
+
+	private static function describe_ironquest_motivation( string $motivation_slug ): array {
+		return match ( sanitize_key( $motivation_slug ) ) {
+			'discipline' => [
+				'label'     => 'Discipline',
+				'direction' => 'composed ritual, controlled posture, and earned structure',
+			],
+			'strength' => [
+				'label'     => 'Strength',
+				'direction' => 'raw capability, power, and undeniable force',
+			],
+			'transformation' => [
+				'label'     => 'Transformation',
+				'direction' => 'visible metamorphosis, ascension, and becoming',
+			],
+			'redemption' => [
+				'label'     => 'Redemption',
+				'direction' => 'battle-worn resolve, comeback energy, and reclaimed purpose',
+			],
+			default => [
+				'label'     => 'Purpose',
+				'direction' => 'clear resolve and a forward-moving quest arc',
+			],
+		};
 	}
 
 	private static function get_latest_progress_photo_data_urls( int $user_id, int $limit = 3 ): array {

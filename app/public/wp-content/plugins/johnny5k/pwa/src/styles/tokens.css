@@ -87,6 +87,277 @@
   --shell-brand-border: rgba(168, 212, 240, 0.9);
   --shell-nav-bg: rgba(255, 255, 255, 0.66);
   --shell-nav-border: rgba(168, 212, 240, 0.88);
+  --shell-menu-toggle-bg: color-mix(in srgb, var(--shell-nav-bg) 92%, white 8%);
+  --shell-menu-toggle-border: var(--shell-nav-border);
+  --shell-nav-backdrop: color-mix(in srgb, var(--text) 28%, transparent);
+  --shell-mobile-nav-bg: var(--surface-drawer);
+  --shell-mobile-nav-border: color-mix(in srgb, var(--shell-nav-border) 92%, white 8%);
+  --shell-mobile-nav-shadow: 0 24px 48px rgba(15, 31, 85, 0.18);
+  --shell-mobile-close-bg: color-mix(in srgb, var(--shell-nav-bg) 96%, white 4%);
+  --shell-mobile-close-border: var(--shell-nav-border);
+  --shell-mobile-link-bg: color-mix(in srgb, var(--surface-card) 88%, white 12%);
+  --shell-mobile-link-border: color-mix(in srgb, var(--shell-nav-border) 94%, white 6%);
+  --shell-mobile-link-active-border: color-mix(in srgb, var(--accent2) 44%, var(--shell-nav-border) 56%);
+  --shell-mobile-link-active-shadow: 0 10px 18px rgba(15, 31, 85, 0.1);
+  --shell-mobile-link-icon-bg:
+    linear-gradient(135deg, color-mix(in srgb, var(--accent2) 12%, transparent), color-mix(in srgb, var(--accent) 10%, transparent));
+  --shell-mobile-link-icon-color: var(--accent2);
+  --shell-push-notice-bg: linear-gradient(135deg, rgba(255, 247, 223, 0.95), rgba(255, 231, 221, 0.95));
+  --shell-push-notice-border: rgba(255, 125, 84, 0.34);
+  --shell-push-notice-shadow: 0 12px 26px rgba(116, 58, 24, 0.12);
+  --shell-notice-bg: var(--surface-shell-notice);
+  --shell-notice-border: rgba(30, 72, 102, 0.18);
+  --shell-notice-shadow: 0 12px 24px rgba(13, 50, 87, 0.1);
+  --shell-connectivity-bg: linear-gradient(135deg, rgba(244, 248, 253, 0.96), rgba(234, 241, 249, 0.96));
+  --shell-connectivity-border: rgba(36, 58, 84, 0.14);
+  --shell-connectivity-shadow: 0 10px 22px rgba(13, 50, 87, 0.08);
+  --shell-connectivity-offline-bg: linear-gradient(135deg, rgba(255, 247, 234, 0.98), rgba(255, 237, 223, 0.98));
+  --shell-connectivity-offline-border: rgba(176, 95, 44, 0.28);
+  --shell-notice-copy-color: color-mix(in srgb, var(--text) 78%, transparent);
+  --shell-notice-action-color: color-mix(in srgb, var(--accent2) 62%, var(--text) 38%);
+  --shell-push-action-color: color-mix(in srgb, var(--accent) 68%, var(--text) 32%);
+  --shell-push-dismiss-color: color-mix(in srgb, var(--text) 70%, var(--accent) 30%);
+  --toast-text: var(--text);
+  --toast-copy: color-mix(in srgb, var(--text) 78%, transparent);
+  --toast-border: color-mix(in srgb, var(--border) 82%, white 18%);
+  --toast-shadow: 0 18px 40px color-mix(in srgb, var(--text) 18%, transparent);
+  --toast-bg-success:
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--bg2) 92%, var(--accent2) 8%),
+      color-mix(in srgb, var(--bg) 84%, var(--success) 16%)
+    );
+  --toast-bg-info:
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--bg2) 90%, var(--yellow) 10%),
+      color-mix(in srgb, var(--bg) 82%, var(--accent) 18%)
+    );
+  --toast-bg-error:
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--bg2) 90%, var(--danger) 10%),
+      color-mix(in srgb, var(--bg) 80%, var(--danger) 20%)
+    );
+  --toast-action-bg: color-mix(in srgb, var(--bg2) 78%, transparent);
+  --toast-action-border: color-mix(in srgb, var(--border) 70%, transparent);
+  --toast-action-hover-bg: color-mix(in srgb, var(--accent2) 12%, var(--bg2) 88%);
+  --toast-action-primary-bg: color-mix(in srgb, var(--accent2) 18%, var(--bg2) 82%);
+  --toast-action-primary-border: color-mix(in srgb, var(--accent2) 42%, var(--border) 58%);
+  --toast-dismiss-color: color-mix(in srgb, var(--text) 70%, transparent);
+  --offline-state-bg:
+    radial-gradient(circle at top right, color-mix(in srgb, var(--yellow) 12%, transparent), transparent 28%),
+    linear-gradient(180deg, color-mix(in srgb, var(--bg2) 98%, white 2%), color-mix(in srgb, var(--accent2) 4%, var(--bg2) 96%));
+  --offline-state-border: color-mix(in srgb, var(--border) 84%, white 16%);
+  --offline-state-shadow: 0 24px 48px rgba(8, 21, 51, 0.12);
+  --live-workout-backdrop: color-mix(in srgb, var(--text) 64%, transparent);
+  --live-workout-panel-bg:
+    radial-gradient(circle at top left, color-mix(in srgb, var(--accent2) 14%, transparent), transparent 22%),
+    radial-gradient(circle at top right, color-mix(in srgb, var(--yellow) 12%, transparent), transparent 26%),
+    linear-gradient(180deg, color-mix(in srgb, var(--text) 82%, black 18%), color-mix(in srgb, var(--text) 70%, var(--accent2) 30%));
+  --live-workout-panel-surface: color-mix(in srgb, var(--bg2) 8%, transparent);
+  --live-workout-panel-border: color-mix(in srgb, var(--border) 36%, transparent);
+  --live-workout-panel-shadow: 0 20px 48px rgba(0, 0, 0, 0.2);
+  --live-workout-title: color-mix(in srgb, white 96%, var(--accent2) 4%);
+  --live-workout-muted: color-mix(in srgb, var(--text) 88%, var(--accent2) 12%);
+  --live-workout-sticky-bg: color-mix(in srgb, var(--text) 78%, transparent);
+  --live-workout-sticky-shadow: 0 14px 28px rgba(0, 0, 0, 0.18);
+  --live-workout-hint-bg: linear-gradient(180deg, color-mix(in srgb, var(--yellow) 88%, white 12%), color-mix(in srgb, var(--accent) 74%, var(--yellow) 26%));
+  --live-workout-hint-tail: color-mix(in srgb, var(--accent) 74%, var(--yellow) 26%);
+  --live-workout-hint-text: color-mix(in srgb, var(--text) 82%, black 18%);
+  --live-workout-card-bg: color-mix(in srgb, var(--surface-card) 96%, white 4%);
+  --live-workout-card-border: color-mix(in srgb, var(--border) 42%, transparent);
+  --live-workout-card-shadow: 0 18px 40px rgba(6, 16, 32, 0.18);
+  --live-workout-heading: var(--hero-title-color);
+  --live-workout-copy: var(--text);
+  --live-workout-progress-bg: linear-gradient(180deg, color-mix(in srgb, var(--accent2) 6%, white 94%), color-mix(in srgb, var(--bg2) 96%, white 4%));
+  --live-workout-progress-border: color-mix(in srgb, var(--accent2) 18%, var(--border) 82%);
+  --live-workout-input-bg: color-mix(in srgb, var(--bg2) 96%, var(--accent2) 4%);
+  --live-workout-input-border: color-mix(in srgb, var(--border) 64%, transparent);
+  --live-workout-session-pill-bg: color-mix(in srgb, var(--bg2) 90%, var(--bg3) 10%);
+  --live-workout-session-pill-border: color-mix(in srgb, var(--border) 42%, transparent);
+  --live-workout-session-pill-accent-bg: color-mix(in srgb, var(--accent2) 14%, transparent);
+  --live-workout-session-pill-accent-color: color-mix(in srgb, var(--accent2) 68%, var(--text) 32%);
+  --live-workout-session-pill-active-bg: linear-gradient(180deg, color-mix(in srgb, var(--accent2) 8%, white 92%), white);
+  --live-workout-session-pill-active-border: color-mix(in srgb, var(--accent2) 34%, var(--border) 66%);
+  --live-workout-session-pill-active-shadow: 0 16px 28px rgba(0, 188, 222, 0.14);
+  --live-workout-johnny-frame-bg: linear-gradient(180deg, color-mix(in srgb, var(--text) 84%, black 16%), color-mix(in srgb, var(--accent2) 34%, var(--text) 66%));
+  --live-workout-johnny-overlay-bg: color-mix(in srgb, var(--text) 76%, transparent);
+  --live-workout-johnny-panel-bg: linear-gradient(155deg, color-mix(in srgb, var(--text) 84%, var(--accent2) 16%), color-mix(in srgb, var(--text) 76%, var(--accent) 24%));
+  --live-workout-johnny-label: var(--live-workout-title);
+  --live-workout-log-border: color-mix(in srgb, var(--accent2) 54%, var(--border) 46%);
+  --live-workout-history-bg: color-mix(in srgb, var(--accent2) 8%, white 92%);
+  --live-workout-history-border: color-mix(in srgb, var(--accent2) 20%, var(--border) 80%);
+  --live-workout-history-chip-bg: color-mix(in srgb, var(--text) 8%, transparent);
+  --live-workout-assistant-bg: color-mix(in srgb, var(--accent2) 6%, white 94%);
+  --live-workout-assistant-border: color-mix(in srgb, var(--accent2) 18%, var(--border) 82%);
+  --live-workout-user-bg: color-mix(in srgb, var(--text) 6%, white 94%);
+  --live-workout-user-border: color-mix(in srgb, var(--text) 8%, var(--border) 92%);
+  --live-workout-recording-bg: color-mix(in srgb, var(--danger) 14%, white 86%);
+  --live-workout-recording-border: color-mix(in srgb, var(--danger) 24%, transparent);
+  --live-workout-recording-text: color-mix(in srgb, var(--danger) 76%, var(--text) 24%);
+  --live-workout-voice-block-bg: linear-gradient(180deg, color-mix(in srgb, var(--accent2) 4%, white 96%), white);
+  --live-workout-voice-block-border: color-mix(in srgb, var(--accent2) 14%, var(--border) 86%);
+  --live-workout-select-bg: color-mix(in srgb, var(--bg2) 96%, white 4%);
+  --live-workout-select-border: color-mix(in srgb, var(--text) 14%, transparent);
+  --live-workout-diagnostic-bg: color-mix(in srgb, var(--text) 4%, white 96%);
+  --live-workout-diagnostic-border: color-mix(in srgb, var(--text) 8%, var(--border) 92%);
+  --live-workout-diagnostic-success-bg: color-mix(in srgb, var(--success) 8%, white 92%);
+  --live-workout-diagnostic-success-border: color-mix(in srgb, var(--success) 22%, transparent);
+  --live-workout-diagnostic-error-bg: color-mix(in srgb, var(--danger) 8%, white 92%);
+  --live-workout-diagnostic-error-border: color-mix(in srgb, var(--danger) 22%, transparent);
+  --live-workout-toast-bg: linear-gradient(180deg, color-mix(in srgb, var(--text) 86%, var(--accent2) 14%), color-mix(in srgb, var(--text) 78%, var(--accent) 22%));
+  --live-workout-toast-shadow: 0 18px 40px rgba(0, 0, 0, 0.26);
+  --live-workout-intro-backdrop: color-mix(in srgb, var(--text) 72%, transparent);
+  --live-workout-intro-bg: linear-gradient(180deg, color-mix(in srgb, var(--bg2) 98%, white 2%), color-mix(in srgb, var(--accent2) 4%, var(--bg2) 96%));
+  --live-workout-intro-border: color-mix(in srgb, var(--border) 54%, transparent);
+  --live-workout-intro-shadow: 0 28px 90px rgba(0, 0, 0, 0.34);
+  --live-workout-intro-step-bg: color-mix(in srgb, var(--bg2) 84%, white 16%);
+  --live-workout-intro-step-border: color-mix(in srgb, var(--border) 40%, transparent);
+  --workout-review-backdrop:
+    radial-gradient(circle at top, color-mix(in srgb, var(--accent) 30%, transparent), transparent 38%),
+    linear-gradient(180deg, color-mix(in srgb, var(--text) 88%, black 12%), color-mix(in srgb, var(--text) 92%, black 8%));
+  --workout-review-panel-bg:
+    linear-gradient(180deg, color-mix(in srgb, white 94%, var(--yellow) 6%), color-mix(in srgb, white 90%, var(--accent) 10%)),
+    color-mix(in srgb, white 94%, var(--yellow) 6%);
+  --workout-review-panel-shadow: 0 32px 90px rgba(0, 0, 0, 0.28);
+  --workout-review-stat-bg: color-mix(in srgb, white 72%, transparent);
+  --workout-review-stat-border: color-mix(in srgb, var(--accent) 8%, var(--border) 92%);
+  --workout-review-card-bg: linear-gradient(180deg, white, color-mix(in srgb, white 88%, var(--accent) 12%));
+  --workout-review-card-border: color-mix(in srgb, var(--accent) 10%, var(--border) 90%);
+  --workout-review-frame-bg: linear-gradient(180deg, color-mix(in srgb, white 92%, transparent 8%), color-mix(in srgb, white 84%, var(--accent) 16%));
+  --workout-review-frame-border: color-mix(in srgb, var(--accent) 14%, var(--border) 86%);
+  --workout-review-copy: color-mix(in srgb, var(--text) 88%, transparent);
+  --workout-confirm-backdrop:
+    radial-gradient(circle at top, color-mix(in srgb, var(--yellow) 18%, transparent), transparent 32%),
+    linear-gradient(180deg, color-mix(in srgb, var(--text) 76%, black 24%), color-mix(in srgb, var(--text) 92%, black 8%));
+  --workout-confirm-panel-bg: linear-gradient(180deg, color-mix(in srgb, white 98%, var(--accent) 2%), color-mix(in srgb, white 92%, var(--accent) 8%));
+  --workout-confirm-panel-border: color-mix(in srgb, var(--accent) 10%, var(--border) 90%);
+  --workout-confirm-panel-shadow: 0 28px 70px rgba(0, 0, 0, 0.26);
+  --workout-confirm-danger-bg: linear-gradient(180deg, color-mix(in srgb, white 98%, var(--danger) 2%), color-mix(in srgb, white 92%, var(--danger) 8%));
+  --workout-confirm-danger-border: color-mix(in srgb, var(--danger) 16%, transparent);
+  --shell-modal-backdrop: color-mix(in srgb, var(--text) 56%, transparent);
+  --shell-modal-bg:
+    radial-gradient(circle at top right, color-mix(in srgb, var(--yellow) 16%, transparent), transparent 30%),
+    linear-gradient(180deg, color-mix(in srgb, white 98%, transparent 2%), color-mix(in srgb, white 94%, var(--accent2) 6%));
+  --shell-modal-border: color-mix(in srgb, var(--border) 88%, white 12%);
+  --shell-modal-shadow: 0 28px 56px rgba(8, 21, 51, 0.28);
+  --shell-modal-close-bg: color-mix(in srgb, white 92%, transparent 8%);
+  --shell-modal-close-border: color-mix(in srgb, var(--border) 90%, white 10%);
+  --shell-modal-card-bg: color-mix(in srgb, white 78%, transparent 22%);
+  --shell-modal-card-border: color-mix(in srgb, var(--border) 76%, white 24%);
+  --shell-modal-option-bg: color-mix(in srgb, white 94%, var(--accent2) 6%);
+  --shell-modal-option-border: color-mix(in srgb, var(--border) 92%, white 8%);
+  --shell-modal-option-hover-border: color-mix(in srgb, var(--accent2) 42%, var(--border) 58%);
+  --shell-modal-option-active-bg: linear-gradient(135deg, color-mix(in srgb, var(--accent2) 16%, transparent), color-mix(in srgb, var(--yellow) 16%, transparent));
+  --shell-modal-option-active-border: color-mix(in srgb, var(--accent2) 60%, var(--border) 40%);
+  --shell-modal-option-active-shadow: 0 10px 22px rgba(0, 188, 222, 0.16);
+  --loading-screen-bg: linear-gradient(180deg, color-mix(in srgb, var(--bg2) 96%, white 4%), color-mix(in srgb, var(--accent2) 4%, var(--bg2) 96%));
+  --loading-screen-border: color-mix(in srgb, var(--text) 8%, transparent);
+  --loading-screen-shadow: 0 28px 60px rgba(8, 21, 51, 0.12);
+  --loading-card-bg: linear-gradient(135deg, color-mix(in srgb, var(--accent2) 8%, var(--bg2) 92%), color-mix(in srgb, var(--bg2) 98%, white 2%));
+  --loading-card-border: color-mix(in srgb, var(--text) 8%, transparent);
+  --loading-card-shimmer: linear-gradient(100deg, transparent 14%, color-mix(in srgb, white 72%, transparent) 42%, transparent 70%);
+  --loading-eyebrow: color-mix(in srgb, var(--accent2) 72%, var(--text) 28%);
+  --loading-title: var(--hero-title-color);
+  --loading-copy: color-mix(in srgb, var(--text) 70%, transparent);
+  --loading-dot: color-mix(in srgb, var(--accent2) 26%, transparent);
+  --workout-tag-bg: color-mix(in srgb, var(--bg) 86%, var(--bg2) 14%);
+  --workout-tag-text: color-mix(in srgb, var(--text) 66%, var(--text-muted) 34%);
+  --workout-tag-subtle-bg: color-mix(in srgb, var(--accent2) 10%, transparent);
+  --workout-tag-subtle-text: color-mix(in srgb, var(--accent2) 76%, var(--text) 24%);
+  --workout-warning-bg: color-mix(in srgb, var(--yellow) 18%, transparent);
+  --workout-warning-border: color-mix(in srgb, var(--yellow) 30%, transparent);
+  --workout-warning-text: color-mix(in srgb, var(--yellow) 22%, var(--text) 78%);
+  --workout-success-bg: color-mix(in srgb, var(--success) 16%, transparent);
+  --workout-success-border: color-mix(in srgb, var(--success) 24%, transparent);
+  --workout-success-text: color-mix(in srgb, var(--success) 72%, var(--text) 28%);
+  --workout-info-bg: color-mix(in srgb, var(--accent2) 16%, transparent);
+  --workout-info-border: color-mix(in srgb, var(--accent2) 24%, transparent);
+  --workout-info-text: color-mix(in srgb, var(--accent2) 72%, var(--text) 28%);
+  --workout-danger-bg: color-mix(in srgb, var(--danger) 14%, transparent);
+  --workout-danger-border: color-mix(in srgb, var(--danger) 28%, transparent);
+  --workout-danger-text: color-mix(in srgb, var(--danger) 72%, var(--text) 28%);
+  --workout-menu-button-bg: color-mix(in srgb, var(--bg2) 96%, white 4%);
+  --workout-menu-button-border: color-mix(in srgb, var(--text) 12%, transparent);
+  --workout-menu-bg: color-mix(in srgb, var(--bg2) 98%, white 2%);
+  --workout-menu-border: color-mix(in srgb, var(--text) 8%, transparent);
+  --workout-menu-shadow: 0 20px 40px rgba(18, 24, 31, 0.14);
+  --workout-menu-hover-bg: color-mix(in srgb, var(--accent2) 8%, transparent);
+  --workout-soft-card-bg: color-mix(in srgb, var(--bg2) 80%, transparent 20%);
+  --workout-soft-card-border: color-mix(in srgb, var(--text) 8%, transparent);
+  --johnny-drawer-backdrop: color-mix(in srgb, var(--text) 20%, transparent);
+  --johnny-drawer-bg:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--bg2) 96%, white 4%) 0%,
+      color-mix(in srgb, var(--bg) 82%, var(--bg2) 18%) 100%
+    );
+  --johnny-drawer-border: color-mix(in srgb, var(--border) 88%, white 12%);
+  --johnny-drawer-shadow: -18px 0 36px color-mix(in srgb, var(--text) 18%, transparent);
+  --johnny-drawer-header-border: color-mix(in srgb, var(--border) 72%, transparent);
+  --johnny-drawer-art-bg:
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--bg2) 96%, white 4%),
+      color-mix(in srgb, var(--bg) 78%, var(--accent2) 22%)
+    );
+  --johnny-drawer-art-border: color-mix(in srgb, var(--border) 84%, white 16%);
+  --johnny-drawer-art-shadow: 0 12px 28px color-mix(in srgb, var(--text) 14%, transparent);
+  --johnny-drawer-status: color-mix(in srgb, var(--accent2) 68%, var(--text) 32%);
+  --johnny-suggestion-bg: color-mix(in srgb, var(--bg2) 94%, white 6%);
+  --johnny-suggestion-border: color-mix(in srgb, var(--accent2) 24%, var(--border) 76%);
+  --johnny-suggestion-text: color-mix(in srgb, var(--text) 92%, var(--accent2) 8%);
+  --johnny-tag-bg: color-mix(in srgb, var(--success) 14%, transparent);
+  --johnny-tag-text: color-mix(in srgb, var(--success) 76%, var(--text) 24%);
+  --johnny-card-bg:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--bg2) 98%, white 2%) 0%,
+      color-mix(in srgb, var(--bg) 68%, var(--bg2) 32%) 100%
+    );
+  --johnny-card-border: color-mix(in srgb, var(--border) 88%, white 12%);
+  --johnny-card-shadow: 0 12px 24px color-mix(in srgb, var(--text) 10%, transparent);
+  --johnny-action-card-shadow: 0 10px 22px color-mix(in srgb, var(--text) 9%, transparent);
+  --johnny-recipe-card-bg: color-mix(in srgb, var(--bg2) 92%, white 8%);
+  --johnny-follow-up-status-bg: color-mix(in srgb, var(--accent2) 14%, transparent);
+  --johnny-follow-up-status-text: color-mix(in srgb, var(--accent2) 72%, var(--text) 28%);
+  --johnny-follow-up-snoozed-bg: color-mix(in srgb, var(--yellow) 22%, transparent);
+  --johnny-follow-up-snoozed-text: color-mix(in srgb, var(--yellow) 30%, var(--text) 70%);
+  --johnny-confidence-medium: color-mix(in srgb, var(--yellow) 34%, var(--text) 66%);
+  --workout-soft-card-alt-bg: color-mix(in srgb, var(--bg) 88%, var(--bg2) 12%);
+  --workout-soft-card-accent-bg: color-mix(in srgb, var(--accent2) 8%, var(--bg2) 92%);
+  --workout-soft-card-accent-border: color-mix(in srgb, var(--accent2) 24%, transparent);
+  --workout-primary-panel-bg:
+    radial-gradient(circle at top right, color-mix(in srgb, var(--accent) 24%, transparent), transparent 34%),
+    linear-gradient(180deg, color-mix(in srgb, white 98%, var(--accent) 2%), color-mix(in srgb, var(--bg2) 96%, white 4%));
+  --workout-primary-panel-border: color-mix(in srgb, var(--text) 8%, transparent);
+  --workout-primary-panel-shadow: 0 18px 44px rgba(31, 42, 46, 0.08);
+  --workout-primary-panel-copy: var(--text);
+  --workout-overlay-backdrop: color-mix(in srgb, var(--text) 72%, transparent);
+  --workout-lightbox-bg: color-mix(in srgb, var(--bg2) 98%, white 2%);
+  --workout-lightbox-frame-bg: color-mix(in srgb, var(--accent2) 6%, var(--bg2) 94%);
+  --workout-lightbox-frame-border: color-mix(in srgb, var(--border) 82%, white 18%);
+  --workout-drawer-shadow: -24px 0 60px rgba(18, 24, 31, 0.18);
+  --workout-control-bg: color-mix(in srgb, var(--bg2) 98%, white 2%);
+  --workout-control-border: color-mix(in srgb, var(--text) 12%, transparent);
+  --workout-set-row-bg: color-mix(in srgb, var(--bg) 90%, var(--bg2) 10%);
+  --workout-set-row-complete-accent: var(--danger);
+  --workout-plan-row-bg: var(--bg2);
+  --workout-plan-row-border: color-mix(in srgb, var(--border) 80%, white 20%);
+  --workout-plan-row-active-shadow: 0 8px 20px rgba(0, 188, 222, 0.14);
+  --workout-chip-bg: color-mix(in srgb, var(--accent2) 12%, transparent);
+  --workout-chip-text: color-mix(in srgb, var(--accent2) 76%, var(--text) 24%);
+  --workout-handle-bg: color-mix(in srgb, var(--bg2) 92%, white 8%);
+  --workout-handle-border: color-mix(in srgb, var(--text) 18%, transparent);
+  --workout-handle-text: color-mix(in srgb, var(--text) 88%, transparent);
+  --workout-handle-hover-bg: linear-gradient(180deg, color-mix(in srgb, var(--bg2) 98%, white 2%), color-mix(in srgb, var(--accent2) 8%, var(--bg2) 92%));
+  --workout-handle-hover-border: color-mix(in srgb, var(--text) 26%, transparent);
+  --workout-handle-hover-shadow: 0 2px 5px rgba(15, 23, 42, 0.14);
+  --workout-session-timer-bg: color-mix(in srgb, var(--accent2) 12%, transparent);
+  --workout-session-timer-border: color-mix(in srgb, var(--accent2) 24%, transparent);
+  --workout-session-timer-text: var(--accent2);
+  --workout-accordion-icon-bg: color-mix(in srgb, var(--text) 6%, transparent);
   --hero-title-color: #081533;
   --hero-copy-color: #26405d;
   --hero-pill-border: rgba(128, 184, 225, 0.6);
@@ -107,48 +378,231 @@
 }
 
 :root[data-experience-mode='ironquest'] {
-  --bg: #151221;
-  --bg2: #241b36;
-  --bg3: #312547;
-  --border: rgba(214, 183, 96, 0.24);
-  --text: #f7efe0;
-  --text-muted: rgba(238, 228, 212, 0.78);
-  --text2: #f7efe0;
-  --text-muted2: rgba(238, 228, 212, 0.78);
-  --text3: #f7efe0;
-  --text-muted3: rgba(238, 228, 212, 0.78);
   --font-body: 'Spectral', Georgia, serif;
   --font-display: 'Cinzel', Georgia, serif;
   --font-ui: 'Exo 2', 'Trebuchet MS', system-ui, sans-serif;
   --surface-app:
-    radial-gradient(circle at top, rgba(255, 183, 77, 0.12), transparent 24%),
-    radial-gradient(circle at bottom right, rgba(116, 92, 255, 0.14), transparent 26%),
-    linear-gradient(180deg, #151221 0%, #20162d 42%, #0f1422 100%);
-  --surface-shell-header: linear-gradient(180deg, rgba(21, 18, 33, 0.96) 0%, rgba(21, 18, 33, 0.82) 65%, rgba(21, 18, 33, 0) 100%);
-  --surface-shell-notice: linear-gradient(135deg, rgba(46, 35, 66, 0.96), rgba(26, 22, 41, 0.96));
-  --surface-card: color-mix(in srgb, var(--bg2) 90%, black 10%);
-  --surface-card-alt: rgba(255, 255, 255, 0.06);
+    radial-gradient(circle at top left, color-mix(in srgb, var(--accent2) 16%, transparent) 0%, transparent 32%),
+    radial-gradient(circle at bottom right, color-mix(in srgb, var(--accent3) 14%, transparent) 0%, transparent 28%),
+    linear-gradient(180deg, color-mix(in srgb, var(--bg) 92%, black 8%) 0%, color-mix(in srgb, var(--bg2) 96%, var(--bg) 4%) 46%, color-mix(in srgb, var(--bg) 92%, black 8%) 100%);
+  --surface-shell-header: linear-gradient(180deg, color-mix(in srgb, var(--bg) 94%, black 6%) 0%, color-mix(in srgb, var(--bg) 82%, transparent 18%) 68%, rgba(0, 0, 0, 0) 100%);
+  --surface-shell-notice: linear-gradient(135deg, color-mix(in srgb, var(--bg2) 92%, var(--accent2) 8%), color-mix(in srgb, var(--bg) 90%, var(--accent) 10%));
+  --surface-card: linear-gradient(180deg, color-mix(in srgb, var(--bg2) 95%, white 5%), color-mix(in srgb, var(--bg) 90%, var(--bg2) 10%));
+  --surface-card-alt: color-mix(in srgb, var(--bg3) 68%, var(--bg2) 32%);
   --surface-hero:
-    radial-gradient(circle at 82% 12%, rgba(245, 196, 0, 0.22), transparent 24%),
-    radial-gradient(circle at 18% 24%, rgba(123, 97, 255, 0.2), transparent 34%),
-    linear-gradient(145deg, rgba(39, 28, 59, 0.98), rgba(27, 22, 41, 0.98) 58%, rgba(16, 19, 31, 0.96));
-  --surface-workout-header: color-mix(in srgb, var(--bg) 88%, black 12%);
-  --surface-drawer: linear-gradient(180deg, rgba(34, 27, 49, 0.98) 0%, rgba(18, 21, 34, 0.98) 100%);
-  --surface-meta: rgba(255, 255, 255, 0.08);
-  --surface-pill: rgba(255, 255, 255, 0.08);
-  --border-strong: rgba(214, 183, 96, 0.34);
-  --shell-brand-bg: rgba(255, 255, 255, 0.08);
-  --shell-brand-border: rgba(214, 183, 96, 0.34);
-  --shell-nav-bg: rgba(17, 20, 33, 0.58);
-  --shell-nav-border: rgba(214, 183, 96, 0.22);
-  --hero-title-color: #f7efe0;
-  --hero-copy-color: rgba(238, 228, 212, 0.84);
-  --hero-pill-border: rgba(214, 183, 96, 0.24);
-  --hero-pill-text: #f7efe0;
-  --ornament-gradient: linear-gradient(90deg, rgba(214, 183, 96, 0.96), rgba(191, 120, 255, 0.88), rgba(79, 209, 255, 0.82));
+    radial-gradient(circle at 84% 14%, color-mix(in srgb, var(--yellow) 26%, transparent) 0%, transparent 22%),
+    radial-gradient(circle at 14% 22%, color-mix(in srgb, var(--accent2) 18%, transparent) 0%, transparent 30%),
+    linear-gradient(145deg, color-mix(in srgb, var(--bg2) 96%, white 4%), color-mix(in srgb, var(--bg3) 72%, var(--bg2) 28%) 58%, color-mix(in srgb, var(--bg) 88%, black 12%));
+  --surface-workout-header: color-mix(in srgb, var(--bg) 92%, var(--bg2) 8%);
+  --surface-drawer: linear-gradient(180deg, color-mix(in srgb, var(--bg2) 96%, white 4%) 0%, color-mix(in srgb, var(--bg) 94%, black 6%) 100%);
+  --surface-meta: color-mix(in srgb, var(--bg2) 84%, var(--bg3) 16%);
+  --surface-pill: color-mix(in srgb, var(--bg2) 88%, white 12%);
+  --border-strong: color-mix(in srgb, var(--border) 78%, var(--accent2) 22%);
+  --shell-brand-bg: color-mix(in srgb, var(--bg2) 78%, white 22%);
+  --shell-brand-border: color-mix(in srgb, var(--border) 80%, var(--accent3) 20%);
+  --shell-nav-bg: color-mix(in srgb, var(--bg2) 72%, transparent 28%);
+  --shell-nav-border: color-mix(in srgb, var(--border) 72%, transparent 28%);
+  --shell-menu-toggle-bg: color-mix(in srgb, var(--bg2) 78%, transparent 22%);
+  --shell-menu-toggle-border: color-mix(in srgb, var(--border) 74%, transparent 26%);
+  --shell-nav-backdrop: color-mix(in srgb, var(--text) 34%, transparent);
+  --shell-mobile-nav-bg: linear-gradient(180deg, color-mix(in srgb, var(--bg2) 96%, white 4%), color-mix(in srgb, var(--bg) 94%, black 6%));
+  --shell-mobile-nav-border: color-mix(in srgb, var(--border) 76%, var(--accent2) 24%);
+  --shell-mobile-nav-shadow: 0 24px 52px rgba(3, 5, 12, 0.28);
+  --shell-mobile-close-bg: color-mix(in srgb, var(--bg2) 84%, transparent 16%);
+  --shell-mobile-close-border: color-mix(in srgb, var(--border) 72%, transparent 28%);
+  --shell-mobile-link-bg: color-mix(in srgb, var(--bg2) 82%, var(--bg3) 18%);
+  --shell-mobile-link-border: color-mix(in srgb, var(--border) 74%, transparent 26%);
+  --shell-mobile-link-active-border: color-mix(in srgb, var(--accent2) 46%, var(--border) 54%);
+  --shell-mobile-link-active-shadow: 0 12px 22px rgba(3, 5, 12, 0.18);
+  --shell-mobile-link-icon-bg:
+    linear-gradient(135deg, color-mix(in srgb, var(--accent2) 18%, transparent), color-mix(in srgb, var(--accent) 16%, transparent));
+  --shell-mobile-link-icon-color: var(--hero-title-color);
+  --shell-push-notice-bg: linear-gradient(135deg, color-mix(in srgb, var(--bg) 52%, black 48%), color-mix(in srgb, var(--accent) 10%, black 90%));
+  --shell-push-notice-border: color-mix(in srgb, var(--yellow) 22%, transparent);
+  --shell-push-notice-shadow: 0 16px 34px rgba(3, 5, 12, 0.24);
+  --shell-notice-bg: var(--surface-shell-notice);
+  --shell-notice-border: color-mix(in srgb, var(--border) 58%, transparent);
+  --shell-notice-shadow: 0 16px 34px rgba(3, 5, 12, 0.24);
+  --shell-connectivity-bg: var(--surface-shell-notice);
+  --shell-connectivity-border: color-mix(in srgb, var(--border) 52%, transparent);
+  --shell-connectivity-shadow: 0 16px 34px rgba(3, 5, 12, 0.24);
+  --shell-connectivity-offline-bg: linear-gradient(135deg, color-mix(in srgb, var(--yellow) 10%, black 90%), color-mix(in srgb, var(--accent) 12%, black 88%));
+  --shell-connectivity-offline-border: color-mix(in srgb, var(--yellow) 20%, transparent);
+  --shell-notice-copy-color: var(--text-muted);
+  --shell-notice-action-color: var(--hero-title-color);
+  --shell-push-action-color: var(--hero-title-color);
+  --shell-push-dismiss-color: var(--hero-title-color);
+  --toast-text: var(--hero-title-color);
+  --toast-copy: var(--text-muted);
+  --toast-border: color-mix(in srgb, var(--border) 58%, transparent);
+  --toast-shadow: 0 18px 40px rgba(3, 5, 12, 0.24);
+  --toast-bg-success:
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--bg2) 88%, var(--accent2) 12%),
+      color-mix(in srgb, var(--bg) 74%, var(--success) 26%)
+    );
+  --toast-bg-info:
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--bg2) 86%, var(--yellow) 14%),
+      color-mix(in srgb, var(--bg) 72%, var(--accent) 28%)
+    );
+  --toast-bg-error:
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--bg2) 84%, var(--danger) 16%),
+      color-mix(in srgb, var(--bg) 68%, var(--danger) 32%)
+    );
+  --toast-action-bg: color-mix(in srgb, var(--bg2) 26%, transparent);
+  --toast-action-border: color-mix(in srgb, var(--border) 42%, transparent);
+  --toast-action-hover-bg: color-mix(in srgb, var(--accent2) 18%, var(--bg2) 82%);
+  --toast-action-primary-bg: color-mix(in srgb, var(--accent2) 26%, var(--bg2) 74%);
+  --toast-action-primary-border: color-mix(in srgb, var(--accent2) 46%, var(--border) 54%);
+  --toast-dismiss-color: color-mix(in srgb, var(--hero-title-color) 74%, transparent);
+  --offline-state-bg:
+    radial-gradient(circle at top right, color-mix(in srgb, var(--yellow) 12%, transparent), transparent 28%),
+    linear-gradient(180deg, color-mix(in srgb, var(--bg2) 96%, white 4%), color-mix(in srgb, var(--bg) 94%, black 6%));
+  --offline-state-border: color-mix(in srgb, var(--border) 72%, transparent);
+  --offline-state-shadow: 0 24px 48px rgba(3, 5, 12, 0.2);
+  --live-workout-backdrop: color-mix(in srgb, black 74%, var(--bg) 26%);
+  --live-workout-panel-bg:
+    radial-gradient(circle at top left, color-mix(in srgb, var(--accent2) 16%, transparent), transparent 22%),
+    radial-gradient(circle at top right, color-mix(in srgb, var(--yellow) 14%, transparent), transparent 26%),
+    linear-gradient(180deg, color-mix(in srgb, black 78%, var(--bg) 22%), color-mix(in srgb, black 72%, var(--bg3) 28%));
+  --live-workout-panel-surface: color-mix(in srgb, var(--bg2) 12%, transparent);
+  --live-workout-panel-border: color-mix(in srgb, var(--border) 30%, transparent);
+  --live-workout-title: color-mix(in srgb, var(--bg2) 78%, white 22%);
+  --live-workout-muted: color-mix(in srgb, var(--text) 88%, var(--accent2) 12%);
+  --live-workout-sticky-bg: color-mix(in srgb, black 64%, var(--bg) 36%);
+  --live-workout-card-bg: linear-gradient(180deg, color-mix(in srgb, var(--bg2) 95%, white 5%), color-mix(in srgb, var(--bg) 88%, var(--bg2) 12%));
+  --live-workout-card-border: color-mix(in srgb, var(--border) 50%, transparent);
+  --live-workout-heading: var(--hero-title-color);
+  --live-workout-copy: var(--text);
+  --live-workout-progress-bg: linear-gradient(180deg, color-mix(in srgb, var(--accent2) 8%, var(--bg2) 92%), color-mix(in srgb, var(--bg2) 96%, var(--bg3) 4%));
+  --live-workout-progress-border: color-mix(in srgb, var(--accent2) 20%, var(--border) 80%);
+  --live-workout-input-bg: color-mix(in srgb, var(--bg2) 94%, var(--bg3) 6%);
+  --live-workout-input-border: color-mix(in srgb, var(--border) 60%, transparent);
+  --live-workout-session-pill-bg: color-mix(in srgb, var(--bg2) 88%, var(--bg3) 12%);
+  --live-workout-session-pill-border: color-mix(in srgb, var(--border) 48%, transparent);
+  --live-workout-session-pill-accent-bg: color-mix(in srgb, var(--accent2) 16%, transparent);
+  --live-workout-session-pill-accent-color: var(--hero-title-color);
+  --live-workout-session-pill-active-bg: linear-gradient(180deg, color-mix(in srgb, var(--accent2) 10%, var(--bg2) 90%), color-mix(in srgb, var(--bg2) 96%, white 4%));
+  --live-workout-session-pill-active-border: color-mix(in srgb, var(--accent2) 36%, var(--border) 64%);
+  --live-workout-johnny-frame-bg: linear-gradient(180deg, color-mix(in srgb, black 80%, var(--bg) 20%), color-mix(in srgb, black 68%, var(--accent2) 32%));
+  --live-workout-johnny-overlay-bg: color-mix(in srgb, black 68%, var(--bg) 32%);
+  --live-workout-johnny-panel-bg: linear-gradient(155deg, color-mix(in srgb, black 74%, var(--bg) 26%), color-mix(in srgb, black 66%, var(--accent) 34%));
+  --live-workout-johnny-label: var(--live-workout-title);
+  --live-workout-log-border: color-mix(in srgb, var(--accent2) 46%, var(--border) 54%);
+  --live-workout-history-bg: color-mix(in srgb, var(--accent2) 10%, var(--bg2) 90%);
+  --live-workout-history-border: color-mix(in srgb, var(--accent2) 22%, var(--border) 78%);
+  --live-workout-history-chip-bg: color-mix(in srgb, var(--text) 10%, transparent);
+  --live-workout-assistant-bg: color-mix(in srgb, var(--accent2) 8%, var(--bg2) 92%);
+  --live-workout-assistant-border: color-mix(in srgb, var(--accent2) 20%, var(--border) 80%);
+  --live-workout-user-bg: color-mix(in srgb, var(--text) 8%, var(--bg2) 92%);
+  --live-workout-user-border: color-mix(in srgb, var(--text) 10%, var(--border) 90%);
+  --live-workout-voice-block-bg: linear-gradient(180deg, color-mix(in srgb, var(--accent2) 6%, var(--bg2) 94%), color-mix(in srgb, var(--bg2) 98%, white 2%));
+  --live-workout-voice-block-border: color-mix(in srgb, var(--accent2) 16%, var(--border) 84%);
+  --live-workout-select-bg: color-mix(in srgb, var(--bg2) 94%, white 6%);
+  --live-workout-select-border: color-mix(in srgb, var(--border) 52%, transparent);
+  --live-workout-diagnostic-bg: color-mix(in srgb, var(--text) 6%, var(--bg2) 94%);
+  --live-workout-diagnostic-border: color-mix(in srgb, var(--text) 10%, var(--border) 90%);
+  --live-workout-toast-bg: linear-gradient(180deg, color-mix(in srgb, black 72%, var(--bg) 28%), color-mix(in srgb, black 64%, var(--accent2) 36%));
+  --live-workout-intro-backdrop: color-mix(in srgb, black 76%, var(--bg) 24%);
+  --live-workout-intro-bg: linear-gradient(180deg, color-mix(in srgb, var(--bg2) 96%, white 4%), color-mix(in srgb, var(--bg) 90%, var(--bg2) 10%));
+  --live-workout-intro-border: color-mix(in srgb, var(--border) 56%, transparent);
+  --live-workout-intro-step-bg: color-mix(in srgb, var(--bg2) 86%, white 14%);
+  --live-workout-intro-step-border: color-mix(in srgb, var(--border) 44%, transparent);
+  --workout-review-backdrop:
+    radial-gradient(circle at top, color-mix(in srgb, var(--accent) 18%, transparent), transparent 38%),
+    linear-gradient(180deg, color-mix(in srgb, black 82%, var(--bg) 18%), color-mix(in srgb, black 88%, var(--bg) 12%));
+  --workout-review-panel-bg:
+    linear-gradient(180deg, color-mix(in srgb, var(--bg2) 96%, white 4%), color-mix(in srgb, var(--bg) 88%, var(--accent) 12%));
+  --workout-review-panel-shadow: 0 32px 90px rgba(0, 0, 0, 0.34);
+  --workout-review-stat-bg: color-mix(in srgb, var(--bg2) 72%, transparent 28%);
+  --workout-review-stat-border: color-mix(in srgb, var(--accent) 12%, var(--border) 88%);
+  --workout-review-card-bg: linear-gradient(180deg, color-mix(in srgb, var(--bg2) 96%, white 4%), color-mix(in srgb, var(--bg) 84%, var(--accent) 16%));
+  --workout-review-card-border: color-mix(in srgb, var(--accent) 14%, var(--border) 86%);
+  --workout-review-frame-bg: linear-gradient(180deg, color-mix(in srgb, var(--bg2) 92%, white 8%), color-mix(in srgb, var(--bg) 82%, var(--accent) 18%));
+  --workout-review-frame-border: color-mix(in srgb, var(--accent) 18%, var(--border) 82%);
+  --workout-review-copy: color-mix(in srgb, var(--text) 86%, transparent);
+  --workout-confirm-backdrop:
+    radial-gradient(circle at top, color-mix(in srgb, var(--yellow) 16%, transparent), transparent 32%),
+    linear-gradient(180deg, color-mix(in srgb, black 76%, var(--bg) 24%), color-mix(in srgb, black 88%, var(--bg) 12%));
+  --workout-confirm-panel-bg: linear-gradient(180deg, color-mix(in srgb, var(--bg2) 96%, white 4%), color-mix(in srgb, var(--bg) 86%, var(--accent) 14%));
+  --workout-confirm-panel-border: color-mix(in srgb, var(--accent) 12%, var(--border) 88%);
+  --workout-confirm-panel-shadow: 0 28px 70px rgba(0, 0, 0, 0.3);
+  --workout-confirm-danger-bg: linear-gradient(180deg, color-mix(in srgb, var(--bg2) 96%, white 4%), color-mix(in srgb, var(--danger) 10%, var(--bg) 90%));
+  --workout-confirm-danger-border: color-mix(in srgb, var(--danger) 18%, transparent);
+  --shell-modal-backdrop: color-mix(in srgb, black 62%, var(--bg) 38%);
+  --shell-modal-bg:
+    radial-gradient(circle at top right, color-mix(in srgb, var(--yellow) 16%, transparent), transparent 30%),
+    linear-gradient(180deg, color-mix(in srgb, var(--bg2) 96%, white 4%), color-mix(in srgb, var(--bg) 90%, var(--accent2) 10%));
+  --shell-modal-border: color-mix(in srgb, var(--border) 76%, transparent);
+  --shell-modal-shadow: 0 28px 56px rgba(3, 5, 12, 0.28);
+  --shell-modal-close-bg: color-mix(in srgb, var(--bg2) 92%, transparent 8%);
+  --shell-modal-close-border: color-mix(in srgb, var(--border) 72%, transparent 28%);
+  --shell-modal-card-bg: color-mix(in srgb, var(--bg2) 78%, transparent 22%);
+  --shell-modal-card-border: color-mix(in srgb, var(--border) 74%, transparent 26%);
+  --shell-modal-option-bg: color-mix(in srgb, var(--bg2) 92%, var(--accent2) 8%);
+  --shell-modal-option-border: color-mix(in srgb, var(--border) 82%, transparent 18%);
+  --shell-modal-option-hover-border: color-mix(in srgb, var(--accent2) 42%, var(--border) 58%);
+  --shell-modal-option-active-bg: linear-gradient(135deg, color-mix(in srgb, var(--accent2) 16%, transparent), color-mix(in srgb, var(--yellow) 16%, transparent));
+  --shell-modal-option-active-border: color-mix(in srgb, var(--accent2) 60%, var(--border) 40%);
+  --shell-modal-option-active-shadow: 0 10px 22px rgba(3, 5, 12, 0.16);
+  --loading-screen-shadow: 0 28px 60px rgba(3, 5, 12, 0.22);
+  --loading-card-shadow: 0 18px 32px rgba(3, 5, 12, 0.14);
+  --workout-menu-shadow: 0 20px 40px rgba(3, 5, 12, 0.22);
+  --workout-primary-panel-bg:
+    radial-gradient(circle at top right, color-mix(in srgb, var(--accent) 24%, transparent), transparent 34%),
+    linear-gradient(180deg, color-mix(in srgb, var(--bg2) 96%, white 4%), color-mix(in srgb, var(--bg) 84%, var(--accent) 16%));
+  --workout-primary-panel-shadow: 0 18px 44px rgba(14, 12, 16, 0.28);
+  --workout-primary-panel-copy: var(--hero-title-color);
+  --workout-drawer-shadow: -24px 0 60px rgba(3, 5, 12, 0.24);
+  --workout-plan-row-active-shadow: 0 8px 20px rgba(3, 5, 12, 0.18);
+  --workout-handle-hover-shadow: 0 2px 5px rgba(3, 5, 12, 0.18);
+  --hero-title-color: var(--text2);
+  --hero-copy-color: var(--text-muted2);
+  --hero-pill-border: color-mix(in srgb, var(--border) 74%, white 26%);
+  --hero-pill-text: var(--text2);
+  --ornament-gradient: linear-gradient(90deg, color-mix(in srgb, var(--accent) 88%, white 12%), color-mix(in srgb, var(--yellow) 86%, white 14%), color-mix(in srgb, var(--accent2) 88%, white 12%));
   --mode-shadow: 0 26px 60px rgba(3, 5, 12, 0.34);
   --display-letter-spacing: 0.03em;
   --display-text-transform: uppercase;
+}
+
+:root[data-experience-mode='ironquest'][data-color-scheme='ironquest-codex'] {
+  --surface-app:
+    radial-gradient(circle at top left, rgba(169, 86, 46, 0.08), transparent 34%),
+    radial-gradient(circle at bottom right, rgba(89, 112, 59, 0.1), transparent 28%),
+    linear-gradient(180deg, #f3e9d7 0%, #f9f1e3 46%, #ecdfc4 100%);
+  --surface-hero:
+    radial-gradient(circle at 82% 12%, rgba(216, 174, 59, 0.24), transparent 24%),
+    radial-gradient(circle at 18% 22%, rgba(89, 112, 59, 0.14), transparent 30%),
+    linear-gradient(145deg, rgba(255, 250, 239, 0.98), rgba(242, 229, 203, 0.96) 58%, rgba(231, 212, 181, 0.95));
+}
+
+:root[data-experience-mode='ironquest'][data-color-scheme='ironquest-ember'] {
+  --surface-app:
+    radial-gradient(circle at top, rgba(208, 167, 58, 0.12), transparent 26%),
+    radial-gradient(circle at bottom right, rgba(126, 143, 178, 0.14), transparent 24%),
+    linear-gradient(180deg, #17131a 0%, #211b22 48%, #120f15 100%);
+  --surface-hero:
+    radial-gradient(circle at 84% 12%, rgba(197, 103, 58, 0.26), transparent 24%),
+    radial-gradient(circle at 16% 22%, rgba(208, 167, 58, 0.18), transparent 30%),
+    linear-gradient(145deg, rgba(41, 33, 42, 0.98), rgba(31, 25, 33, 0.98) 58%, rgba(20, 17, 22, 0.98));
+  --surface-card-alt: color-mix(in srgb, var(--bg3) 58%, var(--bg2) 42%);
+}
+
+:root[data-experience-mode='ironquest'][data-color-scheme='ironquest-grove'] {
+  --surface-app:
+    radial-gradient(circle at top left, rgba(70, 118, 99, 0.12), transparent 30%),
+    radial-gradient(circle at bottom right, rgba(180, 154, 83, 0.12), transparent 24%),
+    linear-gradient(180deg, #e6eee5 0%, #f2f7ee 48%, #dce7db 100%);
+  --surface-hero:
+    radial-gradient(circle at 84% 12%, rgba(180, 154, 83, 0.22), transparent 24%),
+    radial-gradient(circle at 18% 22%, rgba(70, 118, 99, 0.16), transparent 30%),
+    linear-gradient(145deg, rgba(247, 251, 243, 0.98), rgba(225, 236, 225, 0.96) 58%, rgba(209, 221, 209, 0.95));
 }
 
 .sr-only {

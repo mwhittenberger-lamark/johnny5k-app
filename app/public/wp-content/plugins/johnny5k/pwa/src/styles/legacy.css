@@ -521,7 +521,7 @@
 .chat-msg-bubble ol { margin: 0; padding-left: 1.25rem; }
 .chat-msg-bubble li + li { margin-top: 6px; }
 .chat-msg.user { align-self: flex-end; }
-.chat-msg.user .chat-msg-bubble { background: linear-gradient(135deg, var(--accent), var(--accent3)); color: #fff; border-bottom-right-radius: 4px; box-shadow: 0 4px 14px rgba(255, 85, 48, 0.25); }
+.chat-msg.user .chat-msg-bubble { background: linear-gradient(135deg, var(--accent), var(--accent3)); color: #fff; border-bottom-right-radius: 4px; box-shadow: 0 4px 14px color-mix(in srgb, var(--accent) 24%, transparent); }
 .chat-msg.assistant { align-self: flex-start; }
 .chat-msg.assistant .chat-msg-bubble { background: var(--bg2); border: 1.5px solid var(--border); border-bottom-left-radius: 4px; box-shadow: var(--shadow-sm); }
 .chat-sources { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; padding: 0 8px; }
@@ -545,7 +545,7 @@
   gap: 8px;
   padding: 10px 16px;
   flex-shrink: 0;
-  box-shadow: 0 4px 14px rgba(255, 85, 48, 0.35);
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--accent) 30%, transparent);
   transition: opacity .2s;
   white-space: normal;
   text-align: center;
@@ -554,7 +554,7 @@
 .johnny-drawer-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(15, 31, 85, 0.18);
+  background: var(--johnny-drawer-backdrop);
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.22s ease;
@@ -584,9 +584,9 @@
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(238, 248, 255, 0.98) 100%);
-  border-left: 1.5px solid rgba(168, 212, 240, 0.9);
-  box-shadow: -18px 0 36px rgba(15, 31, 85, 0.16);
+  background: var(--johnny-drawer-bg);
+  border-left: 1.5px solid var(--johnny-drawer-border);
+  box-shadow: var(--johnny-drawer-shadow);
   backdrop-filter: blur(12px);
 }
 .johnny-drawer-header {
@@ -595,7 +595,7 @@
   align-items: flex-start;
   gap: 16px;
   padding: 20px 18px 14px;
-  border-bottom: 1px solid rgba(168, 212, 240, 0.7);
+  border-bottom: 1px solid var(--johnny-drawer-header-border);
 }
 .johnny-drawer-header-main {
   display: grid;
@@ -617,9 +617,9 @@
   height: 184px;
   overflow: hidden;
   border-radius: 24px;
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(227, 244, 255, 0.92));
-  border: 1px solid rgba(168, 212, 240, 0.85);
-  box-shadow: 0 12px 28px rgba(15, 31, 85, 0.12);
+  background: var(--johnny-drawer-art-bg);
+  border: 1px solid var(--johnny-drawer-art-border);
+  box-shadow: var(--johnny-drawer-art-shadow);
 }
 .johnny-drawer-header-art img {
   display: block;
@@ -665,7 +665,7 @@
 .johnny-drawer-status {
   margin: 0;
   padding: 10px 18px 0;
-  color: var(--accent2);
+  color: var(--johnny-drawer-status);
   font-size: 0.84rem;
   font-weight: 700;
 }
@@ -682,9 +682,9 @@
   margin-top: 12px;
 }
 .johnny-drawer-suggestion {
-  border: 1px solid rgba(0, 188, 222, 0.22);
-  background: rgba(255, 255, 255, 0.94);
-  color: #0b1d49;
+  border: 1px solid var(--johnny-suggestion-border);
+  background: var(--johnny-suggestion-bg);
+  color: var(--johnny-suggestion-text);
   border-radius: 999px;
   padding: 10px 14px;
   font: inherit;
@@ -703,8 +703,8 @@
   align-items: center;
   border-radius: 999px;
   padding: 4px 10px;
-  background: rgba(34, 196, 126, 0.12);
-  color: var(--success);
+  background: var(--johnny-tag-bg);
+  color: var(--johnny-tag-text);
   font-size: 0.75rem;
   font-weight: 800;
   letter-spacing: 0.02em;
@@ -719,10 +719,10 @@
   display: grid;
   gap: 8px;
   padding: 12px;
-  border: 1px solid rgba(168, 212, 240, 0.9);
+  border: 1px solid var(--johnny-card-border);
   border-radius: 16px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(241, 249, 255, 0.98) 100%);
-  box-shadow: 0 10px 22px rgba(15, 31, 85, 0.08);
+  background: var(--johnny-card-bg);
+  box-shadow: var(--johnny-action-card-shadow);
 }
 .johnny-action-card-head {
   display: flex;
@@ -752,9 +752,9 @@
 .johnny-recipe-preview-card {
   display: grid;
   gap: 10px;
-  border: 1px solid rgba(168, 212, 240, 0.9);
+  border: 1px solid var(--johnny-card-border);
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.92);
+  background: var(--johnny-recipe-card-bg);
   overflow: hidden;
 }
 .johnny-recipe-preview-image {
@@ -783,8 +783,8 @@
   align-items: center;
   border-radius: 999px;
   padding: 3px 8px;
-  background: rgba(34, 196, 126, 0.12);
-  color: var(--success);
+  background: color-mix(in srgb, var(--success) 14%, transparent);
+  color: color-mix(in srgb, var(--success) 76%, var(--text) 24%);
   font-size: 0.72rem;
   font-weight: 800;
 }
@@ -829,10 +829,10 @@
   gap: 10px;
   margin: 0 6px 12px;
   padding: 14px;
-  border: 1px solid rgba(168, 212, 240, 0.95);
+  border: 1px solid var(--johnny-card-border);
   border-radius: 18px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.99) 0%, rgba(245, 250, 255, 0.98) 100%);
-  box-shadow: 0 12px 24px rgba(15, 31, 85, 0.08);
+  background: var(--johnny-card-bg);
+  box-shadow: var(--johnny-card-shadow);
 }
 .johnny-memory-card-head,
 .johnny-follow-up-head,
@@ -882,16 +882,16 @@
   font-size: 0.72rem;
   font-weight: 800;
   letter-spacing: 0.03em;
-  background: rgba(0, 120, 212, 0.1);
-  color: #0b4d88;
+  background: var(--johnny-follow-up-status-bg);
+  color: var(--johnny-follow-up-status-text);
 }
 .johnny-follow-up-status.missed {
-  background: rgba(255, 46, 80, 0.12);
-  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  color: color-mix(in srgb, var(--danger) 76%, var(--text) 24%);
 }
 .johnny-follow-up-status.snoozed {
-  background: rgba(255, 208, 0, 0.2);
-  color: #8b6500;
+  background: var(--johnny-follow-up-snoozed-bg);
+  color: var(--johnny-follow-up-snoozed-text);
 }
 .johnny-follow-up-prompt,
 .johnny-follow-up-reason,
@@ -907,7 +907,7 @@
   color: var(--success);
 }
 .johnny-reasoning-confidence.medium {
-  color: #a56600;
+  color: var(--johnny-confidence-medium);
 }
 .johnny-reasoning-confidence.low {
   color: var(--danger);

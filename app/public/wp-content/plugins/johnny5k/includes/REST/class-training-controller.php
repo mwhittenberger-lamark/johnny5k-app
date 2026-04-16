@@ -6,6 +6,7 @@ defined( 'ABSPATH' ) || exit;
 use Johnny5k\Services\TrainingEngine;
 use Johnny5k\Services\ExerciseLibraryService;
 use Johnny5k\Services\UserTime;
+use Johnny5k\Support\TrainingDayTypes;
 
 /**
  * REST Controller: Training (plan management)
@@ -119,6 +120,21 @@ class TrainingController {
 			"SELECT * FROM {$p}fit_user_training_days WHERE training_plan_id = %d ORDER BY day_order",
 			$plan->id
 		) );
+
+		$has_invalid_day_types = false;
+		foreach ( $days as $day ) {
+			if ( ! TrainingDayTypes::is_valid( $day->day_type ?? '' ) ) {
+				$has_invalid_day_types = true;
+				break;
+			}
+		}
+
+		if ( $has_invalid_day_types && OnboardingController::repair_active_training_plan_from_preferences( $user_id ) ) {
+			$days = $wpdb->get_results( $wpdb->prepare(
+				"SELECT * FROM {$p}fit_user_training_days WHERE training_plan_id = %d ORDER BY day_order",
+				$plan->id
+			) );
+		}
 
 		foreach ( $days as $day ) {
 			$day->weekday_label = self::weekday_label( (int) $day->day_order );

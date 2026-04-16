@@ -14,6 +14,7 @@ export default function WorkoutActiveSession({
   wasResumed,
   readinessScore,
   scheduledDayType,
+  statusNotice,
   statusError,
   todayLabel,
   displayDayType,
@@ -69,6 +70,7 @@ export default function WorkoutActiveSession({
           {offlineStatus}
           {wasResumed ? <p className="settings-subtitle workout-session-note">Resumed your in-progress workout automatically.</p> : null}
           {scheduledDayType && displayDayType && scheduledDayType !== displayDayType ? <p className="settings-subtitle workout-session-note">Scheduled for today: {formatDayType(scheduledDayType)}. You chose to run {formatDayType(displayDayType)} instead.</p> : null}
+          {statusNotice ? <p className="settings-subtitle workout-session-note">{statusNotice}</p> : null}
           {statusError ? <ErrorState className="workout-inline-error" eyebrow="Workout status" message={statusError} title="There’s a problem with this session" /> : null}
         </div>
         <div className="workout-session-header-actions">
@@ -97,6 +99,7 @@ export default function WorkoutActiveSession({
               <h2>{sessionController.missionIntro.title}</h2>
               <p>{sessionController.missionIntro.message}</p>
               {sessionController.missionIntro.objective ? <p className="workout-ironquest-moment-detail">{sessionController.missionIntro.objective}</p> : null}
+              {sessionController.missionIntro.currentSituation ? <p className="workout-ironquest-moment-detail">{sessionController.missionIntro.currentSituation}</p> : null}
             </div>
           </div>
         </section>
@@ -197,11 +200,18 @@ export default function WorkoutActiveSession({
         session={session}
         exercises={exercises}
         liveFrames={liveWorkoutFrames}
+        ironQuestOverlay={sessionController.missionIntro}
+        ironQuestLivePrefs={sessionController.ironQuestLivePrefs}
         activeExerciseIdx={activeExerciseIdx}
         onSetActiveExerciseIdx={setActiveExerciseIdx}
         onCreateSet={sessionController.handleCreateSet}
+        onChooseIronQuestStoryOpening={sessionController.chooseIronQuestStoryOpening}
+        onProgressIronQuestStory={sessionController.progressIronQuestStory}
         onUpdateSet={sessionController.handleUpdateSet}
         onClose={sessionController.closeLiveMode}
+        onSetIronQuestStance={sessionController.setIronQuestLiveStance}
+        onSetIronQuestBeatsEnabled={sessionController.setIronQuestLiveBeatsEnabled}
+        ironQuestStoryBusy={sessionController.ironQuestStoryBusy}
         pauseSessionTimer={sessionController.pauseSessionTimer}
         resumeSessionTimer={sessionController.resumeSessionTimer}
         sessionTimerPaused={sessionController.sessionTimerPaused}

@@ -12,7 +12,10 @@ export const ironquestApi = {
   selectMission: (payload) => api.post('/ironquest/missions/select', payload),
   startMission: (payload) => api.post('/ironquest/missions/start', payload),
   resolveMission: (payload) => api.post('/ironquest/missions/resolve', payload),
+  chooseStoryOpening: (payload) => api.post('/ironquest/missions/story/choice', payload),
+  progressStory: (payload) => api.post('/ironquest/missions/story/progress', payload),
   refreshDailyState: (payload = {}) => api.post('/ironquest/daily/refresh', payload),
   updateDailyProgress: (payload = {}) => api.post('/ironquest/daily/progress', payload),
   fastTravel: (payload = {}) => api.post('/ironquest/route/fast-travel', payload),
+  travelToLocation: (payload = {}) => api.post('/ironquest/route/travel', payload),
 }

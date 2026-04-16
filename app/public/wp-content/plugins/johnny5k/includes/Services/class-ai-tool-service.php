@@ -152,6 +152,31 @@ class AiToolService {
 					'additionalProperties' => false,
 				],
 			],
+			'set_training_schedule' => [
+				'read_only'   => false,
+				'enabled'     => true,
+				'description' => 'Set or change the user\'s weekly training split and workout schedule. Use when the user wants specific day types assigned to specific weekdays, such as push on Monday, pull on Wednesday, legs on Friday, cardio on Saturday, and rest on the remaining days.',
+				'parameters'  => [
+					'type'                 => 'object',
+					'properties'           => [
+						'preferred_workout_days_json' => [
+							'type'        => 'array',
+							'description' => 'Weekly schedule entries. Each item should include a weekday label (Mon, Tue, Wed, Thu, Fri, Sat, Sun) and a day_type. Omitted weekdays will default to rest.',
+							'items'       => [
+								'type'                 => 'object',
+								'properties'           => [
+									'day' => [ 'type' => 'string', 'description' => 'Weekday label: Mon, Tue, Wed, Thu, Fri, Sat, or Sun.' ],
+									'day_type' => [ 'type' => 'string', 'description' => 'Workout type for that weekday: ' . TrainingDayTypes::ai_list() . '.' ],
+								],
+								'required'             => [ 'day', 'day_type' ],
+								'additionalProperties' => false,
+							],
+						],
+					],
+					'required'             => [ 'preferred_workout_days_json' ],
+					'additionalProperties' => false,
+				],
+			],
 			'create_custom_workout' => [
 				'read_only'   => false,
 				'enabled'     => true,
@@ -365,6 +390,7 @@ class AiToolService {
 				'create_custom_workout'    => 'Johnny queued a custom workout for you on the workout page.',
 				'create_personal_exercise' => 'Johnny added that exercise to your custom exercise library.',
 				'create_training_plan'     => 'Johnny created a new training plan.',
+				'set_training_schedule'    => 'Johnny updated your weekly training schedule.',
 				'clear_follow_ups'        => 'Johnny cleared the requested follow-ups.',
 				'clear_sms_reminders'     => 'Johnny canceled the requested SMS reminders.',
 				'swap_workout_exercise'    => 'Johnny updated the current workout.',
@@ -395,7 +421,7 @@ class AiToolService {
 		$message            = strtolower( trim( $user_message ) );
 		$current_screen     = sanitize_key( (string) ( $context_overrides['current_screen'] ?? '' ) );
 		$workout_keywords   = [
-			'workout', 'training', 'exercise', 'session', 'split', 'push day', 'pull day', 'leg day', 'upper body', 'lower body', 'bench', 'squat', 'deadlift', 'swap exercise', 'replace exercise',
+			'workout', 'training', 'exercise', 'session', 'split', 'schedule', 'training schedule', 'workout schedule', 'weekly schedule', 'week split', 'weekly split', 'push day', 'pull day', 'leg day', 'upper body', 'lower body', 'bench', 'squat', 'deadlift', 'swap exercise', 'replace exercise',
 		];
 		$nutrition_keywords = [
 			'meal', 'meals', 'breakfast', 'lunch', 'dinner', 'snack', 'shake', 'protein', 'calorie', 'macro', 'macros', 'recipe', 'recipes', 'pantry', 'grocery', 'food', 'eat', 'eating',
@@ -412,7 +438,7 @@ class AiToolService {
 
 	private static function tool_allowed_for_request( string $tool_name, array $request_context ): bool {
 		return match ( $tool_name ) {
-			'create_training_plan', 'create_custom_workout', 'create_personal_exercise', 'swap_workout_exercise' => ! empty( $request_context['workout_mutation_allowed'] ),
+			'create_training_plan', 'set_training_schedule', 'create_custom_workout', 'create_personal_exercise', 'swap_workout_exercise' => ! empty( $request_context['workout_mutation_allowed'] ),
 			default => true,
 		};
 	}

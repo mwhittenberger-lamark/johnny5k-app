@@ -31,10 +31,11 @@ class RestRouteRegistrationTest extends ServiceTestCase {
 		$this->assertRouteNotRegistered( '/nutrition/summary' );
 	}
 
-	public function test_ironquest_controller_registers_fast_travel_and_restart_routes(): void {
+	public function test_ironquest_controller_registers_fast_travel_travel_and_restart_routes(): void {
 		IronQuestController::register_routes();
 
 		$this->assertRouteRegistered( '/ironquest/route/fast-travel', [ IronQuestController::class, 'fast_travel' ] );
+		$this->assertRouteRegistered( '/ironquest/route/travel', [ IronQuestController::class, 'travel_to_location' ] );
 		$this->assertRouteRegistered( '/ironquest/restart', [ IronQuestController::class, 'restart_onboarding' ] );
 	}
 

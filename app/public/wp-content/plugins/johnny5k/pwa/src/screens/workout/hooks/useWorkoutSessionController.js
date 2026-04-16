@@ -1,9 +1,54 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { ironquestApi } from '../../../api/modules/ironquest'
 import { showGlobalToast } from '../../../lib/uiFeedback'
 import { buildIronQuestMissionIntro, buildIronQuestWorkoutToast } from '../../../lib/ironquestFeedback'
 import { useLatest } from './useLatest'
 import { buildWorkoutCompletionReview, formatDayType, formatWorkoutElapsedTime, getPausedTimerNowValue } from '../workoutScreenUtils'
+
+export function buildRestoredIronQuestMissionIntro(activeMissionPayload, sessionId, readinessScore) {
+  const numericSessionId = Number(sessionId || 0)
+  if (!numericSessionId || !activeMissionPayload || typeof activeMissionPayload !== 'object') {
+    return null
+  }
+
+  const activeRun = activeMissionPayload?.active_run ?? null
+  if (!activeRun || String(activeRun?.source_session_id || '') !== String(numericSessionId) || String(activeRun?.status || '') !== 'active') {
+    return null
+  }
+
+  const missionSlug = String(activeRun?.mission_slug || '').trim()
+  const matchingMission = Array.isArray(activeMissionPayload?.missions)
+    ? activeMissionPayload.missions.find((mission) => String(mission?.slug || '').trim() === missionSlug) ?? null
+    : null
+
+  return buildIronQuestMissionIntro({
+    run: activeRun,
+    story_state: activeMissionPayload?.story_state ?? null,
+    profile: activeMissionPayload?.profile ?? null,
+    location: activeMissionPayload?.location ?? null,
+    mission: matchingMission,
+  }, {
+    readinessScore,
+  })
+}
+
+function buildIronQuestStartNotice(ironquest) {
+  const errorMessage = String(ironquest?.error || '').trim()
+  if (!errorMessage) {
+    return ''
+  }
+
+  if (/turned off for this profile/i.test(errorMessage)) {
+    return 'Workout started in standard coach mode because IronQuest mode is off for this profile. Turn it on in Settings or the quest hub to attach missions.'
+  }
+
+  if (/not enabled for this account/i.test(errorMessage)) {
+    return 'Workout started in standard coach mode because this account does not currently have IronQuest access.'
+  }
+
+  return `Workout started in standard coach mode because IronQuest could not attach a mission: ${errorMessage}`
+}
 
 export function useWorkoutSessionController({
   session,
@@ -29,6 +74,7 @@ export function useWorkoutSessionController({
   takeRestDay,
   previewDayType,
   customWorkoutDraft,
+  readinessScore,
   scheduledDayType,
   displayDayType,
   displaySessionTitle,
@@ -60,6 +106,11 @@ export function useWorkoutSessionController({
   const [sessionTimerPausedMs, setSessionTimerPausedMs] = useState(0)
   const [completionReview, setCompletionReview] = useState(null)
   const [missionIntro, setMissionIntro] = useState(null)
+  const [ironQuestStoryBusy, setIronQuestStoryBusy] = useState(false)
+  const [ironQuestLivePrefs, setIronQuestLivePrefs] = useState({
+    beatsEnabled: true,
+    stance: 'steady',
+  })
   const [pendingSessionAction, setPendingSessionAction] = useState(null)
   const queryClient = useQueryClient()
   const locationStateRef = useLatest(location.state && typeof location.state === 'object' ? location.state : null)
@@ -192,6 +243,50 @@ export function useWorkoutSessionController({
     if (session) return
     setLiveModeOpen(false)
   }, [session])
+
+  useEffect(() => {
+    if (!session?.session?.id) {
+      setIronQuestLivePrefs({ beatsEnabled: true, stance: 'steady' })
+      return
+    }
+
+    setIronQuestLivePrefs({ beatsEnabled: true, stance: 'steady' })
+  }, [session?.session?.id])
+
+  useEffect(() => {
+    const sessionId = Number(session?.session?.id || 0)
+
+    if (!sessionId) {
+      setMissionIntro(null)
+      return undefined
+    }
+
+    let active = true
+
+    ironquestApi.activeMission()
+      .then((payload) => {
+        if (!active) {
+          return
+        }
+
+        setMissionIntro(
+          buildRestoredIronQuestMissionIntro(
+            payload,
+            sessionId,
+            session?.session?.readiness_score ?? readinessScore,
+          )
+        )
+      })
+      .catch(() => {
+        if (active) {
+          setMissionIntro(null)
+        }
+      })
+
+    return () => {
+      active = false
+    }
+  }, [readinessScore, session?.session?.id, session?.session?.readiness_score])
 
   useEffect(() => {
     if (!completionReview) {
@@ -349,9 +444,17 @@ export function useWorkoutSessionController({
     })
 
     const missionName = startResult?.ironquest?.mission?.name || ''
-    setMissionIntro(buildIronQuestMissionIntro(startResult?.ironquest))
+    setMissionIntro(buildIronQuestMissionIntro(startResult?.ironquest, {
+      readinessScore: startResult?.session?.readiness_score ?? readinessScore,
+    }))
     if (missionName) {
       setStatusNotice(`IronQuest mission started: ${missionName}.`)
+      return
+    }
+
+    const ironQuestStartNotice = buildIronQuestStartNotice(startResult?.ironquest)
+    if (ironQuestStartNotice) {
+      setStatusNotice(ironQuestStartNotice)
     }
   }
 
@@ -458,6 +561,90 @@ export function useWorkoutSessionController({
     setLiveModeOpen(false)
   }, [])
 
+  const setIronQuestLiveStance = useCallback((stance) => {
+    const normalizedStance = ['steady', 'aggressive', 'cautious'].includes(String(stance || '').trim().toLowerCase())
+      ? String(stance || '').trim().toLowerCase()
+      : 'steady'
+
+    setIronQuestLivePrefs((current) => ({
+      ...current,
+      stance: normalizedStance,
+      beatsEnabled: true,
+    }))
+  }, [])
+
+  const setIronQuestLiveBeatsEnabled = useCallback((enabled) => {
+    setIronQuestLivePrefs((current) => ({
+      ...current,
+      beatsEnabled: Boolean(enabled),
+    }))
+  }, [])
+
+  const chooseIronQuestStoryOpening = useCallback(async (choiceId) => {
+    const runId = Number(missionIntro?.storyState?.run_id || missionIntro?.runId || 0)
+    if (!runId || ironQuestStoryBusy) {
+      return null
+    }
+
+    setIronQuestStoryBusy(true)
+    try {
+      const payload = await ironquestApi.chooseStoryOpening({
+        run_id: runId,
+        choice_id: choiceId,
+        stance: ironQuestLivePrefs.stance,
+      })
+
+      setMissionIntro((current) => current ? buildIronQuestMissionIntro({
+        run: payload?.run ?? { encounter_phase: current.encounterPhase, run_type: current.runType },
+        story_state: payload?.story_state ?? current.storyState,
+        profile: {
+          class_slug: current.classSlug,
+          motivation_slug: current.motivationSlug,
+          starter_portrait_attachment_id: current.portraitAttachmentId,
+        },
+        location: {
+          slug: current.locationSlug,
+          name: current.locationName,
+          ai_prompt_anchor: current.aiAnchor,
+        },
+        mission: {
+          slug: current.missionSlug,
+          name: current.missionName,
+          summary: current.objective,
+        },
+      }, { readinessScore }) : current)
+
+      return payload
+    } finally {
+      setIronQuestStoryBusy(false)
+    }
+  }, [ironQuestLivePrefs.stance, ironQuestStoryBusy, missionIntro, readinessScore])
+
+  const progressIronQuestStory = useCallback(async (progressPayload = {}) => {
+    const runId = Number(missionIntro?.storyState?.run_id || missionIntro?.runId || 0)
+    if (!runId) {
+      return null
+    }
+
+    const payload = await ironquestApi.progressStory({
+      run_id: runId,
+      stance: ironQuestLivePrefs.stance,
+      ...progressPayload,
+    })
+
+    setMissionIntro((current) => current ? ({
+      ...current,
+      encounterPhase: String(payload?.run?.encounter_phase || current.encounterPhase || 'intro').trim() || 'intro',
+      storyState: payload?.story_state ?? current.storyState,
+      currentSituation: String(payload?.story_state?.current_situation || current.currentSituation || '').trim(),
+      decisionPrompt: String(payload?.story_state?.decision_prompt || current.decisionPrompt || '').trim(),
+      openingChoice: String(payload?.story_state?.opening_choice || current.openingChoice || '').trim(),
+      latestBeat: String(payload?.story_state?.latest_beat || current.latestBeat || '').trim(),
+    }) : current)
+
+    return payload
+  }, [ironQuestLivePrefs.stance, missionIntro])
+
   return {
     addingSlot,
     activeSessionTimerLabel,
@@ -481,6 +668,8 @@ export function useWorkoutSessionController({
     handleSwapExercise,
     handleUndoAction,
     handleUpdateSet,
+    ironQuestLivePrefs,
+    ironQuestStoryBusy,
     liveModeOpen,
     missionIntro,
     openLiveMode,
@@ -492,6 +681,10 @@ export function useWorkoutSessionController({
     requestRestartSession,
     resumeSessionTimer,
     sessionTimerPaused,
+    chooseIronQuestStoryOpening,
+    progressIronQuestStory,
+    setIronQuestLiveBeatsEnabled,
+    setIronQuestLiveStance,
     closePendingSessionAction,
     confirmPendingSessionAction,
     takingRestDay,

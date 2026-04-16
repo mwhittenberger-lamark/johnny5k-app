@@ -218,6 +218,145 @@ class IronQuestRouteProgressionTest extends ServiceTestCase {
 		);
 	}
 
+	public function test_travel_to_location_endpoint_switches_to_unlocked_region_and_sets_default_mission(): void {
+		$user_id = 42;
+		$GLOBALS['johnny5k_test_users'][ $user_id ] = new \WP_User( $user_id, 'admin@example.test', 'admin', [ 'manage_options' => true ] );
+		\wp_set_current_user( $user_id );
+
+		$profile = [
+			'id'                    => 7,
+			'user_id'               => $user_id,
+			'enabled'               => true,
+			'class_slug'            => 'warrior',
+			'motivation_slug'       => 'discipline',
+			'level'                 => 2,
+			'xp'                    => 180,
+			'gold'                  => 25,
+			'hp_current'            => 100,
+			'hp_max'                => 100,
+			'current_location_slug' => 'the_training_grounds',
+			'active_mission_slug'   => 'captain_of_the_yard',
+		];
+
+		$this->queueProfileLookups( $user_id, $profile, 16 );
+		$this->queueUnlockLookups(
+			$user_id,
+			[
+				$this->rawUnlockRow( 11, $user_id, 'location_arc', 'the_training_grounds' ),
+				$this->rawUnlockRow( 12, $user_id, 'location', 'grim_hollow_village' ),
+			],
+			24
+		);
+		$this->queueActivityAwardLookups(
+			$user_id,
+			[
+				$this->rawLedgerRow( 21, $user_id, 'route_progress', 'steps_2026-04-08', 'travel_points', [ 'points' => 3 ] ),
+			],
+			36
+		);
+		$this->wpdb()->expectGetVar( "SELECT timezone FROM wp_fit_user_profiles WHERE user_id = {$user_id} LIMIT 1", 'America/New_York' );
+		$daily_state_callback = function () use ( $user_id ) {
+			foreach ( $this->wpdb()->inserted as $insert ) {
+				if ( $insert['table'] !== 'wp_fit_ironquest_daily_state' ) {
+					continue;
+				}
+				if ( (int) ( $insert['data']['user_id'] ?? 0 ) !== $user_id ) {
+					continue;
+				}
+				if ( ( $insert['data']['state_date'] ?? '' ) !== '2026-04-09' ) {
+					continue;
+				}
+
+				return array_merge(
+					[
+						'id'         => 1,
+						'created_at' => '2026-04-09 12:00:00',
+						'updated_at' => '2026-04-09 12:00:00',
+					],
+					$insert['data']
+				);
+			}
+
+			return null;
+		};
+		for ( $index = 0; $index < 6; $index++ ) {
+			$this->wpdb()->expectGetRow( "FROM wp_fit_ironquest_daily_state WHERE user_id = {$user_id} AND state_date = '2026-04-09'", $daily_state_callback );
+		}
+		$this->wpdb()->expectGetRow( "FROM wp_fit_ironquest_mission_runs WHERE user_id = {$user_id} AND status = 'active'", null );
+
+		$request = new \WP_REST_Request( 'POST', '/fit/v1/ironquest/route/travel' );
+		$request->set_param( 'location_slug', 'grim_hollow_village' );
+
+		$response = IronQuestController::travel_to_location( $request );
+		$data     = $response->get_data();
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertTrue( $data['traveled'] );
+		$this->assertSame( 'grim_hollow_village', $data['location_slug'] );
+		$this->assertSame( 'grim_hollow_village', $data['profile']['current_location_slug'] );
+		$this->assertSame( 'shadows_in_the_streets', $data['profile']['active_mission_slug'] );
+		$this->assertSame( 'Grim Hollow Village', $data['location']['name'] );
+		$this->assertTrue(
+			$this->hasUpdatedRow(
+				'wp_fit_ironquest_profiles',
+				static fn( array $row ): bool => ( $row['current_location_slug'] ?? '' ) === 'grim_hollow_village'
+					&& ( $row['active_mission_slug'] ?? '' ) === 'shadows_in_the_streets'
+			)
+		);
+	}
+
+	public function test_travel_to_location_endpoint_rejects_locked_region(): void {
+		$user_id = 42;
+		$GLOBALS['johnny5k_test_users'][ $user_id ] = new \WP_User( $user_id, 'admin@example.test', 'admin', [ 'manage_options' => true ] );
+		\wp_set_current_user( $user_id );
+
+		$profile = [
+			'id'                    => 7,
+			'user_id'               => $user_id,
+			'enabled'               => true,
+			'class_slug'            => 'warrior',
+			'motivation_slug'       => 'discipline',
+			'level'                 => 2,
+			'xp'                    => 180,
+			'gold'                  => 25,
+			'hp_current'            => 100,
+			'hp_max'                => 100,
+			'current_location_slug' => 'the_training_grounds',
+			'active_mission_slug'   => 'captain_of_the_yard',
+		];
+
+		$this->queueProfileLookups( $user_id, $profile, 8 );
+		$this->queueUnlockLookups(
+			$user_id,
+			[
+				$this->rawUnlockRow( 11, $user_id, 'location_arc', 'the_training_grounds' ),
+			],
+			12
+		);
+		$this->queueActivityAwardLookups(
+			$user_id,
+			[
+				$this->rawLedgerRow( 21, $user_id, 'route_progress', 'steps_2026-04-08', 'travel_points', [ 'points' => 1 ] ),
+			],
+			18
+		);
+
+		$request = new \WP_REST_Request( 'POST', '/fit/v1/ironquest/route/travel' );
+		$request->set_param( 'location_slug', 'grim_hollow_village' );
+
+		$response = IronQuestController::travel_to_location( $request );
+
+		$this->assertSame( 409, $response->get_status() );
+		$this->assertSame( 'That region is not unlocked yet.', $response->get_data()['message'] ?? '' );
+		$this->assertFalse(
+			$this->hasUpdatedRow(
+				'wp_fit_ironquest_profiles',
+				static fn( array $row ): bool => array_key_exists( 'current_location_slug', $row )
+					&& 'grim_hollow_village' === ( $row['current_location_slug'] ?? '' )
+			)
+		);
+	}
+
 	public function test_restart_onboarding_endpoint_clears_identity_and_disables_mode(): void {
 		$user_id = 42;
 		$GLOBALS['johnny5k_test_users'][ $user_id ] = new \WP_User( $user_id, 'admin@example.test', 'admin', [ 'manage_options' => true ] );

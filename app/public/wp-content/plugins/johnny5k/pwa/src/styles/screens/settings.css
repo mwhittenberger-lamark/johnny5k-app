@@ -243,13 +243,6 @@
   background: rgba(255, 255, 255, 0.72);
   border: 1px solid rgba(15, 31, 85, 0.06);
 }
-.settings-prediction-card {
-  margin-bottom: var(--space-4);
-  background:
-    radial-gradient(circle at top right, rgba(255, 208, 0, 0.14), transparent 30%),
-    radial-gradient(circle at left center, rgba(0, 188, 222, 0.1), transparent 38%),
-    linear-gradient(160deg, rgba(255,255,255,0.98), rgba(250, 247, 239, 0.98));
-}
 .settings-prediction-head {
   display: flex;
   align-items: flex-start;
@@ -1187,7 +1180,70 @@
   }
 }
 
-:root[data-experience-mode='ironquest'] .settings-screen div[class^='settings-'],
-:root[data-experience-mode='ironquest'] .settings-screen div[class*=' settings-'] {
-  background: none !important;
+:root[data-experience-mode='ironquest'] .settings-accordion-group {
+  border-color: var(--border-strong);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--bg2) 96%, white 4%), color-mix(in srgb, var(--bg3) 64%, var(--bg2) 36%));
+  box-shadow: var(--mode-shadow);
+}
+
+:root[data-experience-mode='ironquest'] .settings-accordion-group.open {
+  border-color: color-mix(in srgb, var(--accent2) 42%, var(--border-strong) 58%);
+}
+
+:root[data-experience-mode='ironquest'] .settings-accordion-eyebrow,
+:root[data-experience-mode='ironquest'] .settings-accordion-count {
+  color: var(--accent2);
+}
+
+:root[data-experience-mode='ironquest'] .settings-accordion-count {
+  background: color-mix(in srgb, var(--accent2) 16%, var(--bg2) 84%);
+}
+
+:root[data-experience-mode='ironquest'] .settings-accordion-trigger p,
+:root[data-experience-mode='ironquest'] .settings-identity-copy p,
+:root[data-experience-mode='ironquest'] .settings-identity-stat span,
+:root[data-experience-mode='ironquest'] .settings-trend-bar-value,
+:root[data-experience-mode='ironquest'] .settings-trend-bar-label {
+  color: var(--text-muted2);
+}
+
+:root[data-experience-mode='ironquest'] .settings-identity-card,
+:root[data-experience-mode='ironquest'] .settings-section,
+:root[data-experience-mode='ironquest'] .target-preview-card,
+:root[data-experience-mode='ironquest'] .settings-screen .dash-card {
+  border-color: var(--border-strong);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--bg2) 95%, white 5%), color-mix(in srgb, var(--bg) 92%, var(--bg2) 8%));
+  box-shadow: var(--mode-shadow);
+}
+
+:root[data-experience-mode='ironquest'] .settings-identity-stat,
+:root[data-experience-mode='ironquest'] .settings-screen .onboarding-schedule-row,
+:root[data-experience-mode='ironquest'] .settings-screen .weekly-split-day {
+  border-color: color-mix(in srgb, var(--border) 72%, var(--accent2) 28%);
+  background: color-mix(in srgb, var(--bg2) 88%, white 12%);
+  color: var(--text2);
+}
+
+:root[data-experience-mode='ironquest'] .settings-identity-stat strong,
+:root[data-experience-mode='ironquest'] .settings-screen h3,
+:root[data-experience-mode='ironquest'] .settings-screen h2 {
+  color: var(--text2);
+}
+
+:root[data-experience-mode='ironquest'] .settings-trend-card {
+  border-color: color-mix(in srgb, var(--border) 72%, var(--accent3) 28%);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--bg) 90%, black 10%), color-mix(in srgb, var(--bg3) 70%, var(--bg) 30%));
+}
+
+:root[data-experience-mode='ironquest'] .settings-trend-head strong,
+:root[data-experience-mode='ironquest'] .settings-trend-head .btn-outline {
+  color: var(--text2);
+}
+
+:root[data-experience-mode='ironquest'] .settings-trend-bar-track {
+  background: color-mix(in srgb, var(--bg2) 22%, transparent 78%);
+}
+
+:root[data-experience-mode='ironquest'] .settings-trend-bar-fill {
+  background: linear-gradient(180deg, var(--accent2), var(--accent));
 }

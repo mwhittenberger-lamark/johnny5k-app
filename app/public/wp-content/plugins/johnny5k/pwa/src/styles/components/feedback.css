@@ -9,22 +9,22 @@
   max-width: min(360px, calc(100vw - 32px));
   padding: 12px 14px;
   border-radius: 16px;
-  border: 1px solid rgba(21, 29, 38, 0.08);
-  background: rgba(15, 31, 85, 0.94);
-  color: #fff;
-  box-shadow: 0 18px 40px rgba(15, 31, 85, 0.26);
+  border: 1px solid var(--toast-border);
+  background: var(--toast-bg-success);
+  color: var(--toast-text);
+  box-shadow: var(--toast-shadow);
 }
 
 .app-toast.success {
-  background: rgba(15, 31, 85, 0.94);
+  background: var(--toast-bg-success);
 }
 
 .app-toast.info {
-  background: rgba(104, 74, 15, 0.96);
+  background: var(--toast-bg-info);
 }
 
 .app-toast.error {
-  background: rgba(128, 22, 42, 0.96);
+  background: var(--toast-bg-error);
 }
 
 .app-toast-copy {
@@ -61,7 +61,7 @@
 .app-toast-details p {
   font-size: 0.78rem;
   line-height: 1.35;
-  opacity: 0.92;
+  color: var(--toast-copy);
 }
 
 .app-toast-actions {
@@ -74,8 +74,8 @@
   min-height: 32px;
   padding: 0 12px;
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.24);
-  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--toast-action-border);
+  background: var(--toast-action-bg);
   color: inherit;
   font: inherit;
   font-size: 0.78rem;
@@ -84,20 +84,20 @@
 }
 
 .app-toast-action.primary {
-  background: rgba(255, 255, 255, 0.18);
-  border-color: rgba(255, 255, 255, 0.38);
+  background: var(--toast-action-primary-bg);
+  border-color: var(--toast-action-primary-border);
 }
 
 .app-toast-action:hover,
 .app-toast-action:focus-visible {
-  background: rgba(255, 255, 255, 0.16);
+  background: var(--toast-action-hover-bg);
   outline: none;
 }
 
 .app-toast-dismiss {
   border: 0;
   background: transparent;
-  color: inherit;
+  color: var(--toast-dismiss-color);
   font: inherit;
   font-size: 1.1rem;
   font-weight: 800;

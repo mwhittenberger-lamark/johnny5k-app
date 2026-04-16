@@ -1,4 +1,4 @@
-export function buildCoachPrompt(event, activeExercise) {
+export function buildCoachPrompt(event, activeExercise, ironQuestOverlay = null) {
   const eventSummary = String(event?.summary || '').trim()
   const userText = String(event?.userText || '').trim()
   const exerciseContext = event?.exerciseContext || buildLiveExerciseSnapshot(activeExercise)
@@ -7,25 +7,60 @@ export function buildCoachPrompt(event, activeExercise) {
   const completedExerciseReview = event?.savedSet?.review ?? null
   const completedReviewSummary = String(completedExerciseReview?.summary || '').trim()
   const completedReviewRecommendation = String(completedExerciseReview?.recommendation || '').trim()
+  const ironQuestGuidance = buildIronQuestPromptFragment(ironQuestOverlay)
 
   if (event?.manual && userText) {
-    return `You are Johnny coaching a user live during their workout inside Johnny5k. Current exercise: ${exerciseName}. Answer the user's question directly in no more than 3 short sentences. Give one concrete coaching cue when possible. ${coachingCueGuidance} You can give form and setup advice, but you cannot see the user, so do not claim visual confirmation with lines like "great form" or "that looked clean" unless the user said that first. If the question is about form, setup, or how to perform the movement, prefer returning an open_exercise_demo action for the current exercise. User question: ${userText}`
+    return `You are Johnny coaching a user live during their workout inside Johnny5k. Current exercise: ${exerciseName}. Answer the user's question directly in no more than 3 short sentences. Give one concrete coaching cue when possible. ${coachingCueGuidance}${ironQuestGuidance} You can give form and setup advice, but you cannot see the user, so do not claim visual confirmation with lines like "great form" or "that looked clean" unless the user said that first. If the question is about form, setup, or how to perform the movement, prefer returning an open_exercise_demo action for the current exercise. User question: ${userText}`
   }
 
   if (event?.type === 'exercise_changed') {
     const loadGuidance = buildLoadGuidancePromptFragment(exerciseContext)
-    return `You are Johnny coaching a user live during their workout inside Johnny5k. The user just moved to a new exercise. Respond with 1 to 2 short sentences only. ${loadGuidance} Give a direct setup cue or execution reminder for the first working set. ${coachingCueGuidance} Do not repeat the whole workout plan. Event: ${eventSummary}`
+    return `You are Johnny coaching a user live during their workout inside Johnny5k. The user just moved to a new exercise. Respond with 1 to 2 short sentences only. ${loadGuidance} Give a direct setup cue or execution reminder for the first working set. ${coachingCueGuidance}${ironQuestGuidance} Do not repeat the whole workout plan. Event: ${eventSummary}`
   }
 
   if (event?.type === 'exercise_completed') {
-    return `You are Johnny coaching a user live during their workout inside Johnny5k. The user just saved the last planned set and finished all planned sets for ${exerciseName}. Respond with 1 to 2 short sentences only. Open with encouragement tied to the work they just finished. Review the whole exercise, not just the last set, and tell the user what today's performance suggests for the next time they perform this exercise. When the data supports it, explicitly recommend one concrete next step such as adding a small amount of weight, adding a set, keeping the load the same, or reducing weight because reps fell short. ${completedReviewSummary ? `Use this exercise review: ${completedReviewSummary}` : ''} ${completedReviewRecommendation ? `Preferred next-step signal: ${completedReviewRecommendation}.` : ''} ${coachingCueGuidance} Do not talk about another set on this exercise because the exercise is done. Event: ${eventSummary}`
+    return `You are Johnny coaching a user live during their workout inside Johnny5k. The user just saved the last planned set and finished all planned sets for ${exerciseName}. Respond with 1 to 2 short sentences only. Open with encouragement tied to the work they just finished. Review the whole exercise, not just the last set, and tell the user what today's performance suggests for the next time they perform this exercise. When the data supports it, explicitly recommend one concrete next step such as adding a small amount of weight, adding a set, keeping the load the same, or reducing weight because reps fell short. ${completedReviewSummary ? `Use this exercise review: ${completedReviewSummary}` : ''} ${completedReviewRecommendation ? `Preferred next-step signal: ${completedReviewRecommendation}.` : ''} ${coachingCueGuidance}${ironQuestGuidance} Do not talk about another set on this exercise because the exercise is done. Event: ${eventSummary}`
   }
 
   if (event?.type === 'set_saved') {
-    return `You are Johnny coaching a user live during their workout inside Johnny5k. The user just saved a working set on ${exerciseName} and still has more work left on this exercise. Respond with 1 to 2 short sentences only. Give quick encouragement, then one useful cue or rest-timing instruction for the next set. ${coachingCueGuidance} Do not talk about future workouts yet. Event: ${eventSummary}`
+    return `You are Johnny coaching a user live during their workout inside Johnny5k. The user just saved a working set on ${exerciseName} and still has more work left on this exercise. Respond with 1 to 2 short sentences only. Give quick encouragement, then one useful cue or rest-timing instruction for the next set. ${coachingCueGuidance}${ironQuestGuidance} Do not talk about future workouts yet. Event: ${eventSummary}`
   }
 
-  return `You are Johnny coaching a user live during their workout inside Johnny5k. The app is sending you a workout-state update. Respond with 1 to 2 short sentences only. Give live encouragement, one useful cue, or rest-timing guidance based on the current state. ${coachingCueGuidance} Do not repeat the entire workout plan. Event: ${eventSummary}`
+  return `You are Johnny coaching a user live during their workout inside Johnny5k. The app is sending you a workout-state update. Respond with 1 to 2 short sentences only. Give live encouragement, one useful cue, or rest-timing guidance based on the current state. ${coachingCueGuidance}${ironQuestGuidance} Do not repeat the entire workout plan. Event: ${eventSummary}`
+}
+
+export function buildRestCoachMessage({ exerciseName, kind, restGuidance, ironQuestOverlay = null }) {
+  const movementLabel = exerciseName || 'the current lift'
+
+  if (!ironQuestOverlay) {
+    if (restGuidance.tone === 'sweet') {
+      return kind === 'exercise'
+        ? `Transition timing is in the sweet spot. Roll straight into ${movementLabel} while you are still inside the ${restGuidance.windowLabel} target.`
+        : `Rest is in the sweet spot for ${movementLabel}. Take the next set now while you are still inside the ${restGuidance.windowLabel} target.`
+    }
+
+    return kind === 'exercise'
+      ? `Transition time is drifting long. Get ${movementLabel} started now so the session stays sharp.`
+      : `Rest is drifting long on ${movementLabel}. Start the next set now unless you need a little more time for safety.`
+  }
+
+  const missionLabel = String(ironQuestOverlay?.missionName || ironQuestOverlay?.title || 'the mission').trim()
+  const stance = String(ironQuestOverlay?.stance || 'steady').trim().toLowerCase()
+  const pressureLead = stance === 'aggressive'
+    ? `Press the attack on ${missionLabel}.`
+    : stance === 'cautious'
+      ? `Hold the line on ${missionLabel}.`
+      : `Keep ${missionLabel} moving.`
+
+  if (restGuidance.tone === 'sweet') {
+    return kind === 'exercise'
+      ? `${pressureLead} Move into ${movementLabel} now while the transition window is still clean.`
+      : `${pressureLead} Start the next ${movementLabel} set now while you are still inside the ${restGuidance.windowLabel} target.`
+  }
+
+  return kind === 'exercise'
+    ? `${missionLabel} is losing momentum. Get ${movementLabel} started now and keep the route moving.`
+    : `${missionLabel} is starting to stall. Begin the next ${movementLabel} set now unless you need a little more time for safety.`
 }
 
 export function buildSavedSetSummary(exercise, currentSetIdx, payload, options = {}) {
@@ -181,6 +216,43 @@ export function buildNextSetCoachMessage(exercise, setNumber, totalSetCount) {
   const totalSetsLabel = totalSetCount > 0 ? `Set ${setNumber} of ${totalSetCount}` : `Set ${setNumber}`
 
   return `${totalSetsLabel} is up for ${exerciseName}. Stay inside ${repRange}.`
+}
+
+function buildIronQuestPromptFragment(ironQuestOverlay) {
+  if (!ironQuestOverlay || typeof ironQuestOverlay !== 'object') {
+    return ' '
+  }
+
+  const details = []
+  const classSlug = String(ironQuestOverlay?.classSlug || '').trim()
+  const locationName = String(ironQuestOverlay?.locationName || ironQuestOverlay?.locationLabel || '').trim()
+  const missionName = String(ironQuestOverlay?.missionName || ironQuestOverlay?.title || '').trim()
+  const encounterPhase = String(ironQuestOverlay?.encounterPhase || '').trim()
+  const resultBand = String(ironQuestOverlay?.resultBand || '').trim()
+  const readinessBand = String(ironQuestOverlay?.readinessBand || '').trim()
+  const stance = String(ironQuestOverlay?.stance || '').trim()
+  const aiAnchor = Array.isArray(ironQuestOverlay?.aiAnchor)
+    ? ironQuestOverlay.aiAnchor.map(entry => String(entry || '').trim()).filter(Boolean).slice(0, 2)
+    : []
+
+  if (classSlug) details.push(`class ${formatQuestToken(classSlug)}`)
+  if (locationName) details.push(`location ${locationName}`)
+  if (missionName) details.push(`mission ${missionName}`)
+  if (encounterPhase) details.push(`encounter phase ${formatQuestToken(encounterPhase)}`)
+  if (resultBand) details.push(`result band ${formatQuestToken(resultBand)}`)
+  if (readinessBand) details.push(`readiness band ${formatQuestToken(readinessBand)}`)
+  if (stance) details.push(`pre-workout stance ${formatQuestToken(stance)}`)
+
+  const detailSentence = details.length ? ` Quest context: ${details.join(', ')}.` : ''
+  const anchorSentence = aiAnchor.length ? ` Location anchor cues: ${aiAnchor.join('; ')}.` : ''
+
+  return ` IronQuest overlay is active.${detailSentence}${anchorSentence} Keep training guidance first and weave in at most one short quest-flavored line. Do not add lore dumps, invent mechanics, delay the next set, or ask for extra taps.`
+}
+
+function formatQuestToken(value) {
+  return String(value || '')
+    .replace(/[_-]+/g, ' ')
+    .trim()
 }
 
 function buildLoadGuidancePromptFragment(exerciseContext) {

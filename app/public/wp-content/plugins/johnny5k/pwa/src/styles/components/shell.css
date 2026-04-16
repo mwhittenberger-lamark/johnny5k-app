@@ -35,10 +35,10 @@
   gap: 16px;
   width: 100%;
   padding: 14px 16px;
-  border: 1px solid rgba(255, 125, 84, 0.34);
+  border: 1px solid var(--shell-push-notice-border);
   border-radius: 20px;
-  background: linear-gradient(135deg, rgba(255, 247, 223, 0.95), rgba(255, 231, 221, 0.95));
-  box-shadow: 0 12px 26px rgba(116, 58, 24, 0.12);
+  background: var(--shell-push-notice-bg);
+  box-shadow: var(--shell-push-notice-shadow);
   color: var(--text);
   text-align: left;
 }
@@ -53,7 +53,7 @@
   font-size: 0.98rem;
 }
 .app-shell-push-notice-copy span {
-  color: rgba(44, 40, 33, 0.78);
+  color: var(--shell-notice-copy-color);
   font-size: 0.9rem;
   line-height: 1.35;
 }
@@ -63,7 +63,7 @@
   font-size: 0.86rem;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: #9d3e17;
+  color: var(--shell-push-action-color);
 }
 .app-shell-push-notice-action-button {
   border: 0;
@@ -79,44 +79,14 @@
 .app-shell-push-notice-dismiss {
   border: 0;
   background: transparent;
-  color: rgba(68, 44, 26, 0.72);
+  color: var(--shell-push-dismiss-color);
   font-size: 0.85rem;
   font-weight: 700;
   text-decoration: underline;
   text-underline-offset: 0.15em;
 }
 .app-shell-push-notice-dismiss:hover {
-  color: #9d3e17;
-}
-:root[data-experience-mode='ironquest'] .app-shell-push-notice,
-:root[data-experience-mode='ironquest'] .app-shell-install-notice,
-:root[data-experience-mode='ironquest'] .app-shell-update-notice,
-:root[data-experience-mode='ironquest'] .app-shell-connectivity-notice {
-  color: var(--text);
-  border-color: rgba(214, 183, 96, 0.24);
-  box-shadow: 0 16px 34px rgba(3, 5, 12, 0.24);
-}
-:root[data-experience-mode='ironquest'] .app-shell-push-notice {
-  background: linear-gradient(135deg, rgba(58, 41, 23, 0.96), rgba(50, 28, 36, 0.96));
-}
-:root[data-experience-mode='ironquest'] .app-shell-install-notice,
-:root[data-experience-mode='ironquest'] .app-shell-update-notice,
-:root[data-experience-mode='ironquest'] .app-shell-connectivity-notice {
-  background: var(--surface-shell-notice);
-}
-:root[data-experience-mode='ironquest'] .app-shell-connectivity-notice.offline {
-  background: linear-gradient(135deg, rgba(72, 44, 24, 0.96), rgba(54, 31, 31, 0.96));
-}
-:root[data-experience-mode='ironquest'] .app-shell-push-notice-copy span,
-:root[data-experience-mode='ironquest'] .app-shell-install-copy span,
-:root[data-experience-mode='ironquest'] .app-shell-connectivity-copy span {
-  color: var(--text-muted);
-}
-:root[data-experience-mode='ironquest'] .app-shell-push-notice-action,
-:root[data-experience-mode='ironquest'] .app-shell-push-notice-dismiss,
-:root[data-experience-mode='ironquest'] .app-shell-install-action,
-:root[data-experience-mode='ironquest'] .app-shell-connectivity-action {
-  color: var(--hero-title-color);
+  color: var(--shell-push-action-color);
 }
 .app-shell-install-notice,
 .app-shell-update-notice,
@@ -132,20 +102,20 @@
 }
 .app-shell-install-notice,
 .app-shell-update-notice {
-  border: 1px solid rgba(30, 72, 102, 0.18);
-  background: var(--surface-shell-notice);
-  box-shadow: 0 12px 24px rgba(13, 50, 87, 0.1);
+  border: 1px solid var(--shell-notice-border);
+  background: var(--shell-notice-bg);
+  box-shadow: var(--shell-notice-shadow);
   color: var(--text);
 }
 .app-shell-connectivity-notice {
-  border: 1px solid rgba(36, 58, 84, 0.14);
-  background: linear-gradient(135deg, rgba(244, 248, 253, 0.96), rgba(234, 241, 249, 0.96));
-  box-shadow: 0 10px 22px rgba(13, 50, 87, 0.08);
+  border: 1px solid var(--shell-connectivity-border);
+  background: var(--shell-connectivity-bg);
+  box-shadow: var(--shell-connectivity-shadow);
   color: var(--text);
 }
 .app-shell-connectivity-notice.offline {
-  border-color: rgba(176, 95, 44, 0.28);
-  background: linear-gradient(135deg, rgba(255, 247, 234, 0.98), rgba(255, 237, 223, 0.98));
+  border-color: var(--shell-connectivity-offline-border);
+  background: var(--shell-connectivity-offline-bg);
 }
 .app-shell-install-copy,
 .app-shell-connectivity-copy {
@@ -161,7 +131,7 @@
 }
 .app-shell-install-copy span,
 .app-shell-connectivity-copy span {
-  color: rgba(44, 40, 33, 0.78);
+  color: var(--shell-notice-copy-color);
   font-size: 0.9rem;
   line-height: 1.35;
 }
@@ -172,7 +142,7 @@
   font-size: 0.86rem;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: #1d5578;
+  color: var(--shell-notice-action-color);
 }
 .app-shell-install-action-button {
   border: 0;
@@ -190,12 +160,10 @@
   margin: 24px auto;
   width: min(100%, 720px);
   padding: 24px;
-  border: 1px solid rgba(168, 212, 240, 0.84);
+  border: 1px solid var(--offline-state-border);
   border-radius: 28px;
-  background:
-    radial-gradient(circle at top right, rgba(255, 208, 0, 0.12), transparent 28%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(238, 248, 252, 0.98));
-  box-shadow: 0 24px 48px rgba(8, 21, 51, 0.12);
+  background: var(--offline-state-bg);
+  box-shadow: var(--offline-state-shadow);
 }
 .offline-state-card h2 {
   margin: 8px 0 10px;
@@ -321,14 +289,11 @@
   gap: 10px;
   min-height: 50px;
   padding: 12px 16px;
-  border: 1.5px solid rgba(168, 212, 240, 0.92);
+  border: 1.5px solid var(--shell-menu-toggle-border);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.82);
+  background: var(--shell-menu-toggle-bg);
   box-shadow: var(--shadow-sm);
   color: var(--text);
-}
-:root[data-experience-mode='ironquest'] .app-shell-menu-toggle {
-  background: rgb(123 69 69 / 82%);
 }
 .app-shell-menu-label {
   font-weight: 800;
@@ -363,7 +328,7 @@
 .app-shell-nav-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(15, 31, 85, 0.28);
+  background: var(--shell-nav-backdrop);
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.22s ease;
@@ -389,10 +354,10 @@
   max-height: 100%;
   min-height: 0;
   padding: 18px;
-  border: 1.5px solid rgba(168, 212, 240, 0.95);
+  border: 1.5px solid var(--shell-mobile-nav-border);
   border-radius: 26px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(242, 249, 252, 0.98));
-  box-shadow: 0 24px 48px rgba(15, 31, 85, 0.18);
+  background: var(--shell-mobile-nav-bg);
+  box-shadow: var(--shell-mobile-nav-shadow);
   transform: translateY(-14px) scale(0.98);
   transform-origin: top center;
   opacity: 0;
@@ -401,9 +366,6 @@
   overflow-y: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
-}
-:root[data-experience-mode='ironquest'] .app-shell-mobile-nav-shell {
-  background: linear-gradient(180deg, rgb(28 90 7), rgb(98 170 81 / 98%));
 }
 .app-shell-mobile-nav.open {
   pointer-events: auto;
@@ -432,14 +394,11 @@
   flex-shrink: 0;
   min-height: 42px;
   padding: 10px 14px;
-  border: 1px solid rgba(168, 212, 240, 0.9);
+  border: 1px solid var(--shell-mobile-close-border);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.92);
+  background: var(--shell-mobile-close-bg);
   color: var(--text);
   font-weight: 700;
-}
-:root[data-experience-mode='ironquest'] .app-shell-mobile-nav-close {
-  background: #081533;
 }
 .app-shell-mobile-nav-grid {
   display: grid;
@@ -454,20 +413,17 @@
   min-height: 72px;
   padding: 16px 18px;
   border-radius: 18px;
-  border: 1px solid rgba(168, 212, 240, 0.86);
-  background: rgba(255, 255, 255, 0.84);
+  border: 1px solid var(--shell-mobile-link-border);
+  background: var(--shell-mobile-link-bg);
   color: var(--text);
   box-shadow: var(--shadow-sm);
   transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
 }
-:root[data-experience-mode='ironquest'] .app-shell-mobile-link {
-  background: rgb(58 6 6 / 84%);
-}
 .app-shell-mobile-link:hover,
 .app-shell-mobile-link.active {
   transform: translateY(-1px);
-  border-color: rgba(0, 188, 222, 0.44);
-  box-shadow: 0 10px 18px rgba(15, 31, 85, 0.1);
+  border-color: var(--shell-mobile-link-active-border);
+  box-shadow: var(--shell-mobile-link-active-shadow);
 }
 .app-shell-mobile-link-icon {
   display: inline-flex;
@@ -476,8 +432,8 @@
   width: 48px;
   height: 48px;
   border-radius: 14px;
-  background: linear-gradient(135deg, rgba(0, 188, 222, 0.12), rgba(255, 85, 48, 0.1));
-  color: var(--accent2);
+  background: var(--shell-mobile-link-icon-bg);
+  color: var(--shell-mobile-link-icon-color);
 }
 .app-shell-mobile-link-copy {
   display: flex;
@@ -516,7 +472,7 @@
   padding: 20px 16px;
 }
 .ui-overlay.app-shell-checkin-shell .ui-overlay-backdrop {
-  background: rgba(8, 21, 51, 0.56);
+  background: var(--shell-modal-backdrop);
   backdrop-filter: blur(10px);
 }
 .ui-dialog.app-shell-checkin-modal {
@@ -526,12 +482,10 @@
   flex-direction: column;
   gap: 18px;
   padding: 22px;
-  border: 1px solid rgba(168, 212, 240, 0.88);
+  border: 1px solid var(--shell-modal-border);
   border-radius: 28px;
-  background:
-    radial-gradient(circle at top right, rgba(255, 208, 0, 0.16), transparent 30%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(238, 248, 252, 0.98));
-  box-shadow: 0 28px 56px rgba(8, 21, 51, 0.28);
+  background: var(--shell-modal-bg);
+  box-shadow: var(--shell-modal-shadow);
 }
 .app-shell-install-modal {
   width: min(100%, 560px);
@@ -561,9 +515,9 @@
   flex-shrink: 0;
   min-height: 42px;
   padding: 10px 14px;
-  border: 1px solid rgba(168, 212, 240, 0.9);
+  border: 1px solid var(--shell-modal-close-border);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.92);
+  background: var(--shell-modal-close-bg);
   color: var(--text);
   font-weight: 700;
 }
@@ -579,8 +533,8 @@
   gap: 12px;
   padding: 16px;
   border-radius: 22px;
-  border: 1px solid rgba(168, 212, 240, 0.76);
-  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid var(--shell-modal-card-border);
+  background: var(--shell-modal-card-bg);
 }
 .app-shell-checkin-question h3 {
   margin: 0;
@@ -594,9 +548,9 @@
 .app-shell-checkin-option {
   min-height: 48px;
   padding: 12px 14px;
-  border: 1px solid rgba(168, 212, 240, 0.92);
+  border: 1px solid var(--shell-modal-option-border);
   border-radius: 16px;
-  background: rgba(245, 250, 252, 0.94);
+  background: var(--shell-modal-option-bg);
   color: var(--text);
   font-weight: 700;
   text-align: center;
@@ -604,12 +558,12 @@
 }
 .app-shell-checkin-option:hover {
   transform: translateY(-1px);
-  border-color: rgba(0, 188, 222, 0.42);
+  border-color: var(--shell-modal-option-hover-border);
 }
 .app-shell-checkin-option.active {
-  border-color: rgba(0, 188, 222, 0.6);
-  background: linear-gradient(135deg, rgba(0, 188, 222, 0.16), rgba(255, 208, 0, 0.16));
-  box-shadow: 0 10px 22px rgba(0, 188, 222, 0.16);
+  border-color: var(--shell-modal-option-active-border);
+  background: var(--shell-modal-option-active-bg);
+  box-shadow: var(--shell-modal-option-active-shadow);
 }
 .app-shell-checkin-actions {
   display: flex;
@@ -665,10 +619,9 @@
   margin: 0 auto;
   padding: 28px;
   border-radius: 30px;
-  border: 1px solid rgba(8, 21, 51, 0.08);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(242, 248, 252, 0.98));
-  box-shadow: 0 28px 60px rgba(8, 21, 51, 0.12);
+  border: 1px solid var(--loading-screen-border);
+  background: var(--loading-screen-bg);
+  box-shadow: var(--loading-screen-shadow);
 }
 .app-loading-screen.compact {
   max-width: 620px;
@@ -698,8 +651,8 @@
   overflow: hidden;
   min-height: 86px;
   border-radius: 24px;
-  border: 1px solid rgba(8, 21, 51, 0.08);
-  background: linear-gradient(135deg, rgba(229, 240, 248, 0.92), rgba(255, 255, 255, 0.98));
+  border: 1px solid var(--loading-card-border);
+  background: var(--loading-card-bg);
   opacity: 0;
   transform: translateY(16px) scale(0.98);
   transition: opacity 0.32s ease, transform 0.32s ease;
@@ -708,7 +661,7 @@
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(100deg, transparent 14%, rgba(255, 255, 255, 0.72) 42%, transparent 70%);
+  background: var(--loading-card-shimmer);
   transform: translateX(-130%);
   animation: app-loading-shimmer 1.6s linear infinite;
 }
@@ -768,13 +721,13 @@
   font-weight: 800;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: #0a7d91;
+  color: var(--loading-eyebrow);
 }
 .app-loading-copy h2 {
   margin: 0;
   font-size: clamp(1.5rem, 2vw + 1rem, 2.3rem);
   line-height: 1.04;
-  color: #081533;
+  color: var(--loading-title);
 }
 .app-loading-screen.copy-inline .app-loading-copy h2 {
   font-size: 1.05rem;
@@ -783,7 +736,7 @@
 .app-loading-copy p {
   margin: 0;
   max-width: 54ch;
-  color: rgba(8, 21, 51, 0.7);
+  color: var(--loading-copy);
   line-height: 1.5;
 }
 .app-loading-screen.copy-inline .app-loading-copy p {
@@ -806,7 +759,7 @@
   width: 10px;
   height: 10px;
   border-radius: 999px;
-  background: rgba(10, 125, 145, 0.26);
+  background: var(--loading-dot);
   animation: app-loading-dot 1.2s ease-in-out infinite;
 }
 .app-loading-dots span:nth-child(2) {

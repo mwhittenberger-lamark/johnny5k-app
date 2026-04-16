@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { buildCoachPrompt, buildCompletedExerciseReview, buildNextSetCoachMessage, buildSavedSetSummary } from './liveWorkoutCoachHelpers'
+import { buildCoachPrompt, buildCompletedExerciseReview, buildNextSetCoachMessage, buildRestCoachMessage, buildSavedSetSummary } from './liveWorkoutCoachHelpers'
+import { buildRestoredIronQuestMissionIntro } from '../../screens/workout/hooks/useWorkoutSessionController'
 
 describe('LiveWorkoutMode helpers', () => {
   it('marks final saved sets as exercise-complete summaries', () => {
@@ -70,6 +71,31 @@ describe('LiveWorkoutMode helpers', () => {
     expect(prompt).toContain('Do not talk about future workouts yet')
   })
 
+  it('adds bounded IronQuest context to live workout prompts', () => {
+    const prompt = buildCoachPrompt({
+      type: 'set_saved',
+      summary: 'Saved set 2 of 4 for Incline Dumbbell Press • 10 reps • 60 lb.',
+      exerciseContext: {
+        exercise_name: 'Incline Dumbbell Press',
+        coaching_cues: ['Keep your shoulders packed'],
+      },
+    }, null, {
+      classSlug: 'warrior',
+      locationName: 'The Training Grounds',
+      missionName: 'Captain Of The Yard',
+      encounterPhase: 'intro',
+      readinessBand: 'steady',
+      stance: 'aggressive',
+      aiAnchor: ['dusty arena', 'iron banners'],
+    })
+
+    expect(prompt).toContain('IronQuest overlay is active')
+    expect(prompt).toContain('mission Captain Of The Yard')
+    expect(prompt).toContain('readiness band steady')
+    expect(prompt).toContain('pre-workout stance aggressive')
+    expect(prompt).toContain('Location anchor cues: dusty arena; iron banners')
+  })
+
   it('recommends reducing weight when the final exercise review shows missed reps', () => {
     const review = buildCompletedExerciseReview(
       {
@@ -111,5 +137,73 @@ describe('LiveWorkoutMode helpers', () => {
     expect(message).not.toContain('between sets')
     expect(message).not.toContain('sweet spot')
     expect(message).not.toContain('drifting long')
+  })
+
+  it('builds quest-flavored rest beats when IronQuest overlay is active', () => {
+    const message = buildRestCoachMessage({
+      exerciseName: 'Incline Dumbbell Press',
+      kind: 'set',
+      restGuidance: {
+        tone: 'sweet',
+        windowLabel: '45 sec to 75 sec between sets',
+      },
+      ironQuestOverlay: {
+        missionName: 'Captain Of The Yard',
+        stance: 'aggressive',
+      },
+    })
+
+    expect(message).toContain('Press the attack on Captain Of The Yard')
+    expect(message).toContain('Incline Dumbbell Press')
+    expect(message).toContain('45 sec to 75 sec between sets')
+  })
+
+  it('rebuilds the active IronQuest mission intro for a restored workout session', () => {
+    const intro = buildRestoredIronQuestMissionIntro({
+      active_run: {
+        id: 44,
+        source_session_id: '901',
+        status: 'active',
+        mission_slug: 'captain_of_the_yard',
+        run_type: 'workout',
+        encounter_phase: 'intro',
+      },
+      profile: {
+        class_slug: 'warrior',
+        motivation_slug: 'discipline',
+        starter_portrait_attachment_id: 88,
+      },
+      location: {
+        slug: 'the_training_grounds',
+        name: 'The Training Grounds',
+        ai_prompt_anchor: ['dust and iron', 'training banners'],
+      },
+      missions: [
+        {
+          slug: 'captain_of_the_yard',
+          name: 'Captain Of The Yard',
+          summary: 'Hold the center line through the whole session.',
+        },
+      ],
+    }, 901, 6)
+
+    expect(intro.title).toBe('Captain Of The Yard')
+    expect(intro.locationLabel).toBe('The Training Grounds')
+    expect(intro.encounterPhase).toBe('intro')
+    expect(intro.readinessBand).toBe('steady')
+    expect(intro.aiAnchor).toEqual(['dust and iron', 'training banners'])
+  })
+
+  it('does not rebuild an IronQuest intro for a different workout session', () => {
+    const intro = buildRestoredIronQuestMissionIntro({
+      active_run: {
+        source_session_id: '902',
+        status: 'active',
+        mission_slug: 'captain_of_the_yard',
+      },
+      missions: [],
+    }, 901, 6)
+
+    expect(intro).toBeNull()
   })
 })

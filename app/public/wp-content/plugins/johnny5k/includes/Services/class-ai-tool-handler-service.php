@@ -7,6 +7,7 @@ use Johnny5k\REST\BodyMetricsController;
 use Johnny5k\REST\DashboardController;
 use Johnny5k\REST\NutritionController;
 use Johnny5k\REST\NutritionRecipeController;
+use Johnny5k\REST\OnboardingController;
 use Johnny5k\REST\TrainingController;
 use Johnny5k\REST\WorkoutController;
 use Johnny5k\Support\TrainingDayTypes;
@@ -38,6 +39,7 @@ class AiToolHandlerService {
 			'log_steps'                  => self::tool_log_steps( $user_id, $arguments, $deps ),
 			'log_food_from_description'  => self::tool_log_food_from_description( $user_id, $arguments, $deps ),
 			'create_training_plan'       => self::tool_create_training_plan( $user_id, $arguments ),
+			'set_training_schedule'      => self::tool_set_training_schedule( $user_id, $arguments, $deps ),
 			'create_custom_workout'      => self::tool_create_custom_workout( $user_id, $arguments ),
 			'create_personal_exercise'   => self::tool_create_personal_exercise( $user_id, $arguments ),
 			'log_sleep'                  => self::tool_log_sleep( $user_id, $arguments, $deps ),
@@ -87,6 +89,18 @@ class AiToolHandlerService {
 		}
 
 		return NutritionController::add_pantry_items_bulk( $request );
+	}
+
+	private static function onboarding_update_training_schedule( array $deps, \WP_REST_Request $request ): \WP_REST_Response {
+		$callable = $deps['onboarding_update_training_schedule'] ?? null;
+		if ( is_callable( $callable ) ) {
+			$response = $callable( $request );
+			if ( $response instanceof \WP_REST_Response ) {
+				return $response;
+			}
+		}
+
+		return OnboardingController::update_training_schedule( $request );
 	}
 
 	/**
@@ -584,6 +598,180 @@ class AiToolHandlerService {
 			'days_created'        => (int) ( $data['days_created'] ?? 0 ),
 			'summary'             => sprintf( 'Created and activated %s with %d training days.', $plan_name, (int) ( $data['days_created'] ?? 0 ) ),
 		];
+	}
+
+	private static function tool_set_training_schedule( int $user_id, array $arguments = [], array $deps = [] ): array {
+		$raw_schedule = $arguments['preferred_workout_days_json']
+			?? $arguments['weekly_schedule']
+			?? $arguments['week_split']
+			?? $arguments['schedule']
+			?? [];
+
+		$schedule = self::normalize_tool_training_schedule_payload( $raw_schedule );
+
+		if ( empty( $schedule ) ) {
+			return [ 'error' => 'A weekly training schedule is required.' ];
+		}
+
+		$request = new \WP_REST_Request( 'POST', '/fit/v1/onboarding/training-schedule' );
+		$request->set_param( 'preferred_workout_days_json', $schedule );
+
+		$previous_user_id = (int) get_current_user_id();
+		$GLOBALS['johnny5k_test_current_user_id'] = $user_id;
+
+		try {
+			$response = self::onboarding_update_training_schedule( $deps, $request );
+		} finally {
+			$GLOBALS['johnny5k_test_current_user_id'] = $previous_user_id;
+		}
+
+		$data   = $response->get_data();
+		$status = (int) $response->get_status();
+
+		if ( $status >= 400 ) {
+			return [ 'error' => (string) ( $data['message'] ?? 'Could not update the training schedule.' ) ];
+		}
+
+		$week_split  = array_values( array_filter( is_array( $data['week_split'] ?? null ) ? $data['week_split'] : [], static fn( $entry ): bool => is_array( $entry ) || is_object( $entry ) ) );
+		$active_days = array_values( array_filter( $week_split, static function( $entry ): bool {
+			$day_type = is_array( $entry ) ? (string) ( $entry['day_type'] ?? '' ) : (string) ( $entry->day_type ?? '' );
+			return 'rest' !== $day_type;
+		} ) );
+		$day_labels = array_values( array_filter( array_map( static function( $entry ): string {
+			$day_type = is_array( $entry ) ? (string) ( $entry['day_type'] ?? '' ) : (string) ( $entry->day_type ?? '' );
+			if ( 'rest' === $day_type ) {
+				return '';
+			}
+
+			$weekday_label = is_array( $entry ) ? (string) ( $entry['weekday_label'] ?? '' ) : (string) ( $entry->weekday_label ?? '' );
+			$label         = TrainingDayTypes::label( $day_type );
+			return '' !== $weekday_label ? sprintf( '%s %s', $weekday_label, $label ) : $label;
+		}, $active_days ) ) );
+
+		$summary = 'Johnny updated your weekly training schedule.';
+		if ( ! empty( $day_labels ) ) {
+			$summary = sprintf( 'Johnny updated your weekly training schedule to %s.', implode( ', ', $day_labels ) );
+		}
+
+		return [
+			'ok'                => true,
+			'action'            => 'set_training_schedule',
+			'saved'             => ! empty( $data['saved'] ),
+			'week_split'        => $week_split,
+			'active_day_count'  => count( $active_days ),
+			'active_day_labels' => $day_labels,
+			'summary'           => $summary,
+		];
+	}
+
+	private static function normalize_tool_training_schedule_payload( $raw_schedule ): array {
+		if ( ! is_array( $raw_schedule ) ) {
+			return [];
+		}
+
+		$is_string_schedule = ! empty( $raw_schedule ) && is_string( $raw_schedule[0] ?? null );
+		if ( $is_string_schedule ) {
+			$days = array_values( array_filter( array_map( [ __CLASS__, 'normalize_tool_schedule_weekday' ], $raw_schedule ) ) );
+			return self::build_default_tool_schedule_entries( $days );
+		}
+
+		$entries = [];
+		foreach ( $raw_schedule as $entry ) {
+			if ( ! is_array( $entry ) ) {
+				continue;
+			}
+
+			$day = self::normalize_tool_schedule_weekday(
+				(string) ( $entry['day'] ?? $entry['weekday'] ?? $entry['weekday_label'] ?? '' )
+			);
+			if ( '' === $day ) {
+				continue;
+			}
+
+			$entries[ $day ] = [
+				'day'      => $day,
+				'day_type' => self::normalize_tool_schedule_day_type( $entry['day_type'] ?? $entry['type'] ?? $entry['split'] ?? $entry['training_type'] ?? '' ),
+			];
+		}
+
+		if ( empty( $entries ) ) {
+			return [];
+		}
+
+		$days           = array_keys( $entries );
+		$default_cycle  = TrainingDayTypes::default_cycle();
+		$cycle_position = 0;
+
+		usort( $days, [ __CLASS__, 'sort_tool_schedule_weekdays' ] );
+
+		$normalized = [];
+		foreach ( $days as $day ) {
+			$day_type = (string) ( $entries[ $day ]['day_type'] ?? '' );
+			if ( '' === $day_type ) {
+				$day_type = $default_cycle[ min( $cycle_position, count( $default_cycle ) - 1 ) ];
+			}
+
+			$normalized[] = [
+				'day'      => $day,
+				'day_type' => $day_type,
+			];
+			$cycle_position += 1;
+		}
+
+		return $normalized;
+	}
+
+	private static function build_default_tool_schedule_entries( array $days ): array {
+		$days = array_values( array_unique( array_filter( $days ) ) );
+		if ( empty( $days ) ) {
+			return [];
+		}
+
+		usort( $days, [ __CLASS__, 'sort_tool_schedule_weekdays' ] );
+		$default_cycle = TrainingDayTypes::default_cycle();
+		$result        = [];
+
+		foreach ( array_values( $days ) as $index => $day ) {
+			$result[] = [
+				'day'      => $day,
+				'day_type' => $default_cycle[ min( $index, count( $default_cycle ) - 1 ) ],
+			];
+		}
+
+		return $result;
+	}
+
+	private static function normalize_tool_schedule_weekday( $value ): string {
+		$weekday = sanitize_key( strtolower( trim( (string) $value ) ) );
+
+		return match ( $weekday ) {
+			'mon', 'monday' => 'Mon',
+			'tue', 'tues', 'tuesday' => 'Tue',
+			'wed', 'wednesday' => 'Wed',
+			'thu', 'thurs', 'thursday' => 'Thu',
+			'fri', 'friday' => 'Fri',
+			'sat', 'saturday' => 'Sat',
+			'sun', 'sunday' => 'Sun',
+			default => '',
+		};
+	}
+
+	private static function normalize_tool_schedule_day_type( $value ): string {
+		return TrainingDayTypes::normalize( $value ) ?? '';
+	}
+
+	private static function sort_tool_schedule_weekdays( string $left, string $right ): int {
+		static $order = [
+			'Mon' => 1,
+			'Tue' => 2,
+			'Wed' => 3,
+			'Thu' => 4,
+			'Fri' => 5,
+			'Sat' => 6,
+			'Sun' => 7,
+		];
+
+		return ( $order[ $left ] ?? 99 ) <=> ( $order[ $right ] ?? 99 );
 	}
 
 	private static function tool_create_custom_workout( int $user_id, array $arguments = [] ): array {

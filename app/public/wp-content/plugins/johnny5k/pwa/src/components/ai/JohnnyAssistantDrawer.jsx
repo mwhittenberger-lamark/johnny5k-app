@@ -22,6 +22,7 @@ const ACTION_TOOLS = new Set([
   'log_sleep',
   'log_food_from_description',
   'create_training_plan',
+  'set_training_schedule',
   'create_custom_workout',
   'create_personal_exercise',
   'add_pantry_items',
@@ -43,6 +44,7 @@ const ACTION_DESTINATIONS = {
   add_pantry_items: { path: '/nutrition/pantry', label: 'Open pantry' },
   add_grocery_gap_items: { path: '/nutrition', state: { focusSection: 'groceryGap' }, label: 'Open grocery gap' },
   create_training_plan: { path: '/workout', label: 'Open workout' },
+  set_training_schedule: { path: '/workout', state: { johnnyActionNotice: 'Johnny updated your weekly split and rebuilt the active training schedule.' }, label: 'Open workout' },
   create_custom_workout: { path: '/workout', state: { johnnyActionNotice: 'Johnny queued a custom workout for you on the Workout screen.' }, label: 'Open workout' },
   create_personal_exercise: { path: '/workout/library', state: { johnnyActionNotice: 'Johnny added an exercise to your custom exercise library.' }, label: 'Open library' },
   swap_workout_exercise: { path: '/workout', label: 'Open workout' },
@@ -916,6 +918,8 @@ function formatToolLabel(toolName) {
       return 'Grocery gap updated'
     case 'create_training_plan':
       return 'Plan created'
+    case 'set_training_schedule':
+      return 'Schedule updated'
     case 'create_custom_workout':
       return 'Custom workout ready'
     case 'create_personal_exercise':
@@ -1468,6 +1472,8 @@ function buildActionTitle(result) {
       return pluraliseItems(result.item_names?.length || 0, 'Grocery item')
     case 'create_training_plan':
       return result.name || 'Training plan created'
+    case 'set_training_schedule':
+      return result.active_day_count === 1 ? '1 training day scheduled' : `${Number(result.active_day_count || 0).toLocaleString()} training days scheduled`
     case 'create_custom_workout':
       return result.name || 'Custom workout ready'
     case 'create_personal_exercise':
@@ -1513,6 +1519,8 @@ function buildFallbackSummary(result) {
       return 'Johnny canceled the requested SMS reminders.'
     case 'create_custom_workout':
       return result.summary || 'Johnny queued a custom workout on the Workout screen.'
+    case 'set_training_schedule':
+      return result.summary || 'Johnny updated your weekly training schedule.'
     case 'create_personal_exercise':
       return result.summary || 'Johnny saved that exercise to your custom exercise library.'
     default:
@@ -1566,6 +1574,8 @@ function buildActionMeta(result) {
       ].filter(Boolean).join(' | ')
     case 'create_training_plan':
       return result.days_created ? `${result.days_created} days scheduled` : ''
+    case 'set_training_schedule':
+      return Array.isArray(result.active_day_labels) ? result.active_day_labels.join(' | ') : ''
     case 'create_custom_workout':
       return [
         result.day_type ? `Base split: ${String(result.day_type).replace(/_/g, ' ')}` : '',

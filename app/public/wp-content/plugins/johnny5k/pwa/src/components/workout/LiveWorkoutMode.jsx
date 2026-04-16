@@ -23,6 +23,7 @@ import {
 import { useAuthStore } from '../../store/authStore'
 import { getPausedTimerNowValue } from '../../screens/workout/workoutScreenUtils'
 import {
+  buildRestCoachMessage,
   buildCompletedExerciseReview,
   buildCoachPrompt,
   buildLiveExerciseSnapshot,
@@ -49,11 +50,18 @@ export default function LiveWorkoutMode({
   session,
   exercises,
   liveFrames = [],
+  ironQuestOverlay = null,
+  ironQuestLivePrefs = null,
   activeExerciseIdx,
   onSetActiveExerciseIdx,
   onCreateSet,
+  onChooseIronQuestStoryOpening,
+  onProgressIronQuestStory,
   onUpdateSet,
   onClose,
+  onSetIronQuestStance,
+  onSetIronQuestBeatsEnabled,
+  ironQuestStoryBusy = false,
   pauseSessionTimer,
   resumeSessionTimer,
   sessionTimerPaused = false,
@@ -86,6 +94,7 @@ export default function LiveWorkoutMode({
   const [voiceTestingOpen, setVoiceTestingOpen] = useState(false)
   const [restToast, setRestToast] = useState(null)
   const [showIntroModal, setShowIntroModal] = useState(false)
+  const [selectingStoryChoice, setSelectingStoryChoice] = useState('')
   const [restTiming, setRestTiming] = useState(DEFAULT_REST_TIMING)
   const [restTimerPausedAt, setRestTimerPausedAt] = useState(null)
   const [restTimerPausedMs, setRestTimerPausedMs] = useState(0)
@@ -138,6 +147,31 @@ export default function LiveWorkoutMode({
   const restElapsedSeconds = Math.max(0, Math.floor((effectiveRestNow - Number(lastTransition?.at || effectiveRestNow)) / 1000))
   const restGuidance = useMemo(() => buildRestGuidance(lastTransition?.kind, restElapsedSeconds, restTiming), [lastTransition?.kind, restElapsedSeconds, restTiming])
   const restCueExerciseName = String(lastTransition?.targetExerciseName || activeExercise?.exercise_name || 'the current lift').trim()
+  const questBeatsEnabled = ironQuestLivePrefs?.beatsEnabled !== false
+  const questStance = ['steady', 'aggressive', 'cautious'].includes(String(ironQuestLivePrefs?.stance || '').trim().toLowerCase())
+    ? String(ironQuestLivePrefs?.stance || '').trim().toLowerCase()
+    : 'steady'
+  const hasIronQuestOverlay = Boolean(ironQuestOverlay?.missionSlug || ironQuestOverlay?.title || ironQuestOverlay?.objective)
+  const activeIronQuestOverlay = useMemo(() => {
+    if (!hasIronQuestOverlay || !questBeatsEnabled) {
+      return null
+    }
+
+    return {
+      ...ironQuestOverlay,
+      stance: questStance,
+    }
+  }, [hasIronQuestOverlay, ironQuestOverlay, questBeatsEnabled, questStance])
+  const storyState = activeIronQuestOverlay?.storyState || ironQuestOverlay?.storyState || null
+  const storyChoices = Array.isArray(storyState?.choices) ? storyState.choices : []
+  const selectedStoryChoiceId = String(storyState?.selected_choice?.id || '').trim()
+  const storyTranscript = Array.isArray(storyState?.transcript) ? storyState.transcript.slice(-3).reverse() : []
+  const storyProgressPercent = Math.max(0, Math.min(100, Number(storyState?.progress?.percent || 0) || 0))
+  const storyProgressLabel = String(storyState?.progress?.label || '').trim()
+  const storyBeat = String(storyState?.latest_beat || ironQuestOverlay?.latestBeat || '').trim()
+  const storySituation = String(storyState?.current_situation || ironQuestOverlay?.currentSituation || '').trim()
+  const storyPrompt = String(storyState?.decision_prompt || ironQuestOverlay?.decisionPrompt || '').trim()
+  const storyRoll = storyState?.roll && typeof storyState.roll === 'object' ? storyState.roll : null
   const liveVoiceMode = String(voicePrefs.liveModeVoiceMode || 'premium').trim().toLowerCase()
   const voiceLabel = formatOpenAiVoiceLabel(voicePrefs.openAiVoice)
   const selectedInstantVoice = useMemo(
@@ -464,13 +498,14 @@ export default function LiveWorkoutMode({
         activeExercise,
         displayDayType,
         totalExerciseCount,
+        ironQuestOverlay: activeIronQuestOverlay,
       }),
       eventType: 'session_opened',
       createdAt: Date.now(),
       actions: [],
     })
     setCoachStatus('Johnny set the opening cue for live mode.')
-  }, [activeExercise, displayDayType, isOpen, totalExerciseCount, workoutSessionId])
+  }, [activeExercise, activeIronQuestOverlay, displayDayType, isOpen, totalExerciseCount, workoutSessionId])
 
   useEffect(() => {
     if (!isOpen || coachMessages[coachMessages.length - 1]?.role !== 'assistant') return
@@ -558,9 +593,19 @@ export default function LiveWorkoutMode({
     }
 
     const guidance = buildRestGuidance(lastTransition.kind, 0, restTiming)
+    const restToastMessage = activeIronQuestOverlay && ['sweet', 'drift'].includes(guidance.tone)
+      ? buildRestCoachMessage({
+          exerciseName: restCueExerciseName,
+          kind: lastTransition.kind,
+          restGuidance: guidance,
+          ironQuestOverlay: activeIronQuestOverlay,
+        })
+      : guidance.message
     setRestToast({
-      title: guidance.title,
-      message: guidance.message,
+      title: activeIronQuestOverlay && ['sweet', 'drift'].includes(guidance.tone)
+        ? `${activeIronQuestOverlay.missionName || activeIronQuestOverlay.title || 'IronQuest'} update`
+        : guidance.title,
+      message: restToastMessage,
       key: `${lastTransition.kind}-${lastTransition.at}`,
     })
 
@@ -571,7 +616,7 @@ export default function LiveWorkoutMode({
     restToastTimerRef.current = window.setTimeout(() => {
       setRestToast(current => (current?.key === `${lastTransition.kind}-${lastTransition.at}` ? null : current))
     }, 10000)
-  }, [isOpen, lastTransition, restTiming])
+  }, [activeIronQuestOverlay, isOpen, lastTransition, restCueExerciseName, restTiming])
 
   useEffect(() => {
     if (!isOpen || !workoutSessionId || voiceTestingOpen) return
@@ -588,13 +633,14 @@ export default function LiveWorkoutMode({
         exerciseName: restCueExerciseName,
         kind: lastTransition.kind,
         restGuidance,
+        ironQuestOverlay: activeIronQuestOverlay,
       }),
       eventType: `rest_${restGuidance.tone}`,
       createdAt: Date.now(),
       actions: [],
     })
     setCoachStatus('Johnny updated the live rest cue.')
-  }, [isOpen, lastTransition, restCueExerciseName, restGuidance, voiceTestingOpen, workoutSessionId])
+  }, [activeIronQuestOverlay, isOpen, lastTransition, restCueExerciseName, restGuidance, voiceTestingOpen, workoutSessionId])
 
   useEffect(() => {
     if (!isOpen) return undefined
@@ -659,7 +705,7 @@ export default function LiveWorkoutMode({
       }
 
       const data = await aiApi.chat(
-        buildCoachPrompt(nextEvent, activeExercise),
+        buildCoachPrompt(nextEvent, activeExercise, activeIronQuestOverlay),
         `live-workout-${workoutSessionId}`,
         'live_workout',
         {
@@ -677,6 +723,7 @@ export default function LiveWorkoutMode({
             restGuidance,
             event: nextEvent,
             timerLabel: workoutTimerLabel,
+            ironQuestOverlay: activeIronQuestOverlay,
           }),
         },
       )
@@ -791,6 +838,19 @@ export default function LiveWorkoutMode({
       completedExercise,
       review: completedExerciseReview,
     })
+    const coachEvent = {
+      type: completedExercise ? 'exercise_completed' : 'set_saved',
+      summary: savedSummary,
+      exerciseContext: buildLiveExerciseSnapshot(activeExercise),
+      savedSet: {
+        setNumber,
+        totalSetCount,
+        completedExercise,
+        isLastSet: completedExercise,
+        review: completedExerciseReview,
+        ...payload,
+      },
+    }
 
     setLastTransition({
       kind: restTransitionKind,
@@ -818,20 +878,6 @@ export default function LiveWorkoutMode({
         allowRestMessages,
         targetExerciseName: restTargetExerciseName,
       })
-      enqueueCoachEvent({
-        type: completedExercise ? 'exercise_completed' : 'set_saved',
-        summary: savedSummary,
-        exerciseContext: buildLiveExerciseSnapshot(activeExercise),
-        savedSet: {
-          setNumber,
-          totalSetCount,
-          completedExercise,
-          isLastSet: completedExercise,
-          review: completedExerciseReview,
-          ...payload,
-        },
-      })
-      setCoachStatus(completedExercise ? 'Exercise saved. Johnny is wrapping up the lift.' : 'Set saved. Johnny is updating.')
 
       const nextSetKey = `${activeExercise.id}:${currentSetIdx + 1}`
       if (!completedExercise) {
@@ -846,6 +892,60 @@ export default function LiveWorkoutMode({
             },
           }
         })
+      }
+
+      if (hasIronQuestOverlay && typeof onProgressIronQuestStory === 'function') {
+        setCoachStatus('Set saved. Johnny is resolving the mission beat.')
+        void onProgressIronQuestStory({
+          event_type: completedExercise ? 'exercise_completed' : 'set_saved',
+          exercise_name: activeExercise?.exercise_name || '',
+          slot_type: activeExercise?.slot_type || '',
+          exercise_order: activeExerciseIdx + 1,
+          exercise_count: totalExerciseCount,
+          set_number: setNumber,
+          sets_total: totalSetCount,
+          rep_target_min: Number(activeExercise?.rep_min || 0),
+          rep_target_max: Number(activeExercise?.rep_max || 0),
+          reps_completed: reps,
+          current_rir: payload.rir,
+          completed_exercise: completedExercise,
+          has_next_exercise: hasNextExercise,
+          next_exercise_name: nextExercise?.exercise_name || '',
+          next_slot_type: nextExercise?.slot_type || '',
+        }).then((storyPayload) => {
+          if (!isOpenRef.current) {
+            return
+          }
+
+            const latestTranscriptEntry = Array.isArray(storyPayload?.story_state?.transcript)
+              ? storyPayload.story_state.transcript[storyPayload.story_state.transcript.length - 1]
+              : null
+            const nextBeat = String(storyPayload?.story_state?.latest_beat || latestTranscriptEntry?.text || '').trim()
+          if (!nextBeat || !questBeatsEnabled) {
+            enqueueCoachEvent(coachEvent)
+            setCoachStatus(completedExercise ? 'Exercise saved. Johnny is wrapping up the lift.' : 'Set saved. Johnny is updating.')
+            return
+          }
+
+          appendCoachMessage({
+            role: 'assistant',
+            text: nextBeat,
+            eventType: completedExercise ? 'ironquest_exercise_transition' : 'ironquest_set_story',
+            createdAt: Date.now(),
+            actions: [],
+          })
+          setCoachStatus('Johnny updated the mission story.')
+        }).catch(() => {
+          if (!isOpenRef.current) {
+            return
+          }
+
+          enqueueCoachEvent(coachEvent)
+          setCoachStatus(completedExercise ? 'Exercise saved. Johnny is wrapping up the lift.' : 'Set saved. Johnny is updating.')
+        })
+      } else {
+        enqueueCoachEvent(coachEvent)
+        setCoachStatus(completedExercise ? 'Exercise saved. Johnny is wrapping up the lift.' : 'Set saved. Johnny is updating.')
       }
     } catch (error) {
       setLastTransition(previousTransition)
@@ -946,6 +1046,32 @@ export default function LiveWorkoutMode({
     setCoachInput('')
     if (listening) {
       stopListening()
+    }
+  }
+
+  async function handleStoryChoice(choiceId) {
+    if (!choiceId || selectingStoryChoice || ironQuestStoryBusy || typeof onChooseIronQuestStoryOpening !== 'function') {
+      return
+    }
+
+    setSelectingStoryChoice(choiceId)
+    try {
+      const payload = await onChooseIronQuestStoryOpening(choiceId)
+      const outcomeText = String(payload?.story_state?.outcome_text || '').trim()
+      if (outcomeText) {
+        appendCoachMessage({
+          role: 'assistant',
+          text: outcomeText,
+          eventType: 'ironquest_opening_choice',
+          createdAt: Date.now(),
+          actions: [],
+        })
+        setCoachStatus('Johnny resolved the opening move.')
+      }
+    } catch (error) {
+      setCoachStatus(error?.message || 'Johnny could not lock the opening move right now.')
+    } finally {
+      setSelectingStoryChoice('')
     }
   }
 
@@ -1182,6 +1308,89 @@ export default function LiveWorkoutMode({
 
         <div className="live-workout-grid">
           <div className="live-workout-main">
+            {hasIronQuestOverlay ? (
+              <section className="dash-card">
+                <div className="dashboard-card-head">
+                  <span className="dashboard-chip awards">IronQuest live</span>
+                  <span className="dashboard-chip subtle">{ironQuestOverlay.locationLabel || 'Current region'}</span>
+                </div>
+                <h3>{ironQuestOverlay.title || 'Mission attached'}</h3>
+                {ironQuestOverlay.objective ? <p className="settings-subtitle">{ironQuestOverlay.objective}</p> : null}
+                <details className="live-workout-ironquest-story-accordion" open>
+                  <summary className="live-workout-ironquest-story-summary">
+                    <div>
+                      <strong>Mission story</strong>
+                      <span>{storyProgressLabel || 'Open the current encounter details and choices.'}</span>
+                    </div>
+                  </summary>
+                  <div className="live-workout-ironquest-story-body">
+                    {storySituation ? <p className="live-workout-ironquest-story-copy">{storySituation}</p> : null}
+                    {storyProgressPercent > 0 ? (
+                      <div className="live-workout-ironquest-progress" aria-label="IronQuest story progress">
+                        <div className="live-workout-ironquest-progress-bar" aria-hidden="true">
+                          <span style={{ width: `${storyProgressPercent}%` }} />
+                        </div>
+                        <strong>{storyProgressLabel || `Story ${storyProgressPercent}%`}</strong>
+                      </div>
+                    ) : null}
+                    <div className="onboarding-review-list">
+                      <div className="onboarding-review-row">
+                        <span>Encounter phase</span>
+                        <strong>{formatToken(ironQuestOverlay.encounterPhase || 'intro')}</strong>
+                      </div>
+                      <div className="onboarding-review-row">
+                        <span>Readiness band</span>
+                        <strong>{formatToken(ironQuestOverlay.readinessBand || 'unknown')}</strong>
+                      </div>
+                      <div className="onboarding-review-row">
+                        <span>Quest beats</span>
+                        <strong>{questBeatsEnabled ? `On • ${formatToken(questStance)}` : 'Skipped'}</strong>
+                      </div>
+                      {storyState?.tension ? (
+                        <div className="onboarding-review-row">
+                          <span>Story tension</span>
+                          <strong>{formatToken(storyState.tension)}</strong>
+                        </div>
+                      ) : null}
+                    </div>
+                    {!selectedStoryChoiceId && storyChoices.length ? (
+                      <div className="live-workout-ironquest-choice-block">
+                        <p className="settings-subtitle">{storyPrompt || 'Pick your opening move before the encounter locks in.'}</p>
+                        <div className="live-workout-ironquest-choice-grid">
+                          {storyChoices.map((choice) => {
+                            const choiceId = String(choice?.id || '').trim()
+                            return (
+                              <button
+                                key={choiceId}
+                                type="button"
+                                className="btn-outline small live-workout-ironquest-choice"
+                                disabled={!choiceId || Boolean(selectingStoryChoice) || ironQuestStoryBusy}
+                                onClick={() => handleStoryChoice(choiceId)}
+                              >
+                                {selectingStoryChoice === choiceId ? 'Locking in...' : String(choice?.label || '').trim()}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    ) : null}
+                    {selectedStoryChoiceId && storyRoll ? (
+                      <div className="live-workout-ironquest-roll-row">
+                        <span className="dashboard-chip subtle">{formatToken(storyRoll.roll_band || 'opening move')}</span>
+                        <span className="settings-subtitle">Opening choice locked: {storyState?.opening_choice || storyState?.selected_choice?.label}</span>
+                      </div>
+                    ) : null}
+                    {storyBeat ? <p className="live-workout-ironquest-story-copy live-workout-ironquest-beat">{storyBeat}</p> : null}
+                  </div>
+                </details>
+                <div className="settings-actions">
+                  <button type="button" className={questBeatsEnabled ? 'btn-secondary small' : 'btn-outline small'} onClick={() => onSetIronQuestBeatsEnabled?.(!questBeatsEnabled)}>
+                    {questBeatsEnabled ? 'Skip quest beats' : 'Resume quest beats'}
+                  </button>
+                </div>
+              </section>
+            ) : null}
+
             <section ref={currentLiftRef} className="dash-card live-workout-exercise-card">
               <div className="live-workout-section-head">
                 <span className="dashboard-chip workout">Current lift</span>
@@ -1212,11 +1421,6 @@ export default function LiveWorkoutMode({
                   <span>Completed sets</span>
                   <strong>{activeExercise.sets?.filter(set => set.completed).length || 0}</strong>
                   <small>{activeExercise.planned_sets || totalSetCount} planned today</small>
-                </div>
-                <div className="live-workout-progress-card">
-                  <span>Rest window</span>
-                  <strong>{restGuidance.windowLabel}</strong>
-                  <small>{formatElapsedSeconds(restElapsedSeconds)} since last change</small>
                 </div>
               </div>
 
@@ -1339,6 +1543,24 @@ export default function LiveWorkoutMode({
               </details>
 
               {coachStatus ? <p className="settings-subtitle" role="status" aria-live="polite">{coachStatus}</p> : null}
+              {hasIronQuestOverlay && storyTranscript.length ? (
+                <details className="live-workout-ironquest-transcript" open>
+                  <summary className="live-workout-ironquest-transcript-summary">
+                    <div>
+                      <strong>Recent mission beats</strong>
+                      <span>{`${storyTranscript.length} recent beat${storyTranscript.length === 1 ? '' : 's'} from the encounter.`}</span>
+                    </div>
+                  </summary>
+                  <div className="live-workout-ironquest-transcript-body" aria-live="polite">
+                    {storyTranscript.map((entry, index) => (
+                      <div key={`${entry.kind || 'story'}-${index}`} className="live-workout-ironquest-transcript-entry">
+                        {entry.title ? <span>{entry.title}</span> : null}
+                        <p>{entry.text}</p>
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              ) : null}
               {!voiceSupported ? <p className="settings-subtitle" id="live-workout-voice-unavailable">Voice capture is unavailable in this browser. Type your question instead.</p> : null}
 
               <div className="live-workout-coach-actions">
@@ -1449,11 +1671,50 @@ export default function LiveWorkoutMode({
             className="live-workout-intro-panel"
           >
               <div className="live-workout-intro-head">
-                <span className="dashboard-chip coach">Live coach flow</span>
+                <span className={`dashboard-chip ${hasIronQuestOverlay ? 'awards' : 'coach'}`}>{hasIronQuestOverlay ? 'IronQuest live' : 'Live coach flow'}</span>
                 <button type="button" className="btn-outline small" onClick={dismissIntroModal}>Close</button>
               </div>
-              <h3>Run one set at a time</h3>
-              <p className="settings-subtitle">Live coach works best when you finish the set, save it, rest inside your target window, then start the next set.</p>
+              <h3>{hasIronQuestOverlay ? (ironQuestOverlay.title || 'Mission briefing') : 'Run one set at a time'}</h3>
+              <p className="settings-subtitle">
+                {hasIronQuestOverlay
+                  ? `${ironQuestOverlay.objective || 'Quest beats only show up during rest windows and never interrupt active lifting.'}`
+                  : 'Live coach works best when you finish the set, save it, rest inside your target window, then start the next set.'}
+              </p>
+              {hasIronQuestOverlay ? (
+                <div className="onboarding-review-list">
+                  <div className="onboarding-review-row">
+                    <span>Region</span>
+                    <strong>{ironQuestOverlay.locationLabel || 'Current region'}</strong>
+                  </div>
+                  <div className="onboarding-review-row">
+                    <span>Encounter phase</span>
+                    <strong>{formatToken(ironQuestOverlay.encounterPhase || 'intro')}</strong>
+                  </div>
+                  <div className="onboarding-review-row">
+                    <span>Readiness band</span>
+                    <strong>{formatToken(ironQuestOverlay.readinessBand || 'unknown')}</strong>
+                  </div>
+                </div>
+              ) : null}
+              {hasIronQuestOverlay ? (
+                <div>
+                  <p className="settings-subtitle">Optional pre-workout stance</p>
+                  <div className="settings-actions">
+                    {['steady', 'aggressive', 'cautious'].map((stance) => (
+                      <button
+                        key={stance}
+                        type="button"
+                        className={questStance === stance ? 'btn-secondary small' : 'btn-outline small'}
+                        onClick={() => {
+                          onSetIronQuestStance?.(stance)
+                        }}
+                      >
+                        {formatToken(stance)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
               <div className="live-workout-intro-steps">
                 <article className="live-workout-intro-step">
                   <strong>1. Finish and save the set</strong>
@@ -1469,6 +1730,14 @@ export default function LiveWorkoutMode({
                 </article>
               </div>
               <div className="live-workout-intro-actions">
+                {hasIronQuestOverlay ? (
+                  <button type="button" className="btn-outline" onClick={() => {
+                    onSetIronQuestBeatsEnabled?.(false)
+                    dismissIntroModal()
+                  }}>
+                    Start without quest beats
+                  </button>
+                ) : null}
                 <button type="button" className="btn-primary" onClick={dismissIntroModal}>Start live coach</button>
               </div>
           </AppDialog>
@@ -1485,27 +1754,19 @@ export default function LiveWorkoutMode({
   )
 }
 
-function buildSessionOpenedCoachMessage({ activeExercise, displayDayType, totalExerciseCount }) {
+function buildSessionOpenedCoachMessage({ activeExercise, displayDayType, totalExerciseCount, ironQuestOverlay = null }) {
   const workoutLabel = formatToken(displayDayType || 'workout').toLowerCase()
   const exerciseName = activeExercise?.exercise_name || 'your first exercise'
   const repRange = formatRepRange(activeExercise)
   const queueLabel = totalExerciseCount > 1 ? `${totalExerciseCount} exercises are queued.` : 'You are on the only exercise in the session.'
 
-  return `Live mode is on for this ${workoutLabel} session. Open with ${exerciseName} for ${repRange}, and get moving early so the pace stays tight. ${queueLabel}`
-}
-
-function buildRestCoachMessage({ exerciseName, kind, restGuidance }) {
-  const movementLabel = exerciseName || 'the current lift'
-
-  if (restGuidance.tone === 'sweet') {
-    return kind === 'exercise'
-      ? `Transition timing is in the sweet spot. Roll straight into ${movementLabel} while you are still inside the ${restGuidance.windowLabel} target.`
-      : `Rest is in the sweet spot for ${movementLabel}. Take the next set now while you are still inside the ${restGuidance.windowLabel} target.`
+  if (ironQuestOverlay) {
+    const missionLabel = ironQuestOverlay.missionName || ironQuestOverlay.title || 'the current mission'
+    const locationLabel = ironQuestOverlay.locationLabel || ironQuestOverlay.locationName || 'the current region'
+    return `IronQuest live is on. ${missionLabel} is attached to this ${workoutLabel} session in ${locationLabel}. Open with ${exerciseName} for ${repRange}, and keep the route moving without dragging the pace. ${queueLabel}`
   }
 
-  return kind === 'exercise'
-    ? `Transition time is drifting long. Get ${movementLabel} started now so the session stays sharp.`
-    : `Rest is drifting long on ${movementLabel}. Start the next set now unless you need a little more time for safety.`
+  return `Live mode is on for this ${workoutLabel} session. Open with ${exerciseName} for ${repRange}, and get moving early so the pace stays tight. ${queueLabel}`
 }
 
 function buildLiveWorkoutContext({
@@ -1519,6 +1780,7 @@ function buildLiveWorkoutContext({
   restGuidance,
   event,
   timerLabel,
+  ironQuestOverlay,
 }) {
   const activeExercise = exercises?.[activeExerciseIdx] ?? null
   const totalSetCount = getLiveTotalSetCount(activeExercise)
@@ -1556,6 +1818,23 @@ function buildLiveWorkoutContext({
     event_summary: event?.summary || '',
     event_saved_set: event?.savedSet || null,
     event_exercise_context: event?.exerciseContext || null,
+    ironquest_overlay: ironQuestOverlay
+      ? {
+          class_slug: ironQuestOverlay.classSlug || '',
+          motivation_slug: ironQuestOverlay.motivationSlug || '',
+          location_slug: ironQuestOverlay.locationSlug || '',
+          location_name: ironQuestOverlay.locationName || ironQuestOverlay.locationLabel || '',
+          mission_slug: ironQuestOverlay.missionSlug || '',
+          mission_name: ironQuestOverlay.missionName || ironQuestOverlay.title || '',
+          run_type: ironQuestOverlay.runType || '',
+          encounter_phase: ironQuestOverlay.encounterPhase || '',
+          result_band: ironQuestOverlay.resultBand || '',
+          readiness_band: ironQuestOverlay.readinessBand || '',
+          stance: ironQuestOverlay.stance || '',
+          story_state: ironQuestOverlay.storyState || null,
+          ai_anchor: Array.isArray(ironQuestOverlay.aiAnchor) ? ironQuestOverlay.aiAnchor : [],
+        }
+      : null,
     session_overview: Array.isArray(exercises)
       ? exercises.map((exercise, index) => ({
           position: index + 1,

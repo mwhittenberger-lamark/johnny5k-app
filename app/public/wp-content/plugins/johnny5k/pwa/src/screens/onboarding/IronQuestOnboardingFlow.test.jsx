@@ -8,6 +8,12 @@ import IronQuestOnboardingFlow from './IronQuestOnboardingFlow'
 
 const profileMock = vi.hoisted(() => vi.fn())
 const setExperienceModeMock = vi.hoisted(() => vi.fn())
+const onboardingGetStateMock = vi.hoisted(() => vi.fn())
+const onboardingUploadHeadshotMock = vi.hoisted(() => vi.fn())
+const onboardingDeleteHeadshotMock = vi.hoisted(() => vi.fn())
+const onboardingHeadshotBlobMock = vi.hoisted(() => vi.fn())
+const onboardingGenerateImagesMock = vi.hoisted(() => vi.fn())
+const onboardingGeneratedImageBlobMock = vi.hoisted(() => vi.fn())
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
@@ -21,12 +27,12 @@ vi.mock('../../api/modules/ironquest', () => ({
 
 vi.mock('../../api/modules/onboarding', () => ({
   onboardingApi: {
-    getState: vi.fn(() => Promise.resolve({ headshot: { configured: false }, generated_images: [] })),
-    uploadHeadshot: vi.fn(),
-    deleteHeadshot: vi.fn(),
-    headshotBlob: vi.fn(),
-    generateImages: vi.fn(),
-    generatedImageBlob: vi.fn(),
+    getState: onboardingGetStateMock,
+    uploadHeadshot: onboardingUploadHeadshotMock,
+    deleteHeadshot: onboardingDeleteHeadshotMock,
+    headshotBlob: onboardingHeadshotBlobMock,
+    generateImages: onboardingGenerateImagesMock,
+    generatedImageBlob: onboardingGeneratedImageBlobMock,
   },
 }))
 
@@ -84,6 +90,15 @@ describe('IronQuestOnboardingFlow', () => {
     root = createRoot(container)
     profileMock.mockReset()
     setExperienceModeMock.mockReset()
+    onboardingGetStateMock.mockReset()
+    onboardingUploadHeadshotMock.mockReset()
+    onboardingDeleteHeadshotMock.mockReset()
+    onboardingHeadshotBlobMock.mockReset()
+    onboardingGenerateImagesMock.mockReset()
+    onboardingGeneratedImageBlobMock.mockReset()
+    onboardingGetStateMock.mockResolvedValue({ headshot: { configured: false }, generated_images: [] })
+    onboardingHeadshotBlobMock.mockResolvedValue(new Blob(['headshot']))
+    onboardingGeneratedImageBlobMock.mockResolvedValue(new Blob(['generated']))
   })
 
   afterEach(async () => {
@@ -158,5 +173,32 @@ describe('IronQuestOnboardingFlow', () => {
 
     expect(container.textContent).toContain('See yourself in IronQuest')
     expect(container.textContent).toContain('Finish IronQuest setup')
+  })
+
+  it('sends the pending IronQuest identity when generating onboarding portraits', async () => {
+    profileMock.mockResolvedValue(buildIronQuestPayload())
+    onboardingGetStateMock.mockResolvedValue({
+      headshot: { configured: true, attachment_id: 55 },
+      generated_images: [],
+    })
+    onboardingGenerateImagesMock.mockResolvedValue({ generated_images: [] })
+
+    await renderFlow('/onboarding/ironquest/image')
+
+    const generateButton = Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.includes('Generate 1 portrait'))
+    expect(generateButton).toBeTruthy()
+
+    await act(async () => {
+      generateButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(onboardingGenerateImagesMock).toHaveBeenCalledWith({
+      prompt: '',
+      count: 1,
+      generation_context: 'ironquest',
+      ironquest_class_slug: 'warrior',
+      ironquest_motivation_slug: 'discipline',
+    })
   })
 })

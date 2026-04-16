@@ -302,6 +302,9 @@ class Seeder {
 			[ 'back',          9, 'medium' ],
 			[ 'shoulders',    10, 'medium' ],
 			[ 'arms',         11, 'medium' ],
+			[ 'full_body',    12, 'medium' ],
+			[ 'stretching',   13, 'short' ],
+			[ 'abs',          14, 'short' ],
 		];
 
 		// [ day_type => [ [slug, slot_type, priority, rep_min, rep_max, sets, rir, optional] ] ]
@@ -371,6 +374,21 @@ class Seeder {
 				[ 'tricep-pushdown',         'accessory',  4, 10, 15, 3, 2.0, 0 ],
 				[ 'skull-crushers',          'accessory',  5, 8, 12,  3, 2.0, 0 ],
 				[ 'overhead-tricep-extension','accessory', 6, 10, 15, 3, 2.0, 0 ],
+			],
+			'full_body' => [
+				[ 'barbell-squat',           'main',       1, 4, 6,   3, 2.0, 0 ],
+				[ 'dumbbell-flat-press',     'secondary',  2, 8, 12,  3, 2.0, 0 ],
+				[ 'cable-row',               'secondary',  3, 10, 15, 3, 2.0, 0 ],
+				[ 'dumbbell-lateral-raise',  'shoulders',  4, 15, 20, 3, null, 0 ],
+				[ 'plank',                   'abs',        5, 20, 60, 3, null, 0 ],
+				[ 'farmers-walk',            'challenge',  6, 20, 40, 3, null, 1 ],
+			],
+			'abs' => [
+				[ 'cable-crunch',            'abs',        1, 12, 20, 3, 2.0, 0 ],
+				[ 'hanging-leg-raise',       'abs',        2, 8, 15,  3, 2.0, 0 ],
+				[ 'dead-bug',                'abs',        3, 8, 12,  3, 2.0, 0 ],
+				[ 'plank',                   'abs',        4, 20, 60, 3, null, 0 ],
+				[ 'russian-twist',           'abs',        5, 15, 20, 3, 2.0, 1 ],
 			],
 		];
 

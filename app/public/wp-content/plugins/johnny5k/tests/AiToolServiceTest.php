@@ -16,6 +16,24 @@ class AiToolServiceTest extends ServiceTestCase {
 		$this->assertSame( 'string', $tool['parameters']['properties']['time_tier']['type'] ?? null );
 	}
 
+	public function test_set_training_schedule_tool_accepts_weekly_entries(): void {
+		$registry = AiToolService::tool_registry( 5, 5, 5 );
+		$tool     = $registry['set_training_schedule'] ?? null;
+
+		$this->assertIsArray( $tool );
+		$this->assertFalse( $tool['read_only'] ?? true );
+		$this->assertSame( 'array', $tool['parameters']['properties']['preferred_workout_days_json']['type'] ?? null );
+		$this->assertSame( [ 'preferred_workout_days_json' ], $tool['parameters']['required'] ?? [] );
+	}
+
+	public function test_schedule_language_exposes_workout_schedule_tool(): void {
+		$registry = AiToolService::tool_registry( 5, 5, 5 );
+		$tools    = AiToolService::get_chat_function_tools( $registry, 'general', [], 'Set my weekly schedule to Monday Wednesday Friday.' );
+		$names    = array_map( static fn( array $tool ): string => (string) ( $tool['name'] ?? '' ), $tools );
+
+		$this->assertContains( 'set_training_schedule', $names );
+	}
+
 	public function test_clear_tools_are_registered_for_johnny(): void {
 		$registry = AiToolService::tool_registry( 5, 5, 5 );
 
