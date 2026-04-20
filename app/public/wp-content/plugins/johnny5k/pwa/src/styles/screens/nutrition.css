@@ -454,9 +454,9 @@
     linear-gradient(180deg, rgba(227, 242, 252, 0.92), rgba(241, 248, 253, 0.98));
 }
 .nutrition-screen .dashboard-chip.ai {
-  background: rgba(0, 188, 222, 0.2);
-  border-color: rgba(126, 244, 255, 0.28);
-  color: #0b4960;
+    background: #00bcde33;
+    border-color: #0d7b4f;
+    color: #0d7b24;
 }
 .nutrition-screen .dashboard-chip.nutrition,
 .nutrition-screen .dashboard-chip:not(.ai):not(.subtle):not(.workout):not(.awards):not(.success):not(.coach) {

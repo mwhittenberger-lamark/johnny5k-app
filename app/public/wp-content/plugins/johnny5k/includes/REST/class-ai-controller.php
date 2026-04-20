@@ -43,7 +43,7 @@ abstract class AbstractNutritionController extends RestController {
 
 		if ( $existing_meal ) {
 			$meal_id      = (int) $existing_meal->id;
-			$merged_items = array_merge( self::get_meal_items_payload( $meal_id ), $items );
+			$merged_items = self::merge_meal_items_with_rollup( self::get_meal_items_payload( $meal_id ), $items );
 
 			$wpdb->update( $p . 'fit_meals', [
 				'meal_datetime' => $meal_dt,
@@ -790,14 +790,11 @@ abstract class AbstractNutritionController extends RestController {
 		$recent_items = self::get_recent_food_entries( $user_id, $query, 12, $beverage_only );
 
 		$merged = [];
-		$seen = [];
 		foreach ( $saved_foods ?: [] as $row ) {
-			$key = self::build_food_match_dedupe_key( (string) $row->canonical_name, (string) $row->brand, (string) $row->serving_size );
-			if ( isset( $seen[ $key ] ) ) {
+			if ( null !== self::find_food_match_index( $merged, (string) $row->canonical_name, (string) $row->brand ) ) {
 				continue;
 			}
 
-			$seen[ $key ] = true;
 			$merged[] = [
 				'id'           => (int) $row->id,
 				'canonical_name'=> (string) $row->canonical_name,
@@ -818,12 +815,10 @@ abstract class AbstractNutritionController extends RestController {
 		}
 
 		foreach ( $recent_items as $row ) {
-			$key = self::build_food_match_dedupe_key( (string) ( $row['canonical_name'] ?? '' ), (string) ( $row['brand'] ?? '' ), (string) ( $row['serving_size'] ?? '' ) );
-			if ( isset( $seen[ $key ] ) ) {
+			if ( null !== self::find_food_match_index( $merged, (string) ( $row['canonical_name'] ?? '' ), (string) ( $row['brand'] ?? '' ) ) ) {
 				continue;
 			}
 
-			$seen[ $key ] = true;
 			$merged[] = $row;
 		}
 
@@ -1021,6 +1016,28 @@ abstract class AbstractNutritionController extends RestController {
 		}, $items );
 	}
 
+	private static function merge_meal_items_with_rollup( array $primary_items, array $candidate_items ): array {
+		$seen = [];
+
+		foreach ( $primary_items as $index => $item ) {
+			$seen[ self::build_meal_item_signature( (array) $item ) ] = $index;
+		}
+
+		foreach ( $candidate_items as $item ) {
+			$signature = self::build_meal_item_signature( (array) $item );
+			if ( isset( $seen[ $signature ] ) ) {
+				$existing_index = (int) $seen[ $signature ];
+				$primary_items[ $existing_index ] = self::rollup_meal_item_payload( (array) $primary_items[ $existing_index ], (array) $item );
+				continue;
+			}
+
+			$primary_items[] = $item;
+			$seen[ $signature ] = count( $primary_items ) - 1;
+		}
+
+		return $primary_items;
+	}
+
 	private static function merge_unique_meal_items_payload( array $primary_items, array $candidate_items ): array {
 		$seen = [];
 
@@ -1039,6 +1056,64 @@ abstract class AbstractNutritionController extends RestController {
 		}
 
 		return $primary_items;
+	}
+
+	private static function rollup_meal_item_payload( array $existing_item, array $incoming_item ): array {
+		$existing_item['serving_amount'] = round( (float) ( $existing_item['serving_amount'] ?? 1 ) + (float) ( $incoming_item['serving_amount'] ?? 1 ), 4 );
+		$existing_item['calories']       = (int) round( (float) ( $existing_item['calories'] ?? 0 ) + (float) ( $incoming_item['calories'] ?? 0 ) );
+		$existing_item['protein_g']      = round( (float) ( $existing_item['protein_g'] ?? 0 ) + (float) ( $incoming_item['protein_g'] ?? 0 ), 4 );
+		$existing_item['carbs_g']        = round( (float) ( $existing_item['carbs_g'] ?? 0 ) + (float) ( $incoming_item['carbs_g'] ?? 0 ), 4 );
+		$existing_item['fat_g']          = round( (float) ( $existing_item['fat_g'] ?? 0 ) + (float) ( $incoming_item['fat_g'] ?? 0 ), 4 );
+		$existing_item['fiber_g']        = self::sum_optional_numeric_meal_value( $existing_item, $incoming_item, 'fiber_g' );
+		$existing_item['sugar_g']        = self::sum_optional_numeric_meal_value( $existing_item, $incoming_item, 'sugar_g' );
+		$existing_item['sodium_mg']      = self::sum_optional_numeric_meal_value( $existing_item, $incoming_item, 'sodium_mg' );
+		$existing_item['micros']         = self::merge_meal_item_micros( $existing_item['micros'] ?? [], $incoming_item['micros'] ?? [] );
+
+		return $existing_item;
+	}
+
+	private static function sum_optional_numeric_meal_value( array $existing_item, array $incoming_item, string $key ) {
+		$has_existing = isset( $existing_item[ $key ] );
+		$has_incoming = isset( $incoming_item[ $key ] );
+
+		if ( ! $has_existing && ! $has_incoming ) {
+			return null;
+		}
+
+		return round( (float) ( $existing_item[ $key ] ?? 0 ) + (float) ( $incoming_item[ $key ] ?? 0 ), 4 );
+	}
+
+	private static function merge_meal_item_micros( $existing_micros, $incoming_micros ): array {
+		$merged = [];
+		$order  = [];
+
+		foreach ( [ $existing_micros, $incoming_micros ] as $micro_list ) {
+			foreach ( is_array( $micro_list ) ? $micro_list : [] as $micro ) {
+				$micro = is_array( $micro ) ? $micro : [];
+				$key   = self::build_meal_micro_signature( $micro );
+				if ( '' === $key ) {
+					continue;
+				}
+
+				if ( ! isset( $merged[ $key ] ) ) {
+					$merged[ $key ] = $micro;
+					$order[]        = $key;
+					continue;
+				}
+
+				$merged[ $key ]['amount'] = round( (float) ( $merged[ $key ]['amount'] ?? 0 ) + (float) ( $micro['amount'] ?? 0 ), 4 );
+			}
+		}
+
+		return array_values( array_map( static fn( string $key ): array => $merged[ $key ], $order ) );
+	}
+
+	private static function build_meal_micro_signature( array $micro ): string {
+		$key   = strtolower( trim( (string) ( $micro['key'] ?? '' ) ) );
+		$label = strtolower( trim( (string) ( $micro['label'] ?? '' ) ) );
+		$unit  = strtolower( trim( (string) ( $micro['unit'] ?? '' ) ) );
+
+		return trim( $key . '|' . $label . '|' . $unit, '|' );
 	}
 
 	private static function build_meal_item_signature( array $item ): string {
@@ -1351,13 +1426,38 @@ abstract class AbstractNutritionController extends RestController {
 		self::save_hidden_recent_food_keys( $user_id, array_merge( $current, $keys ) );
 	}
 
-	private static function build_food_match_dedupe_key( string $name, string $brand = '', string $serving_size = '' ): string {
-		$normalize = static function( string $value ): string {
-			$value = strtolower( trim( $value ) );
-			return preg_replace( '/\s+/', ' ', $value ) ?: '';
-		};
+	private static function find_food_match_index( array $items, string $name, string $brand = '' ): ?int {
+		$normalized_name  = self::normalize_food_match_value( $name );
+		$normalized_brand = self::normalize_food_match_value( $brand );
 
-		return $normalize( $name ) . '|' . $normalize( $brand ) . '|' . $normalize( $serving_size );
+		if ( '' === $normalized_name ) {
+			return null;
+		}
+
+		foreach ( $items as $index => $item ) {
+			$item_name = self::normalize_food_match_value( (string) ( $item['canonical_name'] ?? $item['food_name'] ?? '' ) );
+			if ( $item_name !== $normalized_name ) {
+				continue;
+			}
+
+			$item_brand = self::normalize_food_match_value( (string) ( $item['brand'] ?? '' ) );
+			if ( '' !== $item_brand && '' !== $normalized_brand && $item_brand !== $normalized_brand ) {
+				continue;
+			}
+
+			return $index;
+		}
+
+		return null;
+	}
+
+	private static function build_food_match_dedupe_key( string $name, string $brand = '', string $serving_size = '' ): string {
+		return self::normalize_food_match_value( $name ) . '|' . self::normalize_food_match_value( $brand ) . '|' . self::normalize_food_match_value( $serving_size );
+	}
+
+	private static function normalize_food_match_value( string $value ): string {
+		$value = strtolower( trim( $value ) );
+		return preg_replace( '/\s+/', ' ', $value ) ?: '';
 	}
 
 	private static function is_beverage_item_payload( array $item ): bool {

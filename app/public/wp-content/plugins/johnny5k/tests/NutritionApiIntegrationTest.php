@@ -93,6 +93,9 @@ class NutritionApiIntegrationTest extends ApiIntegrationTestCase {
 				'protein_g' => 45,
 				'carbs_g' => 50,
 				'fat_g' => 12,
+				'fiber_g' => 0,
+				'sugar_g' => 0,
+				'sodium_mg' => 0,
 				'micros' => [
 					[
 						'key' => 'iron',
@@ -115,6 +118,118 @@ class NutritionApiIntegrationTest extends ApiIntegrationTestCase {
 		$this->assertSame( 'wp_fit_meal_items', $db->inserted[1]['table'] );
 		$this->assertSame( 'Chicken Rice Bowl', $db->inserted[1]['data']['food_name'] );
 		$this->assertSame( 'wp_fit_behavior_events', $db->inserted[2]['table'] );
+	}
+
+	public function test_meal_logging_merges_existing_meal_without_repeating_existing_items(): void {
+		$db = $this->wpdb();
+		$GLOBALS['johnny5k_test_current_user_id'] = 7;
+
+		$db->expectGetResults(
+			"WHERE user_id = 7 AND meal_type = 'lunch' AND DATE(meal_datetime) = '2026-04-09' AND confirmed = 1",
+			[
+				(object) [
+					'id' => 31,
+					'meal_datetime' => '2026-04-09 12:00:00',
+					'source' => 'manual',
+				],
+			]
+		);
+		$db->expectGetResults(
+			'FROM wp_fit_meal_items WHERE meal_id = 31',
+			[
+				[
+					'food_id' => null,
+					'food_name' => 'Chicken Rice Bowl',
+					'serving_amount' => 1,
+					'serving_unit' => 'bowl',
+					'calories' => 550,
+					'protein_g' => 45,
+					'carbs_g' => 50,
+					'fat_g' => 12,
+					'fiber_g' => 0,
+					'sugar_g' => 0,
+					'sodium_mg' => 0,
+					'micros_json' => wp_json_encode( [
+						[
+							'key' => 'iron',
+							'label' => 'Iron',
+							'amount' => 2.4,
+							'unit' => 'mg',
+						],
+					] ),
+					'is_beverage' => 0,
+					'source_json' => null,
+				],
+			]
+		);
+
+		$req = new \WP_REST_Request( 'POST', '/fit/v1/nutrition/meal' );
+		$req->set_param( 'meal_datetime', '2026-04-09 12:00:00' );
+		$req->set_param( 'meal_type', 'lunch' );
+		$req->set_param( 'source', 'manual' );
+		$req->set_param( 'items', [
+			[
+				'food_name' => 'Chicken Rice Bowl',
+				'serving_amount' => 1,
+				'serving_unit' => 'bowl',
+				'calories' => 550,
+				'protein_g' => 45,
+				'carbs_g' => 50,
+				'fat_g' => 12,
+				'fiber_g' => 0,
+				'sugar_g' => 0,
+				'sodium_mg' => 0,
+				'micros' => [
+					[
+						'key' => 'iron',
+						'label' => 'Iron',
+						'amount' => 2.4,
+						'unit' => 'mg',
+					],
+				],
+			],
+			[
+				'food_name' => 'Apple',
+				'serving_amount' => 1,
+				'serving_unit' => 'medium',
+				'calories' => 95,
+				'protein_g' => 0,
+				'carbs_g' => 25,
+				'fat_g' => 0,
+				'micros' => [
+					[
+						'key' => 'vitamin_c',
+						'label' => 'Vitamin C',
+						'amount' => 8.4,
+						'unit' => 'mg',
+					],
+				],
+			],
+		] );
+
+		$response = TestAiMealController::log_meal( $req );
+		$data = $response->get_data();
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame( 31, $data['meal_id'] );
+		$this->assertTrue( (bool) $data['merged'] );
+		$this->assertSame( [ 7 ], TestAiMealController::$synced_awards );
+		$this->assertCount( 1, $db->updated );
+		$this->assertCount( 1, $db->deleted );
+		$this->assertSame( 'wp_fit_meal_items', $db->deleted[0]['table'] );
+
+		$item_rows = array_values( array_filter( $db->inserted, static fn( array $entry ): bool => 'wp_fit_meal_items' === $entry['table'] ) );
+		$this->assertCount( 2, $item_rows );
+		$this->assertSame( [ 'Chicken Rice Bowl', 'Apple' ], array_map( static fn( array $entry ): string => (string) $entry['data']['food_name'], $item_rows ) );
+		$this->assertSame( 2.0, $item_rows[0]['data']['serving_amount'] );
+		$this->assertSame( 1100, $item_rows[0]['data']['calories'] );
+		$this->assertSame( 90.0, $item_rows[0]['data']['protein_g'] );
+		$this->assertSame( 100.0, $item_rows[0]['data']['carbs_g'] );
+		$this->assertSame( 24.0, $item_rows[0]['data']['fat_g'] );
+		$this->assertSame( 0.0, $item_rows[0]['data']['fiber_g'] );
+		$this->assertSame( 0.0, $item_rows[0]['data']['sugar_g'] );
+		$this->assertSame( 0.0, $item_rows[0]['data']['sodium_mg'] );
+		$this->assertStringContainsString( '"amount":4.8', (string) ( $item_rows[0]['data']['micros_json'] ?? '' ) );
 	}
 
 	public function test_beverage_logging_marks_beverage_items_and_type(): void {
@@ -158,6 +273,68 @@ class NutritionApiIntegrationTest extends ApiIntegrationTestCase {
 		$this->assertSame( 1, $data['meal_id'] );
 		$this->assertSame( 'beverage', $db->inserted[0]['data']['meal_type'] );
 		$this->assertSame( 1, $db->inserted[1]['data']['is_beverage'] );
+	}
+
+	public function test_search_foods_dedupes_recent_match_when_saved_food_already_exists(): void {
+		$db = $this->wpdb();
+		$GLOBALS['johnny5k_test_current_user_id'] = 7;
+
+		$db->expectGetResults(
+			'FROM wp_fit_foods',
+			[
+				(object) [
+					'id' => 15,
+					'canonical_name' => 'Greek Yogurt',
+					'brand' => 'Chobani',
+					'serving_size' => '1 cup',
+					'calories' => 120,
+					'protein_g' => 20,
+					'carbs_g' => 7,
+					'fat_g' => 0,
+					'fiber_g' => 0,
+					'sugar_g' => 5,
+					'sodium_mg' => 65,
+					'micros_json' => '[]',
+					'is_beverage' => 0,
+					'match_type' => 'saved_food',
+				],
+			]
+		);
+		$db->expectGetResults(
+			'FROM wp_fit_meal_items mi',
+			[
+				[
+					'id' => 88,
+					'food_id' => null,
+					'food_name' => 'Greek Yogurt',
+					'serving_amount' => 1,
+					'serving_unit' => '170 g cup',
+					'calories' => 120,
+					'protein_g' => 20,
+					'carbs_g' => 7,
+					'fat_g' => 0,
+					'fiber_g' => 0,
+					'sugar_g' => 5,
+					'sodium_mg' => 65,
+					'micros_json' => '[]',
+					'is_beverage' => 0,
+					'meal_id' => 9,
+					'meal_datetime' => '2026-04-10 12:00:00',
+					'source_json' => wp_json_encode( [ 'type' => 'manual' ] ),
+				],
+			]
+		);
+
+		$req = new \WP_REST_Request( 'GET', '/fit/v1/nutrition/foods/search' );
+		$req->set_param( 'q', 'greek yogurt' );
+
+		$response = TestAiMealController::search_foods( $req );
+		$data = $response->get_data();
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertCount( 1, $data );
+		$this->assertSame( 'saved_food', $data[0]['match_type'] );
+		$this->assertSame( 15, $data[0]['id'] );
 	}
 
 	public function test_meal_logging_with_malformed_items_returns_400(): void {

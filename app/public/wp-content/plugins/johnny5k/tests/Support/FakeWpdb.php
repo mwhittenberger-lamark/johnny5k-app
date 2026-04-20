@@ -78,6 +78,10 @@ class FakeWpdb {
 		return $query;
 	}
 
+	public function esc_like( string $text ): string {
+		return addcslashes( $text, '_%\\' );
+	}
+
 	public function get_var( string $query ): mixed {
 		return $this->resolve( 'get_var', $query );
 	}

@@ -1582,8 +1582,8 @@ export default function NutritionScreen() {
         <SupportIconButton label="Get help with nutrition" onClick={handleOpenNutritionSupport} />
         <div>
           <p className="dashboard-eyebrow">Nutrition</p>
-          <h1>Log today first</h1>
-          <p className="settings-subtitle">Keep today&apos;s meals fast and obvious. Planning, shopping, and pantry upkeep stay one tap away when you need them.</p>
+            <h1>Stay on top of today&apos;s food</h1>
+            <p className="settings-subtitle">Log what you eat without losing the bigger picture. Saved foods, meal planning, and pantry tools are still right here when you need them.</p>
         </div>
         <div className="header-actions nutrition-header-actions">
           <button className="btn-primary header-action-button nutrition-primary-header-action" title="Add manually" onClick={() => {
@@ -3095,7 +3095,7 @@ function BeverageBoard({ screen, showHeader = true, showShell = true }) {
     const timeoutId = window.setTimeout(async () => {
       setLoadingSuggestions(true)
       try {
-        const results = await nutritionApi.searchFoods(trimmedQuery, { beverageOnly: true })
+        const results = dedupeFoodSearchSuggestions(await nutritionApi.searchFoods(trimmedQuery, { beverageOnly: true }))
         if (!cancelled) {
           setSuggestions(Array.isArray(results) ? results : [])
         }
@@ -6081,18 +6081,10 @@ function findSavedFoodDuplicates(savedFoods, draft) {
 
 function dedupeFoodSearchSuggestions(results) {
   const deduped = []
-  const seen = new Map()
 
   for (const suggestion of Array.isArray(results) ? results : []) {
-    const dedupeKey = buildFoodSuggestionDedupeKey(suggestion)
-    if (!dedupeKey) {
-      deduped.push(suggestion)
-      continue
-    }
-
-    const existingIndex = seen.get(dedupeKey)
-    if (existingIndex == null) {
-      seen.set(dedupeKey, deduped.length)
+    const existingIndex = findFoodSuggestionMatchIndex(deduped, suggestion)
+    if (existingIndex === -1) {
       deduped.push(suggestion)
       continue
     }
@@ -6105,15 +6097,23 @@ function dedupeFoodSearchSuggestions(results) {
   return deduped
 }
 
-function buildFoodSuggestionDedupeKey(suggestion) {
-  const name = normaliseFoodMatchText(suggestion?.canonical_name || suggestion?.food_name || '')
-  const brand = normaliseFoodMatchText(suggestion?.brand || '')
+function findFoodSuggestionMatchIndex(suggestions, candidate) {
+  const name = normaliseFoodMatchText(candidate?.canonical_name || candidate?.food_name || '')
+  const brand = normaliseFoodMatchText(candidate?.brand || '')
 
   if (!name) {
-    return ''
+    return -1
   }
 
-  return `${name}|${brand}`
+  return suggestions.findIndex(existing => {
+    const existingName = normaliseFoodMatchText(existing?.canonical_name || existing?.food_name || '')
+    if (existingName !== name) {
+      return false
+    }
+
+    const existingBrand = normaliseFoodMatchText(existing?.brand || '')
+    return !existingBrand || !brand || existingBrand === brand
+  })
 }
 
 function compareFoodSuggestionPriority(left, right) {
