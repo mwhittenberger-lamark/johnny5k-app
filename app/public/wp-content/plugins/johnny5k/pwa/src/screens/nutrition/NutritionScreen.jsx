@@ -1583,7 +1583,7 @@ export default function NutritionScreen() {
         <div>
           <p className="dashboard-eyebrow">Nutrition</p>
             <h1>Stay on top of today&apos;s food</h1>
-            <p className="settings-subtitle">Log what you eat without losing the bigger picture. Saved foods, meal planning, and pantry tools are still right here when you need them.</p>
+            <p className="settings-subtitle">Log what you eat without losing the bigger picture. Saved foods, meal planning, and pantry tools are here when you need them.</p>
         </div>
         <div className="header-actions nutrition-header-actions">
           <button className="btn-primary header-action-button nutrition-primary-header-action" title="Add manually" onClick={() => {
@@ -5898,7 +5898,7 @@ function buildBeverageSelectionLabel(selection) {
 
 function buildBeverageServingOptions(selection) {
   const servingSize = String(selection?.serving_size || '1 serving').trim() || '1 serving'
-  return [0.5, 1, 1.5, 2].map(multiplier => ({
+  return [0.5, 1, 1.5, 2, 2.5, 3].map(multiplier => ({
     multiplier,
     label: multiplier === 1 ? servingSize : `${formatMealMacroValue(multiplier)} x ${servingSize}`,
   }))

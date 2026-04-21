@@ -935,6 +935,10 @@
 .nutrition-header > :nth-child(2) {
   width: 100%;
 }
+.nutrition-header > :nth-child(2) h1 {
+  max-width: 250px;
+  line-height: 1.1;
+}
 .nutrition-header-actions {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
