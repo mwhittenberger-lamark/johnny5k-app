@@ -38,9 +38,55 @@ describe('buildCoachingSummary', () => {
 
     expect(summary.statusLabel).toBe('Nutrition gap')
     expect(summary.primaryType).toBe('nutrition')
-    expect(summary.headline).toMatch(/Nutrition consistency/i)
+    expect(summary.headline).toMatch(/Food logging/i)
     expect(summary.nextAction.href).toBe('/nutrition')
     expect(summary.followUpPrompts).toHaveLength(3)
+  })
+
+  it('avoids app-like phrasing in summary copy and leads with a concrete next step', () => {
+    const summary = buildCoachingSummary({
+      snapshot: {
+        goal: { target_protein_g: 180 },
+        nutrition_totals: { protein_g: 92 },
+      },
+      weeklyCaloriesReview: {
+        loggedDays: 3,
+        totalCalories: 10800,
+        targetCalories: 14000,
+        periodLabel: 'Last 7 days',
+      },
+    })
+
+    const text = [
+      summary.headline,
+      summary.summary,
+      summary.nextAction?.message,
+      summary.starterPrompt,
+      ...(summary.followUpPrompts || []).map(item => item.prompt),
+    ].join(' ')
+
+    expect(text).not.toMatch(/current progress|clear next move|signal|traction|recover on purpose|keep logging clean/i)
+    expect(summary.nextAction?.message).toMatch(/log|eat|open|check|keep|use|do|get/i)
+  })
+
+  it('keeps workout momentum copy plain and free of summary framing', () => {
+    const summary = buildCoachingSummary({
+      surface: 'workout_post',
+      snapshot: {
+        nutrition_totals: { protein_g: 150 },
+        goal: { target_protein_g: 180 },
+        streaks: { training_days: 4 },
+      },
+      completionReview: {
+        sessionLabel: 'Upper day complete',
+      },
+      readinessScore: 7,
+    })
+
+    const text = [summary.headline, summary.summary, summary.nextAction?.message].join(' ')
+
+    expect(text).not.toMatch(/reviewed|current progress|clear next move|traction/i)
+    expect(summary.summary.split('.').filter(Boolean).length).toBeLessThanOrEqual(2)
   })
 
   it('does not claim seven unlogged days when dashboard logging history is unavailable', () => {

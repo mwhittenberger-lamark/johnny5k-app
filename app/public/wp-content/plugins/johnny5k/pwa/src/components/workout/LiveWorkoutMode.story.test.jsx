@@ -56,14 +56,15 @@ function buildOverlay(overrides = {}) {
     runId: 44,
     runType: 'workout',
     stance: 'steady',
-    storyState: {
-      run_id: 44,
-      progress: { percent: 24, label: 'Opening exchange secured' },
-      current_situation: 'The captain holds the center lane and waits for your first mistake.',
-      decision_prompt: 'Pick your opening move before the yard closes around you.',
-      latest_beat: '',
-      tension: 'rising',
-      selected_choice: {},
+      storyState: {
+        run_id: 44,
+        progress: { percent: 24, label: 'Opening exchange secured' },
+        current_situation: 'The captain holds the center lane and waits for your first mistake.',
+        decision_prompt: 'Pick your opening move before the yard closes around you.',
+        debug_prompt: 'Generate the opening scene for an IronQuest mission.\n\nInput JSON:\n{"mission":{"name":"Captain Of The Yard"}}',
+        latest_beat: '',
+        tension: 'rising',
+        selected_choice: {},
       choices: [
         { id: 'direct_assault', label: 'Drive straight at the captain and seize the tempo', tone: 'aggressive' },
         { id: 'steady_approach', label: 'Brace, watch, and step in only when the lane opens', tone: 'cautious' },
@@ -187,6 +188,7 @@ describe('LiveWorkoutMode IronQuest story', () => {
     await flushEffects()
 
     expect(document.body.textContent).toContain('Pick your opening move before the yard closes around you.')
+    expect(document.body.textContent).toContain('AI prompt')
     const choiceButton = findButtonByText('Drive straight at the captain and seize the tempo')
     expect(choiceButton).not.toBeUndefined()
 

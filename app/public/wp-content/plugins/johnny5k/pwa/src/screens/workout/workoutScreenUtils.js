@@ -364,8 +364,8 @@ export function buildJohnnyReview({ todayLabel, scheduledDayType, selectedDayTyp
   if (selectedDayType === 'rest') {
     return {
       message: isOverride
-        ? `Johnny reviewed today and sees you swapping your scheduled ${scheduledLabel.toLowerCase()} day for a rest day. Recover on purpose, then come back with a clearer signal next session.`
-        : `${todayLabel} is lined up as a rest day. Recover on purpose and keep your logging clean so the next workout has better context.`,
+        ? `You swapped your scheduled ${scheduledLabel.toLowerCase()} day for a rest day. Take the easy win and actually recover so the next session feels better.`
+        : `${todayLabel} is a rest day. Take it easy, log what matters, and make tomorrow easier.`,
       lastSessionLabel: '',
       exerciseLines: [],
     }
@@ -373,7 +373,7 @@ export function buildJohnnyReview({ todayLabel, scheduledDayType, selectedDayTyp
 
   if (selectedDayType === 'cardio') {
     return {
-      message: `${todayLabel} is set up as ${scheduledLabel}. Log your conditioning on the Progress screen, or override to a strength split if you want Johnny to build a lifting session instead.`,
+      message: `${todayLabel} is set up as ${scheduledLabel}. Log your conditioning in Progress, or switch to a lifting split if that is what you actually want to do.`,
       lastSessionLabel: '',
       exerciseLines: [],
     }
@@ -382,8 +382,8 @@ export function buildJohnnyReview({ todayLabel, scheduledDayType, selectedDayTyp
   if (!lastCompletedSession) {
     return {
       message: isOverride
-        ? `Johnny reviewed this and sees you overriding ${scheduledLabel} with ${selectedLabel}. Treat this as a clean baseline session and log every working set so the next ${selectedLabel.toLowerCase()} day has a useful reference.`
-        : `Johnny reviewed today as ${selectedLabel}. Log every working set cleanly so the next ${selectedLabel.toLowerCase()} day has better progression data.`,
+        ? `You switched ${scheduledLabel} to ${selectedLabel}. Use today as a clean baseline and log your working sets so next time we have something real to build from.`
+        : `Today is ${selectedLabel}. Log your working sets so next time we have something useful to compare against.`,
       lastSessionLabel: '',
       exerciseLines: [],
     }
@@ -396,13 +396,13 @@ export function buildJohnnyReview({ todayLabel, scheduledDayType, selectedDayTyp
 
   const lastSessionLabel = `Last ${selectedLabel.toLowerCase()} session was ${formatCalendarDate(lastCompletedSession.session_date)} with ${lastCompletedSession.completed_sets} completed sets across ${lastCompletedSession.exercise_count} exercises.`
   const progressionPrompt = lastCompletedSession.completed_sets >= 10
-    ? 'Johnny wants one clear win today: add a rep, add a little load, or make the same work feel cleaner.'
-    : 'Johnny wants a more complete log today so he can tighten progression on the next round.'
+    ? 'Get one clear win today: add a rep, add a little load, or make the same work feel smoother.'
+    : 'Give yourself a more complete log today so next time the progression is easier to judge.'
 
   return {
     message: isOverride
-      ? `Johnny reviewed today and sees you swapping your scheduled ${scheduledLabel.toLowerCase()} day for ${selectedLabel.toLowerCase()}. ${progressionPrompt}`
-      : `Johnny reviewed your ${selectedLabel.toLowerCase()} day. ${progressionPrompt}`,
+      ? `You swapped your scheduled ${scheduledLabel.toLowerCase()} day for ${selectedLabel.toLowerCase()}. ${progressionPrompt}`
+      : `${selectedLabel} day is up. ${progressionPrompt}`,
     lastSessionLabel,
     exerciseLines,
   }

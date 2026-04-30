@@ -230,6 +230,12 @@ if ( ! function_exists( 'wp_timezone_string' ) ) {
 	}
 }
 
+if ( ! function_exists( 'wp_timezone' ) ) {
+	function wp_timezone(): DateTimeZone {
+		return new DateTimeZone( wp_timezone_string() );
+	}
+}
+
 if ( ! function_exists( 'current_time' ) ) {
 	function current_time( string $type, bool $gmt = false ): string {
 		return match ( $type ) {

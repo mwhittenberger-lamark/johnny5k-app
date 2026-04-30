@@ -398,6 +398,22 @@
   --surface-meta: color-mix(in srgb, var(--bg2) 84%, var(--bg3) 16%);
   --surface-pill: color-mix(in srgb, var(--bg2) 88%, white 12%);
   --border-strong: color-mix(in srgb, var(--border) 78%, var(--accent2) 22%);
+  --ironquest-copy-muted: color-mix(in srgb, var(--text) 74%, var(--bg2) 26%);
+  --ironquest-header-rule: color-mix(in srgb, var(--border) 72%, white 28%);
+  --ironquest-shell-bg:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-card) 82%, transparent), color-mix(in srgb, var(--surface-card-alt) 88%, transparent));
+  --ironquest-panel-bg:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-card) 88%, white 12%), color-mix(in srgb, var(--surface-card-alt) 76%, var(--surface-card) 24%));
+  --ironquest-panel-strong-bg:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-card-alt) 94%, white 6%), color-mix(in srgb, var(--surface-card) 72%, var(--surface-card-alt) 28%));
+  --ironquest-subpanel-bg:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-meta) 92%, white 8%), color-mix(in srgb, var(--surface-card-alt) 84%, var(--surface-meta) 16%));
+  --ironquest-subpanel-border: color-mix(in srgb, var(--border-strong) 82%, white 18%);
+  --ironquest-inset-bg: color-mix(in srgb, var(--surface-pill) 72%, var(--bg2) 28%);
+  --ironquest-inset-border: color-mix(in srgb, var(--border) 80%, white 20%);
+  --ironquest-section-shadow: 0 16px 34px rgba(3, 5, 12, 0.12);
+  --ironquest-section-glow: color-mix(in srgb, var(--accent2) 18%, transparent);
+  --ironquest-accent-bar: linear-gradient(90deg, color-mix(in srgb, var(--accent) 82%, white 18%), color-mix(in srgb, var(--yellow) 80%, white 20%), color-mix(in srgb, var(--accent2) 82%, white 18%));
   --shell-brand-bg: color-mix(in srgb, var(--bg2) 78%, white 22%);
   --shell-brand-border: color-mix(in srgb, var(--border) 80%, var(--accent3) 20%);
   --shell-nav-bg: color-mix(in srgb, var(--bg2) 72%, transparent 28%);
@@ -573,36 +589,82 @@
 
 :root[data-experience-mode='ironquest'][data-color-scheme='ironquest-codex'] {
   --surface-app:
-    radial-gradient(circle at top left, rgba(169, 86, 46, 0.08), transparent 34%),
-    radial-gradient(circle at bottom right, rgba(89, 112, 59, 0.1), transparent 28%),
-    linear-gradient(180deg, #f3e9d7 0%, #f9f1e3 46%, #ecdfc4 100%);
+    radial-gradient(circle at top left, rgba(143, 75, 42, 0.1), transparent 34%),
+    radial-gradient(circle at bottom right, rgba(78, 101, 64, 0.12), transparent 28%),
+    linear-gradient(180deg, #efe2c8 0%, #f9efdd 46%, #e4cfaa 100%);
   --surface-hero:
-    radial-gradient(circle at 82% 12%, rgba(216, 174, 59, 0.24), transparent 24%),
-    radial-gradient(circle at 18% 22%, rgba(89, 112, 59, 0.14), transparent 30%),
-    linear-gradient(145deg, rgba(255, 250, 239, 0.98), rgba(242, 229, 203, 0.96) 58%, rgba(231, 212, 181, 0.95));
+    radial-gradient(circle at 82% 12%, rgba(200, 155, 47, 0.26), transparent 24%),
+    radial-gradient(circle at 18% 22%, rgba(78, 101, 64, 0.16), transparent 30%),
+    linear-gradient(145deg, rgba(255, 249, 237, 0.99), rgba(241, 225, 193, 0.97) 58%, rgba(220, 194, 146, 0.95));
+  --ironquest-copy-muted: color-mix(in srgb, var(--text) 76%, #fff4df 24%);
+  --ironquest-header-rule: color-mix(in srgb, #a97a1b 20%, var(--border) 80%);
+  --ironquest-shell-bg:
+    radial-gradient(circle at top right, rgba(200, 155, 47, 0.08), transparent 26%),
+    linear-gradient(180deg, rgba(255, 248, 235, 0.97), rgba(236, 219, 187, 0.94));
+  --ironquest-panel-bg:
+    linear-gradient(180deg, rgba(255, 247, 234, 0.96), rgba(236, 219, 187, 0.95));
+  --ironquest-panel-strong-bg:
+    linear-gradient(180deg, rgba(255, 250, 240, 0.98), rgba(226, 203, 161, 0.97));
+  --ironquest-subpanel-bg:
+    linear-gradient(180deg, rgba(249, 238, 214, 0.96), rgba(228, 210, 177, 0.94));
+  --ironquest-inset-bg: color-mix(in srgb, #fff8e8 78%, var(--bg3) 22%);
+  --ironquest-inset-border: color-mix(in srgb, #a97a1b 22%, var(--border) 78%);
+  --ironquest-section-glow: rgba(169, 121, 27, 0.16);
+  --ironquest-accent-bar: linear-gradient(90deg, rgba(143, 75, 42, 0.96), rgba(200, 155, 47, 0.94), rgba(78, 101, 64, 0.92));
 }
 
 :root[data-experience-mode='ironquest'][data-color-scheme='ironquest-ember'] {
   --surface-app:
-    radial-gradient(circle at top, rgba(208, 167, 58, 0.12), transparent 26%),
-    radial-gradient(circle at bottom right, rgba(126, 143, 178, 0.14), transparent 24%),
-    linear-gradient(180deg, #17131a 0%, #211b22 48%, #120f15 100%);
+    radial-gradient(circle at top, rgba(199, 160, 58, 0.14), transparent 26%),
+    radial-gradient(circle at bottom right, rgba(135, 151, 188, 0.16), transparent 24%),
+    linear-gradient(180deg, #141016 0%, #1d161d 48%, #0f0b11 100%);
   --surface-hero:
-    radial-gradient(circle at 84% 12%, rgba(197, 103, 58, 0.26), transparent 24%),
-    radial-gradient(circle at 16% 22%, rgba(208, 167, 58, 0.18), transparent 30%),
-    linear-gradient(145deg, rgba(41, 33, 42, 0.98), rgba(31, 25, 33, 0.98) 58%, rgba(20, 17, 22, 0.98));
+    radial-gradient(circle at 84% 12%, rgba(192, 106, 61, 0.3), transparent 24%),
+    radial-gradient(circle at 16% 22%, rgba(199, 160, 58, 0.18), transparent 30%),
+    linear-gradient(145deg, rgba(38, 29, 38, 0.98), rgba(27, 21, 29, 0.99) 58%, rgba(17, 13, 18, 0.99));
   --surface-card-alt: color-mix(in srgb, var(--bg3) 58%, var(--bg2) 42%);
+  --ironquest-copy-muted: color-mix(in srgb, var(--text) 82%, #a68767 18%);
+  --ironquest-header-rule: color-mix(in srgb, var(--accent) 24%, var(--border) 76%);
+  --ironquest-shell-bg:
+    radial-gradient(circle at top right, rgba(192, 106, 61, 0.12), transparent 24%),
+    radial-gradient(circle at bottom left, rgba(135, 151, 188, 0.1), transparent 28%),
+    linear-gradient(180deg, rgba(33, 26, 34, 0.98), rgba(19, 15, 22, 0.99));
+  --ironquest-panel-bg:
+    linear-gradient(180deg, rgba(39, 31, 40, 0.98), rgba(25, 20, 29, 0.98));
+  --ironquest-panel-strong-bg:
+    linear-gradient(180deg, rgba(56, 43, 48, 0.99), rgba(31, 24, 34, 0.99));
+  --ironquest-subpanel-bg:
+    linear-gradient(180deg, rgba(61, 47, 54, 0.97), rgba(37, 28, 36, 0.97));
+  --ironquest-inset-bg: color-mix(in srgb, rgba(255, 244, 227, 0.06) 46%, rgba(135, 151, 188, 0.16) 54%);
+  --ironquest-inset-border: color-mix(in srgb, var(--accent2) 24%, var(--border) 76%);
+  --ironquest-section-glow: rgba(192, 106, 61, 0.14);
+  --ironquest-accent-bar: linear-gradient(90deg, rgba(192, 106, 61, 0.98), rgba(199, 160, 58, 0.94), rgba(135, 151, 188, 0.9));
 }
 
 :root[data-experience-mode='ironquest'][data-color-scheme='ironquest-grove'] {
   --surface-app:
-    radial-gradient(circle at top left, rgba(70, 118, 99, 0.12), transparent 30%),
-    radial-gradient(circle at bottom right, rgba(180, 154, 83, 0.12), transparent 24%),
-    linear-gradient(180deg, #e6eee5 0%, #f2f7ee 48%, #dce7db 100%);
+    radial-gradient(circle at top left, rgba(62, 109, 90, 0.14), transparent 30%),
+    radial-gradient(circle at bottom right, rgba(165, 138, 70, 0.12), transparent 24%),
+    linear-gradient(180deg, #e1eadf 0%, #f2f7ee 48%, #d1dfcf 100%);
   --surface-hero:
-    radial-gradient(circle at 84% 12%, rgba(180, 154, 83, 0.22), transparent 24%),
-    radial-gradient(circle at 18% 22%, rgba(70, 118, 99, 0.16), transparent 30%),
-    linear-gradient(145deg, rgba(247, 251, 243, 0.98), rgba(225, 236, 225, 0.96) 58%, rgba(209, 221, 209, 0.95));
+    radial-gradient(circle at 84% 12%, rgba(165, 138, 70, 0.22), transparent 24%),
+    radial-gradient(circle at 18% 22%, rgba(62, 109, 90, 0.18), transparent 30%),
+    linear-gradient(145deg, rgba(248, 251, 244, 0.99), rgba(223, 235, 221, 0.97) 58%, rgba(198, 215, 197, 0.96));
+  --ironquest-copy-muted: color-mix(in srgb, var(--text) 72%, #eef5e8 28%);
+  --ironquest-header-rule: color-mix(in srgb, var(--accent2) 18%, var(--border) 82%);
+  --ironquest-shell-bg:
+    radial-gradient(circle at top right, rgba(62, 109, 90, 0.1), transparent 26%),
+    linear-gradient(180deg, rgba(248, 251, 244, 0.97), rgba(218, 230, 216, 0.95));
+  --ironquest-panel-bg:
+    linear-gradient(180deg, rgba(247, 251, 243, 0.96), rgba(218, 230, 216, 0.96));
+  --ironquest-panel-strong-bg:
+    linear-gradient(180deg, rgba(251, 253, 247, 0.98), rgba(201, 220, 199, 0.97));
+  --ironquest-subpanel-bg:
+    linear-gradient(180deg, rgba(236, 244, 232, 0.96), rgba(208, 224, 206, 0.95));
+  --ironquest-inset-bg: color-mix(in srgb, #f9fcf5 76%, var(--bg3) 24%);
+  --ironquest-inset-border: color-mix(in srgb, var(--accent2) 18%, var(--border) 82%);
+  --ironquest-section-glow: rgba(62, 109, 90, 0.12);
+  --ironquest-accent-bar: linear-gradient(90deg, rgba(149, 83, 52, 0.95), rgba(62, 109, 90, 0.94), rgba(165, 138, 70, 0.9));
 }
 
 .sr-only {

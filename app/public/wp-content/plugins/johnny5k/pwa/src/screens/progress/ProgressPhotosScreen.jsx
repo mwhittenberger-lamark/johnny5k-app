@@ -20,9 +20,11 @@ export default function ProgressPhotosScreen() {
   const [photos, setPhotos] = useState([])
   const [baselines, setBaselines] = useState({})
   const [photoSrcs, setPhotoSrcs] = useState({})
+  const [comparisonResult, setComparisonResult] = useState(null)
   const [angle, setAngle] = useState('front')
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10))
   const [uploading, setUploading] = useState(false)
+  const [comparingAngle, setComparingAngle] = useState('')
   const [baselineSavingAngle, setBaselineSavingAngle] = useState('')
   const [deletingId, setDeletingId] = useState(0)
   const [error, setError] = useState('')
@@ -138,6 +140,8 @@ export default function ProgressPhotosScreen() {
 
   const uploadButtonLabel = uploading ? 'Uploading…' : `Upload ${titleCase(angle)} Photo`
 
+  const activeComparison = comparisonResult?.data?.comparison ?? null
+
   useEffect(() => {
     if (!timelineDateGroups.length) {
       setOpenTimelineDates({})
@@ -205,6 +209,28 @@ export default function ProgressPhotosScreen() {
       setError(err.message)
     } finally {
       setBaselineSavingAngle('')
+    }
+  }
+
+  async function handleCompare(group) {
+    if (!group?.baseline || !group?.latest || Number(group.baseline.id) === Number(group.latest.id)) {
+      return
+    }
+
+    setComparingAngle(group.angle)
+    setComparisonResult(null)
+    setError('')
+
+    try {
+      const data = await dashboardApi.comparePhotos(group.baseline.id, group.latest.id)
+      setComparisonResult({
+        angle: group.angle,
+        data,
+      })
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setComparingAngle('')
     }
   }
 
@@ -302,6 +328,18 @@ export default function ProgressPhotosScreen() {
               {!group.baseline ? <p className="progress-angle-tip">Set a baseline in Timeline first.</p> : null}
               {group.baseline && group.latest && group.latest.id === group.baseline.id ? <p className="progress-angle-tip">Add a newer {group.angle} photo to compare against your baseline.</p> : null}
               {group.baseline && group.latest && group.latest.id !== group.baseline.id ? <p className="progress-angle-tip">Baseline is set and a newer {group.angle} photo is available in the timeline.</p> : null}
+              {group.baseline && group.latest && group.latest.id !== group.baseline.id ? (
+                <div className="progress-angle-actions">
+                  <button
+                    className="btn-secondary"
+                    type="button"
+                    onClick={() => handleCompare(group)}
+                    disabled={comparingAngle === group.angle}
+                  >
+                    {comparingAngle === group.angle ? 'Comparing…' : 'Compare latest vs baseline'}
+                  </button>
+                </div>
+              ) : null}
             </article>
           ))}
           {!compareGroups.length ? (
@@ -313,6 +351,65 @@ export default function ProgressPhotosScreen() {
           ) : null}
         </div>
       </section>
+
+      {comparingAngle ? (
+        <section className="dash-card progress-comparison-card progress-comparison-images-loading" aria-live="polite">
+          <div className="dashboard-card-head">
+            <span className="dashboard-chip ai">AI comparison</span>
+            <span className="dashboard-chip subtle">{titleCase(comparingAngle)}</span>
+          </div>
+          <div className="progress-comparison-images">
+            <div className="progress-comparison-image-skeleton" aria-hidden="true" />
+            <div className="progress-comparison-image-skeleton" aria-hidden="true" />
+          </div>
+          <div className="progress-comparison-loading">
+            <p className="progress-comparison-loading-copy">Comparing your latest photo against the saved baseline.</p>
+            <div className="progress-comparison-loading-lines" aria-hidden="true">
+              <span />
+              <span />
+              <span />
+            </div>
+          </div>
+        </section>
+      ) : null}
+
+      {comparisonResult && activeComparison ? (
+        <section className="dash-card progress-comparison-card">
+          <div className="dashboard-card-head">
+            <span className="dashboard-chip ai">AI comparison</span>
+            <span className="dashboard-chip subtle">{titleCase(comparisonResult.angle)}</span>
+          </div>
+          <h2>Latest vs baseline</h2>
+          <p className="settings-subtitle">Johnny compares your newest {comparisonResult.angle} photo against the saved baseline for the same angle.</p>
+
+          <div className="progress-comparison-images">
+            <figure>
+              <img
+                src={photoSrcs[comparisonResult.data?.first_photo?.id] ?? comparisonResult.data?.first_photo?.url ?? ''}
+                alt={`Baseline ${comparisonResult.angle} photo from ${formatPhotoDate(comparisonResult.data?.first_photo?.photo_date)}`}
+              />
+              <figcaption>Baseline • {formatPhotoDate(comparisonResult.data?.first_photo?.photo_date)}</figcaption>
+            </figure>
+            <figure>
+              <img
+                src={photoSrcs[comparisonResult.data?.second_photo?.id] ?? comparisonResult.data?.second_photo?.url ?? ''}
+                alt={`Latest ${comparisonResult.angle} photo from ${formatPhotoDate(comparisonResult.data?.second_photo?.photo_date)}`}
+              />
+              <figcaption>Latest • {formatPhotoDate(comparisonResult.data?.second_photo?.photo_date)}</figcaption>
+            </figure>
+          </div>
+
+          <p>{activeComparison.comparison}</p>
+          {activeComparison.visible_changes?.length ? (
+            <ul className="progress-howto-list">
+              {activeComparison.visible_changes.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+          ) : null}
+          {activeComparison.confidence ? <p className="settings-subtitle">Confidence: {activeComparison.confidence}</p> : null}
+        </section>
+      ) : null}
 
       <section className="dashboard-section">
         <div className="dashboard-section-title-row">

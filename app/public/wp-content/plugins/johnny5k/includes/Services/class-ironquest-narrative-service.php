@@ -93,9 +93,12 @@ class IronQuestNarrativeService {
 		$normalized_stance = self::normalize_stance( $stance );
 		$roll              = self::build_story_roll( $choice, $normalized_stance, $state );
 		$ai_outcome        = IronQuestAiNarrativeService::build_choice_outcome( $user_id, $profile, $location, $mission, $state, $choice, $roll );
+		$scene_state       = self::update_scene_state_for_opening( (array) ( $state['scene_state'] ?? [] ), (string) ( $roll['roll_band'] ?? '' ) );
+		$state_with_scene  = $state;
+		$state_with_scene['scene_state'] = $scene_state;
 		$outcome_text      = '' !== (string) ( $ai_outcome['outcome_text'] ?? '' )
 			? (string) $ai_outcome['outcome_text']
-			: self::build_choice_outcome_text( $state, $choice, $roll );
+			: self::build_choice_outcome_text( $state_with_scene, $choice, $roll );
 		$transcript        = self::append_transcript(
 			(array) ( $state['transcript'] ?? [] ),
 			[
@@ -120,13 +123,15 @@ class IronQuestNarrativeService {
 		$state['roll']              = $roll;
 		$state['outcome_text']      = $outcome_text;
 		$state['latest_beat']       = $outcome_text;
-		$state['current_situation'] = '' !== (string) ( $ai_outcome['current_situation'] ?? '' )
-			? (string) $ai_outcome['current_situation']
-			: self::build_current_situation( $state, $choice, $roll );
-		$state['decision_prompt']   = '' !== (string) ( $ai_outcome['decision_prompt'] ?? '' )
-			? (string) $ai_outcome['decision_prompt']
-			: 'Press into the encounter and let the next set decide the pace.';
-		$state['tension']           = self::resolve_choice_tension( (string) ( $roll['roll_band'] ?? '' ) );
+		$state['scene_state']       = $scene_state;
+			$state['current_situation'] = '' !== (string) ( $ai_outcome['current_situation'] ?? '' )
+				? (string) $ai_outcome['current_situation']
+				: self::build_current_situation( $state_with_scene, $choice, $roll );
+			$state['decision_prompt']   = '' !== (string) ( $ai_outcome['decision_prompt'] ?? '' )
+				? (string) $ai_outcome['decision_prompt']
+				: 'Press into the encounter and let the next set decide the pace.';
+			$state['debug_prompt']      = sanitize_textarea_field( (string) ( $ai_outcome['debug_prompt'] ?? '' ) );
+			$state['tension']           = self::resolve_choice_tension( (string) ( $roll['roll_band'] ?? '' ) );
 		$state['transcript']        = $transcript;
 		$state['progress']          = self::merge_progress_state(
 			(array) ( $state['progress'] ?? [] ),
@@ -167,17 +172,31 @@ class IronQuestNarrativeService {
 		$next_exercise_name = sanitize_text_field( (string) ( $payload['next_exercise_name'] ?? '' ) );
 		$next_slot_type    = sanitize_key( (string) ( $payload['next_slot_type'] ?? '' ) );
 		$encounter_type    = self::resolve_encounter_type_for_exercise( $exercise_name, $slot_type, (string) ( $run['run_type'] ?? '' ) );
+		$encounter_seed    = self::resolve_encounter_seed( $mission, max( 1, $exercise_order ), $encounter_type, (string) ( $state['enemy'] ?? '' ) );
 		$current_context   = (array) ( $state['exercise_context'] ?? [] );
 		$set_result        = self::resolve_set_result( $reps_completed, $rep_target_min, $rep_target_max, $completed_exercise, $current_rir, $current_context, $exercise_name );
 		$beat_context      = self::build_set_beat_context( $current_context, $exercise_name, $set_number, $sets_total, $set_result, $completed_exercise, $reps_completed, $current_rir );
-		$fallback_latest_beat = self::build_set_story_text( $state, $exercise_name, $set_number, $sets_total, $set_result, $event_type, $completed_exercise, $encounter_type, $beat_context );
+		$hp_loss_this_set  = self::resolve_hp_loss_for_set( $set_result, $beat_context );
+		if ( $hp_loss_this_set > 0 ) {
+			$profile = IronQuestProfileService::set_hp(
+				$user_id,
+				max( 0, (int) ( $profile['hp_current'] ?? 100 ) - $hp_loss_this_set ),
+				max( 1, (int) ( $profile['hp_max'] ?? 100 ) )
+			);
+		}
+		$scene_state       = self::update_scene_state_for_set( (array) ( $state['scene_state'] ?? [] ), $encounter_seed, $set_result, $completed_exercise, $beat_context );
+		$state_with_scene  = $state;
+		$state_with_scene['encounter_type'] = $encounter_type;
+		$state_with_scene['encounter_seed'] = $encounter_seed;
+		$state_with_scene['scene_state']    = $scene_state;
+		$fallback_latest_beat = self::build_set_story_text( $state_with_scene, $exercise_name, $set_number, $sets_total, $set_result, $event_type, $completed_exercise, $encounter_type, $beat_context );
 		$set_beat_bundle   = ! $completed_exercise
 			? IronQuestAiNarrativeService::build_set_beat_bundle(
 				$user_id,
 				$profile,
 				$location,
 				$mission,
-				$state,
+				$state_with_scene,
 				[
 					'exercise_name'  => $exercise_name,
 					'exercise_order' => $exercise_order,
@@ -218,16 +237,24 @@ class IronQuestNarrativeService {
 		$state['tension']         = $next_tension;
 		$state['latest_beat']     = $latest_beat;
 		$state['encounter_type']  = $encounter_type;
+		$state['encounter_seed']  = $encounter_seed;
+		$state['scene_state']     = $scene_state;
+		$state['hp_current']      = max( 0, (int) ( $profile['hp_current'] ?? 0 ) );
+		$state['hp_max']          = max( 1, (int) ( $profile['hp_max'] ?? 100 ) );
+		$state['hp_loss_this_set'] = $hp_loss_this_set;
 		$state['encounter_index'] = max( 1, (int) ( $state['encounter_index'] ?? $exercise_order ) );
 		$state['current_situation'] = $completed_exercise
-			? self::build_transition_situation( $state, $exercise_name, $encounter_type )
+			? self::build_transition_situation( $state_with_scene, $exercise_name, $encounter_type )
 			: ( '' !== (string) ( $set_beat_bundle['current_situation'] ?? '' )
 				? (string) $set_beat_bundle['current_situation']
-				: self::build_follow_up_situation( $state, $exercise_name, $set_result, $encounter_type, $beat_context ) );
-		$state['decision_prompt'] = ! $completed_exercise && '' !== (string) ( $set_beat_bundle['decision_prompt'] ?? '' )
-			? (string) $set_beat_bundle['decision_prompt']
-			: 'Press into the encounter and let the next set decide the pace.';
-		$state['exercise_context'] = [
+				: self::build_follow_up_situation( $state_with_scene, $exercise_name, $set_result, $encounter_type, $beat_context ) );
+			$state['decision_prompt'] = ! $completed_exercise && '' !== (string) ( $set_beat_bundle['decision_prompt'] ?? '' )
+				? (string) $set_beat_bundle['decision_prompt']
+				: 'Press into the encounter and let the next set decide the pace.';
+			$state['debug_prompt'] = ! $completed_exercise
+				? sanitize_textarea_field( (string) ( $set_beat_bundle['debug_prompt'] ?? '' ) )
+				: sanitize_textarea_field( (string) ( $state['debug_prompt'] ?? '' ) );
+			$state['exercise_context'] = [
 			'exercise_name' => $exercise_name,
 			'exercise_order'=> $exercise_order,
 			'exercise_count'=> $exercise_count,
@@ -259,37 +286,47 @@ class IronQuestNarrativeService {
 
 		if ( $completed_exercise && $has_next_exercise && '' !== $next_exercise_name ) {
 			$next_encounter_type      = self::resolve_encounter_type_for_exercise( $next_exercise_name, $next_slot_type, (string) ( $run['run_type'] ?? '' ) );
+			$next_encounter_seed      = self::resolve_encounter_seed( $mission, $next_encounter_index, $next_encounter_type, (string) ( $state['enemy'] ?? '' ) );
+			$next_scene_state         = self::build_scene_state_from_seed( $next_encounter_seed, $next_encounter_index, $exercise_count );
+			$transition_state         = $state;
+			$transition_state['encounter_type'] = $next_encounter_type;
+			$transition_state['encounter_seed'] = $next_encounter_seed;
+			$transition_state['scene_state']    = $next_scene_state;
 			$transition_bundle        = IronQuestAiNarrativeService::build_transition_bundle(
 				$user_id,
 				$profile,
 				$location,
 				$mission,
-				$state,
+				$transition_state,
 				$state['exercise_context'],
 				[
 					'exercise_name'  => $next_exercise_name,
 					'exercise_order' => $next_encounter_index,
 					'exercise_count' => $exercise_count,
 					'encounter_type' => $next_encounter_type,
+					'encounter_seed' => $next_encounter_seed,
 				]
 			);
 			$next_choices             = ! empty( $transition_bundle['choices'] )
 				? (array) $transition_bundle['choices']
-				: self::build_next_encounter_choices( $state, $next_exercise_name, $next_encounter_type );
+				: self::build_next_encounter_choices( $transition_state, $next_exercise_name, $next_encounter_type );
 			$state['phase']           = 'opening';
 			$state['encounter_phase'] = 'intro';
 			$state['encounter_type']  = $next_encounter_type;
+			$state['encounter_seed']  = $next_encounter_seed;
+			$state['scene_state']     = $next_scene_state;
 			$state['encounter_index'] = $next_encounter_index;
 			$state['latest_beat']     = '' !== (string) ( $transition_bundle['latest_beat'] ?? '' )
 				? (string) $transition_bundle['latest_beat']
 				: $latest_beat;
 			$state['current_situation'] = '' !== (string) ( $transition_bundle['current_situation'] ?? '' )
 				? (string) $transition_bundle['current_situation']
-				: self::build_next_encounter_situation( $state, $next_exercise_name, $next_encounter_type, $next_encounter_index, $exercise_count );
-			$state['decision_prompt'] = '' !== (string) ( $transition_bundle['decision_prompt'] ?? '' )
-				? (string) $transition_bundle['decision_prompt']
-				: self::build_next_encounter_prompt( $next_exercise_name, $next_encounter_index, $exercise_count );
-			$state['choices']         = $next_choices;
+				: self::build_next_encounter_situation( $transition_state, $next_exercise_name, $next_encounter_type, $next_encounter_index, $exercise_count );
+				$state['decision_prompt'] = '' !== (string) ( $transition_bundle['decision_prompt'] ?? '' )
+					? (string) $transition_bundle['decision_prompt']
+					: self::build_next_encounter_prompt( $transition_state, $next_exercise_name, $next_encounter_index, $exercise_count );
+				$state['debug_prompt']    = sanitize_textarea_field( (string) ( $transition_bundle['debug_prompt'] ?? '' ) );
+				$state['choices']         = $next_choices;
 			$state['default_choice_id'] = (string) ( $next_choices[1]['id'] ?? $next_choices[0]['id'] ?? 'steady_approach' );
 			$state['selected_choice'] = [];
 			$state['opening_choice']  = '';
@@ -329,11 +366,12 @@ class IronQuestNarrativeService {
 			'epilogue' => self::build_conclusion_epilogue( $state, $result_band, $xp, $gold ),
 		];
 
-		$state['phase']           = 'completed';
-		$state['encounter_phase'] = 'complete';
-		$state['result_band']     = $result_band;
-		$state['conclusion']      = $conclusion;
-		$state['latest_beat']     = $conclusion['summary'];
+			$state['phase']           = 'completed';
+			$state['encounter_phase'] = 'complete';
+			$state['result_band']     = $result_band;
+			$state['conclusion']      = $conclusion;
+			$state['debug_prompt']    = sanitize_textarea_field( (string) ( $ai_conclusion['debug_prompt'] ?? '' ) );
+			$state['latest_beat']     = $conclusion['summary'];
 		$state['progress']        = self::merge_progress_state( (array) ( $state['progress'] ?? [] ), [ 'percent' => 100, 'label' => 'Mission complete' ] );
 		$state['transcript']      = self::append_transcript(
 			(array) ( $state['transcript'] ?? [] ),
@@ -357,24 +395,26 @@ class IronQuestNarrativeService {
 		$mission     = (array) ( $mission_ctx['mission'] ?? [] );
 		$enemy       = self::resolve_enemy_label( $location, $mission );
 		$encounter_type = self::resolve_default_encounter_type( (string) ( $run['run_type'] ?? '' ), $mission );
-		$opening_bundle = IronQuestAiNarrativeService::build_opening_bundle( $user_id, $run, $profile, $location, $mission, $enemy, $encounter_type );
+		$encounter_seed = self::resolve_encounter_seed( $mission, 1, $encounter_type, $enemy );
+		$scene_state    = self::build_scene_state_from_seed( $encounter_seed, 1, 0 );
+		$opening_bundle = IronQuestAiNarrativeService::build_opening_bundle( $user_id, $run, $profile, $location, $mission, $enemy, $encounter_type, $encounter_seed, $scene_state );
 		$opening     = '' !== (string) ( $opening_bundle['opening_text'] ?? '' )
 			? (string) $opening_bundle['opening_text']
-			: self::build_opening_text( $location, $mission, $enemy, $encounter_type );
+			: self::build_opening_text( $location, $mission, $enemy, $encounter_type, $encounter_seed );
 		$choices     = ! empty( $opening_bundle['choices'] )
 			? (array) $opening_bundle['choices']
-			: self::build_story_choices( $profile, $location, $mission, $enemy, $encounter_type );
+			: self::build_story_choices( $profile, $location, $mission, $enemy, $encounter_type, $encounter_seed );
 		$decision_prompt = '' !== (string) ( $opening_bundle['decision_prompt'] ?? '' )
 			? (string) $opening_bundle['decision_prompt']
 			: 'What do you do?';
 		$current_situation = '' !== (string) ( $opening_bundle['current_situation'] ?? '' )
 			? (string) $opening_bundle['current_situation']
-			: self::resolve_current_situation( $mission, $enemy, $encounter_type );
+			: self::resolve_current_situation( $mission, $enemy, $encounter_type, $encounter_seed );
 
-		return [
-			'run_id'            => (int) ( $run['id'] ?? 0 ),
-			'encounter_index'   => 1,
-			'phase'             => 'opening',
+			return [
+				'run_id'            => (int) ( $run['id'] ?? 0 ),
+				'encounter_index'   => 1,
+				'phase'             => 'opening',
 			'encounter_phase'   => 'intro',
 			'stance'            => 'steady',
 			'location_name'     => sanitize_text_field( (string) ( $location['name'] ?? '' ) ),
@@ -382,11 +422,14 @@ class IronQuestNarrativeService {
 			'objective'         => sanitize_text_field( (string) ( $mission['goal'] ?? '' ) ),
 			'opening_text'      => $opening,
 			'decision_prompt'   => $decision_prompt,
-			'choices'           => $choices,
-			'default_choice_id' => (string) ( $choices[1]['id'] ?? $choices[0]['id'] ?? 'steady_approach' ),
-			'current_situation' => $current_situation,
-			'enemy'             => $enemy,
+				'choices'           => $choices,
+				'default_choice_id' => (string) ( $choices[1]['id'] ?? $choices[0]['id'] ?? 'steady_approach' ),
+				'current_situation' => $current_situation,
+				'debug_prompt'      => sanitize_textarea_field( (string) ( $opening_bundle['debug_prompt'] ?? '' ) ),
+				'enemy'             => $enemy,
 			'encounter_type'    => $encounter_type,
+			'encounter_seed'    => $encounter_seed,
+			'scene_state'       => $scene_state,
 			'tension'           => 'rising',
 			'roll'              => [],
 			'outcome_text'      => '',
@@ -413,49 +456,29 @@ class IronQuestNarrativeService {
 		];
 	}
 
-	private static function build_opening_text( array $location, array $mission, string $enemy, string $encounter_type ): string {
+	private static function build_opening_text( array $location, array $mission, string $enemy, string $encounter_type, array $encounter_seed = [] ): string {
 		$location_name = sanitize_text_field( (string) ( $location['name'] ?? 'the region' ) );
 		$mission_name  = sanitize_text_field( (string) ( $mission['name'] ?? 'the mission' ) );
-		$goal          = sanitize_text_field( (string) ( $mission['goal'] ?? 'hold the line' ) );
 		$narrative     = sanitize_textarea_field( (string) ( $mission['narrative'] ?? '' ) );
 		$tone          = sanitize_text_field( (string) ( $location['tone'] ?? '' ) );
-		$encounter_label = self::encounter_flavor_label( $encounter_type );
-		$encounter_objective = self::encounter_objective_phrase( $encounter_type );
+		$seed          = self::resolve_seed_details( $encounter_seed, $encounter_type, $enemy );
 
-		$lead = sprintf( '%1$s is live now. %2$s is in front of you, and %3$s has taken the shape of a %4$s.', $location_name, $enemy, $mission_name, $encounter_label );
-		$middle = '' !== $narrative
-			? $narrative
-			: sprintf( 'The goal is clear: %s.', strtolower( $goal ) );
-		$close = '' !== $tone
-			? sprintf( 'The room feels %1$s. Stay measured and use the first sets to %2$s before the %3$s turns against you.', strtolower( $tone ), $encounter_objective, $encounter_label )
-			: sprintf( 'Stay measured and use the first sets to %1$s before the %2$s turns against you.', $encounter_objective, $encounter_label );
+			$lead = sprintf( '%1$s is live now. %2$s has taken the shape of %3$s around %4$s, and %5$s.', $location_name, $mission_name, strtolower( $seed['title'] ?: self::encounter_flavor_label( $encounter_type ) ), strtolower( $seed['landmark'] ?: $seed['prop'] ), strtolower( $seed['enemy_posture'] ?: $seed['threat'] ) );
+			$middle = '' !== $narrative
+				? $narrative
+				: sprintf( 'The goal is clear: %1$s inside this %2$s. %3$s.', strtolower( $seed['objective'] ), strtolower( self::encounter_flavor_label( $encounter_type ) ), self::capitalize_first( $seed['sensory_detail'] ?: $seed['hazard'] ) );
+			$close = '' !== $tone
+				? sprintf( 'The room feels %1$s. %2$s, and use the first exchanges to %3$s before %4$s.', strtolower( $tone ), self::capitalize_first( $seed['stakes'] ?: $seed['pressure'] ), strtolower( $seed['objective'] ), strtolower( $seed['transition'] ) )
+				: sprintf( '%1$s, and use the first exchanges to %2$s before %3$s.', self::capitalize_first( $seed['stakes'] ?: $seed['pressure'] ), strtolower( $seed['objective'] ), strtolower( $seed['transition'] ) );
 
 		return trim( implode( "\n\n", [ $lead, $middle, $close ] ) );
 	}
 
-	private static function build_story_choices( array $profile, array $location, array $mission, string $enemy, string $encounter_type ): array {
+	private static function build_story_choices( array $profile, array $location, array $mission, string $enemy, string $encounter_type, array $encounter_seed = [] ): array {
 		$class_label = self::humanize_slug( (string) ( $profile['class_slug'] ?? 'hero' ) );
-		$goal        = sanitize_text_field( (string) ( $mission['goal'] ?? 'win the ground' ) );
-		$threat      = sanitize_text_field( (string) ( $mission['threat'] ?? $enemy ) );
-		$encounter_objective = self::encounter_objective_phrase( $encounter_type );
+		$seed        = self::resolve_seed_details( $encounter_seed, $encounter_type, $enemy );
 
-		return [
-			[
-				'id'    => 'direct_assault',
-				'tone'  => 'aggressive',
-				'label' => sprintf( 'Take the initiative and %1$s before %2$s turns into a problem', $encounter_objective, strtolower( $goal ) ),
-			],
-			[
-				'id'    => 'steady_approach',
-				'tone'  => 'cautious',
-				'label' => sprintf( 'Settle your pace, read the pressure, and find the cleanest way to %1$s through %2$s', $encounter_objective, strtolower( $threat ) ),
-			],
-			[
-				'id'    => 'class_play',
-				'tone'  => 'creative',
-				'label' => sprintf( 'Use your %1$s instincts, change the angle, and create room to %2$s', strtolower( $class_label ), $encounter_objective ),
-			],
-		];
+		return self::build_scene_specific_choices( $seed, $class_label, $encounter_type, 'opening' );
 	}
 
 	private static function build_story_roll( array $choice, string $stance, array $state ): array {
@@ -474,88 +497,98 @@ class IronQuestNarrativeService {
 
 	private static function build_choice_outcome_text( array $state, array $choice, array $roll ): string {
 		$enemy      = sanitize_text_field( (string) ( $state['enemy'] ?? 'threat' ) );
-		$choice_txt = sanitize_text_field( (string) ( $choice['label'] ?? 'make your move' ) );
 		$band       = sanitize_key( (string) ( $roll['roll_band'] ?? '' ) );
 		$encounter_type = (string) ( $state['encounter_type'] ?? 'skirmish' );
-		$encounter_label = self::encounter_flavor_label( $encounter_type );
-		$encounter_objective = self::encounter_objective_phrase( $encounter_type );
+		$seed = self::resolve_seed_details( (array) ( $state['scene_state'] ?? [] ), $encounter_type, $enemy );
+		$landmark = strtolower( $seed['landmark'] ?: $seed['prop'] );
+		$sensory = self::capitalize_first( $seed['sensory_detail'] ?: $seed['hazard'] );
 
 		if ( in_array( $band, [ 'dominant_success', 'strong_success' ], true ) ) {
-			return sprintf( 'Your opening move works. The %1$s gives a little ground, and %2$s gives you a clean chance to %3$s inside the %4$s.', strtolower( $enemy ), $choice_txt, $encounter_objective, $encounter_label );
+			return sprintf( 'Your opening move lands at %1$s. %2$s. %3$s, and you get room to %4$s before %5$s can recover.', $landmark, self::capitalize_first( $seed['success_turn'] ), $sensory, strtolower( $seed['objective'] ), strtolower( $seed['threat'] ) );
 		}
 
 		if ( 'moderate_success' === $band || 'low_success' === $band ) {
-			return sprintf( 'You get moving first, but the %1$s answers right away. %2$s buys position, not comfort, and you still need to %3$s inside the %4$s.', strtolower( $enemy ), $choice_txt, $encounter_objective, $encounter_label );
+			return sprintf( 'You move first at %1$s, but not cleanly. %2$s. %3$s is still contested, and you still need to %4$s.', $landmark, $sensory, self::capitalize_first( $seed['struggle_turn'] ), strtolower( $seed['objective'] ) );
 		}
 
-		return sprintf( 'You do not get control on the first move. The %1$s gets loud early, and the next sets need to help you %2$s inside the %3$s.', strtolower( $enemy ), $encounter_objective, $encounter_label );
+		return sprintf( 'The first move goes against you at %1$s. %2$s. %3$s, and the next exchange has to help you %4$s before %5$s.', $landmark, $sensory, self::capitalize_first( $seed['struggle_turn'] ), strtolower( $seed['objective'] ), strtolower( $seed['stakes'] ?: $seed['pressure'] ) );
 	}
 
 	private static function build_set_story_text( array $state, string $exercise_name, int $set_number, int $sets_total, string $set_result, string $event_type, bool $completed_exercise, string $encounter_type, array $beat_context = [] ): string {
 		$enemy        = sanitize_text_field( (string) ( $state['enemy'] ?? 'threat' ) );
-		$exercise     = '' !== $exercise_name ? $exercise_name : 'the lift';
 		$roll_band    = sanitize_key( (string) ( $state['roll']['roll_band'] ?? '' ) );
-		$set_label    = $sets_total > 0 ? sprintf( 'set %1$d of %2$d', max( 1, $set_number ), $sets_total ) : sprintf( 'set %d', max( 1, $set_number ) );
-		$encounter_label = self::encounter_flavor_label( $encounter_type );
-		$success_shift = self::encounter_success_phrase( $encounter_type, $exercise );
-		$pressure_shift = self::encounter_pressure_phrase( $encounter_type, $exercise );
-		$transition_shift = self::encounter_transition_phrase( $encounter_type, $exercise );
+		$scene_state  = self::sanitize_scene_state( (array) ( $state['scene_state'] ?? [] ) );
+		$seed         = self::resolve_seed_details( $scene_state, $encounter_type, $enemy );
+		$scene_state  = array_merge( $scene_state, $seed );
 		$stage          = sanitize_key( (string) ( $beat_context['stage'] ?? '' ) );
 		$trend          = sanitize_key( (string) ( $beat_context['trend'] ?? '' ) );
+		$phase          = sanitize_key( (string) ( $scene_state['phase'] ?? 'opening' ) );
+		$turn_text      = self::resolve_scene_turn_text( $scene_state, $set_result, $completed_exercise );
+		$landmark       = strtolower( $seed['prop'] ?: $seed['landmark'] );
+		$sensory        = self::capitalize_first( $seed['sensory_detail'] ?: $seed['hazard'] );
+		$stakes_now     = strtolower( (string) ( $scene_state['stakes_now'] ?? ( $seed['stakes'] ?: $seed['pressure'] ) ) );
 
 		if ( $completed_exercise || 'exercise_completed' === $event_type ) {
 			if ( in_array( $set_result, [ 'target_met', 'push_set', 'breakthrough', 'surge', 'recovered' ], true ) ) {
-				return sprintf( 'You close %1$s well on %2$s. %3$s, the %4$s opens up, and the %5$s has to react.', $exercise, $set_label, self::capitalize_first( $success_shift ), $encounter_label, strtolower( $enemy ) );
+				return sprintf( 'You secure %1$s at %2$s. %3$s. %4$s, and %5$s finally gives ground.', strtolower( $seed['objective'] ), $landmark, $sensory, self::capitalize_first( $turn_text ), strtolower( $seed['threat'] ) );
 			}
 
-			return sprintf( 'You finish %1$s and keep the %2$s moving. %3$s, but the %4$s is not done yet.', $exercise, $encounter_label, self::capitalize_first( $transition_shift ), strtolower( $enemy ) );
+			return sprintf( 'You wrench this phase forward at %1$s without fully securing %2$s. %3$s. %4$s, but %5$s is still waiting there.', $landmark, strtolower( $seed['objective'] ), $sensory, self::capitalize_first( $turn_text ), strtolower( $seed['threat'] ) );
 		}
 
 		if ( 'opening' === $stage ) {
 			if ( in_array( $set_result, [ 'target_met', 'surge', 'breakthrough', 'push_set' ], true ) ) {
-				return sprintf( 'The first exchange on %1$s goes your way. %2$s, and the %3$s starts to give you room.', $exercise, self::capitalize_first( $success_shift ), $encounter_label );
+				return sprintf( 'The first exchange opens space at %1$s. %2$s. %3$s.', $landmark, self::capitalize_first( $seed['success_turn'] ), $sensory );
 			}
 
 			if ( in_array( $set_result, [ 'close_call', 'strain' ], true ) ) {
-				return sprintf( 'The first exchange on %1$s is tight. %2$s, and the %3$s is still pressing back.', $exercise, self::capitalize_first( $pressure_shift ), $encounter_label );
+				return sprintf( 'The first exchange is tight at %1$s. %2$s. %3$s.', $landmark, self::capitalize_first( $seed['struggle_turn'] ), $sensory );
 			}
 
-			return sprintf( 'The first exchange on %1$s goes against you. %2$s, and the %3$s is asking for a steadier answer.', $exercise, self::capitalize_first( $pressure_shift ), $encounter_label );
+			return sprintf( 'The first exchange goes against you at %1$s. %2$s. %3$s.', $landmark, self::capitalize_first( $seed['struggle_turn'] ), $sensory );
 		}
 
 		if ( 'recovered' === $set_result ) {
-			return sprintf( 'Set %1$d settles the encounter down. %2$s, and the %3$s stops dictating every step.', max( 1, $set_number ), self::capitalize_first( $success_shift ), $encounter_label );
+			return sprintf( 'You recover the line at %1$s. %2$s. %3$s.', $landmark, self::capitalize_first( $turn_text ), $sensory );
 		}
 
 		if ( in_array( $set_result, [ 'surge', 'breakthrough' ], true ) ) {
-			return sprintf( 'Set %1$d turns the tempo. %2$s, and the %3$s moves sharply in your favor.', max( 1, $set_number ), self::capitalize_first( $success_shift ), $encounter_label );
+			return sprintf( 'The tempo turns hard in your favor around %1$s. %2$s. %3$s.', $landmark, self::capitalize_first( $turn_text ), $sensory );
 		}
 
 		if ( 'slipped' === $set_result ) {
-			return sprintf( 'Set %1$d gives some ground back. %2$s, and the %3$s tightens again.', max( 1, $set_number ), self::capitalize_first( $pressure_shift ), $encounter_label );
+			return sprintf( 'You give ground back at %1$s. %2$s. %3$s.', $landmark, self::capitalize_first( $turn_text ), $sensory );
 		}
 
 		if ( in_array( $set_result, [ 'target_met', 'push_set' ], true ) ) {
+			if ( 'turning_point' === $phase ) {
+				return sprintf( 'You finally bend %1$s onto your timing. %2$s. %3$s.', $landmark, self::capitalize_first( $turn_text ), self::capitalize_first( $stakes_now ) );
+			}
+
 			if ( 'closing' === $stage ) {
-				return sprintf( 'Set %1$d keeps the pressure on late. %2$s, and the %3$s is starting to tilt your way for good.', max( 1, $set_number ), self::capitalize_first( $success_shift ), $encounter_label );
+				return sprintf( 'You keep the pressure on late at %1$s. %2$s. %3$s.', $landmark, self::capitalize_first( $turn_text ), self::capitalize_first( $stakes_now ) );
 			}
 
 			if ( 'up' === $trend ) {
-				return sprintf( 'Set %1$d builds on the last one. %2$s, and the %3$s is losing its footing.', max( 1, $set_number ), self::capitalize_first( $success_shift ), $encounter_label );
+				return sprintf( 'You build on the last push and keep %1$s alive. %2$s. %3$s.', strtolower( $seed['objective'] ), self::capitalize_first( $turn_text ), $sensory );
 			}
 
-			return sprintf( '%1$s goes well on %2$s. %3$s, and the %4$s starts moving your way.', $exercise, $set_label, self::capitalize_first( $success_shift ), $encounter_label );
+			return sprintf( 'You move %1$s forward at %2$s. %3$s. %4$s.', strtolower( $seed['objective'] ), $landmark, self::capitalize_first( $turn_text ), $sensory );
 		}
 
 		if ( in_array( $set_result, [ 'close_call', 'strain' ], true ) ) {
-			return sprintf( '%1$s gets done, but barely. %2$s, and the %3$s is still tight.', self::capitalize_first( $set_label ), self::capitalize_first( $pressure_shift ), $encounter_label );
+			if ( 'crisis' === $phase ) {
+				return sprintf( 'The encounter starts to buckle around %1$s. %2$s. %3$s.', $landmark, self::capitalize_first( $turn_text ), self::capitalize_first( $stakes_now ) );
+			}
+
+			return sprintf( 'You hold through it at %1$s, but barely. %2$s. %3$s.', $landmark, self::capitalize_first( $seed['pressure'] ), $sensory );
 		}
 
 		if ( in_array( $roll_band, [ 'struggle', 'failure' ], true ) ) {
-			return sprintf( '%1$s is rough. %2$s, and the %3$s is asking for a cleaner next set.', $exercise, self::capitalize_first( $pressure_shift ), $encounter_label );
+			return sprintf( 'The exchange is rough around %1$s. %2$s. %3$s.', $landmark, self::capitalize_first( $turn_text ), self::capitalize_first( $stakes_now ) );
 		}
 
-		return sprintf( 'You finish %1$s and reset. The %2$s is still there, and %3$s.', $set_label, strtolower( $enemy ), $pressure_shift );
+		return sprintf( 'You regroup at %1$s for one more push. %2$s. %3$s.', $landmark, self::capitalize_first( $turn_text ), $sensory );
 	}
 
 	private static function build_fallback_conclusion( array $state, array $mission, string $result_band ): string {
@@ -564,16 +597,18 @@ class IronQuestNarrativeService {
 		$encounter_type = sanitize_key( (string) ( $state['encounter_type'] ?? 'skirmish' ) );
 		$encounter_label = self::encounter_flavor_label( $encounter_type );
 		$encounter_objective = self::encounter_objective_phrase( $encounter_type );
+		$seed = self::resolve_seed_details( (array) ( $state['scene_state'] ?? [] ), $encounter_type, $enemy );
+		$landmark = strtolower( $seed['landmark'] ?: $seed['prop'] ?: $encounter_label );
 
 		if ( 'failure' === $result_band ) {
-			return sprintf( '%1$s stays unfinished for now. The %2$s keeps control of the %3$s before you can %4$s, but the route back is still open.', $mission_name, strtolower( $enemy ), $encounter_label, $encounter_objective );
+			return sprintf( '%1$s stays unfinished for now. At %2$s, %3$s keeps control of the %4$s before you can %5$s, but the route back is still open.', $mission_name, $landmark, strtolower( $enemy ), $encounter_label, $encounter_objective );
 		}
 
 		if ( 'partial' === $result_band ) {
-			return sprintf( '%1$s moves your way, but not cleanly. The %2$s gives some ground, and the %3$s opens long enough for you to %4$s.', $mission_name, strtolower( $enemy ), $encounter_label, $encounter_objective );
+			return sprintf( '%1$s moves your way, but not cleanly. At %2$s, %3$s gives some ground, and the %4$s opens long enough for you to %5$s.', $mission_name, $landmark, strtolower( $enemy ), $encounter_label, $encounter_objective );
 		}
 
-		return sprintf( '%1$s breaks your way. The %2$s cannot hold the lane, and the %3$s stays with you because you kept finding ways to %4$s.', $mission_name, strtolower( $enemy ), $encounter_label, $encounter_objective );
+		return sprintf( '%1$s breaks your way. At %2$s, %3$s cannot hold the lane, and the %4$s stays with you because you kept finding ways to %5$s.', $mission_name, $landmark, strtolower( $enemy ), $encounter_label, $encounter_objective );
 	}
 
 	private static function format_authored_conclusion( string $summary, array $state, array $mission, string $result_band ): string {
@@ -640,108 +675,614 @@ class IronQuestNarrativeService {
 		return $enemies[0] ?? 'the threat';
 	}
 
-	private static function resolve_current_situation( array $mission, string $enemy, string $encounter_type ): string {
-		$goal = sanitize_text_field( (string) ( $mission['goal'] ?? '' ) );
-		$encounter_label = self::encounter_flavor_label( $encounter_type );
-		$encounter_objective = self::encounter_objective_phrase( $encounter_type );
-		if ( '' !== $goal ) {
-			return sprintf( 'The %1$s is in front of you and the %2$s is already taking shape. The goal is still %3$s, and the session needs to help you %4$s.', strtolower( $enemy ), $encounter_label, strtolower( $goal ), $encounter_objective );
-		}
+	private static function resolve_current_situation( array $mission, string $enemy, string $encounter_type, array $encounter_seed = [] ): string {
+		$seed = self::resolve_seed_details( $encounter_seed, $encounter_type, $enemy );
 
-		return sprintf( 'The %1$s controls the first step, and you need to %2$s before the %3$s locks in.', strtolower( $enemy ), $encounter_objective, $encounter_label );
+			return sprintf( '%1$s around %2$s is still live. %3$s, and you need to %4$s before %5$s.', self::capitalize_first( $seed['threat'] ), strtolower( $seed['landmark'] ?: $seed['prop'] ), self::capitalize_first( $seed['hazard'] ?: $seed['pressure'] ), strtolower( $seed['objective'] ), strtolower( $seed['stakes'] ?: $seed['pressure'] ) );
 	}
 
 	private static function build_current_situation( array $state, array $choice, array $roll ): string {
-		$enemy = sanitize_text_field( (string) ( $state['enemy'] ?? 'threat' ) );
 		$band  = sanitize_key( (string) ( $roll['roll_band'] ?? '' ) );
 		$encounter_type = sanitize_key( (string) ( $state['encounter_type'] ?? 'skirmish' ) );
-		$encounter_label = self::encounter_flavor_label( $encounter_type );
-		$encounter_objective = self::encounter_objective_phrase( $encounter_type );
+		$seed = self::resolve_seed_details( (array) ( $state['scene_state'] ?? [] ), $encounter_type, (string) ( $state['enemy'] ?? 'threat' ) );
 
 		if ( in_array( $band, [ 'dominant_success', 'strong_success' ], true ) ) {
-			return sprintf( 'The %1$s is reacting now. Your opening %2$s gave you some room inside the %3$s, but the next set still needs to help you %4$s.', strtolower( $enemy ), sanitize_text_field( (string) ( $choice['tone'] ?? 'move' ) ), $encounter_label, $encounter_objective );
+				return sprintf( 'You have room at %1$s now, but %2$s and the next push still needs to %3$s before %4$s.', strtolower( $seed['landmark'] ?: $seed['prop'] ), strtolower( $seed['hazard'] ?: $seed['pressure'] ), strtolower( $seed['objective'] ), strtolower( $seed['stakes'] ?: $seed['pressure'] ) );
 		}
 
 		if ( 'failure' === $band || 'struggle' === $band ) {
-			return sprintf( 'The %1$s got the pace first. The %2$s is tightening, and the next sets need to buy back enough room to %3$s.', strtolower( $enemy ), $encounter_label, $encounter_objective );
+				return sprintf( '%1$s has the pace for now at %2$s, and the next push needs to buy back room there to %3$s.', self::capitalize_first( $seed['threat'] ), strtolower( $seed['landmark'] ?: $seed['prop'] ), strtolower( $seed['objective'] ) );
 		}
 
-		return sprintf( 'The %1$s is engaged and watching for mistakes. The %2$s has started, and the workout still needs to help you %3$s.', strtolower( $enemy ), $encounter_label, $encounter_objective );
+			return sprintf( '%1$s is still contested, and you need to %2$s before %3$s.', self::capitalize_first( $seed['landmark'] ?: $seed['prop'] ), strtolower( $seed['objective'] ), strtolower( $seed['stakes'] ?: $seed['pressure'] ) );
 	}
 
 	private static function build_follow_up_situation( array $state, string $exercise_name, string $set_result, string $encounter_type, array $beat_context = [] ): string {
-		$enemy    = sanitize_text_field( (string) ( $state['enemy'] ?? 'threat' ) );
-		$exercise = '' !== $exercise_name ? $exercise_name : 'the lift';
-		$encounter_label = self::encounter_flavor_label( $encounter_type );
-		$success_shift = self::encounter_success_phrase( $encounter_type, $exercise );
-		$pressure_shift = self::encounter_pressure_phrase( $encounter_type, $exercise );
+		$scene_state = self::sanitize_scene_state( (array) ( $state['scene_state'] ?? [] ) );
+		$seed = self::resolve_seed_details( $scene_state, $encounter_type, (string) ( $state['enemy'] ?? 'threat' ) );
 		$stage = sanitize_key( (string) ( $beat_context['stage'] ?? '' ) );
+		$phase = sanitize_key( (string) ( $scene_state['phase'] ?? 'opening' ) );
+		$objective_status = sanitize_key( (string) ( $scene_state['objective_status'] ?? 'contested' ) );
+		$landmark = $seed['landmark'] ?: $seed['prop'];
 
 		if ( in_array( $set_result, [ 'target_met', 'push_set', 'surge', 'breakthrough', 'recovered' ], true ) ) {
 			if ( 'opening' === $stage ) {
-				return sprintf( 'The encounter is live now. %1$s is giving you some room inside the %2$s, but the next set still has to confirm it.', $exercise, $encounter_label );
+				return sprintf( 'The encounter is live now. You have room at %1$s, but the next push still has to secure %2$s before %3$s.', $landmark, strtolower( $seed['objective'] ), strtolower( $seed['stakes'] ?: $seed['pressure'] ) );
 			}
 
-			return sprintf( 'The %1$s is starting to give. %2$s is helping you stay ahead inside the %3$s while %4$s.', strtolower( $enemy ), $exercise, $encounter_label, $success_shift );
+			if ( 'turning_point' === $phase || 'within_reach' === $objective_status ) {
+				return sprintf( 'The objective is finally within reach. %1$s is starting to open for you while %2$s, and %3$s.', $landmark, strtolower( $seed['advance_turn'] ), strtolower( $scene_state['stakes_now'] ?? $seed['stakes'] ) );
+			}
+
+			return sprintf( '%1$s is starting to give. You are staying ahead at %2$s while %3$s, and %4$s.', $seed['threat'], $landmark, strtolower( $seed['success_turn'] ), strtolower( $scene_state['stakes_now'] ?? $seed['stakes'] ) );
 		}
 
 		if ( in_array( $set_result, [ 'close_call', 'strain', 'slipped' ], true ) ) {
-			return sprintf( '%1$s is still tight. %2$s, and one cleaner set will reopen the space you need inside the %3$s.', $exercise, self::capitalize_first( $pressure_shift ), $encounter_label );
+			if ( 'crisis' === $phase || 'slipping' === $objective_status ) {
+				return sprintf( '%1$s is one bad turn from collapsing. %2$s, so the next answer at %3$s has to be clean before %4$s.', self::capitalize_first( $seed['objective'] ), self::capitalize_first( $seed['crisis_turn'] ), $landmark, strtolower( $seed['stakes'] ?: $seed['pressure'] ) );
+			}
+
+			return sprintf( '%1$s, and one cleaner push will reopen space at %2$s to %3$s before %4$s.', self::capitalize_first( $seed['pressure'] ), $landmark, strtolower( $seed['objective'] ), strtolower( $seed['stakes'] ?: $seed['pressure'] ) );
 		}
 
-		return sprintf( 'The %1$s is still pressing into %2$s. %3$s, so take a short rest and answer it quickly.', strtolower( $enemy ), $exercise, self::capitalize_first( $pressure_shift ) );
+		return sprintf( '%1$s is still pressing in around %2$s. %3$s, so take a short rest and answer it quickly.', $seed['threat'], $landmark, self::capitalize_first( $seed['pressure'] ) );
 	}
 
 	private static function build_transition_situation( array $state, string $exercise_name, string $encounter_type ): string {
-		$enemy    = sanitize_text_field( (string) ( $state['enemy'] ?? 'threat' ) );
-		$exercise = '' !== $exercise_name ? $exercise_name : 'that encounter';
-		$encounter_label = self::encounter_flavor_label( $encounter_type );
-		$transition_shift = self::encounter_transition_phrase( $encounter_type, $exercise );
+		$seed = self::resolve_seed_details( (array) ( $state['scene_state'] ?? [] ), $encounter_type, (string) ( $state['enemy'] ?? 'threat' ) );
 
-		return sprintf( '%1$s is done, but the %2$s is not. %3$s, and the %4$s is already forming around the next answer.', $exercise, strtolower( $enemy ), self::capitalize_first( $transition_shift ), $encounter_label );
+		return sprintf( 'One phase is done, but the mission is not. %1$s Beyond %2$s, the next danger is already forming and %3$s.', self::capitalize_first( $seed['transition'] ), strtolower( $seed['landmark'] ?: $seed['prop'] ), strtolower( $seed['stakes'] ?: $seed['pressure'] ) );
 	}
 
 	private static function build_next_encounter_choices( array $state, string $exercise_name, string $encounter_type ): array {
-		$exercise = sanitize_text_field( $exercise_name ?: 'the next movement' );
-		$enemy = sanitize_text_field( (string) ( $state['enemy'] ?? 'threat' ) );
 		$class_label = self::humanize_slug( (string) ( $state['class_slug'] ?? 'hero' ) );
-		$encounter_objective = self::encounter_objective_phrase( $encounter_type );
+		$seed = self::resolve_seed_details( (array) ( $state['scene_state'] ?? [] ), $encounter_type, (string) ( $state['enemy'] ?? 'threat' ) );
 
-		return [
-			[
-				'id'    => 'direct_assault',
-				'tone'  => 'aggressive',
-				'label' => sprintf( 'Step into %1$s fast and %2$s before %3$s settles in', $exercise, $encounter_objective, strtolower( $enemy ) ),
+		return self::build_scene_specific_choices( $seed, $class_label, $encounter_type, 'transition' );
+	}
+
+	private static function build_scene_specific_choices( array $seed, string $class_label, string $encounter_type, string $phase = 'opening' ): array {
+		$seed = self::sanitize_scene_state( $seed );
+		$phase = sanitize_key( $phase );
+		$objective = strtolower( (string) ( $seed['objective'] ?? 'hold the line' ) );
+		$threat = strtolower( (string) ( $seed['threat'] ?? 'the threat' ) );
+		$prop = strtolower( (string) ( $seed['prop'] ?? $seed['landmark'] ?? 'the line' ) );
+		$landmark = strtolower( (string) ( $seed['landmark'] ?? $seed['prop'] ?? 'the ground ahead' ) );
+		$hazard = strtolower( (string) ( $seed['hazard'] ?? $seed['pressure'] ?? 'the danger closing in' ) );
+		$stakes = strtolower( (string) ( $seed['stakes'] ?? $seed['pressure'] ?? 'the scene turning against you' ) );
+		$class_label = strtolower( trim( $class_label ) !== '' ? $class_label : 'hero' );
+		$is_transition = 'transition' === $phase;
+
+		$choices = match ( sanitize_key( $encounter_type ) ) {
+			'duel', 'close_combat', 'boss_duel' => [
+				[
+					'id'    => 'break_the_center',
+					'tone'  => 'aggressive',
+					'label' => $is_transition
+						? sprintf( 'Step into %1$s first and force %2$s off balance before the next exchange settles', $landmark, $threat )
+						: sprintf( 'Press into %1$s and force %2$s off balance before the next exchange settles', $landmark, $threat ),
+				],
+				[
+					'id'    => 'hold_the_center',
+					'tone'  => 'cautious',
+					'label' => sprintf( 'Hold %1$s, read the first opening, and %2$s cleanly', $prop, $objective ),
+				],
+				[
+					'id'    => 'bait_the_angle',
+					'tone'  => 'creative',
+					'label' => sprintf( 'Use your %1$s instincts to bait %2$s into the wrong angle at %3$s', $class_label, $threat, $landmark ),
+				],
 			],
-			[
-				'id'    => 'steady_approach',
-				'tone'  => 'cautious',
-				'label' => sprintf( 'Use %1$s to settle your pace first, then %2$s cleanly', $exercise, $encounter_objective ),
+			'pursuit', 'hunt' => [
+				[
+					'id'    => 'cut_the_route',
+					'tone'  => 'aggressive',
+					'label' => sprintf( 'Run hard through %1$s and cut %2$s off before it slips the route', $landmark, $threat ),
+				],
+				[
+					'id'    => 'hold_the_trail',
+					'tone'  => 'cautious',
+					'label' => sprintf( 'Keep the trail under you at %1$s and %2$s without losing the line', $landmark, $objective ),
+				],
+				[
+					'id'    => 'turn_the_route',
+					'tone'  => 'creative',
+					'label' => sprintf( 'Use your %1$s instincts to turn %2$s into a false opening for %3$s', $class_label, $hazard, $threat ),
+				],
 			],
-			[
-				'id'    => 'class_play',
-				'tone'  => 'creative',
-				'label' => sprintf( 'Lean on your %1$s instincts and create a better angle through %2$s', strtolower( $class_label ), $exercise ),
+			'rhythm_trial', 'warding' => [
+				[
+					'id'    => 'break_the_pattern',
+					'tone'  => 'aggressive',
+					'label' => sprintf( 'Break the pattern at %1$s before %2$s locks in', $landmark, $threat ),
+				],
+				[
+					'id'    => 'steady_the_line',
+					'tone'  => 'cautious',
+					'label' => sprintf( 'Settle your breathing at %1$s and %2$s before %3$s', $landmark, $objective, $stakes ),
+				],
+				[
+					'id'    => 'steal_the_tempo',
+					'tone'  => 'creative',
+					'label' => sprintf( 'Use your %1$s instincts to steal the tempo and turn %2$s back on the threat', $class_label, $hazard ),
+				],
 			],
-		];
+			'burden', 'breach', 'advance', 'siege' => [
+				[
+					'id'    => 'drive_the_lane',
+					'tone'  => 'aggressive',
+					'label' => sprintf( 'Drive through %1$s and %2$s before %3$s can brace', $landmark, $objective, $threat ),
+				],
+				[
+					'id'    => 'anchor_the_ground',
+					'tone'  => 'cautious',
+					'label' => sprintf( 'Plant yourself at %1$s, absorb the pressure, and %2$s', $landmark, $objective ),
+				],
+				[
+					'id'    => 'turn_the_hazard',
+					'tone'  => 'creative',
+					'label' => sprintf( 'Use your %1$s instincts to make %2$s work against %3$s', $class_label, $hazard, $threat ),
+				],
+			],
+			default => [
+				[
+					'id'    => 'force_the_opening',
+					'tone'  => 'aggressive',
+					'label' => sprintf( 'Force %1$s at %2$s before %3$s settles in', $objective, $landmark, $threat ),
+				],
+				[
+					'id'    => 'hold_the_ground',
+					'tone'  => 'cautious',
+					'label' => sprintf( 'Hold %1$s, weather %2$s, and buy room to %3$s', $prop, $hazard, $objective ),
+				],
+				[
+					'id'    => 'turn_the_scene',
+					'tone'  => 'creative',
+					'label' => sprintf( 'Use your %1$s instincts to turn %2$s into an advantage before %3$s', $class_label, $hazard, $stakes ),
+				],
+			],
+		};
+
+		return array_values( $choices );
 	}
 
 	private static function build_next_encounter_situation( array $state, string $exercise_name, string $encounter_type, int $encounter_index, int $exercise_count ): string {
-		$exercise = sanitize_text_field( $exercise_name ?: 'the next movement' );
-		$enemy = sanitize_text_field( (string) ( $state['enemy'] ?? 'threat' ) );
-		$encounter_label = self::encounter_flavor_label( $encounter_type );
+		$seed = self::resolve_seed_details( (array) ( $state['scene_state'] ?? [] ), $encounter_type, (string) ( $state['enemy'] ?? 'threat' ) );
 		$encounter_total = $exercise_count > 0 ? sprintf( 'Encounter %1$d of %2$d', max( 1, $encounter_index ), $exercise_count ) : sprintf( 'Encounter %d', max( 1, $encounter_index ) );
 
-		return sprintf( '%1$s is next. %2$s waits deeper in the route, and %3$s is shaping up as a %4$s.', $encounter_total, $enemy, $exercise, $encounter_label );
+		return sprintf( '%1$s is next. %2$s is forming around %3$s, and you need to %4$s before %5$s.', $encounter_total, $seed['threat'], $seed['prop'], strtolower( $seed['objective'] ), strtolower( $seed['pressure'] ) );
 	}
 
-	private static function build_next_encounter_prompt( string $exercise_name, int $encounter_index, int $exercise_count ): string {
-		$exercise = sanitize_text_field( $exercise_name ?: 'the next movement' );
+	private static function build_next_encounter_prompt( array $state, string $exercise_name, int $encounter_index, int $exercise_count ): string {
+		$seed = self::resolve_seed_details( (array) ( $state['scene_state'] ?? [] ), (string) ( $state['encounter_type'] ?? 'skirmish' ), (string) ( $state['enemy'] ?? 'threat' ) );
 		if ( $exercise_count > 0 ) {
-			return sprintf( 'Choose how you enter encounter %1$d of %2$d around %3$s.', max( 1, $encounter_index ), $exercise_count, $exercise );
+			return sprintf( 'Choose how you enter encounter %1$d of %2$d at %3$s.', max( 1, $encounter_index ), $exercise_count, strtolower( $seed['prop'] ) );
 		}
 
-		return sprintf( 'Choose how you enter the next encounter around %s.', $exercise );
+		return sprintf( 'Choose how you enter the next encounter at %s.', strtolower( $seed['prop'] ) );
+	}
+
+	private static function sanitize_encounter_seed( array $seed ): array {
+		return [
+			'slug'          => sanitize_key( (string) ( $seed['slug'] ?? '' ) ),
+			'title'         => sanitize_text_field( (string) ( $seed['title'] ?? '' ) ),
+			'objective'     => sanitize_text_field( (string) ( $seed['objective'] ?? '' ) ),
+			'threat'        => sanitize_text_field( (string) ( $seed['threat'] ?? '' ) ),
+			'prop'          => sanitize_text_field( (string) ( $seed['prop'] ?? '' ) ),
+			'landmark'      => sanitize_text_field( (string) ( $seed['landmark'] ?? '' ) ),
+			'hazard'        => sanitize_text_field( (string) ( $seed['hazard'] ?? '' ) ),
+			'stakes'        => sanitize_text_field( (string) ( $seed['stakes'] ?? '' ) ),
+			'enemy_posture' => sanitize_text_field( (string) ( $seed['enemy_posture'] ?? '' ) ),
+			'sensory_detail'=> sanitize_text_field( (string) ( $seed['sensory_detail'] ?? '' ) ),
+			'pressure'      => sanitize_text_field( (string) ( $seed['pressure'] ?? '' ) ),
+			'success_turn'  => sanitize_text_field( (string) ( $seed['success_turn'] ?? '' ) ),
+			'advance_turn'  => sanitize_text_field( (string) ( $seed['advance_turn'] ?? '' ) ),
+			'struggle_turn' => sanitize_text_field( (string) ( $seed['struggle_turn'] ?? '' ) ),
+			'crisis_turn'   => sanitize_text_field( (string) ( $seed['crisis_turn'] ?? '' ) ),
+			'transition'    => sanitize_text_field( (string) ( $seed['transition'] ?? '' ) ),
+		];
+	}
+
+	private static function sanitize_scene_state( array $scene_state ): array {
+		return [
+			'slug'           => sanitize_key( (string) ( $scene_state['slug'] ?? '' ) ),
+			'title'          => sanitize_text_field( (string) ( $scene_state['title'] ?? '' ) ),
+			'objective'      => sanitize_text_field( (string) ( $scene_state['objective'] ?? '' ) ),
+			'threat'         => sanitize_text_field( (string) ( $scene_state['threat'] ?? '' ) ),
+			'prop'           => sanitize_text_field( (string) ( $scene_state['prop'] ?? '' ) ),
+			'landmark'       => sanitize_text_field( (string) ( $scene_state['landmark'] ?? '' ) ),
+			'hazard'         => sanitize_text_field( (string) ( $scene_state['hazard'] ?? '' ) ),
+			'stakes'         => sanitize_text_field( (string) ( $scene_state['stakes'] ?? '' ) ),
+			'enemy_posture'  => sanitize_text_field( (string) ( $scene_state['enemy_posture'] ?? '' ) ),
+			'sensory_detail' => sanitize_text_field( (string) ( $scene_state['sensory_detail'] ?? '' ) ),
+			'pressure'       => sanitize_text_field( (string) ( $scene_state['pressure'] ?? '' ) ),
+			'success_turn'   => sanitize_text_field( (string) ( $scene_state['success_turn'] ?? '' ) ),
+			'advance_turn'   => sanitize_text_field( (string) ( $scene_state['advance_turn'] ?? '' ) ),
+			'struggle_turn'  => sanitize_text_field( (string) ( $scene_state['struggle_turn'] ?? '' ) ),
+			'crisis_turn'    => sanitize_text_field( (string) ( $scene_state['crisis_turn'] ?? '' ) ),
+			'transition'     => sanitize_text_field( (string) ( $scene_state['transition'] ?? '' ) ),
+			'current_visual' => sanitize_text_field( (string) ( $scene_state['current_visual'] ?? '' ) ),
+			'stakes_now'     => sanitize_text_field( (string) ( $scene_state['stakes_now'] ?? '' ) ),
+			'status'         => sanitize_key( (string) ( $scene_state['status'] ?? 'contested' ) ),
+			'phase'          => sanitize_key( (string) ( $scene_state['phase'] ?? 'opening' ) ),
+			'objective_status' => sanitize_key( (string) ( $scene_state['objective_status'] ?? 'threatened' ) ),
+			'beat_index'     => max( 0, (int) ( $scene_state['beat_index'] ?? 0 ) ),
+			'last_turn'      => sanitize_text_field( (string) ( $scene_state['last_turn'] ?? '' ) ),
+			'encounter_index'=> max( 1, (int) ( $scene_state['encounter_index'] ?? 1 ) ),
+			'encounter_total'=> max( 0, (int) ( $scene_state['encounter_total'] ?? 0 ) ),
+		];
+	}
+
+	private static function resolve_encounter_seed( array $mission, int $encounter_index, string $encounter_type, string $enemy ): array {
+		$seeds = array_values( array_filter( array_map( [ __CLASS__, 'sanitize_encounter_seed' ], (array) ( $mission['encounter_seeds'] ?? [] ) ) ) );
+		if ( empty( $seeds ) ) {
+			return self::build_default_encounter_seed( $encounter_index, $encounter_type, $enemy );
+		}
+
+		$seed_count = count( $seeds );
+		$index = min( max( 1, $encounter_index ), $seed_count ) - 1;
+		$seed  = $seeds[ $index ] ?? [];
+
+		if ( $encounter_index > $seed_count ) {
+			$seed = self::build_overflow_encounter_seed( $seeds[ $seed_count - 1 ] ?? [], $encounter_index, $encounter_type, $enemy, $encounter_index - $seed_count );
+		}
+
+		return self::resolve_seed_details( $seed, $encounter_type, $enemy, $encounter_index );
+	}
+
+	private static function build_overflow_encounter_seed( array $seed, int $encounter_index, string $encounter_type, string $enemy, int $overflow_index ): array {
+		$base = self::resolve_seed_details( $seed, $encounter_type, $enemy, max( 1, $encounter_index - 1 ) );
+		$late_prop = 1 === $overflow_index
+			? sprintf( 'the far side of %s', strtolower( $base['prop'] ) )
+			: sprintf( 'the last span beyond %s', strtolower( $base['prop'] ) );
+
+		return [
+			'slug'          => sanitize_key( sprintf( '%s_%d', $base['slug'], max( 1, $encounter_index ) ) ),
+			'title'         => 1 === $overflow_index ? sprintf( '%s Final Push', $base['title'] ) : sprintf( '%s Last Stand', $base['title'] ),
+			'objective'     => sprintf( 'lock down %s before the mission slips', $late_prop ),
+			'threat'        => $base['threat'],
+			'prop'          => $late_prop,
+			'pressure'      => sprintf( 'the last safe angle around %s is closing fast', $late_prop ),
+			'success_turn'  => sprintf( 'you turn %s into a foothold and the mission finally opens', $late_prop ),
+			'advance_turn'  => sprintf( 'your momentum starts carrying past %s instead of stalling there', strtolower( $base['prop'] ) ),
+			'struggle_turn' => sprintf( 'the fight keeps getting dragged back toward %s', strtolower( $base['prop'] ) ),
+			'crisis_turn'   => sprintf( 'the final stretch around %s is starting to cave in', $late_prop ),
+			'transition'    => sprintf( '%s finally breaks, but the mission still wants a clean exit', self::capitalize_first( $late_prop ) ),
+		];
+	}
+
+	private static function build_default_encounter_seed( int $encounter_index, string $encounter_type, string $enemy ): array {
+		$encounter_label = self::encounter_flavor_label( $encounter_type );
+		$encounter_prop  = self::encounter_scene_prop( $encounter_type );
+		$encounter_objective = self::encounter_objective_phrase( $encounter_type );
+
+		return self::resolve_seed_details(
+			[
+				'slug'          => 'encounter_' . max( 1, $encounter_index ),
+					'title'         => sprintf( 'Encounter %d', max( 1, $encounter_index ) ),
+					'objective'     => $encounter_objective,
+					'threat'        => $enemy,
+					'prop'          => $encounter_prop,
+					'landmark'      => self::encounter_landmark( $encounter_type ),
+					'hazard'        => self::encounter_hazard( $encounter_type ),
+					'stakes'        => self::encounter_stakes( $encounter_type ),
+					'enemy_posture' => self::encounter_enemy_posture( $encounter_type, $enemy ),
+					'sensory_detail'=> self::encounter_sensory_detail( $encounter_type ),
+					'pressure'      => sprintf( 'the %s locks in', strtolower( $encounter_label ) ),
+					'success_turn'  => self::encounter_success_phrase( $encounter_type ),
+					'struggle_turn' => self::encounter_pressure_phrase( $encounter_type ),
+				'transition'    => self::encounter_transition_phrase( $encounter_type ),
+			],
+			$encounter_type,
+			$enemy,
+			$encounter_index
+		);
+	}
+
+	private static function encounter_scene_prop( string $encounter_type ): string {
+		return match ( sanitize_key( $encounter_type ) ) {
+			'burden' => 'burden march',
+			'breach' => 'breach lane',
+			'duel' => 'duel line',
+			'rhythm_trial' => 'machine tempo',
+			'advance' => 'forward lane',
+			'pursuit' => 'running route',
+			'warding' => 'ward circle',
+			'siege' => 'siege line',
+			'hunt' => 'hunt line',
+			'close_combat' => 'close-quarters line',
+			default => self::encounter_flavor_label( $encounter_type ),
+		};
+	}
+
+	private static function encounter_landmark( string $encounter_type ): string {
+		return match ( sanitize_key( $encounter_type ) ) {
+			'burden' => 'the broken causeway',
+			'breach' => 'the splintered gate mouth',
+			'duel' => 'the marked center lane',
+			'rhythm_trial' => 'the iron gear dais',
+			'advance' => 'the narrowing stair run',
+			'pursuit' => 'the switchback route',
+			'warding' => 'the cracked ward stones',
+			'siege' => 'the half-fallen gatehouse',
+			'hunt' => 'the thorn-choked game trail',
+			'close_combat' => 'the torchlit choke point',
+			default => 'the contested ground',
+		};
+	}
+
+	private static function encounter_hazard( string $encounter_type ): string {
+		return match ( sanitize_key( $encounter_type ) ) {
+			'burden' => 'the stones are slick and dropping away under the load',
+			'breach' => 'shattered beams and jagged barricade teeth are collapsing inward',
+			'duel' => 'one wrong step leaves you exposed in the open lane',
+			'rhythm_trial' => 'the iron mechanism keeps trying to steal your timing',
+			'advance' => 'the stairs shorten your breathing and punish hesitation',
+			'pursuit' => 'the route bends blind and keeps trying to spill you wide',
+			'warding' => 'the ward line flickers whenever your stance loosens',
+			'siege' => 'stone dust and splinters keep raining off the battered wall',
+			'hunt' => 'roots and low branches keep turning the ground underfoot',
+			'close_combat' => 'there is no room to give ground without losing the choke point',
+			default => 'the ground keeps turning against you',
+		};
+	}
+
+	private static function encounter_stakes( string $encounter_type ): string {
+		return match ( sanitize_key( $encounter_type ) ) {
+			'burden' => 'the route will fold if the burden owns your posture',
+			'breach' => 'the opening will seal if the lane is not forced now',
+			'duel' => 'the clean line will belong to the enemy if you lose the center',
+			'rhythm_trial' => 'the mechanism will set the pace of the whole encounter if you let it',
+			'advance' => 'the climb will stall and throw the whole push backward',
+			'pursuit' => 'the quarry will slip the route and take the advantage with it',
+			'warding' => 'the circle will break and expose everything behind it',
+			'siege' => 'the gate will hold if your pressure breaks before the wall does',
+			'hunt' => 'the trail will disappear if you lose the opening now',
+			'close_combat' => 'the choke point will be overrun if you give up the inside line',
+			default => 'the mission will settle against you if you lose this space',
+		};
+	}
+
+	private static function encounter_enemy_posture( string $encounter_type, string $enemy ): string {
+		$enemy_label = '' !== trim( $enemy ) ? strtolower( $enemy ) : 'the threat';
+		return match ( sanitize_key( $encounter_type ) ) {
+			'burden' => sprintf( '%s keeps leaning its full weight into the crossing', $enemy_label ),
+			'breach' => sprintf( '%s is braced behind the choke point and waiting for you to slow', $enemy_label ),
+			'duel' => sprintf( '%s is squared up in the lane and daring you to blink first', $enemy_label ),
+			'rhythm_trial' => sprintf( '%s is riding the machine tempo and trying to trap you inside it', $enemy_label ),
+			'advance' => sprintf( '%s keeps backing up just enough to drag you into a worse angle', $enemy_label ),
+			'pursuit' => sprintf( '%s is skimming the edge of the route and refusing a clean catch', $enemy_label ),
+			'warding' => sprintf( '%s keeps pressing the weak seams of the circle', $enemy_label ),
+			'siege' => sprintf( '%s is dug in behind the broken wall and absorbing the first impact', $enemy_label ),
+			'hunt' => sprintf( '%s keeps slipping between cover and forcing the chase longer', $enemy_label ),
+			'close_combat' => sprintf( '%s is crowding the choke point and trying to own the inside line', $enemy_label ),
+			default => sprintf( '%s is pressing the contested ground and refusing to give it up', $enemy_label ),
+		};
+	}
+
+	private static function encounter_sensory_detail( string $encounter_type ): string {
+		return match ( sanitize_key( $encounter_type ) ) {
+			'burden' => 'stone grit skids underfoot and every breath sounds too loud',
+			'breach' => 'splinters snap and old hinges scream in the strain',
+			'duel' => 'every foot scrape carries across the lane like a challenge',
+			'rhythm_trial' => 'iron teeth chatter and the whole platform hums under tension',
+			'advance' => 'air burns in the throat while the stairwell echoes each step back at you',
+			'pursuit' => 'cold wind cuts across the route and loose gravel keeps shifting',
+			'warding' => 'ozone and candle smoke hang over the circle',
+			'siege' => 'stone dust hangs in the air and the wall booms under each hit',
+			'hunt' => 'wet leaves slap at your boots and branches hiss in the dark',
+			'close_combat' => 'torch smoke and hot breath make the choke point feel even tighter',
+			default => 'the air feels close and every sound comes back sharper than it should',
+		};
+	}
+
+	private static function build_scene_visual( array $scene, string $phase = '', string $status = '' ): string {
+		$phase = '' !== $phase ? sanitize_key( $phase ) : sanitize_key( (string) ( $scene['phase'] ?? 'opening' ) );
+		$status = '' !== $status ? sanitize_key( $status ) : sanitize_key( (string) ( $scene['status'] ?? 'contested' ) );
+		$landmark = strtolower( (string) ( $scene['landmark'] ?? $scene['prop'] ?? 'the contested ground' ) );
+		$hazard = strtolower( (string) ( $scene['hazard'] ?? $scene['pressure'] ?? 'the danger keeps closing' ) );
+		$enemy_posture = trim( (string) ( $scene['enemy_posture'] ?? '' ) );
+		$sensory = trim( (string) ( $scene['sensory_detail'] ?? '' ) );
+
+		if ( 'transition' === $phase ) {
+			return sprintf( 'The space around %1$s is finally open for a breath, but %2$s.', $landmark, strtolower( (string) ( $scene['transition'] ?? $hazard ) ) );
+		}
+
+		if ( 'turning_point' === $phase || 'advantage' === $status ) {
+			return sprintf( 'At %1$s, %2$s, and %3$s.', $landmark, strtolower( $enemy_posture ?: 'the threat is finally giving ground' ), $sensory ?: $hazard );
+		}
+
+		if ( 'crisis' === $phase || 'losing_ground' === $status ) {
+			return sprintf( 'Around %1$s, %2$s, and %3$s.', $landmark, strtolower( $hazard ), $enemy_posture ?: 'the threat is closing fast' );
+		}
+
+		return sprintf( 'At %1$s, %2$s, and %3$s.', $landmark, strtolower( $hazard ), $enemy_posture ?: 'the threat keeps testing the line' );
+	}
+
+	private static function build_scene_enemy_posture( array $scene, string $mode ): string {
+		$base = trim( (string) ( $scene['enemy_posture'] ?? '' ) );
+		$base = '' !== $base ? rtrim( $base, ". \t\n\r\0\x0B" ) : strtolower( (string) ( $scene['threat'] ?? 'the threat keeps pressing the ground' ) );
+		$landmark = strtolower( (string) ( $scene['landmark'] ?? $scene['prop'] ?? 'the line' ) );
+
+		return match ( sanitize_key( $mode ) ) {
+			'opening_advantage' => sprintf( '%s, but it finally checks its advance at %s', $base, $landmark ),
+			'opening_loss' => sprintf( '%s, and now it is coming harder through %s', $base, $landmark ),
+			'set_advantage' => sprintf( '%s, but the clean line through %s is starting to slip away from it', $base, $landmark ),
+			'set_turning_point' => sprintf( '%s, but it is finally being driven off the ground it wanted at %s', $base, $landmark ),
+			'set_crisis' => sprintf( '%s, and it keeps finding the weak side around %s', $base, $landmark ),
+			'set_loss' => sprintf( '%s, and now it is flooding %s faster than before', $base, $landmark ),
+			default => $base,
+		};
+	}
+
+	private static function build_scene_stakes_now( array $scene, string $mode ): string {
+		$objective = strtolower( (string) ( $scene['objective'] ?? 'finish the exchange' ) );
+		$stakes = strtolower( (string) ( $scene['stakes'] ?? '' ) );
+		$hazard = strtolower( (string) ( $scene['hazard'] ?? $scene['pressure'] ?? 'the scene turns against you' ) );
+		$landmark = strtolower( (string) ( $scene['landmark'] ?? $scene['prop'] ?? 'the line' ) );
+		$stakes_clause = '' !== $stakes ? $stakes : $hazard;
+
+		return match ( sanitize_key( $mode ) ) {
+			'opening_advantage' => sprintf( 'one cleaner push could %s before %s', $objective, $stakes_clause ),
+			'opening_contested' => sprintf( 'the next exchange has to %s before %s', $objective, $stakes_clause ),
+			'opening_loss' => sprintf( 'if you cannot %s soon, %s', $objective, $stakes_clause ),
+			'transition' => sprintf( 'the opening at %s is yours for a breath, but %s', $landmark, strtolower( (string) ( $scene['transition'] ?? 'the next danger is already forming' ) ) ),
+			'set_turning_point' => sprintf( 'one more clean answer could %s before %s', $objective, $stakes_clause ),
+			'set_advantage' => sprintf( 'hold the gain around %s before %s', $landmark, $stakes_clause ),
+			'set_escalation' => sprintf( 'the next push has to stabilize %s before %s', $landmark, $stakes_clause ),
+			'set_crisis' => sprintf( 'one bad exchange could cost you %s', $stakes_clause ),
+			'set_loss' => sprintf( 'if you do not answer now, %s', $stakes_clause ),
+			default => $stakes_clause,
+		};
+	}
+
+	private static function resolve_seed_details( array $seed, string $encounter_type, string $enemy, int $encounter_index = 1 ): array {
+		$clean = self::sanitize_encounter_seed( $seed );
+		$encounter_label = self::encounter_flavor_label( $encounter_type );
+		$encounter_objective = self::encounter_objective_phrase( $encounter_type );
+
+		$clean['slug'] = '' !== $clean['slug'] ? $clean['slug'] : 'encounter_' . max( 1, $encounter_index );
+		$clean['title'] = '' !== $clean['title'] ? $clean['title'] : sprintf( 'Encounter %d', max( 1, $encounter_index ) );
+			$clean['objective'] = '' !== $clean['objective'] ? $clean['objective'] : $encounter_objective;
+			$clean['threat'] = '' !== $clean['threat'] ? $clean['threat'] : $enemy;
+			$clean['prop'] = '' !== $clean['prop'] ? $clean['prop'] : self::encounter_scene_prop( $encounter_type );
+			$clean['landmark'] = '' !== $clean['landmark'] ? $clean['landmark'] : self::encounter_landmark( $encounter_type );
+			$clean['hazard'] = '' !== $clean['hazard'] ? $clean['hazard'] : self::encounter_hazard( $encounter_type );
+			$clean['stakes'] = '' !== $clean['stakes']
+				? $clean['stakes']
+				: ( '' !== $clean['objective'] ? $clean['objective'] : self::encounter_stakes( $encounter_type ) );
+			$clean['enemy_posture'] = '' !== $clean['enemy_posture'] ? $clean['enemy_posture'] : self::encounter_enemy_posture( $encounter_type, $clean['threat'] );
+			$clean['sensory_detail'] = '' !== $clean['sensory_detail'] ? $clean['sensory_detail'] : self::encounter_sensory_detail( $encounter_type );
+			$clean['pressure'] = '' !== $clean['pressure'] ? $clean['pressure'] : sprintf( 'the %s locks in around you', strtolower( $encounter_label ) );
+		$clean['success_turn'] = '' !== $clean['success_turn'] ? $clean['success_turn'] : self::encounter_success_phrase( $encounter_type );
+		$clean['advance_turn'] = '' !== $clean['advance_turn'] ? $clean['advance_turn'] : sprintf( '%s starts widening under your control', $clean['prop'] );
+		$clean['struggle_turn'] = '' !== $clean['struggle_turn'] ? $clean['struggle_turn'] : self::encounter_pressure_phrase( $encounter_type );
+		$clean['crisis_turn'] = '' !== $clean['crisis_turn'] ? $clean['crisis_turn'] : sprintf( 'the last safe angle around %s is starting to collapse', strtolower( $clean['prop'] ) );
+		$clean['transition'] = '' !== $clean['transition'] ? $clean['transition'] : self::encounter_transition_phrase( $encounter_type );
+
+			return $clean;
+		}
+
+	private static function build_scene_state_from_seed( array $encounter_seed, int $encounter_index, int $encounter_total ): array {
+		$seed = self::sanitize_scene_state( $encounter_seed );
+		return array_merge(
+			$seed,
+			[
+				'status'          => 'contested',
+				'phase'           => 'opening',
+				'objective_status'=> 'threatened',
+				'beat_index'      => 0,
+				'current_visual'  => self::build_scene_visual( $seed, 'opening', 'contested' ),
+				'stakes_now'      => (string) ( $seed['stakes'] ?? '' ),
+				'last_turn'       => '',
+				'encounter_index' => max( 1, $encounter_index ),
+				'encounter_total' => max( 0, $encounter_total ),
+			]
+		);
+	}
+
+	private static function update_scene_state_for_opening( array $scene_state, string $roll_band ): array {
+		$scene = self::sanitize_scene_state( $scene_state );
+		if ( in_array( sanitize_key( $roll_band ), [ 'dominant_success', 'strong_success' ], true ) ) {
+			$scene['status'] = 'advantage';
+			$scene['objective_status'] = 'contested';
+			$scene['enemy_posture'] = self::build_scene_enemy_posture( $scene, 'opening_advantage' );
+			$scene['current_visual'] = self::build_scene_visual( $scene, 'opening', 'advantage' );
+			$scene['stakes_now'] = self::build_scene_stakes_now( $scene, 'opening_advantage' );
+			$scene['last_turn'] = $scene['success_turn'];
+			return $scene;
+		}
+
+		if ( in_array( sanitize_key( $roll_band ), [ 'moderate_success', 'low_success' ], true ) ) {
+			$scene['status'] = 'contested';
+			$scene['objective_status'] = 'under_pressure';
+			$scene['enemy_posture'] = self::build_scene_enemy_posture( $scene, 'contested' );
+			$scene['current_visual'] = self::build_scene_visual( $scene, 'opening', 'contested' );
+			$scene['stakes_now'] = self::build_scene_stakes_now( $scene, 'opening_contested' );
+			$scene['last_turn'] = $scene['pressure'];
+			return $scene;
+		}
+
+		$scene['status'] = 'losing_ground';
+		$scene['objective_status'] = 'slipping';
+		$scene['enemy_posture'] = self::build_scene_enemy_posture( $scene, 'opening_loss' );
+		$scene['current_visual'] = self::build_scene_visual( $scene, 'opening', 'losing_ground' );
+		$scene['stakes_now'] = self::build_scene_stakes_now( $scene, 'opening_loss' );
+		$scene['last_turn'] = $scene['struggle_turn'];
+		return $scene;
+	}
+
+	private static function update_scene_state_for_set( array $scene_state, array $encounter_seed, string $set_result, bool $completed_exercise, array $beat_context = [] ): array {
+		$scene = array_merge( self::sanitize_scene_state( $scene_state ), self::sanitize_scene_state( $encounter_seed ) );
+		$scene['beat_index'] = max( 0, (int) ( $scene['beat_index'] ?? 0 ) ) + 1;
+		$stage = sanitize_key( (string) ( $beat_context['stage'] ?? '' ) );
+
+		if ( $completed_exercise ) {
+			$scene['status'] = in_array( sanitize_key( $set_result ), [ 'target_met', 'push_set', 'breakthrough', 'surge', 'recovered' ], true ) ? 'secured' : 'scarred';
+			$scene['phase'] = 'transition';
+			$scene['objective_status'] = 'secured';
+			$scene['current_visual'] = self::build_scene_visual( $scene, 'transition', (string) $scene['status'] );
+			$scene['stakes_now'] = self::build_scene_stakes_now( $scene, 'transition' );
+			$scene['last_turn'] = $scene['transition'];
+			return $scene;
+		}
+
+		if ( in_array( sanitize_key( $set_result ), [ 'target_met', 'push_set', 'surge', 'breakthrough', 'recovered' ], true ) ) {
+			$scene['status'] = 'advantage';
+			$scene['phase'] = ( 'closing' === $stage || $scene['beat_index'] >= 2 || in_array( sanitize_key( $set_result ), [ 'surge', 'breakthrough', 'recovered' ], true ) ) ? 'turning_point' : 'escalation';
+			$scene['objective_status'] = 'turning_point' === $scene['phase'] ? 'within_reach' : 'contested';
+			$scene['enemy_posture'] = self::build_scene_enemy_posture( $scene, 'turning_point' === $scene['phase'] ? 'set_turning_point' : 'set_advantage' );
+			$scene['current_visual'] = self::build_scene_visual( $scene, (string) $scene['phase'], 'advantage' );
+			$scene['stakes_now'] = self::build_scene_stakes_now( $scene, 'turning_point' === $scene['phase'] ? 'set_turning_point' : 'set_advantage' );
+			$scene['last_turn'] = 'turning_point' === $scene['phase'] ? $scene['advance_turn'] : $scene['success_turn'];
+			return $scene;
+		}
+
+		if ( in_array( sanitize_key( $set_result ), [ 'close_call', 'strain' ], true ) ) {
+			$scene['status'] = 'contested';
+			$scene['phase'] = ( 'closing' === $stage || $scene['beat_index'] >= 2 ) ? 'crisis' : 'escalation';
+			$scene['objective_status'] = 'under_pressure';
+			$scene['enemy_posture'] = self::build_scene_enemy_posture( $scene, 'crisis' === $scene['phase'] ? 'set_crisis' : 'contested' );
+			$scene['current_visual'] = self::build_scene_visual( $scene, (string) $scene['phase'], 'contested' );
+			$scene['stakes_now'] = self::build_scene_stakes_now( $scene, 'crisis' === $scene['phase'] ? 'set_crisis' : 'set_escalation' );
+			$scene['last_turn'] = 'crisis' === $scene['phase'] ? $scene['crisis_turn'] : $scene['pressure'];
+			return $scene;
+		}
+
+		$scene['status'] = 'losing_ground';
+		$scene['phase'] = 'crisis';
+		$scene['objective_status'] = 'slipping';
+		$scene['enemy_posture'] = self::build_scene_enemy_posture( $scene, 'set_loss' );
+		$scene['current_visual'] = self::build_scene_visual( $scene, 'crisis', 'losing_ground' );
+		$scene['stakes_now'] = self::build_scene_stakes_now( $scene, 'set_loss' );
+		$scene['last_turn'] = $scene['crisis_turn'];
+		return $scene;
+	}
+
+	private static function resolve_scene_turn_text( array $scene_state, string $set_result, bool $completed_exercise ): string {
+		$scene = self::sanitize_scene_state( $scene_state );
+
+		if ( $completed_exercise ) {
+			return $scene['transition'];
+		}
+
+		if ( 'turning_point' === (string) ( $scene['phase'] ?? '' ) && '' !== $scene['advance_turn'] ) {
+			return $scene['advance_turn'];
+		}
+
+		if ( 'crisis' === (string) ( $scene['phase'] ?? '' ) && '' !== $scene['crisis_turn'] ) {
+			return $scene['crisis_turn'];
+		}
+
+		if ( in_array( sanitize_key( $set_result ), [ 'target_met', 'push_set', 'surge', 'breakthrough', 'recovered' ], true ) ) {
+			return $scene['success_turn'];
+		}
+
+		if ( in_array( sanitize_key( $set_result ), [ 'close_call', 'strain' ], true ) ) {
+			return $scene['pressure'];
+		}
+
+		return $scene['struggle_turn'];
 	}
 
 	private static function build_progress_label( int $set_number, array $beat_context, string $set_result ): string {
@@ -820,51 +1361,51 @@ class IronQuestNarrativeService {
 		};
 	}
 
-	private static function encounter_success_phrase( string $encounter_type, string $exercise ): string {
+	private static function encounter_success_phrase( string $encounter_type ): string {
 		return match ( sanitize_key( $encounter_type ) ) {
-			'burden' => sprintf( '%s keeps the load obedient instead of punishing your frame', $exercise ),
-			'breach' => sprintf( '%s drives a fresh gap through the resistance in front of you', $exercise ),
-			'duel' => sprintf( '%s lands like a clean answer on one exposed weakness', $exercise ),
-			'rhythm_trial' => sprintf( '%s snaps the machine tempo back into your hands', $exercise ),
-			'advance' => sprintf( '%s keeps the march moving and denies the stall', $exercise ),
-			'pursuit' => sprintf( '%s keeps the chase in your favor before the route bends away', $exercise ),
-			'warding' => sprintf( '%s steadies the circle and refuses the collapse', $exercise ),
-			'siege' => sprintf( '%s keeps the battering line heavy and relentless', $exercise ),
-			'hunt' => sprintf( '%s pins the opening before the prey can slip free', $exercise ),
-			'close_combat' => sprintf( '%s keeps you chest-to-chest and on the stronger side of the clash', $exercise ),
-			default => sprintf( '%s keeps the momentum tilted toward you', $exercise ),
+			'burden' => 'the load stays obedient instead of punishing your frame',
+			'breach' => 'a fresh gap opens through the resistance in front of you',
+			'duel' => 'a clean answer lands on one exposed weakness',
+			'rhythm_trial' => 'the machine tempo snaps back into your hands',
+			'advance' => 'the march keeps moving and denies the stall',
+			'pursuit' => 'the chase stays in your favor before the route bends away',
+			'warding' => 'the circle steadies and refuses the collapse',
+			'siege' => 'the battering line stays heavy and relentless',
+			'hunt' => 'the opening stays pinned before the prey can slip free',
+			'close_combat' => 'you stay chest-to-chest and on the stronger side of the clash',
+			default => 'the momentum stays tilted toward you',
 		};
 	}
 
-	private static function encounter_pressure_phrase( string $encounter_type, string $exercise ): string {
+	private static function encounter_pressure_phrase( string $encounter_type ): string {
 		return match ( sanitize_key( $encounter_type ) ) {
-			'burden' => sprintf( 'the load is starting to pull at your structure around %s', $exercise ),
-			'breach' => sprintf( 'the lane is clogging up around %s faster than you want', $exercise ),
-			'duel' => sprintf( 'the single-target duel around %s is getting exacting and mean', $exercise ),
-			'rhythm_trial' => sprintf( 'the machine tempo around %s is trying to trap you in its pattern', $exercise ),
-			'advance' => sprintf( 'the march around %s is shortening your room to recover', $exercise ),
-			'pursuit' => sprintf( 'the route around %s is slipping and asking for speed you may not have yet', $exercise ),
-			'warding' => sprintf( 'the circle around %s is wavering and wants you to break first', $exercise ),
-			'siege' => sprintf( 'the siege line around %s is grinding into your breathing', $exercise ),
-			'hunt' => sprintf( 'the hunt around %s is tightening every time you hesitate', $exercise ),
-			'close_combat' => sprintf( 'the close-quarters exchange around %s is getting crowded and violent', $exercise ),
-			default => sprintf( 'the encounter around %s is escalating faster than you want', $exercise ),
+			'burden' => 'the load is starting to pull at your structure',
+			'breach' => 'the lane is clogging up faster than you want',
+			'duel' => 'the single-target duel is getting exacting and mean',
+			'rhythm_trial' => 'the machine tempo is trying to trap you in its pattern',
+			'advance' => 'the march is shortening your room to recover',
+			'pursuit' => 'the route is slipping and asking for speed you may not have yet',
+			'warding' => 'the circle is wavering and wants you to break first',
+			'siege' => 'the siege line is grinding into your breathing',
+			'hunt' => 'the hunt is tightening every time you hesitate',
+			'close_combat' => 'the close-quarters exchange is getting crowded and violent',
+			default => 'the encounter is escalating faster than you want',
 		};
 	}
 
-	private static function encounter_transition_phrase( string $encounter_type, string $exercise ): string {
+	private static function encounter_transition_phrase( string $encounter_type ): string {
 		return match ( sanitize_key( $encounter_type ) ) {
-			'burden' => sprintf( '%s is finished, but you are still carrying the demand of the mission forward', $exercise ),
-			'breach' => sprintf( '%s punched a lane open, but the mission is already shoving fresh resistance into it', $exercise ),
-			'duel' => sprintf( '%s won the exchange, but the mission is already choosing the next weak point for you', $exercise ),
-			'rhythm_trial' => sprintf( '%s broke the machine pace, but the next section is already trying to set a new one', $exercise ),
-			'advance' => sprintf( '%s moved you forward, but the march is not done asking for control', $exercise ),
-			'pursuit' => sprintf( '%s kept the route alive, but the chase is bending toward the next turn already', $exercise ),
-			'warding' => sprintf( '%s held the circle, but the next stretch wants to break it from another angle', $exercise ),
-			'siege' => sprintf( '%s cracked the line, but the wall behind it still has to come down', $exercise ),
-			'hunt' => sprintf( '%s pinned the opening, but the mission is already drawing the prey somewhere else', $exercise ),
-			'close_combat' => sprintf( '%s won the collision, but there is another body and another angle waiting immediately after', $exercise ),
-			default => sprintf( '%s is done, but the mission is already shaping the next exchange', $exercise ),
+			'burden' => 'the demand of the mission is still riding on your frame',
+			'breach' => 'the mission is already shoving fresh resistance into the gap you opened',
+			'duel' => 'the mission is already choosing the next weak point for you',
+			'rhythm_trial' => 'the next stretch is already trying to set a new machine pace',
+			'advance' => 'the march is not done asking for control',
+			'pursuit' => 'the chase is already bending toward the next turn',
+			'warding' => 'the next stretch wants to break the circle from another angle',
+			'siege' => 'the wall behind the broken line still has to come down',
+			'hunt' => 'the prey is already being drawn somewhere else',
+			'close_combat' => 'another body and another angle are already waiting immediately after',
+			default => 'the mission is already shaping the next exchange',
 		};
 	}
 
@@ -1162,12 +1703,15 @@ class IronQuestNarrativeService {
 		$normalized['mission_name'] = sanitize_text_field( (string) ( $state['mission_name'] ?? '' ) );
 		$normalized['objective'] = sanitize_text_field( (string) ( $state['objective'] ?? '' ) );
 		$normalized['opening_text'] = sanitize_textarea_field( (string) ( $state['opening_text'] ?? '' ) );
-		$normalized['decision_prompt'] = sanitize_text_field( (string) ( $state['decision_prompt'] ?? '' ) );
-		$normalized['choices'] = array_values( array_filter( array_map( [ __CLASS__, 'sanitize_story_choice' ], (array) ( $state['choices'] ?? [] ) ) ) );
-		$normalized['default_choice_id'] = sanitize_key( (string) ( $state['default_choice_id'] ?? '' ) );
-		$normalized['current_situation'] = sanitize_text_field( (string) ( $state['current_situation'] ?? '' ) );
-		$normalized['enemy'] = sanitize_text_field( (string) ( $state['enemy'] ?? '' ) );
+			$normalized['decision_prompt'] = sanitize_text_field( (string) ( $state['decision_prompt'] ?? '' ) );
+			$normalized['choices'] = array_values( array_filter( array_map( [ __CLASS__, 'sanitize_story_choice' ], (array) ( $state['choices'] ?? [] ) ) ) );
+			$normalized['default_choice_id'] = sanitize_key( (string) ( $state['default_choice_id'] ?? '' ) );
+			$normalized['current_situation'] = sanitize_text_field( (string) ( $state['current_situation'] ?? '' ) );
+			$normalized['debug_prompt'] = sanitize_textarea_field( (string) ( $state['debug_prompt'] ?? '' ) );
+			$normalized['enemy'] = sanitize_text_field( (string) ( $state['enemy'] ?? '' ) );
 		$normalized['encounter_type'] = sanitize_key( (string) ( $state['encounter_type'] ?? 'skirmish' ) );
+		$normalized['encounter_seed'] = self::sanitize_encounter_seed( (array) ( $state['encounter_seed'] ?? [] ) );
+		$normalized['scene_state'] = self::sanitize_scene_state( (array) ( $state['scene_state'] ?? [] ) );
 		$normalized['tension'] = sanitize_key( (string) ( $state['tension'] ?? 'rising' ) );
 		$normalized['roll'] = [
 			'dice_roll'            => max( 0, (int) ( $state['roll']['dice_roll'] ?? 0 ) ),
@@ -1201,10 +1745,32 @@ class IronQuestNarrativeService {
 			'summary'  => sanitize_textarea_field( (string) ( $state['conclusion']['summary'] ?? '' ) ),
 			'epilogue' => sanitize_textarea_field( (string) ( $state['conclusion']['epilogue'] ?? '' ) ),
 		];
+		$profile = null;
+		if ( ! array_key_exists( 'hp_current', $state ) || ! array_key_exists( 'hp_max', $state ) ) {
+			$profile = IronQuestProfileService::ensure_profile( $user_id );
+		}
+		$normalized['hp_current'] = max( 0, (int) ( $state['hp_current'] ?? $profile['hp_current'] ?? 100 ) );
+		$normalized['hp_max'] = max( 1, (int) ( $state['hp_max'] ?? $profile['hp_max'] ?? 100 ) );
+		$normalized['hp_loss_this_set'] = max( 0, (int) ( $state['hp_loss_this_set'] ?? 0 ) );
 		$normalized['result_band'] = sanitize_key( (string) ( $state['result_band'] ?? '' ) );
-		$normalized['class_slug'] = sanitize_key( (string) ( $state['class_slug'] ?? ( IronQuestProfileService::ensure_profile( $user_id )['class_slug'] ?? '' ) ) );
+		$normalized['class_slug'] = sanitize_key( (string) ( $state['class_slug'] ?? $profile['class_slug'] ?? '' ) );
 
 		return $normalized;
+	}
+
+	private static function resolve_hp_loss_for_set( string $set_result, array $beat_context ): int {
+		$strain = sanitize_key( (string) ( $beat_context['strain'] ?? '' ) );
+		$set_result = sanitize_key( $set_result );
+
+		if ( 'high' === $strain || in_array( $set_result, [ 'slipped', 'struggle' ], true ) ) {
+			return 2;
+		}
+
+		if ( 'medium' === $strain || in_array( $set_result, [ 'close_call', 'strain' ], true ) ) {
+			return 1;
+		}
+
+		return 0;
 	}
 
 	private static function sanitize_story_choice( array $choice ): array {

@@ -1,339 +1,268 @@
-# Inventory System Feature
+# IronQuest Inventory System
 
-## Core Goal Of Inventory + Gear
+## Purpose
 
-Users should feel:
+Inventory should make the player feel like they own a growing build.
 
-> "This is my build"
+It should not turn Johnny5k into a bag-management RPG.
 
-Not:
+## Product Rule
 
-> "I have some random items"
+Inventory exists to support training, recovery, and route decisions.
 
-## 1. Inventory System (V1 Structure)
+It must stay readable in under one minute.
 
-Keep it tight.
+## Core Thesis
 
-### Inventory Categories
+Inventory is the ownership layer between the Character Sheet and the General Store.
 
-- Equipped Gear
-- Backpack, for items
-- Consumables, including potions and supplies
-- Capacity, an important decision
+It answers three questions:
 
-### V1 Recommendation
+1. What do I own?
+2. What is active right now?
+3. What can I use before the next mission?
 
-- Unlimited inventory for now
+## V1 Structure
 
-### Why
+Keep inventory limited to four categories:
 
-- Avoids early friction
-- Easier technically
-- No inventory anxiety
+1. Relics
+2. Consumables
+3. Titles
+4. Active modifiers
 
-You can add limits later if needed.
+Do not ship a full weapon / armor / accessory equipment grid in Phase 2.
 
-## 2. Equipment Slots (Lock This)
+## Why This Scope
 
-Keep it simple and meaningful.
+IronQuest already has class, HP, gold, route progress, missions, and Tavern Day.
 
-### Slots
+Inventory should deepen those loops, not replace them.
 
-- Weapon
-- Armor
-- Accessory
+If Phase 2 adds too many item slots, the mode starts competing with the actual fitness product.
 
-### Why Only 3?
+## Item Categories
 
-- Forces decisions
-- Easy to understand
-- Prevents stat stacking chaos
+### 1. Relics
 
-## 3. Gear Design Principles
+Relics are persistent account-bound unlocks.
 
-Every item should be:
+Rules:
 
-- Easy to understand
-- Small impact
-- Clearly useful
+- passive effect only
+- small impact
+- no duplicates active at the same time
+- tied to bosses, regions, or major rewards
 
-### Example Gear (Refined)
+Example effects:
 
-- Weapon: Iron Sword
-  +1 modifier on strength-based sets
-- Weapon: Cursed Blade of Hollow, boss item
-  +1 strength modifier
-  +1 final boss roll, once per boss
-- Armor: Reinforced Vest
-  Reduce HP loss by 1 on failed set, once per workout
-- Accessory: Traveler's Boots
-  +10% travel point gain
-- Accessory: Band of Focus
-  +1 final boss roll, once per fight
-
-## 4. Equip Logic (Important)
-
-When the user taps an item, show:
-
-- Current equipped item in the same slot
-- New item stats
-- Simple comparison
-
-### Example UI
-
-```text
-Equip Cursed Blade?
-
-Current: Iron Sword (+1 strength)
-New: Cursed Blade (+1 strength + boss bonus)
-
-[Equip] [Cancel]
-```
-
-### Rules
-
-- Equipping is instant
-- No cost to equip
-- No cooldown
-
-## 5. Item Types
-
-### 1. Gear (Persistent)
-
-- Stays until sold or replaced
+- `Road Builder`: small travel point bonus
+- `Steady Hand`: slightly reduced HP loss on average sessions
+- `Field Notes`: better mission preview clarity
 
 ### 2. Consumables
 
-- Potions
-- Supplies
+Consumables are one-use items that affect the next mission or the current recovery day.
 
-### 3. Artifacts (Special Gear)
+Rules:
 
-- Unique
-- Boss drops
-- Cannot stack duplicates
+- max carry should stay low, recommended cap `3`
+- effect should be immediate or next-session only
+- no crafting tree
+- no stacking multiple identical buffs in one session
 
-## 6. Artifact Rules (Important)
+Example effects:
 
-### Unique Rule
+- restore HP
+- reduce next mission damage
+- improve next mission gold or XP payout slightly
+- reveal a stronger mission hint
 
-- Only one of each artifact
+### 3. Titles
 
-If the user gets a duplicate:
+Titles are progression markers with optional minor passive effects.
 
-- Auto-convert to gold
-- Or allow sell
+Rules:
 
-### Artifact Identity
+- unlock from arcs, streaks, or bosses
+- should display on the Character Sheet
+- may provide one small passive bonus, but identity comes first
 
-Artifacts should:
+### 4. Active Modifiers
 
-- Feel tied to location
-- Have flavor text
-- Have 1-2 meaningful effects
+This is not a true item type.
 
-## 7. Inventory UX Flow
+It is a visible summary of what is currently affecting the player.
 
-### Main Screen
+Examples:
 
-#### Top
+- Tavern rumor buff active
+- store charm active for next mission
+- relic passive modifying route gain
 
-- Character image, from Gemini
-- Equipped gear, visual icons
+## UX Model
 
-#### Sections
+Inventory should not be its own complex app section first.
 
-##### Equipped
+In Phase 2 it should live inside the Character Sheet as a clear owned-items area.
 
-- Weapon
-- Armor
-- Accessory
+### Primary Layout
 
-##### Backpack
+Top summary:
 
-- All gear items
+- gold
+- HP
+- active modifiers
+- item counts
 
-##### Consumables
+Sections:
 
-- Potions
-- Supplies
+- Relics
+- Consumables
+- Titles
+- Active effects
 
-### Tap Behavior
+## Interaction Rules
 
-#### Tap Gear
+### Relics
 
-- Show stats
-- Show equip option
+Tap to inspect.
 
-#### Tap Consumable
+If a relic has an on/off slot rule later, only allow a very small number of active relics.
 
-- Show use option
+Recommended Phase 2 cap:
 
-## 8. Quick Actions (Very Important)
+- `2 active relics`
 
-Make it fast to use.
+### Consumables
 
-### From Main Screen
+Tap to inspect and use.
 
-- Use Potion
-- Equip Best Gear, optional later
-- Sell Junk, later
+Usage should require one confirm step with the exact effect shown.
 
-## 9. Auto-Equip (Optional But Strong)
+### Titles
 
-For beginners:
+Tap to inspect flavor text and unlock source.
 
-### Button
+Equipping a displayed title is optional and cosmetic.
 
-- Optimize Gear
+## Design Principles
 
-Automatically:
+Every item should be:
 
-- Equips best item per slot
+- easy to understand
+- small in impact
+- tied to a real game loop
+- worth showing on the Character Sheet
 
-### Why
+Avoid items that only add noise, rarity clutter, or stat math.
 
-- Removes friction
-- Helps non-gamers
+## Source Of Items
 
-## 10. Sell Flow (Refined)
+Phase 2 item sources should be limited to:
 
-When selling, show:
+1. boss clears
+2. region unlocks
+3. store purchases
+4. Tavern Day rewards
+5. weekly or arc summaries
 
-- Item value
-- Equipped warning
+## Data Model
 
-### Example
+Inventory should be renderable from one profile-adjacent payload.
 
-```text
-Sell Cursed Blade of Hollow?
+### Suggested Payload Shape
 
-Value: 65 gold
-This item is currently equipped
-
-[Sell] [Cancel]
+```json
+{
+  "inventory": {
+    "relics": [
+      {
+        "id": "road_builder",
+        "name": "Road Builder",
+        "description": "You know how to take the longest road without wasting motion.",
+        "effect_summary": "+10% travel points from steps",
+        "active": true,
+        "source": "region_clear"
+      }
+    ],
+    "consumables": [
+      {
+        "id": "field_bandage",
+        "name": "Field Bandage",
+        "description": "Patch up before the next push.",
+        "effect_summary": "Restore 15 HP",
+        "quantity": 1,
+        "usable": true
+      }
+    ],
+    "titles": [
+      {
+        "id": "last_one_standing",
+        "name": "Last One Standing",
+        "description": "Earned by finishing a mission under pressure.",
+        "equipped": true,
+        "effect_summary": "+small gold bonus on low-HP clears"
+      }
+    ],
+    "active_modifiers": [
+      {
+        "id": "rumor_bonus",
+        "label": "Rumor lead",
+        "effect_summary": "Mission preview improved for the next run"
+      }
+    ]
+  }
+}
 ```
 
-## 11. Visual Progression (Big Win)
+## Persistence Rules
 
-Tie gear to the character image:
+Recommended Phase 2 persistence:
 
-- New weapon -> visible
-- Armor change -> visible
-- Accessory -> subtle visual
+- inventory collection stored on the IronQuest profile layer
+- consumable quantities updated on use and purchase
+- relic unlocks stored permanently
+- active modifiers stored with an explicit expiry rule
 
-Result:
+## Guardrails
 
-> "I'm getting stronger"
+Do not add in Phase 2:
 
-## 12. Class Synergy (Important)
+- full equipment slot grids
+- crafting
+- random loot rarity ladders
+- junk items for selling only
+- inventory capacity management
+- compare-every-stat UI
 
-Gear should feel better for certain classes without locking others.
+## Character Sheet Relationship
 
-### Example
+Character Sheet is where inventory is viewed.
 
-Warrior using Warhammer:
+Inventory is not the main screen.
 
-> "This feels powerful"
+The Character Sheet should summarize ownership, while inventory handles detail and action.
 
-Rogue using the same:
+## General Store Relationship
 
-> "Useful, but not optimal"
+The store is where players make spending decisions.
 
-### Implementation
+Inventory is where those purchased or earned items live afterward.
 
-- No restrictions
-- Just subtle synergy bonuses
+### Intended Loop
 
-## 13. Stat Stacking Rule (Very Important)
+1. complete mission or Tavern Day
+2. gain gold or unlock
+3. visit store or earn reward
+4. item enters inventory
+5. item appears on Character Sheet and can affect the next mission
 
-Hard cap total bonuses.
+## Phase 2 Success Criteria
 
-### Example
+Inventory is successful if:
 
-- Max total modifier bonus: +5
-- Max percent bonus: 15%
-
-### Why
-
-Prevents:
-
-- Broken builds
-- Trivial gameplay
-
-## 14. Inventory + Store Connection
-
-### Flow Loop
-
-1. Do mission
-2. Earn item
-3. Equip or sell
-4. Buy upgrades
-5. Repeat
-
-This is your engagement engine.
-
-## 15. One High-Impact Feature
-
-### New Item Highlight
-
-When user gets item:
-
-- Glow effect
-- New badge
-- Auto-open inventory option
-
-### Why
-
-- Reinforces reward
-- Drives interaction
-
-## 16. Future Expansion (Don't Build Yet)
-
-Keep in mind:
-
-- Set bonuses
-- Gear rarity tiers
-- Crafting
-- Loadouts
-
-## Final V1 System (Locked)
-
-### Inventory
-
-- Unlimited
-- 3 sections
-
-### Gear
-
-- Weapon
-- Armor
-- Accessory
-- Simple stats
-
-### Equip
-
-- Instant
-- Clear comparison
-
-### Artifacts
-
-- Unique
-- Boss-tied
-
-### UX
-
-- Fast
-- Minimal friction
-
-## Why This Works
-
-It gives:
-
-- Ownership
-- Progression
-- Decision-making
-
-Without:
-
-- Overwhelming the user
+- players can understand what they own immediately
+- items change the next mission or route choice in a visible way
+- the system feels like progression, not housekeeping
+- the Character Sheet becomes more meaningful because inventory exists

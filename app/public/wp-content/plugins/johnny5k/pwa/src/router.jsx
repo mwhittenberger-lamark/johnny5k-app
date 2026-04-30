@@ -28,6 +28,9 @@ const SettingsScreen = lazy(() => import('./screens/settings/SettingsScreen'))
 const ProgressPhotosScreen = lazy(() => import('./screens/progress/ProgressPhotosScreen'))
 const RewardsScreen = lazy(() => import('./screens/rewards/RewardsScreen'))
 const IronQuestScreen = lazy(() => import('./screens/ironquest/IronQuestScreen'))
+const IronQuestMapScreen = lazy(() => import('./screens/ironquest/IronQuestMapScreen'))
+const IronQuestCharacterSheetScreen = lazy(() => import('./screens/ironquest/IronQuestCharacterSheetScreen'))
+const IronQuestStoreScreen = lazy(() => import('./screens/ironquest/IronQuestStoreScreen'))
 
 function lazyElement(routeComponent) {
   const RouteComponent = routeComponent
@@ -136,6 +139,21 @@ export const router = createBrowserRouter([
                   {
                     path: '/ironquest',
                     element: lazyElement(IronQuestScreen),
+                    errorElement: <RouteErrorScreen area="dashboard" />,
+                  },
+                  {
+                    path: '/ironquest/map',
+                    element: lazyElement(IronQuestMapScreen),
+                    errorElement: <RouteErrorScreen area="dashboard" />,
+                  },
+                  {
+                    path: '/ironquest/character',
+                    element: lazyElement(IronQuestCharacterSheetScreen),
+                    errorElement: <RouteErrorScreen area="dashboard" />,
+                  },
+                  {
+                    path: '/ironquest/store',
+                    element: lazyElement(IronQuestStoreScreen),
                     errorElement: <RouteErrorScreen area="dashboard" />,
                   },
                   {

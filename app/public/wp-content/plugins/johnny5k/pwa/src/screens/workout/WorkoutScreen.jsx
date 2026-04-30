@@ -7,9 +7,12 @@ import OfflineState from '../../components/ui/OfflineState'
 import { trainingApi } from '../../api/modules/training'
 import { openSupportGuide } from '../../lib/supportHelp'
 import { useOnlineStatus } from '../../lib/useOnlineStatus'
+import { ironquestApi } from '../../api/modules/ironquest'
+import { getTavernMissionPreview, getTavernResolution } from '../../lib/ironquestTavern'
 import { cacheWorkoutPlanSnapshot, countQueuedWorkoutSetEntries, readCachedWorkoutPlanSnapshot } from '../../lib/workoutOffline'
 import { useJohnnyAssistantStore } from '../../store/johnnyAssistantStore'
 import { useDashboardStore } from '../../store/dashboardStore'
+import { useAuthStore } from '../../store/authStore'
 import { useWorkoutStore } from '../../store/workoutStore'
 import { buildCoachingPromptOptions, buildCoachingSummary, runCoachingAction } from '../../lib/coachingSummary'
 import WorkoutActiveSession from './components/WorkoutActiveSession'
@@ -26,6 +29,7 @@ export default function WorkoutScreen() {
   const openDrawer = useJohnnyAssistantStore(state => state.openDrawer)
   const dashboardSnapshot = useDashboardStore(state => state.snapshot)
   const loadDashboardSnapshot = useDashboardStore(state => state.loadSnapshot)
+  const experienceMode = useAuthStore(state => state.experienceMode)
   const {
     session,
     loading,
@@ -87,6 +91,8 @@ export default function WorkoutScreen() {
   const [offlineRecoveryStatus, setOfflineRecoveryStatus] = useState({ kind: '', message: '' })
   const [retryingQueuedSets, setRetryingQueuedSets] = useState(false)
   const [recoveringWorkout, setRecoveringWorkout] = useState(false)
+  const [resolvingTavernActionId, setResolvingTavernActionId] = useState('')
+  const [tavernStateOverride, setTavernStateOverride] = useState(null)
   const location = useLocation()
   const navigate = useNavigate()
   const isOnline = useOnlineStatus()
@@ -190,6 +196,12 @@ export default function WorkoutScreen() {
     snapshot: dashboardSnapshot,
     readinessScore,
   }), [dashboardSnapshot, readinessScore])
+  const tavernQuery = useQuery({
+    queryKey: ['ironquest-tavern', todayLabel],
+    queryFn: () => ironquestApi.tavern(),
+    enabled: planning.isRestSelection && experienceMode === 'ironquest',
+    staleTime: 60_000,
+  })
   const workoutCoachingSummary = useMemo(() => buildCoachingSummary({
     surface: 'workout_post',
     snapshot: dashboardSnapshot,
@@ -202,6 +214,9 @@ export default function WorkoutScreen() {
     || 0,
   )
   const starterPortrait = useIronQuestStarterPortrait(starterPortraitAttachmentId)
+  const tavernState = tavernStateOverride ?? tavernQuery.data ?? null
+  const tavernMissionPreview = useMemo(() => getTavernMissionPreview(tavernState), [tavernState])
+  const tavernResolvedAction = useMemo(() => getTavernResolution(tavernState), [tavernState])
 
   const recoverWorkoutState = useCallback(async (message = 'Connection restored. Your workout data was refreshed from the server.') => {
     setRecoveringWorkout(true)
@@ -234,6 +249,32 @@ export default function WorkoutScreen() {
     void recoverWorkoutState('The latest server copy was reloaded. Review your workout below.')
   }, [recoverWorkoutState])
 
+  const handleResolveTavernAction = useCallback(async (actionId) => {
+    const normalizedActionId = String(actionId || '').trim()
+    if (!normalizedActionId || resolvingTavernActionId) {
+      return
+    }
+
+    setResolvingTavernActionId(normalizedActionId)
+    setStatusError('')
+    try {
+      const result = await ironquestApi.resolveTavernAction({ action_id: normalizedActionId })
+      setTavernStateOverride(result?.state ?? null)
+
+      const notice = String(result?.johnny_line || result?.state?.johnny_line || '').trim()
+      if (notice) {
+        setStatusNotice(notice)
+      }
+    } catch (resolveError) {
+      if (resolveError?.data?.state) {
+        setTavernStateOverride(resolveError.data.state)
+      }
+      setStatusError(resolveError?.message || 'Could not lock in that tavern action right now.')
+    } finally {
+      setResolvingTavernActionId('')
+    }
+  }, [resolvingTavernActionId, setStatusError, setStatusNotice])
+
   useEffect(() => {
     bootstrapSession()
   }, [bootstrapSession])
@@ -255,6 +296,15 @@ export default function WorkoutScreen() {
 
     setShowPreWorkoutScreen(false)
   }, [session, wasResumed])
+
+  useEffect(() => {
+    if (planning.isRestSelection) {
+      return
+    }
+
+    setResolvingTavernActionId('')
+    setTavernStateOverride(null)
+  }, [planning.isRestSelection])
 
   useEffect(() => subscribeOfflineWriteQueue((snapshot) => {
     setWorkoutQueueState({
@@ -433,6 +483,16 @@ export default function WorkoutScreen() {
         onOpenWorkoutSupport={handleOpenWorkoutSupport}
         onPrebuiltQueued={handlePrebuiltQueued}
         planning={planning}
+        tavernDay={{
+          enabled: experienceMode === 'ironquest',
+          state: tavernState,
+          loading: tavernQuery.isLoading,
+          error: tavernQuery.error?.message || '',
+          missionPreview: tavernMissionPreview,
+          resolvedAction: tavernResolvedAction,
+          resolvingActionId: resolvingTavernActionId,
+          onResolveAction: handleResolveTavernAction,
+        }}
         sessionController={sessionController}
         resumedSession={session}
         onResumeSession={() => setShowPreWorkoutScreen(false)}

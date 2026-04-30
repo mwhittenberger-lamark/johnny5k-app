@@ -55,6 +55,26 @@
           "low-stakes optimism"
         ]
       },
+      "store": {
+        "name": "Quartermaster Vale",
+        "tone_tags": [
+          "training supplies",
+          "starter kits"
+        ],
+        "stock": {
+          "recovery_goods": [
+            "field_bandage"
+          ],
+          "mission_prep": [
+            "basic_supplies",
+            "scouting_map"
+          ],
+          "utility_charms": [
+            "coin_charm",
+            "apprentice_focus_charm"
+          ]
+        }
+      },
       "source_graph": {
         "connected_from": [
           "onboarding_and_class_selection"
@@ -118,6 +138,25 @@
           "survivors",
           "quiet desperation"
         ]
+      },
+      "store": {
+        "name": "Lantern Provisioner",
+        "tone_tags": [
+          "grim supplies",
+          "warded goods"
+        ],
+        "stock": {
+          "recovery_goods": [
+            "hot_meal_kit"
+          ],
+          "mission_prep": [
+            "scouting_map"
+          ],
+          "utility_charms": [
+            "ward_thread",
+            "candleglass_token"
+          ]
+        }
       },
       "source_graph": {
         "connected_from": [
@@ -187,6 +226,25 @@
           "proud exhaustion"
         ]
       },
+      "store": {
+        "name": "Halden's Forge Goods",
+        "tone_tags": [
+          "heat-hardened kits",
+          "charms for harsh work"
+        ],
+        "stock": {
+          "recovery_goods": [
+            "restglass_phial"
+          ],
+          "mission_prep": [
+            "elite_mission_supplies"
+          ],
+          "utility_charms": [
+            "apprentice_focus_charm",
+            "ward_thread"
+          ]
+        }
+      },
       "source_graph": {
         "connected_from": [
           "stormpeak_mountains"
@@ -253,6 +311,25 @@
           "smugglers",
           "people who never sit with their backs exposed"
         ]
+      },
+      "store": {
+        "name": "Mirelight Goods",
+        "tone_tags": [
+          "quiet contraband",
+          "travel utility"
+        ],
+        "stock": {
+          "recovery_goods": [
+            "field_bandage"
+          ],
+          "mission_prep": [
+            "standard_mission_kit"
+          ],
+          "utility_charms": [
+            "waymarker_charm",
+            "shadecoin"
+          ]
+        }
       },
       "source_graph": {
         "connected_from": [

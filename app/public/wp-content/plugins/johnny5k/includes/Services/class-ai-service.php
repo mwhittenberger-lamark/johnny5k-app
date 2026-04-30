@@ -19,6 +19,7 @@ use Johnny5k\Support\TrainingDayTypes;
 class AiService {
 
 	private const DEFAULT_MODEL    = 'gpt-4o-mini';
+	private const IRONQUEST_MODEL  = 'gpt-5.2';
 	private const RESPONSES_ENDPOINT = 'https://api.openai.com/v1/responses';
 	private const AUDIO_SPEECH_ENDPOINT = 'https://api.openai.com/v1/audio/speech';
 	private const DEFAULT_CHAT_HISTORY_LIMIT = 18;
@@ -311,7 +312,7 @@ class AiService {
 	 *
 	 * @return array{data:array<string,mixed>,reply:string,tokens_in:int,tokens_out:int,sources:array<int,array{url:string,title:string}>,used_web_search:bool,model:string,system_prompt:string,context:array<string,mixed>}|WP_Error
 	 */
-	public static function preview_json( int $user_id, string $user_message, string $mode = 'general', array $context_overrides = [] ) {
+	public static function preview_json( int $user_id, string $user_message, string $mode = 'general', array $context_overrides = [], string $model = self::DEFAULT_MODEL ) {
 		$api_key = get_option( 'jf_openai_api_key', '' );
 		if ( ! is_string( $api_key ) || '' === trim( $api_key ) ) {
 			return new \WP_Error( 'no_api_key', 'OpenAI API key not configured.' );
@@ -330,9 +331,9 @@ class AiService {
 					'content' => $user_message,
 				],
 			],
-			self::DEFAULT_MODEL,
-			[ 'web_search' => false ]
-		);
+				$model,
+				[ 'web_search' => false ]
+			);
 
 		if ( is_wp_error( $result ) ) {
 			return $result;
@@ -354,6 +355,10 @@ class AiService {
 			'system_prompt'   => $system_prompt,
 			'context'         => self::get_user_context( $user_id, $context_overrides ),
 		];
+	}
+
+	public static function ironquest_model(): string {
+		return self::IRONQUEST_MODEL;
 	}
 
 	// ── One-shot context-aware analysis ──────────────────────────────────────
@@ -2395,7 +2400,10 @@ PROMPT;
 		}
 
 		$lines[] = 'Return only valid JSON with this exact shape: {title, message, next_step, next_step_label, next_step_hint, backup_step, encouragement, starter_prompt}.';
-		$lines[] = 'Rules: title 4-10 words. message 2-3 sentences max reviewing current progress. next_step 1 sentence telling the user what to do next. next_step_label 2-5 words, optional but useful when you can frame the move more specifically than "Next step". next_step_hint 1 short supporting sentence, optional. backup_step 1 short fallback action the user can do if the main next step is not practical right now, optional. encouragement 1 supportive sentence. starter_prompt 1 sentence the app can send back to Johnny for a deeper follow-up about today. Be specific to the data. Do not invent metrics. Keep the tone warm, direct, and encouraging.';
+		$lines[] = 'Rules: title 4-10 words. message 2-3 sentences max. next_step 1 sentence telling the user what to do next. next_step_label 2-5 words, optional but useful when you can frame the move more specifically than "Next step". next_step_hint 1 short supporting sentence, optional. backup_step 1 short fallback action the user can do if the main next step is not practical right now, optional. encouragement 1 supportive sentence. starter_prompt 1 sentence the app can send back to Johnny for a deeper follow-up about today.';
+		$lines[] = 'Voice rules: use plain spoken English, use contractions, and sound like a good coach texting a client. Start with the point, not with "Johnny reviewed", "Johnny sees", or another summary phrase. Keep it concrete: one observation, one next step, one short reason when useful.';
+		$lines[] = 'Avoid app-like phrasing and abstract coaching jargon. Do not use phrases like "current progress", "clear next move", "signal", "traction", "recover on purpose", or "keep logging clean". Prefer simple verbs like eat, log, walk, lift, sleep, finish, and skip.';
+		$lines[] = 'Be specific to the data. Do not invent metrics.';
 		$lines[] = 'Meal timing rule: every food recommendation must fit the user\'s current local time and what is already logged today. Do not tell them to handle dinner in the morning, breakfast after breakfast is already logged, or any meal slot that is no longer the next realistic anchor.';
 
 		return implode( "\n", $lines );
@@ -2413,23 +2421,23 @@ PROMPT;
 		$next_step_meta = self::dashboard_review_next_step_meta( $snapshot );
 
 		if ( '' === $title ) {
-			$title = 'Johnny reviewed your board';
+			$title = 'Here\'s the move for today';
 		}
 
 		if ( '' === $message ) {
-			$message = 'Johnny reviewed your current progress and sees a clear next move for today.';
+			$message = 'You have enough here to make a good call. Keep it simple and handle the next thing that matters.';
 		}
 
 		if ( '' === $next_step ) {
-			$next_step = 'Pick the highest-impact open action and close it before the day gets noisier.';
+			$next_step = 'Do the next useful thing first before the day gets noisier.';
 		}
 
 		if ( '' === $encouragement ) {
-			$encouragement = 'You do not need a perfect day. You just need the next solid rep.';
+			$encouragement = 'Today does not need to be perfect. It just needs one solid decision.';
 		}
 
 		if ( '' === $starter_prompt ) {
-			$starter_prompt = 'Review my current dashboard stats and tell me exactly what I should do next today.';
+			$starter_prompt = 'Look at my dashboard and tell me what matters most today and what I should do next.';
 		}
 
 		if ( '' !== $next_step_label ) {

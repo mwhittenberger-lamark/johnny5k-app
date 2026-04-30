@@ -37,6 +37,12 @@ class RestRouteRegistrationTest extends ServiceTestCase {
 		$this->assertRouteRegistered( '/ironquest/route/fast-travel', [ IronQuestController::class, 'fast_travel' ] );
 		$this->assertRouteRegistered( '/ironquest/route/travel', [ IronQuestController::class, 'travel_to_location' ] );
 		$this->assertRouteRegistered( '/ironquest/restart', [ IronQuestController::class, 'restart_onboarding' ] );
+		$this->assertRouteRegistered( '/ironquest/store', [ IronQuestController::class, 'get_store' ] );
+		$this->assertRouteRegistered( '/ironquest/store/purchase', [ IronQuestController::class, 'purchase_store_item' ] );
+		$this->assertRouteRegistered( '/ironquest/store/use', [ IronQuestController::class, 'use_store_item' ] );
+		$this->assertRouteRegistered( '/ironquest/store/sell', [ IronQuestController::class, 'sell_store_item' ] );
+		$this->assertRouteRegistered( '/ironquest/tavern', [ IronQuestController::class, 'get_tavern' ] );
+		$this->assertRouteRegistered( '/ironquest/tavern/action', [ IronQuestController::class, 'resolve_tavern_action' ] );
 	}
 
 	public function test_router_registers_top_level_and_nested_routes(): void {

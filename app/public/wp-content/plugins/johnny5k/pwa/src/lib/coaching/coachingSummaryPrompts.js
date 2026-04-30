@@ -16,18 +16,18 @@ export function buildStarterPrompt(summary) {
     .filter(Boolean)
 
   const nextActionText = summary.nextAction
-    ? `Recommended next action: ${summary.nextAction.title}. ${summary.nextAction.message}`
+    ? `Next step: ${summary.nextAction.title}. ${summary.nextAction.message}`
     : 'No next action was generated.'
 
   return joinList([
-    `Review my ${String(summary.contextLabel || 'current').toLowerCase()} coaching summary.`,
+    `Look at my ${String(summary.contextLabel || 'current').toLowerCase()} coaching summary.`,
     summary.headline,
     summary.summary,
-    wins.length ? `What is improving: ${wins.join(' ')}` : '',
-    risks.length ? `What is slipping: ${risks.join(' ')}` : '',
+    wins.length ? `What is going well: ${wins.join(' ')}` : '',
+    risks.length ? `What looks off: ${risks.join(' ')}` : '',
     joinList(insightLines),
     nextActionText,
-    'Explain the logic, tell me what matters most, and give me the simplest plan to follow.',
+    'Tell me what matters most and give me the simplest plan to follow.',
   ])
 }
 
@@ -50,17 +50,17 @@ export function buildFollowUpPrompts(summary) {
     {
       id: 'summary_explain',
       label: 'Explain this summary',
-      prompt: `Explain my coaching summary, the evidence behind it, and why ${primaryType || 'this issue'} is the top priority right now.`,
+      prompt: `Explain my coaching summary in plain English, show me the evidence behind it, and tell me why ${primaryType || 'this issue'} matters most right now.`,
     },
     {
       id: 'summary_fix',
       label: 'What should I change next?',
-      prompt: `Turn my coaching summary into a 3-step plan for today and this week. Focus on ${nextActionTitle || 'the next move'} first.`,
+      prompt: `Turn my coaching summary into a simple 3-step plan for today and this week. Start with ${nextActionTitle || 'the next move'}.`,
     },
     {
       id: 'summary_risk',
       label: 'What is stalling me?',
-      prompt: `Based on my coaching summary, tell me what is most likely slowing progress and what I should stop overreacting to.`,
+      prompt: 'Based on my coaching summary, tell me what is most likely slowing me down and what I can stop worrying about so much.',
     },
   ]
 

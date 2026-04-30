@@ -8,6 +8,7 @@ import WorkoutSessionConfirmModal from './WorkoutSessionConfirmModal'
 import WorkoutCustomizeDrawer from './WorkoutCustomizeDrawer'
 import WorkoutPrebuiltLibraryDrawer from './WorkoutPrebuiltLibraryDrawer'
 import { formatDayType, formatPreviewSetRepLabel, getReadinessRepDelta } from '../workoutScreenUtils'
+import { getTavernJohnnyLine, getTavernMissionPreview, getTavernResolution } from '../../../lib/ironquestTavern'
 
 const READINESS_OPTIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 const TIME_TIER_OPTIONS = [
@@ -114,6 +115,7 @@ export default function WorkoutLaunchpad({
   onOpenWorkoutSupport,
   onPrebuiltQueued,
   planning,
+  tavernDay,
   sessionController,
   resumedSession,
   onResumeSession,
@@ -144,6 +146,11 @@ export default function WorkoutLaunchpad({
       ? 'Conditioning is lined up for today. Hit start when you want to log it.'
       : `Johnny trimmed this around readiness ${readinessScore}/10 and your ${timeTier} session length.`
   const focusCopy = useMemo(() => getFocusCopy({ coachingSummary, planning, readinessScore }), [coachingSummary, planning, readinessScore])
+  const tavernState = tavernDay?.state ?? null
+  const tavernResolution = useMemo(() => getTavernResolution(tavernState), [tavernState])
+  const tavernMissionPreview = useMemo(() => getTavernMissionPreview(tavernDay?.missionPreview ? tavernDay : tavernState), [tavernDay, tavernState])
+  const tavernJohnnyLine = useMemo(() => getTavernJohnnyLine(tavernState), [tavernState])
+  const tavernActions = Array.isArray(tavernState?.available_actions) ? tavernState.available_actions : []
 
   const primaryAction = useMemo(() => {
     if (hasResumedSession) {
@@ -202,6 +209,7 @@ export default function WorkoutLaunchpad({
 
     if (planning.isRestSelection) {
       return [
+        { label: 'Open IronQuest', variant: 'btn-secondary', onClick: () => navigate('/ironquest') },
         { label: 'Activity Log', variant: 'btn-secondary', onClick: () => navigate('/activity-log') },
         { label: 'Open Progress', variant: 'btn-secondary', onClick: () => navigate('/body') },
         { label: 'My exercise library', variant: 'btn-outline', onClick: () => navigate('/workout/library') },
@@ -257,6 +265,61 @@ export default function WorkoutLaunchpad({
           <span className="workout-launchpad-focus-label">Johnny&apos;s Focus</span>
           <p>{focusCopy}</p>
         </div>
+        {planning.isRestSelection && tavernDay?.enabled ? (
+          <div className="workout-launchpad-section workout-launchpad-tavern-card">
+            <div className="dashboard-card-head">
+              <span className="dashboard-chip coach">{tavernState?.tavern?.name || 'Tavern Day'}</span>
+              <span className="dashboard-chip subtle">{tavernResolution ? 'Action locked' : 'Pick one move'}</span>
+            </div>
+            <p className="settings-subtitle workout-launchpad-helper">
+              {tavernState?.tavern?.flavor_text || 'Recovery days still move the story. Pick one small Tavern action and keep the day light.'}
+            </p>
+            {tavernJohnnyLine ? (
+              <div className="workout-launchpad-tavern-line">
+                <span className="workout-launchpad-focus-label">Johnny says</span>
+                <p>{tavernJohnnyLine}</p>
+              </div>
+            ) : null}
+            {tavernDay?.error ? <ErrorState className="workout-inline-error" eyebrow="Tavern Day" message={tavernDay.error} title="Could not load the tavern" /> : null}
+            {!tavernResolution && tavernActions.length ? (
+              <div className="workout-launchpad-tavern-actions">
+                {tavernActions.map(action => (
+                  <button
+                    key={action.id}
+                    type="button"
+                    className="daytype-pill"
+                    onClick={() => tavernDay?.onResolveAction?.(action.id)}
+                    disabled={Boolean(action.disabled) || Boolean(tavernDay?.resolvingActionId) || tavernDay?.loading}
+                  >
+                    <strong>{action.label}</strong>
+                    <small>{action.description}</small>
+                    <small>{tavernDay?.resolvingActionId === action.id ? 'Locking it in...' : action.effect_summary}</small>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+            {tavernResolution ? (
+              <div className="workout-launchpad-tavern-resolution">
+                <strong>{tavernResolution.action_id === 'rumors' ? 'Rumors gathered' : 'Action resolved'}</strong>
+                <span>{tavernResolution.effects?.hp_delta ? `+${tavernResolution.effects.hp_delta} HP` : null}{tavernResolution.effects?.gold_delta ? `${tavernResolution.effects?.hp_delta ? ' • ' : ''}+${tavernResolution.effects.gold_delta} gold` : null}{tavernResolution.effects?.xp_delta ? `${(tavernResolution.effects?.hp_delta || tavernResolution.effects?.gold_delta) ? ' • ' : ''}+${tavernResolution.effects.xp_delta} XP` : null}</span>
+              </div>
+            ) : null}
+            {tavernMissionPreview ? (
+              <div className="workout-launchpad-tavern-preview">
+                <div>
+                  <span className="workout-launchpad-focus-label">Rumor preview</span>
+                  <strong>{tavernMissionPreview.name || 'Next mission lead'}</strong>
+                  <p>{tavernMissionPreview.summary || 'You picked up a lead for the next mission.'}</p>
+                </div>
+                <div className="settings-actions">
+                  <button type="button" className="btn-secondary small" onClick={() => navigate('/ironquest')}>
+                    Open mission board
+                  </button>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
         {offlineStatus}
         {statusNotice ? <p className="settings-subtitle">{statusNotice}</p> : null}
         {statusError ? <ErrorState className="workout-inline-error" eyebrow="Workout status" message={statusError} title="Could not load today’s workout status" /> : null}

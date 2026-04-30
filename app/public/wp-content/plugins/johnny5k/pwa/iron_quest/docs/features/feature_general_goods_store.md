@@ -1,277 +1,272 @@
-# General Goods Store Feature
+# IronQuest General Store
 
-## Core Purpose Of The General Goods Store
+## Purpose
 
-The store should enable 3 things:
+The General Store is where gold turns into preparation.
 
-### 1. Progression Support
+Tavern Day handles low-pressure story and recovery choices.
 
-Help users:
+The store handles practical next-mission decisions.
 
-- Recover, including HP and potions
-- Prepare, including supplies
-- Continue playing
+## Product Rule
 
-### 2. Strategic Choices
+The store must make gold matter without making the player feel blocked from basic play.
 
-Users decide whether to:
+## Core Thesis
 
-- Spend gold to make the next mission easier
-- Save for better gear
-- Fast travel versus grind steps
+The General Store should let the player answer one simple question:
 
-### 3. Identity Reinforcement
+What should I buy before the next push?
 
-- Gear reflects class and playstyle
-- Items feel thematic to the location
+The answer should be understandable in seconds.
 
-## Store Structure (Keep V1 Simple)
+## V1 Structure
 
-Use 4 sections only:
+Keep the store limited to four sections:
 
-1. Supplies
-2. Potions
-3. Gear
-4. Sell / Inventory
+1. Recovery goods
+2. Mission prep
+3. Utility charms
+4. Inventory sellback
 
-No more than this for v1.
+Do not ship a large gear catalog in Phase 2.
 
-## 1. Supplies (Mission Entry System)
+## Why This Scope
 
-These are the "permission to play" items for bigger content.
+Gold already exists.
 
-### Items
+The store should quickly give that currency meaning.
 
-- Basic Supplies - 15 gold
-  Required for standard missions, optional early game
-- Standard Supplies - 25 gold
-  Required for boss fights
-- Elite Supplies - 40 gold
-  Required for higher-tier bosses later
+If the first version becomes a full gear economy, it will add grind pressure and bury the useful decisions.
 
-### Design Intent
+## Core Item Types
 
-- Creates a gold sink
-- Makes bosses feel like preparation matters
+### 1. Recovery Goods
 
-## 2. Potions (Recovery Layer)
+Purpose:
 
-### Items
+- help the player recover or stabilize without replacing healthy habits
 
-- Healing Potion - 20 gold
-  Restore 20 HP
-- Greater Healing Potion - 35 gold
-  Restore 35 HP
+Examples:
 
-### Rules
+- `Field Bandage`: restore a small amount of HP
+- `Hot Meal Kit`: small recovery plus next-day readiness flavor
 
-- Max carry: 3 in v1
-- 1 use per day, optional constraint
+Rules:
 
-### Design Intent
+- low carry cap
+- immediate use or next-mission use only
 
-- Safety net
-- Reduces frustration
-- Alternative to sleep recovery
+### 2. Mission Prep
 
-## 3. Gear (Light RPG Layer)
+Purpose:
 
-This is where identity and strategy kick in.
+- improve the next mission slightly
 
-### Equip Slots (V1)
+Examples:
 
-- Weapon
-- Armor
-- Accessory
+- `Scouting Map`: better mission preview
+- `Packed Rations`: reduce next mission HP loss slightly
+- `Travel Papers`: reduce fast-travel cost or add route efficiency
 
-### Example Store Items (Starter Tier)
+Rules:
 
-- Weapon: Iron Sword - 30 gold
-  +1 modifier on strength sets
-- Armor: Reinforced Vest - 30 gold
-  -1 HP loss on failed sets, once per workout
-- Accessory: Traveler's Boots - 25 gold
-  +10% travel point gain
-- Accessory: Band of Focus - 25 gold
-  +1 bonus on final boss roll, once per fight
+- must expire after the next relevant mission or day
+- no long chains of stored prep items
 
-### Design Rules
+### 3. Utility Charms
 
-- Keep bonuses small
-- Cap total bonus impact at around 15%
-- Avoid stacking exploits
+Purpose:
 
-## 4. Sell / Inventory System
+- create one small strategic choice with gold
 
-This is critical for making loot matter.
+Examples:
 
-### Selling Items
+- `Coin Charm`: small next-mission gold bias
+- `Focus Charm`: small next-mission XP bias
+- `Ward Thread`: slight protection against HP loss
 
-Suggested values:
+Rules:
 
-- Common: 15-25 gold
-- Uncommon: 30-50 gold
-- Rare, such as boss items: 60-80 gold
+- only one active charm at a time in Phase 2
+- effect must be visible on the Character Sheet under active effects
 
-### Rules
+### 4. Inventory Sellback
 
-- Cannot sell equipped item accidentally
-- Confirm before selling
-- Show stat comparison before selling
+Purpose:
 
-### Design Intent
+- convert unused items into meaningful decisions
 
-- Creates economy loop
-- Lets users convert rewards into choices
+Rules:
 
-## 5. Location-Based Stores (Very Important)
+- no accidental sell of active or equipped title / relic states
+- always show value and confirmation
 
-Each location should feel different.
+## Location Identity
 
-### Example
+Each region store should feel slightly different without requiring a giant catalog.
 
-#### Grim Hollow Store
+### Example Pattern
 
-- Dark
-- Desperate
-- Limited gear
-- More potions
+- one reliable recovery item
+- one region-flavored utility item
+- one mission-prep item
+- one rotating premium item later, optional
 
-#### Ironhold Store
+This keeps store identity local without excessive complexity.
 
-- Military
-- Strength gear
-- Fewer potions
-
-This adds:
-
-- Immersion
-- Variety
-- Replay value
-
-## 6. Price Balancing (Very Important)
+## Pricing Philosophy
 
 Gold should feel:
 
-- Earnable in 1-2 sessions
-- Spendable without anxiety
-- Valuable enough to think about
+- earnable in one to two sessions
+- worth spending without anxiety
+- valuable enough to create a real choice
 
 ### Target Feel
 
-- 1 workout = about 25 gold
-- 1 potion = about 1 workout
-- 1 gear item = about 1-2 days
+- basic recovery item: about one session of gold
+- stronger prep item: about two sessions of gold
+- premium region item: saved purchase, not grind wall
 
-## 7. Fast Travel Integration
+## Johnny5k Layer
 
-The store should also offer:
+The store should always show one smart recommendation.
 
-### Travel Pass
+Examples:
 
-- 10 gold per travel point
+- low HP: suggest recovery item
+- boss ahead: suggest prep item
+- high route pressure: suggest travel utility
+- high gold: suggest premium region item
 
-### UX Idea
+Johnny should guide, not force.
+
+## UX Model
+
+### Top Summary
 
 Show:
 
-> "You are 2 points away"
+- gold
+- HP
+- current region store name
+- one recommended purchase line
 
-- Walk
-- Do Cardio
-- Use Gold
+### Store Sections
 
-## 8. Rotating Items (Optional V2)
+Show:
 
-Later you can add:
+- recovery goods
+- mission prep
+- utility charms
+- sellback
 
-- Daily rotating gear
-- Rare items
-- Limited-time offers
+### Purchase Flow
 
-Skip this for v1.
+Tap item, then show:
 
-## 9. UX Flow (Important)
+- effect summary
+- cost
+- expiry rule
+- confirm purchase
 
-When the user enters the store, show:
+### After Purchase
 
-### Top
+After buying an item, link naturally to:
 
-- Gold balance
-- HP status
+- Character Sheet
+- Inventory
+- Mission Board
 
-### Sections
+## Data Model
 
-- Supplies
-- Potions
-- Gear
-- Sell
+Store rendering should come from a location-aware payload.
 
-### Buying Flow
+### Suggested Payload Shape
 
-Tap item, then see:
+```json
+{
+  "store": {
+    "location_slug": "the_training_grounds",
+    "location_name": "The Training Grounds",
+    "store_name": "Quartermaster Halden",
+    "gold": 54,
+    "hp_current": 82,
+    "hp_max": 100,
+    "recommended_purchase": {
+      "item_id": "field_bandage",
+      "label": "You are running light on HP. Patch up before the next push."
+    },
+    "sections": {
+      "recovery_goods": [
+        {
+          "id": "field_bandage",
+          "name": "Field Bandage",
+          "description": "A quick patch before the next mission.",
+          "effect_summary": "Restore 15 HP",
+          "cost_gold": 20,
+          "available": true
+        }
+      ],
+      "mission_prep": [
+        {
+          "id": "scouting_map",
+          "name": "Scouting Map",
+          "description": "Marks the cleaner path into trouble.",
+          "effect_summary": "Improves the next mission preview",
+          "cost_gold": 25,
+          "available": true
+        }
+      ],
+      "utility_charms": [
+        {
+          "id": "coin_charm",
+          "name": "Coin Charm",
+          "description": "Luck favors the prepared and the paid.",
+          "effect_summary": "Small bonus gold on the next mission",
+          "cost_gold": 25,
+          "available": true
+        }
+      ]
+    }
+  }
+}
+```
 
-- Effect
-- Comparison
-- Confirm
+## Relationship To Inventory
 
-### Selling Flow
+Purchased items should enter inventory immediately.
 
-Open inventory, tap item, then see:
+Temporary purchases should also appear under active effects when relevant.
 
-- Value
-- Warning if equipped
-- Confirm
+## Relationship To Character Sheet
 
-## 10. One Feature You Should Add
+The Character Sheet should be the easiest place to confirm what the purchase changed.
 
-### Recommended Purchase
+## Relationship To Tavern Day
 
-Based on:
+Tavern Day is a once-per-day mood and recovery choice.
 
-- Low HP -> suggest potion
-- Boss coming -> suggest supplies
-- Low travel -> suggest travel
+The General Store is a spending decision.
 
-Example:
+They should feel adjacent, not interchangeable.
 
-> "You look unprepared for what's ahead."
+## Guardrails
 
-This uses Johnny5k to guide without forcing.
+Do not add in Phase 2:
 
-## 11. Tavern + Store Relationship
+- mandatory supplies that block normal missions
+- large gear trees
+- random daily monetization-style offers
+- more than one premium rotating item at a time
+- grind-to-play economy pressure
 
-- Tavern = passive benefits
-- Store = active decisions
+## Phase 2 Success Criteria
 
-They should feel different.
+The store is successful if:
 
-## 12. One Risk To Avoid
-
-Do not make the store feel like:
-
-> "I need to grind gold to play"
-
-### Solution
-
-- Keep basic play free
-- Make the store enhance, not block
-
-## Final Structure (Locked V1)
-
-The store has:
-
-- Supplies: 15 / 25 / 40 gold
-- Potions: 20 / 35 gold
-- Gear: 25-40 gold
-- Sell system
-- Fast travel option
-
-## Why This Works
-
-This creates:
-
-- Meaningful decisions
-- Repeat engagement
-- Light RPG depth
-- No overwhelm
+- gold has a clear use
+- purchases affect the next mission or route choice visibly
+- the store feels region-specific
+- players can make a decision fast without feeling trapped in an economy screen

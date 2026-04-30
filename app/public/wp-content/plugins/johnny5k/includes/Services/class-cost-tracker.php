@@ -12,14 +12,15 @@ defined( 'ABSPATH' ) || exit;
 class CostTracker {
 
 	// Current OpenAI prices (USD) — update when model pricing changes
-	private const OPENAI_PRICE_PER_1K = [
-		'gpt-4o'              => [ 'in' => 0.005,  'out' => 0.015  ],
-		'gpt-4o-mini'         => [ 'in' => 0.00015, 'out' => 0.0006 ],
-		'gpt-4-turbo'         => [ 'in' => 0.01,   'out' => 0.03   ],
-		'gpt-4.1'             => [ 'in' => 0.002,  'out' => 0.008  ],
-		'gpt-4.1-mini'        => [ 'in' => 0.0004, 'out' => 0.0016 ],
-		'gpt-4.1-nano'        => [ 'in' => 0.0001, 'out' => 0.0004 ],
-	];
+		private const OPENAI_PRICE_PER_1K = [
+			'gpt-4o'              => [ 'in' => 0.005,  'out' => 0.015  ],
+			'gpt-4o-mini'         => [ 'in' => 0.00015, 'out' => 0.0006 ],
+			'gpt-4-turbo'         => [ 'in' => 0.01,   'out' => 0.03   ],
+			'gpt-4.1'             => [ 'in' => 0.002,  'out' => 0.008  ],
+			'gpt-4.1-mini'        => [ 'in' => 0.0004, 'out' => 0.0016 ],
+			'gpt-4.1-nano'        => [ 'in' => 0.0001, 'out' => 0.0004 ],
+			'gpt-5.2'             => [ 'in' => 0.00175, 'out' => 0.014 ],
+		];
 
 	// Current Gemini Developer API prices (USD) for text input/output tokens.
 	// gemini-3-pro-image-preview is estimated using Gemini 3 Pro token rates.

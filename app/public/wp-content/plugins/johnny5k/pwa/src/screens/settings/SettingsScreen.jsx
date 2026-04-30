@@ -27,7 +27,7 @@ import { buildThirtyDayPrediction } from '../../lib/thirtyDayPrediction'
 import { DAY_TYPE_OPTIONS } from '../../lib/trainingDayTypes'
 import { formatUsShortDate } from '../../lib/dateFormat'
 import { openSupportGuide } from '../../lib/supportHelp'
-import { applyColorScheme, getColorSchemeOptions, normalizeColorScheme, setAvailableColorSchemes } from '../../lib/theme'
+import { applyColorScheme, getColorSchemeOptions, getDefaultIronQuestColorSchemeId, isIronQuestColorScheme, normalizeColorScheme, setAvailableColorSchemes } from '../../lib/theme'
 import { confirmGlobalAction } from '../../lib/uiFeedback'
 
 const TIMEZONE_REGIONS = getTimezoneRegions()
@@ -56,6 +56,7 @@ export default function SettingsScreen() {
   const dailyCheckInEntry = useAuthStore(s => s.dailyCheckInEntry)
   const setAuth = useAuthStore(s => s.setAuth)
   const setExperienceMode = useAuthStore(s => s.setExperienceMode)
+  const experienceMode = useAuthStore(s => s.experienceMode)
   const setNotificationPrefs = useAuthStore(s => s.setNotificationPrefs)
   const setPreferenceMeta = useAuthStore(s => s.setPreferenceMeta)
   const openDrawer = useJohnnyAssistantStore(state => state.openDrawer)
@@ -209,8 +210,16 @@ export default function SettingsScreen() {
   }, [setExperienceMode])
 
   useEffect(() => {
+    if (experienceMode === 'ironquest') {
+      const nextScheme = isIronQuestColorScheme(form.color_scheme)
+        ? form.color_scheme
+        : getDefaultIronQuestColorSchemeId()
+      applyColorScheme(nextScheme)
+      return
+    }
+
     applyColorScheme(form.color_scheme)
-  }, [form.color_scheme])
+  }, [experienceMode, form.color_scheme])
 
   useEffect(() => {
     writeLiveWorkoutVoicePrefs(liveVoicePrefs)
@@ -541,7 +550,13 @@ export default function SettingsScreen() {
       }
 
       const state = await onboardingApi.getState()
-      setPreferenceMeta(state?.prefs?.exercise_preferences_json ?? {})
+      const nextPreferenceMeta = state?.prefs?.exercise_preferences_json ?? {}
+      setPreferenceMeta(nextPreferenceMeta)
+      setForm(current => ({
+        ...current,
+        color_scheme: normalizeColorScheme(nextPreferenceMeta?.color_scheme ?? current.color_scheme),
+        preference_meta: nextPreferenceMeta,
+      }))
       setMissingFields(formatMissingFields(state.missing_profile_fields))
       setHeadshot(state?.headshot ?? { configured: false })
       setGeneratedImages(Array.isArray(state?.generated_images) ? state.generated_images : [])

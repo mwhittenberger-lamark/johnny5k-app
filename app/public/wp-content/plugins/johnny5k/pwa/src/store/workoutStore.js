@@ -232,6 +232,7 @@ export const useWorkoutStore = create(persist((set, get) => ({
             bootstrapped: true,
             wasResumed: false,
             activeExerciseIdx: 0,
+            previewDayType: '',
             undoToast: null,
           })
           return
@@ -262,6 +263,7 @@ export const useWorkoutStore = create(persist((set, get) => ({
         bootstrapped: true,
         wasResumed: false,
         activeExerciseIdx: 0,
+        previewDayType: '',
         undoToast: null,
       })
     } catch (err) {

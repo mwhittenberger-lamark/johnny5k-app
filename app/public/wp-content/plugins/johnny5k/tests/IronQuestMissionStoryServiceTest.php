@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Johnny5k\Tests;
 
 use Johnny5k\Services\AiPromptService;
+use Johnny5k\Services\IronQuestAiNarrativeService;
+use Johnny5k\Services\IronQuestRegistryService;
 use Johnny5k\Services\IronQuestNarrativeService;
 use Johnny5k\Services\IronQuestProfileService;
 use Johnny5k\Tests\Support\ServiceTestCase;
@@ -221,6 +223,26 @@ class IronQuestMissionStoryServiceTest extends ServiceTestCase {
 		);
 
 		$this->assertIsArray( $captured_payload );
+		$this->assertSame( '', $captured_payload['encounter']['exercise_name'] );
+		$this->assertArrayNotHasKey( 'opening_choice', $captured_payload['story_state'] );
+		$this->assertArrayNotHasKey( 'enemy', $captured_payload['story_state'] );
+		$this->assertArrayNotHasKey( 'name', $captured_payload['mission'] );
+		$this->assertArrayNotHasKey( 'objective', $captured_payload['mission'] );
+		$this->assertArrayNotHasKey( 'narrative', $captured_payload['mission'] );
+		$this->assertArrayNotHasKey( 'subclass', $captured_payload['user'] );
+		$this->assertArrayNotHasKey( 'level', $captured_payload['user'] );
+		$this->assertNotSame( '', $captured_payload['encounter_seed']['objective'] ?? '' );
+		$this->assertNotSame( '', $captured_payload['encounter_seed']['landmark'] ?? '' );
+		$this->assertNotSame( '', $captured_payload['encounter_seed']['hazard'] ?? '' );
+		$this->assertNotSame( '', $captured_payload['encounter_seed']['stakes'] ?? '' );
+		$this->assertNotSame( '', $captured_payload['encounter_seed']['enemy_posture'] ?? '' );
+		$this->assertNotSame( '', $captured_payload['encounter_seed']['sensory_detail'] ?? '' );
+		$this->assertNotSame( '', $captured_payload['scene_state']['current_visual'] ?? '' );
+		$this->assertNotSame( '', $captured_payload['scene_state']['stakes_now'] ?? '' );
+		$this->assertArrayNotHasKey( 'slug', $captured_payload['encounter_seed'] );
+		$this->assertArrayNotHasKey( 'success_turn', $captured_payload['encounter_seed'] );
+		$this->assertArrayNotHasKey( 'advance_turn', $captured_payload['encounter_seed'] );
+		$this->assertArrayNotHasKey( 'prop', $captured_payload['scene_state'] );
 		$this->assertContains( $captured_payload['mechanics']['roll_band'], [ 'dominant_success', 'strong_success', 'moderate_success', 'low_success', 'struggle', 'failure' ] );
 		$this->assertSame( 'near_miss', $captured_payload['mechanics']['set_result'] );
 		$this->assertSame( 'close_call', $captured_payload['mechanics']['set_result_detail'] );
@@ -229,13 +251,100 @@ class IronQuestMissionStoryServiceTest extends ServiceTestCase {
 		$this->assertSame( [ 'Ember ward hardens your breathing' ], $captured_payload['mechanics']['spell_effects'] );
 	}
 
+	public function test_advance_story_after_set_applies_real_hp_loss_to_profile_and_story_state(): void {
+		$user_id = 42;
+		$profile = [
+			'id'                    => 7,
+			'user_id'               => $user_id,
+			'enabled'               => false,
+			'class_slug'            => '',
+			'motivation_slug'       => '',
+			'level'                 => 1,
+			'xp'                    => 0,
+			'gold'                  => 0,
+			'hp_current'            => 100,
+			'hp_max'                => 100,
+			'current_location_slug' => 'grim_hollow_village',
+			'active_mission_slug'   => 'shadows_in_the_streets',
+		];
+		$this->queueProfileLookups( $user_id, $profile, 12 );
+
+		$run = [
+			'id'              => 67,
+			'mission_slug'    => 'shadows_in_the_streets',
+			'location_slug'   => 'grim_hollow_village',
+			'encounter_phase' => 'intro',
+			'status'          => 'active',
+		];
+
+		IronQuestNarrativeService::choose_opening_action( $user_id, $run, 'steady_approach', 'steady' );
+		$progressed = IronQuestNarrativeService::advance_story_after_set(
+			$user_id,
+			$run,
+			[
+				'event_type'     => 'set_saved',
+				'exercise_name'  => 'Bench Press',
+				'slot_type'      => 'main',
+				'exercise_order' => 1,
+				'exercise_count' => 3,
+				'set_number'     => 1,
+				'sets_total'     => 3,
+				'rep_target_min' => 8,
+				'rep_target_max' => 10,
+				'reps_completed' => 7,
+				'current_rir'    => 1,
+			]
+		);
+
+		$this->assertSame( 1, $progressed['hp_loss_this_set'] );
+		$this->assertSame( 99, $progressed['hp_current'] );
+		$this->assertSame( 100, $progressed['hp_max'] );
+		$this->assertSame( 99, $profile['hp_current'] );
+		$this->assertNotEmpty( $this->wpdb()->updated );
+		$this->assertSame( 99, (int) ( $this->wpdb()->updated[0]['data']['hp_current'] ?? 0 ) );
+	}
+
 	public function test_ironquest_mode_instructions_match_premium_system_contract(): void {
 		$instructions = $this->invokePrivateStatic( AiPromptService::class, 'get_mode_instructions', [ 'ironquest', [] ] );
 
 		$this->assertStringContainsString( 'Dungeon Master and fitness guide for IronQuest', $instructions );
-		$this->assertStringContainsString( 'Make each set feel like a meaningful action', $instructions );
+		$this->assertStringContainsString( 'Treat each set as the next beat in an exciting ongoing encounter', $instructions );
 		$this->assertStringContainsString( '30 to 60 second rests', $instructions );
 		$this->assertStringContainsString( 'Make the user feel like the hero of the mission', $instructions );
+		$this->assertStringContainsString( 'literal exercise names', $instructions );
+	}
+
+	public function test_ironquest_prompt_templates_call_for_authored_scene_anchors(): void {
+		$payload = [
+			'encounter_seed' => [
+				'landmark'       => 'the market square',
+				'hazard'         => 'fog-choked alleys feeding dead into the square',
+				'stakes'         => 'the doors never bar if the square falls',
+				'enemy_posture'  => 'the dead keep crowding the lane',
+				'sensory_detail' => 'wet fog and banging shutters',
+			],
+			'scene_state' => [
+				'current_visual' => 'At the market square, the dead keep crowding the lane.',
+				'stakes_now'     => 'one more clean answer could hold the square before the doors fail',
+			],
+		];
+
+		$opening = $this->invokePrivateStatic( IronQuestAiNarrativeService::class, 'build_user_prompt', [ 'mission_opening', $payload ] );
+		$set = $this->invokePrivateStatic( IronQuestAiNarrativeService::class, 'build_user_prompt', [ 'set_progression', $payload ] );
+		$transition = $this->invokePrivateStatic( IronQuestAiNarrativeService::class, 'build_user_prompt', [ 'exercise_transition', $payload ] );
+
+		$this->assertStringContainsString( 'encounter_seed.landmark', $opening );
+		$this->assertStringContainsString( 'encounter_seed.hazard', $opening );
+		$this->assertStringContainsString( 'encounter_seed.stakes', $opening );
+		$this->assertStringContainsString( 'encounter_seed.enemy_posture', $opening );
+		$this->assertStringContainsString( 'encounter_seed.sensory_detail', $opening );
+		$this->assertStringContainsString( 'scene_state.current_visual', $set );
+		$this->assertStringContainsString( 'scene_state.stakes_now', $set );
+		$this->assertStringContainsString( 'Match the brevity and concreteness of these examples', $set );
+		$this->assertStringContainsString( 'Example strong beat', $set );
+		$this->assertStringContainsString( 'Example strained beat', $set );
+		$this->assertStringContainsString( 'what landmark or prop is now behind the player', $transition );
+		$this->assertStringContainsString( 'what new landmark is ahead', $transition );
 	}
 
 	public function test_ai_failures_fall_back_to_deterministic_story_generation(): void {
@@ -409,7 +518,7 @@ class IronQuestMissionStoryServiceTest extends ServiceTestCase {
 		$this->assertSame( 'victory', $completed['result_band'] );
 		$this->assertSame( 100, $completed['progress']['percent'] );
 		$this->assertNotSame( '', $completed['conclusion']['summary'] );
-		$this->assertStringContainsString( 'The Necromancer falls.', $completed['conclusion']['summary'] );
+		$this->assertStringContainsString( 'The necromancer falls', $completed['conclusion']['summary'] );
 		$this->assertStringContainsString( 'close-quarters clash', $completed['conclusion']['summary'] );
 		$this->assertStringContainsString( '+300 XP', $completed['conclusion']['epilogue'] );
 		$this->assertSame( 'mission_complete', $completed['transcript'][3]['kind'] );
@@ -455,9 +564,61 @@ class IronQuestMissionStoryServiceTest extends ServiceTestCase {
 			[ $state, 'Leg Press Machine', 1, 3, 'close_call', 'set_saved', false, 'rhythm_trial' ]
 		);
 
-		$this->assertStringContainsString( 'load obedient', $burden_text );
+		$this->assertStringContainsString( 'load stays obedient', $burden_text );
 		$this->assertStringContainsString( 'machine tempo', $rhythm_text );
+		$this->assertStringNotContainsString( 'Farmer Carry', $burden_text );
+		$this->assertStringNotContainsString( 'Leg Press Machine', $rhythm_text );
 		$this->assertNotSame( $burden_text, $rhythm_text );
+	}
+
+	public function test_fallback_choices_vary_by_encounter_type_and_scene(): void {
+		$burden_choices = $this->invokePrivateStatic(
+			IronQuestNarrativeService::class,
+			'build_story_choices',
+			[
+				[ 'class_slug' => 'warrior' ],
+				[],
+				[],
+				'training constructs',
+				'burden',
+				[
+					'objective' => 'steady the bellows bank',
+					'threat'    => 'the forge machinery bucking under too much heat',
+					'prop'      => 'the bellows bank',
+					'landmark'  => 'the row of iron bellows',
+					'hazard'    => 'heat gusts and kicking pistons',
+					'stakes'    => 'the whole station cooks its crew',
+				],
+			]
+		);
+		$hunt_choices = $this->invokePrivateStatic(
+			IronQuestNarrativeService::class,
+			'build_story_choices',
+			[
+				[ 'class_slug' => 'rogue' ],
+				[],
+				[],
+				'the quarry',
+				'hunt',
+				[
+					'objective' => 'cut off the quarry before it slips the trail',
+					'threat'    => 'the quarry',
+					'prop'      => 'the game trail',
+					'landmark'  => 'the thorn-choked game trail',
+					'hazard'    => 'roots and low branches',
+					'stakes'    => 'the trail will disappear if you lose the opening now',
+				],
+			]
+		);
+
+		$this->assertSame( 3, count( $burden_choices ) );
+		$this->assertSame( 3, count( $hunt_choices ) );
+		$this->assertStringContainsString( 'bellows', strtolower( $burden_choices[0]['label'] ) );
+		$this->assertStringContainsString( 'heat gusts', strtolower( $burden_choices[2]['label'] ) );
+		$this->assertStringContainsString( 'trail', strtolower( $hunt_choices[1]['label'] ) );
+		$this->assertStringContainsString( 'quarry', strtolower( $hunt_choices[0]['label'] ) );
+		$this->assertNotSame( $burden_choices[0]['label'], $hunt_choices[0]['label'] );
+		$this->assertNotSame( $burden_choices[1]['label'], $hunt_choices[1]['label'] );
 	}
 
 	public function test_same_exercise_sets_generate_distinct_story_beats(): void {
@@ -529,7 +690,8 @@ class IronQuestMissionStoryServiceTest extends ServiceTestCase {
 
 		$this->assertNotSame( $first['latest_beat'], $second['latest_beat'] );
 		$this->assertStringContainsString( 'first exchange', strtolower( $first['latest_beat'] ) );
-		$this->assertStringContainsString( 'set 2', strtolower( $second['latest_beat'] ) );
+		$this->assertStringNotContainsString( 'bench press', strtolower( $first['latest_beat'] ) );
+		$this->assertStringNotContainsString( 'bench press', strtolower( $second['latest_beat'] ) );
 	}
 
 	public function test_exercise_completion_opens_the_next_encounter_with_new_choices(): void {
@@ -592,8 +754,161 @@ class IronQuestMissionStoryServiceTest extends ServiceTestCase {
 		$this->assertSame( 2, $transitioned['encounter_index'] );
 		$this->assertSame( [], $transitioned['selected_choice'] );
 		$this->assertCount( 3, $transitioned['choices'] );
-		$this->assertStringContainsString( 'Incline Press', $transitioned['current_situation'] );
+		$this->assertStringNotContainsString( 'Incline Press', $transitioned['current_situation'] );
 		$this->assertStringContainsString( 'encounter 2 of 3', strtolower( $transitioned['decision_prompt'] ) );
+	}
+
+	public function test_authored_encounter_seeds_drive_fallback_story_specificity(): void {
+		$user_id = 42;
+		$profile = [
+			'id'                    => 7,
+			'user_id'               => $user_id,
+			'enabled'               => false,
+			'class_slug'            => '',
+			'motivation_slug'       => '',
+			'level'                 => 1,
+			'xp'                    => 0,
+			'gold'                  => 0,
+			'hp_current'            => 100,
+			'hp_max'                => 100,
+			'current_location_slug' => 'grim_hollow_village',
+			'active_mission_slug'   => 'shadows_in_the_streets',
+		];
+		$this->queueProfileLookups( $user_id, $profile, 12 );
+		IronQuestProfileService::update_identity(
+			$user_id,
+			[
+				'class_slug'      => 'rogue',
+				'motivation_slug' => 'discipline',
+			]
+		);
+
+		add_filter( 'johnny5k_ironquest_ai_response', static function ( $response, string $prompt_type ) {
+			if ( in_array( $prompt_type, [ 'mission_opening', 'choice_generation', 'choice_outcome', 'set_progression', 'exercise_transition' ], true ) ) {
+				return new WP_Error( 'ai_down', 'AI unavailable' );
+			}
+
+			return $response;
+		}, 10, 2 );
+
+		$run = [
+			'id'             => 93,
+			'mission_slug'   => 'shadows_in_the_streets',
+			'location_slug'  => 'grim_hollow_village',
+			'encounter_phase'=> 'intro',
+			'status'         => 'active',
+		];
+
+		$state = IronQuestNarrativeService::get_or_create_story_state( $user_id, $run );
+		$this->assertStringContainsString( 'market crossroad', strtolower( $state['opening_text'] ) );
+		$this->assertStringContainsString( 'market crossroad', strtolower( $state['current_situation'] ) );
+
+		IronQuestNarrativeService::choose_opening_action( $user_id, $run, '', 'steady' );
+		$progressed = IronQuestNarrativeService::advance_story_after_set(
+			$user_id,
+			$run,
+			[
+				'event_type'      => 'set_saved',
+				'exercise_name'   => 'Bench Press',
+				'slot_type'       => 'main',
+				'exercise_order'  => 1,
+				'exercise_count'  => 3,
+				'set_number'      => 1,
+				'sets_total'      => 3,
+				'rep_target_min'  => 8,
+				'rep_target_max'  => 10,
+				'reps_completed'  => 10,
+			]
+		);
+
+		$this->assertStringContainsString( 'market crossroad', strtolower( $progressed['latest_beat'] ) );
+		$this->assertStringContainsString( 'market crossroad', strtolower( $progressed['current_situation'] ) );
+	}
+
+	public function test_overflow_encounter_seed_extends_late_scene_instead_of_reusing_last_seed_verbatim(): void {
+		$missions = IronQuestRegistryService::get_missions_config();
+		$form_check = [];
+
+		foreach ( (array) ( $missions['missions'] ?? [] ) as $mission ) {
+			if ( 'form_check' === (string) ( $mission['slug'] ?? '' ) ) {
+				$form_check = (array) $mission;
+				break;
+			}
+		}
+
+		$this->assertNotEmpty( $form_check );
+
+		$second_seed = $this->invokePrivateStatic(
+			IronQuestNarrativeService::class,
+			'resolve_encounter_seed',
+			[ $form_check, 2, 'duel', 'training dummies' ]
+		);
+		$third_seed = $this->invokePrivateStatic(
+			IronQuestNarrativeService::class,
+			'resolve_encounter_seed',
+			[ $form_check, 3, 'duel', 'training dummies' ]
+		);
+
+		$this->assertSame( 'the center lane', strtolower( (string) ( $second_seed['prop'] ?? '' ) ) );
+		$this->assertStringContainsString( 'far side of the center lane', strtolower( (string) ( $third_seed['prop'] ?? '' ) ) );
+		$this->assertNotSame( $second_seed['objective'], $third_seed['objective'] );
+		$this->assertStringContainsString( 'final', strtolower( (string) ( $third_seed['title'] ?? '' ) ) );
+	}
+
+	public function test_scene_state_progression_marks_turning_points_and_crises_for_late_beats(): void {
+		$seed = [
+			'slug'          => 'market_crossroad',
+			'title'         => 'Market Crossroad',
+			'objective'     => 'clear the market crossroad',
+			'threat'        => 'grave-bell dead',
+			'prop'          => 'the market crossroad',
+			'landmark'      => 'the market crossroad',
+			'stakes'        => 'hold the market crossroad long enough for the doors to bar',
+			'enemy_posture' => 'the dead keep crowding the route back down',
+			'sensory_detail'=> 'fog and broken shutters keep the square loud in the wrong places',
+			'pressure'      => 'the alleys are closing around you',
+			'success_turn'  => 'the dead lose their footing at the crossing',
+			'advance_turn'  => 'the crossing finally starts opening all the way through',
+			'struggle_turn' => 'the dead keep crowding the route back down',
+			'crisis_turn'   => 'the crossing is one bad turn from disappearing under them',
+			'transition'    => 'the bell rope comes into view beyond the broken line',
+		];
+
+		$scene = $this->invokePrivateStatic(
+			IronQuestNarrativeService::class,
+			'build_scene_state_from_seed',
+			[ $seed, 1, 3 ]
+		);
+		$scene = $this->invokePrivateStatic(
+			IronQuestNarrativeService::class,
+			'update_scene_state_for_set',
+			[ $scene, $seed, 'target_met', false, [ 'stage' => 'middle' ] ]
+		);
+		$scene = $this->invokePrivateStatic(
+			IronQuestNarrativeService::class,
+			'update_scene_state_for_set',
+			[ $scene, $seed, 'target_met', false, [ 'stage' => 'closing' ] ]
+		);
+
+		$this->assertSame( 'turning_point', $scene['phase'] );
+		$this->assertSame( 'within_reach', $scene['objective_status'] );
+		$this->assertSame( 'the crossing finally starts opening all the way through', $scene['last_turn'] );
+		$this->assertStringContainsString( 'market crossroad', strtolower( (string) ( $scene['current_visual'] ?? '' ) ) );
+		$this->assertStringContainsString( 'doors to bar', strtolower( (string) ( $scene['stakes_now'] ?? '' ) ) );
+		$this->assertStringContainsString( 'dead keep crowding the route back down', strtolower( (string) ( $scene['enemy_posture'] ?? '' ) ) );
+
+		$scene = $this->invokePrivateStatic(
+			IronQuestNarrativeService::class,
+			'update_scene_state_for_set',
+			[ $scene, $seed, 'strain', false, [ 'stage' => 'closing' ] ]
+		);
+
+		$this->assertSame( 'crisis', $scene['phase'] );
+		$this->assertSame( 'under_pressure', $scene['objective_status'] );
+		$this->assertSame( 'the crossing is one bad turn from disappearing under them', $scene['last_turn'] );
+		$this->assertStringContainsString( 'market crossroad', strtolower( (string) ( $scene['current_visual'] ?? '' ) ) );
+		$this->assertStringContainsString( 'doors to bar', strtolower( (string) ( $scene['stakes_now'] ?? '' ) ) );
+		$this->assertStringContainsString( 'dead keep crowding the route back down', strtolower( (string) ( $scene['enemy_posture'] ?? '' ) ) );
 	}
 
 	public function test_opening_and_conclusion_prose_branch_by_encounter_type(): void {
@@ -681,6 +996,51 @@ class IronQuestMissionStoryServiceTest extends ServiceTestCase {
 		$this->assertStringContainsString( 'running pursuit', $token_summary );
 		$this->assertStringContainsString( 'run the distance before the route can close', $token_summary );
 		$this->assertStringNotContainsString( 'The running pursuit stayed on your terms', $token_summary );
+	}
+
+	public function test_authored_mission_story_text_avoids_literal_workout_jargon(): void {
+		$path = JF_PLUGIN_DIR . 'pwa/iron_quest/config/missions.json';
+		$data = json_decode( (string) file_get_contents( $path ), true );
+
+		$this->assertIsArray( $data );
+		$this->assertIsArray( $data['missions'] ?? null );
+
+		$banned_patterns = [
+			'/\breps?\b/i',
+			'/\bsets?\b/i',
+			'/\bexercise(?:s)?\b/i',
+			'/\blifts?\b/i',
+			'/\bmovement(?:s)?\b/i',
+			'/\bbench press\b/i',
+			'/\bincline press\b/i',
+			'/\bleg press\b/i',
+			'/\bfarmer carry\b/i',
+			'/\bwalking lunge\b/i',
+			'/\bsled push\b/i',
+			'/\bcable lateral raise\b/i',
+		];
+
+		foreach ( $data['missions'] as $mission ) {
+			$mission_slug = (string) ( $mission['slug'] ?? 'unknown_mission' );
+			$story_fields = [
+				'narrative' => (string) ( $mission['narrative'] ?? '' ),
+				'victory'   => (string) ( $mission['outcomes']['victory'] ?? '' ),
+				'partial'   => (string) ( $mission['outcomes']['partial'] ?? '' ),
+				'failure'   => (string) ( $mission['outcomes']['failure'] ?? '' ),
+			];
+
+			foreach ( $story_fields as $field_name => $text ) {
+				$this->assertNotSame( '', trim( $text ), sprintf( 'Mission %s is missing authored %s text.', $mission_slug, $field_name ) );
+
+				foreach ( $banned_patterns as $pattern ) {
+					$this->assertSame(
+						0,
+						preg_match( $pattern, $text ),
+						sprintf( 'Mission %1$s %2$s reintroduced workout jargon: %3$s', $mission_slug, $field_name, $text )
+					);
+				}
+			}
+		}
 	}
 
 	private function queueProfileLookups( int $user_id, array &$profile, int $times ): void {

@@ -4,6 +4,7 @@ import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { buildCoachingSummary } from '../../lib/coachingSummary'
+import { buildJohnnyDashboardReview } from './dashboardRecommendationHelpers'
 import { makeDashboardCard } from './dashboardCardRegistry'
 import { CoachingSummaryCard } from './components/DashboardCards'
 import DashboardScreen from './DashboardScreen'
@@ -159,5 +160,26 @@ describe('DashboardScreen', () => {
     expect(container.textContent).toContain(summary.summary)
     expect(container.textContent).toContain(nextActionTitle)
     expect(container.textContent).toContain('Fallback coach read')
+  })
+
+  it('keeps the dashboard fallback coach copy plain and non-app-like', () => {
+    const review = buildJohnnyDashboardReview({
+      score_7d: 62,
+      steps: { today: 3800, target: 8000 },
+      goal: { target_sleep_hours: 8, target_protein_g: 180 },
+      sleep: { hours_sleep: 6.6 },
+      meals_today: [{ meal_type: 'breakfast' }],
+      nutrition_totals: { protein_g: 85 },
+      recovery_summary: { mode: 'normal' },
+      today_schedule: { day_type: 'push' },
+      training_status: { recorded: false, scheduled_day_type: 'push', status: 'open' },
+      streaks: { logging_days: 2, training_days: 2, sleep_days: 1, cardio_days: 0 },
+    })
+
+    const text = [review.title, review.message, review.nextStep, review.encouragement, review.starterPrompt].join(' ')
+
+    expect(text).not.toMatch(/reviewed your board|signal|traction|clear next move|recover on purpose|keep logging clean/i)
+    expect(review.message).not.toMatch(/^Johnny sees/i)
+    expect(review.nextStep).toMatch(/start|open|handle|do|get|log|keep/i)
   })
 })

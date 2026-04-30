@@ -266,6 +266,37 @@
   background: var(--workout-soft-card-bg);
   border: 1px solid var(--workout-soft-card-border);
 }
+.workout-launchpad-tavern-card {
+  padding: var(--space-3) var(--space-3-5);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--workout-soft-card-bg) 78%, #d59d3d 22%);
+  border: 1px solid color-mix(in srgb, var(--workout-soft-card-border) 70%, #7a4a12 30%);
+}
+.workout-launchpad-tavern-line,
+.workout-launchpad-tavern-resolution,
+.workout-launchpad-tavern-preview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1-5);
+  padding: var(--space-2-5) var(--space-3);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--surface-card) 82%, rgba(255,255,255,0.18) 18%);
+  border: 1px solid color-mix(in srgb, var(--workout-soft-card-border) 78%, transparent);
+}
+.workout-launchpad-tavern-line p,
+.workout-launchpad-tavern-preview p,
+.workout-launchpad-tavern-resolution span {
+  margin: 0;
+}
+.workout-launchpad-tavern-preview strong,
+.workout-launchpad-tavern-resolution strong {
+  color: var(--text);
+}
+.workout-launchpad-tavern-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+}
 .workout-launchpad-focus-label {
   font-size: 0.78rem;
   font-weight: 800;
@@ -1170,6 +1201,47 @@
   gap: var(--space-3);
 }
 
+.live-workout-ironquest-debug-prompt {
+  border: 1px solid color-mix(in srgb, var(--border-subtle) 78%, transparent);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--surface-elevated) 92%, transparent);
+  overflow: hidden;
+}
+
+.live-workout-ironquest-debug-prompt-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  cursor: pointer;
+  list-style: none;
+}
+
+.live-workout-ironquest-debug-prompt-summary::-webkit-details-marker {
+  display: none;
+}
+
+.live-workout-ironquest-debug-prompt-summary strong {
+  color: var(--text-primary);
+}
+
+.live-workout-ironquest-debug-prompt-summary span {
+  color: var(--text-muted);
+  font-size: 0.88rem;
+}
+
+.live-workout-ironquest-debug-prompt-copy {
+  margin: 0;
+  padding: 0 var(--space-3) var(--space-3);
+  color: var(--text-secondary);
+  font: 0.8rem/1.6 var(--font-family-mono, monospace);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 18rem;
+  overflow: auto;
+}
+
 .live-workout-ironquest-beat {
   color: var(--text-primary);
 }
@@ -1433,6 +1505,11 @@
 .live-workout-panel .settings-subtitle {
   color: var(--live-workout-copy);
 }
+.live-workout-header .dashboard-chip.ai {
+  color: var(--live-workout-title);
+  border-color: color-mix(in srgb, var(--live-workout-title) 32%, transparent);
+  background: color-mix(in srgb, var(--live-workout-title) 16%, transparent);
+}
 .live-workout-header .dashboard-chip.subtle,
 .live-workout-sticky-meta .dashboard-chip.subtle {
   color: var(--live-workout-title);
@@ -1467,6 +1544,9 @@
   gap: var(--space-2);
   min-width: 0;
 }
+.live-workout-grid-ironquest .live-workout-sticky-nav {
+  grid-template-columns: 52px minmax(0, 1fr) 52px;
+}
 .live-workout-sticky-arrow {
   width: 100%;
   min-height: 34px;
@@ -1474,6 +1554,57 @@
   font-size: 1rem;
   line-height: 1;
   box-shadow: var(--live-workout-sticky-shadow);
+}
+.live-workout-sticky-panel-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  padding: 0 var(--space-3);
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--live-workout-title) 24%, transparent);
+  background: color-mix(in srgb, var(--live-workout-title) 12%, transparent);
+  color: var(--live-workout-title);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  text-align: center;
+}
+.live-workout-panel-switcher {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin-bottom: var(--space-4-5);
+  padding: var(--space-2);
+  border-radius: 20px;
+  border: 1px solid var(--live-workout-card-border);
+  background: color-mix(in srgb, var(--live-workout-card-bg) 88%, white 12%);
+  box-shadow: var(--live-workout-card-shadow);
+}
+.live-workout-panel-switch {
+  min-height: 48px;
+  padding: var(--space-2) var(--space-2-5);
+  border: 1px solid color-mix(in srgb, var(--live-workout-heading) 12%, transparent);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--live-workout-card-bg) 92%, transparent);
+  color: color-mix(in srgb, var(--live-workout-heading) 78%, white 22%);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  text-align: center;
+}
+.live-workout-panel-switch:hover,
+.live-workout-panel-switch:focus-visible {
+  color: color-mix(in srgb, var(--live-workout-heading) 88%, white 12%);
+}
+.live-workout-panel-switch.active {
+  border-color: color-mix(in srgb, var(--accent2) 42%, var(--live-workout-card-border) 58%);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent2) 12%, white 88%), color-mix(in srgb, var(--accent2) 6%, white 94%));
+  color: var(--live-workout-heading);
+  box-shadow: 0 12px 24px rgba(6, 16, 32, 0.12);
 }
 .live-workout-header-actions {
   display: flex;
@@ -1572,11 +1703,82 @@
   gap: var(--space-4-5);
   align-items: start;
 }
+.live-workout-grid-ironquest {
+  grid-template-columns: 1fr;
+}
 .live-workout-main,
 .live-workout-coach {
   display: flex;
   flex-direction: column;
   gap: var(--space-4-5);
+}
+.live-workout-interface-card {
+  border-color: var(--live-workout-card-border);
+  background: var(--live-workout-card-bg);
+  box-shadow: var(--live-workout-card-shadow);
+}
+.live-workout-ironquest-card {
+  position: relative;
+  overflow: hidden;
+}
+.live-workout-ironquest-card::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 6px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--yellow) 78%, white 22%), color-mix(in srgb, var(--accent2) 42%, var(--accent) 58%));
+}
+.live-workout-interface-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3-5);
+  margin-bottom: var(--space-3-5);
+}
+.live-workout-ironquest-hud {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-2-5);
+  margin-bottom: var(--space-3-5);
+}
+.live-workout-ironquest-hud-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: var(--space-2-5) var(--space-3);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--live-workout-card-bg) 78%, white 22%);
+  border: 1px solid color-mix(in srgb, var(--live-workout-heading) 12%, transparent);
+}
+.live-workout-ironquest-hud-stat span {
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--live-workout-copy) 74%, white 26%);
+}
+.live-workout-ironquest-hud-stat strong {
+  font-size: 1rem;
+  color: var(--live-workout-heading);
+}
+.live-workout-ironquest-hud-stat small {
+  color: var(--live-workout-copy);
+  font-size: 0.8rem;
+}
+.live-workout-interface-head h3 {
+  margin: 0;
+  font-size: clamp(1.35rem, 2.1vw, 1.8rem);
+  line-height: 1.05;
+  color: var(--live-workout-heading);
+}
+.live-workout-interface-head .settings-subtitle {
+  margin-top: var(--space-2);
+}
+.live-workout-interface-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  justify-content: flex-end;
 }
 .live-workout-exercise-card,
 .live-workout-plan-card,
@@ -1653,10 +1855,21 @@
   color: var(--live-workout-heading);
 }
 .live-workout-set-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.live-workout-set-form-primary,
+.live-workout-set-form-secondary {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: var(--space-3);
   align-items: end;
+}
+.live-workout-set-form-primary {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.live-workout-set-form-secondary {
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 0.9fr);
 }
 .live-workout-set-form label {
   display: flex;
@@ -2617,9 +2830,12 @@
   }
 
   .live-workout-progress-grid,
-  .live-workout-set-form,
   .live-workout-nav-grid,
   .live-workout-coach-buttons {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .live-workout-set-form-secondary {
     grid-template-columns: 1fr 1fr;
   }
 
@@ -2645,9 +2861,16 @@
     grid-area: previous-exercise;
   }
 
-  .live-workout-set-form .live-workout-save,
   .live-workout-coach-buttons > .btn-primary {
     grid-column: 1 / -1;
+  }
+
+  .live-workout-interface-head {
+    flex-direction: column;
+  }
+
+  .live-workout-interface-badges {
+    justify-content: flex-start;
   }
 
   .live-workout-johnny-hero {
@@ -2729,9 +2952,25 @@
 }
 
 @media (max-width: 560px) {
-  .live-workout-set-form,
   .live-workout-nav-grid,
   .live-workout-coach-buttons {
+    grid-template-columns: 1fr;
+  }
+
+  .live-workout-set-form-primary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .live-workout-set-form-secondary,
+  .live-workout-panel-switcher {
+    grid-template-columns: 1fr;
+  }
+
+  .live-workout-ironquest-hud {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .workout-launchpad-tavern-actions {
     grid-template-columns: 1fr;
   }
 
@@ -2757,8 +2996,18 @@
     gap: var(--space-1-5);
   }
 
+  .live-workout-grid-ironquest .live-workout-sticky-nav {
+    grid-template-columns: 40px minmax(0, 1fr) 40px;
+  }
+
   .live-workout-sticky-arrow {
     min-height: 32px;
     padding: 6px 8px;
+  }
+
+  .live-workout-sticky-panel-label {
+    min-height: 32px;
+    padding: 0 var(--space-2);
+    font-size: 0.72rem;
   }
 }

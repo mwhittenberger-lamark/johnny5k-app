@@ -11,6 +11,7 @@ use Johnny5k\Services\IronQuestProfileService;
 use Johnny5k\Services\IronQuestProgressionService;
 use Johnny5k\Services\IronQuestRegistryService;
 use Johnny5k\Services\IronQuestRewardService;
+use WP_Error;
 
 class IronQuestController extends RestController {
 	private const FAST_TRAVEL_GOLD_COST = 10;
@@ -170,6 +171,66 @@ class IronQuestController extends RestController {
 			[
 				'methods'             => 'POST',
 				'callback'            => [ __CLASS__, 'update_daily_progress' ],
+				'permission_callback' => self::auth_callback(),
+			]
+		);
+
+		register_rest_route(
+			$ns,
+			'/ironquest/store',
+			[
+				'methods'             => 'GET',
+				'callback'            => [ __CLASS__, 'get_store' ],
+				'permission_callback' => self::auth_callback(),
+			]
+		);
+
+		register_rest_route(
+			$ns,
+			'/ironquest/store/purchase',
+			[
+				'methods'             => 'POST',
+				'callback'            => [ __CLASS__, 'purchase_store_item' ],
+				'permission_callback' => self::auth_callback(),
+			]
+		);
+
+		register_rest_route(
+			$ns,
+			'/ironquest/store/use',
+			[
+				'methods'             => 'POST',
+				'callback'            => [ __CLASS__, 'use_store_item' ],
+				'permission_callback' => self::auth_callback(),
+			]
+		);
+
+		register_rest_route(
+			$ns,
+			'/ironquest/store/sell',
+			[
+				'methods'             => 'POST',
+				'callback'            => [ __CLASS__, 'sell_store_item' ],
+				'permission_callback' => self::auth_callback(),
+			]
+		);
+
+		register_rest_route(
+			$ns,
+			'/ironquest/tavern',
+			[
+				'methods'             => 'GET',
+				'callback'            => [ __CLASS__, 'get_tavern' ],
+				'permission_callback' => self::auth_callback(),
+			]
+		);
+
+		register_rest_route(
+			$ns,
+			'/ironquest/tavern/action',
+			[
+				'methods'             => 'POST',
+				'callback'            => [ __CLASS__, 'resolve_tavern_action' ],
 				'permission_callback' => self::auth_callback(),
 			]
 		);
@@ -501,6 +562,7 @@ class IronQuestController extends RestController {
 			[
 				'run'         => $updated_run,
 				'story_state' => $story_state,
+				'profile'     => IronQuestProfileService::ensure_profile( $user_id ),
 			]
 		);
 	}
@@ -516,6 +578,163 @@ class IronQuestController extends RestController {
 				'profile'     => IronQuestProfileService::ensure_profile( $user_id ),
 			]
 		);
+	}
+
+	public static function get_tavern( \WP_REST_Request $req ): \WP_REST_Response {
+		$user_id    = get_current_user_id();
+		$state_date = sanitize_text_field( (string) ( $req->get_param( 'state_date' ) ?: '' ) );
+
+		return self::response( self::build_tavern_state( $user_id, $state_date ?: null ) );
+	}
+
+	public static function get_store( \WP_REST_Request $req ): \WP_REST_Response {
+		$user_id = get_current_user_id();
+
+		return self::response( self::build_profile_payload( $user_id )['store'] ?? [] );
+	}
+
+	public static function purchase_store_item( \WP_REST_Request $req ): \WP_REST_Response {
+		$user_id    = get_current_user_id();
+		$state_date = sanitize_text_field( (string) ( $req->get_param( 'state_date' ) ?: '' ) );
+		$item_id    = sanitize_key( (string) ( $req->get_param( 'item_id' ) ?: '' ) );
+		$profile    = IronQuestProfileService::ensure_profile( $user_id );
+
+		if ( ! IronQuestEntitlementService::user_has_access( $user_id ) ) {
+			return self::message( 'IronQuest is not enabled for this account.', 403 );
+		}
+
+		if ( empty( $profile['enabled'] ) ) {
+			return self::message( 'IronQuest mode is turned off for this profile.', 409 );
+		}
+
+		if ( '' === $item_id ) {
+			return self::message( 'Choose a store item before purchasing it.', 400 );
+		}
+
+		$result = self::apply_store_purchase( $user_id, $item_id, $state_date ?: null );
+		if ( is_wp_error( $result ) ) {
+			$status = match ( $result->get_error_code() ) {
+				'invalid_item' => 404,
+				'insufficient_gold', 'inventory_full', 'already_owned' => 409,
+				default => 400,
+			};
+
+			return self::response(
+				[
+					'purchased' => false,
+					'reason'    => $result->get_error_code(),
+					'message'   => $result->get_error_message(),
+					'store'     => self::build_profile_payload( $user_id )['store'] ?? [],
+					'profile'   => $profile,
+				],
+				$status
+			);
+		}
+
+		return self::response( $result, 201 );
+	}
+
+	public static function use_store_item( \WP_REST_Request $req ): \WP_REST_Response {
+		$user_id    = get_current_user_id();
+		$state_date = sanitize_text_field( (string) ( $req->get_param( 'state_date' ) ?: '' ) );
+		$item_id    = sanitize_key( (string) ( $req->get_param( 'item_id' ) ?: '' ) );
+		$profile    = IronQuestProfileService::ensure_profile( $user_id );
+
+		if ( ! IronQuestEntitlementService::user_has_access( $user_id ) ) {
+			return self::message( 'IronQuest is not enabled for this account.', 403 );
+		}
+
+		if ( empty( $profile['enabled'] ) ) {
+			return self::message( 'IronQuest mode is turned off for this profile.', 409 );
+		}
+
+		if ( '' === $item_id ) {
+			return self::message( 'Choose an inventory item before using it.', 400 );
+		}
+
+		$result = self::apply_store_item_use( $user_id, $item_id, $state_date ?: null );
+		if ( is_wp_error( $result ) ) {
+			$status = match ( $result->get_error_code() ) {
+				'invalid_item' => 404,
+				'already_prepped', 'hp_full' => 409,
+				default => 400,
+			};
+
+			return self::response(
+				[
+					'used'    => false,
+					'reason'  => $result->get_error_code(),
+					'message' => $result->get_error_message(),
+					'store'   => self::build_profile_payload( $user_id )['store'] ?? [],
+					'profile' => $profile,
+				],
+				$status
+			);
+		}
+
+		return self::response( $result );
+	}
+
+	public static function sell_store_item( \WP_REST_Request $req ): \WP_REST_Response {
+		$user_id    = get_current_user_id();
+		$state_date = sanitize_text_field( (string) ( $req->get_param( 'state_date' ) ?: '' ) );
+		$item_id    = sanitize_key( (string) ( $req->get_param( 'item_id' ) ?: '' ) );
+		$profile    = IronQuestProfileService::ensure_profile( $user_id );
+
+		if ( ! IronQuestEntitlementService::user_has_access( $user_id ) ) {
+			return self::message( 'IronQuest is not enabled for this account.', 403 );
+		}
+
+		if ( empty( $profile['enabled'] ) ) {
+			return self::message( 'IronQuest mode is turned off for this profile.', 409 );
+		}
+
+		if ( '' === $item_id ) {
+			return self::message( 'Choose an inventory item before selling it.', 400 );
+		}
+
+		$result = self::apply_store_item_sellback( $user_id, $item_id, $state_date ?: null );
+		if ( is_wp_error( $result ) ) {
+			$status = match ( $result->get_error_code() ) {
+				'invalid_item' => 404,
+				default => 400,
+			};
+
+			return self::response(
+				[
+					'sold'    => false,
+					'reason'  => $result->get_error_code(),
+					'message' => $result->get_error_message(),
+					'store'   => self::build_profile_payload( $user_id )['store'] ?? [],
+					'profile' => $profile,
+				],
+				$status
+			);
+		}
+
+		return self::response( $result );
+	}
+
+	public static function resolve_tavern_action( \WP_REST_Request $req ): \WP_REST_Response {
+		$user_id    = get_current_user_id();
+		$state_date = sanitize_text_field( (string) ( $req->get_param( 'state_date' ) ?: '' ) );
+		$action_id  = sanitize_key( (string) ( $req->get_param( 'action_id' ) ?: '' ) );
+
+		$result = self::apply_tavern_action( $user_id, $action_id, $state_date ?: null );
+		if ( is_wp_error( $result ) ) {
+			$status = 'action_already_resolved' === $result->get_error_code() ? 409 : 400;
+
+			return self::message(
+				$result->get_error_message(),
+				$status,
+				[
+					'reason' => $result->get_error_code(),
+					'state'  => self::build_tavern_state( $user_id, $state_date ?: null ),
+				]
+			);
+		}
+
+		return self::response( $result );
 	}
 
 	public static function update_daily_progress( \WP_REST_Request $req ): \WP_REST_Response {
@@ -879,6 +1098,7 @@ class IronQuestController extends RestController {
 		$location_slug = sanitize_key( (string) ( $profile['current_location_slug'] ?? '' ) );
 		$route_state   = self::build_route_state( $user_id, $profile );
 		$unlock_history = array_slice( IronQuestRewardService::list_unlocks( $user_id ), 0, 24 );
+		$location      = $location_slug ? IronQuestRegistryService::get_location( $location_slug ) : null;
 		$missions      = $location_slug ? IronQuestRegistryService::get_location_missions( $location_slug ) : [];
 		$active_run    = IronQuestMissionService::get_active_run( $user_id );
 		$daily_state   = IronQuestDailyStateService::get_state( $user_id );
@@ -886,7 +1106,7 @@ class IronQuestController extends RestController {
 		return [
 			'entitlement' => IronQuestEntitlementService::get_access_state( $user_id ),
 			'profile'     => $profile,
-			'location'    => $location_slug ? IronQuestRegistryService::get_location( $location_slug ) : null,
+			'location'    => $location,
 			'missions'    => $missions,
 			'mission_board' => self::build_mission_board( $profile, $missions, $daily_state, $active_run ),
 			'active_run'  => $active_run,
@@ -895,7 +1115,861 @@ class IronQuestController extends RestController {
 			'recent_unlocks' => array_slice( $unlock_history, 0, 6 ),
 			'unlock_history' => $unlock_history,
 			'route_state' => $route_state,
+			'character_sheet' => self::build_character_sheet_payload( $profile, is_array( $location ) ? $location : [], $route_state, $daily_state, $unlock_history, $active_run ),
+			'store' => self::build_store_payload( $profile, is_array( $location ) ? $location : [], $daily_state, $unlock_history, $active_run ),
 		];
+	}
+
+	private static function build_character_sheet_payload( array $profile, array $location, array $route_state, array $daily_state, array $unlock_history, ?array $active_run ): array {
+		$title_unlocks = array_values( array_filter( $unlock_history, static fn( array $unlock ): bool => ( $unlock['unlock_type'] ?? '' ) === 'title' ) );
+		$relic_unlocks = array_values( array_filter( $unlock_history, static fn( array $unlock ): bool => ( $unlock['unlock_type'] ?? '' ) === 'relic' ) );
+		$journal_unlocks = array_values( array_filter( $unlock_history, static fn( array $unlock ): bool => ( $unlock['unlock_type'] ?? '' ) === 'journal_entry' ) );
+		$inventory_state = self::build_character_sheet_inventory_summary( $title_unlocks, $relic_unlocks, $daily_state );
+		$display_title = self::resolve_character_sheet_display_title( $title_unlocks[0] ?? null );
+		$selected_mission_slug = sanitize_key( (string) ( $profile['active_mission_slug'] ?? '' ) );
+		$selected_mission_name = '';
+
+		if ( '' !== $selected_mission_slug ) {
+			$selected_mission_name = (string) ( self::find_location_mission( (string) ( $profile['current_location_slug'] ?? '' ), $selected_mission_slug )['name'] ?? self::humanize_key( $selected_mission_slug ) );
+		}
+
+		return [
+			'identity' => [
+				'portrait_attachment_id' => (int) ( $profile['starter_portrait_attachment_id'] ?? 0 ),
+				'display_title'         => $display_title,
+				'class_slug'            => sanitize_key( (string) ( $profile['class_slug'] ?? '' ) ),
+				'motivation_slug'       => sanitize_key( (string) ( $profile['motivation_slug'] ?? '' ) ),
+			],
+			'progression' => [
+				'level'      => max( 1, (int) ( $profile['level'] ?? 1 ) ),
+				'xp'         => max( 0, (int) ( $profile['xp'] ?? 0 ) ),
+				'hp_current' => max( 0, (int) ( $profile['hp_current'] ?? 0 ) ),
+				'hp_max'     => max( 1, (int) ( $profile['hp_max'] ?? 100 ) ),
+				'gold'       => max( 0, (int) ( $profile['gold'] ?? 0 ) ),
+			],
+			'campaign' => [
+				'current_location_slug' => sanitize_key( (string) ( $profile['current_location_slug'] ?? '' ) ),
+				'current_location_name' => (string) ( $location['name'] ?? self::humanize_key( (string) ( $profile['current_location_slug'] ?? '' ) ) ),
+				'selected_mission_slug' => $selected_mission_slug,
+				'selected_mission_name' => $selected_mission_name,
+				'route_progress_label'  => self::build_character_sheet_route_progress_label( $route_state ),
+				'tavern_name'           => (string) ( $location['tavern']['name'] ?? '' ),
+				'store_name'            => self::resolve_store_name( $location ),
+			],
+			'active_effects' => self::build_character_sheet_active_effects( $daily_state, $active_run ),
+			'inventory_summary' => $inventory_state,
+			'collections' => [
+				'titles'  => array_values( array_map( [ __CLASS__, 'build_character_sheet_unlock_entry' ], array_slice( $title_unlocks, 0, 6 ) ) ),
+				'relics'  => array_values( array_map( [ __CLASS__, 'build_character_sheet_unlock_entry' ], array_slice( $relic_unlocks, 0, 6 ) ) ),
+				'journal' => array_values( array_map( [ __CLASS__, 'build_character_sheet_unlock_entry' ], array_slice( $journal_unlocks, 0, 6 ) ) ),
+			],
+			'recent_history' => array_values( array_map( [ __CLASS__, 'build_character_sheet_unlock_entry' ], array_slice( $unlock_history, 0, 4 ) ) ),
+		];
+	}
+
+	private static function build_character_sheet_inventory_summary( array $title_unlocks, array $relic_unlocks, array $daily_state ): array {
+		$equipped_relics = array_values( array_map( [ __CLASS__, 'build_character_sheet_unlock_entry' ], array_slice( $relic_unlocks, 0, 2 ) ) );
+		$consumables     = self::extract_store_inventory_consumables( $daily_state );
+		$display_title   = self::resolve_character_sheet_display_title( $title_unlocks[0] ?? null );
+
+		return [
+			'active_relics'    => count( $equipped_relics ),
+			'relic_count'      => count( $relic_unlocks ),
+			'consumable_count' => count( $consumables ),
+			'equipped_title'   => $display_title,
+			'equipped_relics'  => $equipped_relics,
+			'consumables'      => $consumables,
+		];
+	}
+
+	private static function resolve_character_sheet_display_title( ?array $unlock ): string {
+		if ( ! is_array( $unlock ) ) {
+			return '';
+		}
+
+		$label = trim( (string) ( $unlock['meta']['label'] ?? '' ) );
+
+		return '' !== $label ? $label : self::humanize_key( (string) ( $unlock['unlock_key'] ?? '' ) );
+	}
+
+	private static function build_character_sheet_route_progress_label( array $route_state ): string {
+		$next_unlock = is_array( $route_state['next_unlocks'][0] ?? null ) ? $route_state['next_unlocks'][0] : null;
+		if ( ! is_array( $next_unlock ) ) {
+			return 'Current route fully unlocked.';
+		}
+
+		$travel_remaining = max( 0, (int) ( $next_unlock['travel_remaining'] ?? 0 ) );
+		$location_name    = self::humanize_key( (string) ( $next_unlock['location_slug'] ?? '' ) );
+
+		return sprintf( '%d route point%s to %s.', $travel_remaining, 1 === $travel_remaining ? '' : 's', $location_name );
+	}
+
+	private static function build_character_sheet_active_effects( array $daily_state, ?array $active_run ): array {
+		$effects = [];
+		$tavern_resolution = self::extract_tavern_resolution( $daily_state );
+		$store_inventory   = self::extract_store_inventory_state( $daily_state );
+
+		if ( is_array( $tavern_resolution ) ) {
+			$action_id = sanitize_key( (string) ( $tavern_resolution['action_id'] ?? '' ) );
+			$effect_data = is_array( $tavern_resolution['effects'] ?? null ) ? $tavern_resolution['effects'] : [];
+			$effect_parts = [];
+
+			if ( ! empty( $effect_data['hp_delta'] ) ) {
+				$effect_parts[] = sprintf( '+%d HP', (int) $effect_data['hp_delta'] );
+			}
+			if ( ! empty( $effect_data['gold_delta'] ) ) {
+				$effect_parts[] = sprintf( '+%d gold', (int) $effect_data['gold_delta'] );
+			}
+			if ( ! empty( $effect_data['xp_delta'] ) ) {
+				$effect_parts[] = sprintf( '+%d XP', (int) $effect_data['xp_delta'] );
+			}
+			if ( ! empty( $effect_data['mission_preview'] ) ) {
+				$effect_parts[] = 'mission preview ready';
+			}
+
+			$effects[] = [
+				'id'             => 'tavern_' . ( $action_id ?: 'action' ),
+				'label'          => 'Tavern: ' . self::humanize_key( $action_id ?: 'action' ),
+				'effect_summary' => ! empty( $effect_parts ) ? implode( ' • ', $effect_parts ) : 'Tavern action resolved today.',
+			];
+		}
+
+		if ( is_array( $active_run ) && ! empty( $active_run['mission_slug'] ) ) {
+			$effects[] = [
+				'id'             => 'active_mission',
+				'label'          => 'Mission in progress',
+				'effect_summary' => self::humanize_key( (string) $active_run['mission_slug'] ) . ' is still active.',
+			];
+		}
+
+		$active_charm = is_array( $store_inventory['active_charm'] ?? null ) ? $store_inventory['active_charm'] : null;
+		if ( is_array( $active_charm ) ) {
+			$effects[] = [
+				'id'             => 'store_charm_' . sanitize_key( (string) ( $active_charm['id'] ?? 'active' ) ),
+				'label'          => (string) ( $active_charm['name'] ?? 'Store charm' ),
+				'effect_summary' => (string) ( $active_charm['effect_summary'] ?? 'Store effect active.' ),
+			];
+		}
+
+		$active_prep = is_array( $store_inventory['active_prep'] ?? null ) ? $store_inventory['active_prep'] : null;
+		if ( is_array( $active_prep ) ) {
+			$effects[] = [
+				'id'             => 'store_prep_' . sanitize_key( (string) ( $active_prep['id'] ?? 'active' ) ),
+				'label'          => (string) ( $active_prep['name'] ?? 'Mission prep' ),
+				'effect_summary' => (string) ( $active_prep['effect_summary'] ?? 'Prep item active for the next mission.' ),
+			];
+		}
+
+		return $effects;
+	}
+
+	private static function build_store_payload( array $profile, array $location, array $daily_state, array $unlock_history, ?array $active_run ): array {
+		$location_slug    = sanitize_key( (string) ( $profile['current_location_slug'] ?? '' ) );
+		$inventory_state  = self::extract_store_inventory_state( $daily_state );
+		$sections         = self::build_store_sections( $location_slug, $location );
+		$recommended_item = self::build_store_recommended_purchase( $profile, $sections, $active_run );
+		$relic_count      = count( array_filter( $unlock_history, static fn( array $unlock ): bool => ( $unlock['unlock_type'] ?? '' ) === 'relic' ) );
+
+		return [
+			'location_slug'        => $location_slug,
+			'location_name'        => (string) ( $location['name'] ?? self::humanize_key( $location_slug ) ),
+			'store_name'           => self::resolve_store_name( $location ),
+			'gold'                 => max( 0, (int) ( $profile['gold'] ?? 0 ) ),
+			'hp_current'           => max( 0, (int) ( $profile['hp_current'] ?? 0 ) ),
+			'hp_max'               => max( 1, (int) ( $profile['hp_max'] ?? 100 ) ),
+			'recommended_purchase' => $recommended_item,
+			'sections'             => $sections,
+			'inventory'            => [
+				'consumables' => self::extract_store_inventory_consumables( $daily_state ),
+				'active_charm' => is_array( $inventory_state['active_charm'] ?? null ) ? $inventory_state['active_charm'] : null,
+				'active_prep' => is_array( $inventory_state['active_prep'] ?? null ) ? $inventory_state['active_prep'] : null,
+				'sellback'    => self::build_store_sellback_entries( $daily_state, $sections ),
+				'relic_count' => $relic_count,
+			],
+		];
+	}
+
+	private static function apply_store_purchase( int $user_id, string $item_id, ?string $state_date = null ): array|WP_Error {
+		$profile       = IronQuestProfileService::ensure_profile( $user_id );
+		$daily_state   = IronQuestDailyStateService::get_state( $user_id, $state_date );
+		$location_slug = sanitize_key( (string) ( $profile['current_location_slug'] ?? '' ) );
+		$location      = $location_slug ? IronQuestRegistryService::get_location( $location_slug ) : [];
+		$sections      = self::build_store_sections( $location_slug, is_array( $location ) ? $location : [] );
+		$item          = self::find_store_item( $sections, $item_id );
+
+		if ( ! is_array( $item ) ) {
+			return new WP_Error( 'invalid_item', 'That store item is not available in this region right now.' );
+		}
+
+		$gold_available = max( 0, (int) ( $profile['gold'] ?? 0 ) );
+		$gold_cost      = max( 0, (int) ( $item['cost_gold'] ?? 0 ) );
+		if ( $gold_available < $gold_cost ) {
+			return new WP_Error( 'insufficient_gold', 'You do not have enough gold for that purchase yet.' );
+		}
+
+		$store_state = self::extract_store_inventory_state( $daily_state );
+		$category    = sanitize_key( (string) ( $item['category'] ?? '' ) );
+
+		if ( 'utility_charms' === $category ) {
+			$active_charm = is_array( $store_state['active_charm'] ?? null ) ? $store_state['active_charm'] : null;
+			if ( is_array( $active_charm ) && sanitize_key( (string) ( $active_charm['id'] ?? '' ) ) === $item_id ) {
+				return new WP_Error( 'already_owned', 'That charm is already active.' );
+			}
+			$store_state['active_charm'] = [
+				'id'             => $item_id,
+				'name'           => (string) ( $item['name'] ?? self::humanize_key( $item_id ) ),
+				'effect_summary' => (string) ( $item['effect_summary'] ?? '' ),
+				'category'       => $category,
+				'purchased_at'   => current_time( 'mysql' ),
+			];
+		} else {
+			$consumables = is_array( $store_state['consumables'] ?? null ) ? $store_state['consumables'] : [];
+			$matched     = false;
+			foreach ( $consumables as &$consumable ) {
+				if ( ! is_array( $consumable ) || sanitize_key( (string) ( $consumable['id'] ?? '' ) ) !== $item_id ) {
+					continue;
+				}
+
+				$consumable['quantity'] = max( 1, (int) ( $consumable['quantity'] ?? 1 ) + 1 );
+				$matched = true;
+				break;
+			}
+			unset( $consumable );
+
+			if ( ! $matched ) {
+				$item_definition = self::find_store_catalog_item( $item_id );
+				$consumables[] = [
+					'id'             => $item_id,
+					'name'           => (string) ( $item['name'] ?? self::humanize_key( $item_id ) ),
+					'effect_summary' => (string) ( $item['effect_summary'] ?? '' ),
+					'quantity'       => 1,
+					'category'       => $category,
+					'use_effect'     => is_array( $item_definition['use_effect'] ?? null ) ? $item_definition['use_effect'] : [],
+					'purchased_at'   => current_time( 'mysql' ),
+				];
+			}
+
+			$store_state['consumables'] = array_values( $consumables );
+		}
+
+		$updated_profile = IronQuestProfileService::update_progression( $user_id, 0, -$gold_cost );
+		$updated_daily   = IronQuestDailyStateService::upsert_state(
+			$user_id,
+			(string) ( $daily_state['state_date'] ?? $state_date ?? '' ),
+			[
+				'bonus_state_json' => array_merge(
+					is_array( $daily_state['bonus_state'] ?? null ) ? $daily_state['bonus_state'] : [],
+					[ 'store' => $store_state ]
+				),
+			]
+		);
+
+		$payload = self::build_profile_payload( $user_id );
+
+		return [
+			'purchased'   => true,
+			'item_id'     => $item_id,
+			'item'        => [
+				'id'             => $item_id,
+				'name'           => (string) ( $item['name'] ?? self::humanize_key( $item_id ) ),
+				'effect_summary' => (string) ( $item['effect_summary'] ?? '' ),
+				'category'       => $category,
+				'cost_gold'      => $gold_cost,
+			],
+			'gold_spent'   => $gold_cost,
+			'profile'      => $updated_profile,
+			'daily_state'  => $updated_daily,
+			'store'        => $payload['store'] ?? [],
+			'character_sheet' => $payload['character_sheet'] ?? [],
+		];
+	}
+
+	private static function apply_store_item_use( int $user_id, string $item_id, ?string $state_date = null ): array|WP_Error {
+		$profile       = IronQuestProfileService::ensure_profile( $user_id );
+		$daily_state   = IronQuestDailyStateService::get_state( $user_id, $state_date );
+		$store_state   = self::extract_store_inventory_state( $daily_state );
+		$consumables   = is_array( $store_state['consumables'] ?? null ) ? array_values( $store_state['consumables'] ) : [];
+		$item_id       = sanitize_key( $item_id );
+		$matched_index = null;
+		$matched_item  = null;
+
+		foreach ( $consumables as $index => $consumable ) {
+			if ( ! is_array( $consumable ) || sanitize_key( (string) ( $consumable['id'] ?? '' ) ) !== $item_id ) {
+				continue;
+			}
+
+			$matched_index = $index;
+			$matched_item  = $consumable;
+			break;
+		}
+
+		if ( ! is_array( $matched_item ) || null === $matched_index ) {
+			return new WP_Error( 'invalid_item', 'That consumable is not currently in your inventory.' );
+		}
+
+		$effect = self::resolve_store_item_use_effect( $matched_item, $profile, $store_state );
+		if ( is_wp_error( $effect ) ) {
+			return $effect;
+		}
+
+		$consumables[ $matched_index ]['quantity'] = max( 0, (int) ( $consumables[ $matched_index ]['quantity'] ?? 1 ) - 1 );
+		if ( (int) $consumables[ $matched_index ]['quantity'] <= 0 ) {
+			array_splice( $consumables, $matched_index, 1 );
+		}
+
+		$store_state['consumables'] = array_values( $consumables );
+		if ( ! empty( $effect['active_prep'] ) ) {
+			$store_state['active_prep'] = $effect['active_prep'];
+		}
+
+		$updated_profile = $profile;
+		if ( ! empty( $effect['hp_delta'] ) ) {
+			$updated_profile = IronQuestProfileService::set_hp(
+				$user_id,
+				max( 0, (int) ( $profile['hp_current'] ?? 0 ) ) + (int) $effect['hp_delta'],
+				(int) ( $profile['hp_max'] ?? 100 )
+			);
+		}
+
+		$updated_daily = IronQuestDailyStateService::upsert_state(
+			$user_id,
+			(string) ( $daily_state['state_date'] ?? $state_date ?? '' ),
+			[
+				'bonus_state_json' => array_merge(
+					is_array( $daily_state['bonus_state'] ?? null ) ? $daily_state['bonus_state'] : [],
+					[ 'store' => $store_state ]
+				),
+			]
+		);
+
+		$payload = self::build_profile_payload( $user_id );
+
+		return [
+			'used'            => true,
+			'item_id'         => $item_id,
+			'item'            => self::build_store_inventory_entry_for_response( $matched_item ),
+			'hp_restored'     => max( 0, (int) ( $effect['hp_delta'] ?? 0 ) ),
+			'active_prep'     => is_array( $effect['active_prep'] ?? null ) ? $effect['active_prep'] : null,
+			'profile'         => $updated_profile,
+			'daily_state'     => $updated_daily,
+			'store'           => $payload['store'] ?? [],
+			'character_sheet' => $payload['character_sheet'] ?? [],
+		];
+	}
+
+	private static function apply_store_item_sellback( int $user_id, string $item_id, ?string $state_date = null ): array|WP_Error {
+		$profile       = IronQuestProfileService::ensure_profile( $user_id );
+		$daily_state   = IronQuestDailyStateService::get_state( $user_id, $state_date );
+		$location_slug = sanitize_key( (string) ( $profile['current_location_slug'] ?? '' ) );
+		$location      = $location_slug ? IronQuestRegistryService::get_location( $location_slug ) : [];
+		$sections      = self::build_store_sections( $location_slug, is_array( $location ) ? $location : [] );
+		$store_state   = self::extract_store_inventory_state( $daily_state );
+		$consumables   = is_array( $store_state['consumables'] ?? null ) ? array_values( $store_state['consumables'] ) : [];
+		$item_id       = sanitize_key( $item_id );
+		$matched_index = null;
+		$matched_item  = null;
+
+		foreach ( $consumables as $index => $consumable ) {
+			if ( ! is_array( $consumable ) || sanitize_key( (string) ( $consumable['id'] ?? '' ) ) !== $item_id ) {
+				continue;
+			}
+
+			$matched_index = $index;
+			$matched_item  = $consumable;
+			break;
+		}
+
+		if ( ! is_array( $matched_item ) || null === $matched_index ) {
+			return new WP_Error( 'invalid_item', 'That inventory item is not available to sell back.' );
+		}
+
+		$sell_value = self::resolve_store_sell_value( $item_id, $sections );
+		$consumables[ $matched_index ]['quantity'] = max( 0, (int) ( $consumables[ $matched_index ]['quantity'] ?? 1 ) - 1 );
+		if ( (int) $consumables[ $matched_index ]['quantity'] <= 0 ) {
+			array_splice( $consumables, $matched_index, 1 );
+		}
+
+		$store_state['consumables'] = array_values( $consumables );
+		$updated_profile = IronQuestProfileService::update_progression( $user_id, 0, $sell_value );
+		$updated_daily = IronQuestDailyStateService::upsert_state(
+			$user_id,
+			(string) ( $daily_state['state_date'] ?? $state_date ?? '' ),
+			[
+				'bonus_state_json' => array_merge(
+					is_array( $daily_state['bonus_state'] ?? null ) ? $daily_state['bonus_state'] : [],
+					[ 'store' => $store_state ]
+				),
+			]
+		);
+
+		$payload = self::build_profile_payload( $user_id );
+
+		return [
+			'sold'            => true,
+			'item_id'         => $item_id,
+			'item'            => self::build_store_inventory_entry_for_response( $matched_item ),
+			'gold_gained'     => $sell_value,
+			'profile'         => $updated_profile,
+			'daily_state'     => $updated_daily,
+			'store'           => $payload['store'] ?? [],
+			'character_sheet' => $payload['character_sheet'] ?? [],
+		];
+	}
+
+	private static function resolve_store_name( array $location ): string {
+		$store_name = trim( (string) ( $location['store']['name'] ?? '' ) );
+
+		if ( '' !== $store_name ) {
+			return $store_name;
+		}
+
+		$location_name = trim( (string) ( $location['name'] ?? '' ) );
+
+		return '' !== $location_name ? $location_name . ' Goods' : 'General Store';
+	}
+
+	private static function build_store_sections( string $location_slug, array $location ): array {
+		$stock_config = is_array( $location['store']['stock'] ?? null ) ? $location['store']['stock'] : [];
+		$defaults     = [
+			'recovery_goods' => [ 'field_bandage', 'hot_meal_kit' ],
+			'mission_prep'   => [ 'scouting_map', 'basic_supplies' ],
+			'utility_charms' => [ 'coin_charm', 'ward_thread' ],
+		];
+
+		return [
+			'recovery_goods'    => self::build_store_stock_entries( $stock_config['recovery_goods'] ?? $defaults['recovery_goods'], 'recovery_goods' ),
+			'mission_prep'      => self::build_store_stock_entries( $stock_config['mission_prep'] ?? $defaults['mission_prep'], 'mission_prep' ),
+			'utility_charms'    => self::build_store_stock_entries( $stock_config['utility_charms'] ?? $defaults['utility_charms'], 'utility_charms' ),
+			'inventory_sellback' => [],
+		];
+	}
+
+	private static function build_store_stock_entries( array $item_ids, string $category ): array {
+		$entries = [];
+
+		foreach ( $item_ids as $item_id ) {
+			$item = self::find_store_catalog_item( (string) $item_id );
+			if ( ! is_array( $item ) ) {
+				continue;
+			}
+
+			if ( sanitize_key( (string) ( $item['category'] ?? '' ) ) !== sanitize_key( $category ) ) {
+				continue;
+			}
+
+			$entries[] = [
+				'id'             => sanitize_key( (string) ( $item['id'] ?? '' ) ),
+				'category'       => sanitize_key( (string) ( $item['category'] ?? $category ) ),
+				'name'           => (string) ( $item['name'] ?? self::humanize_key( (string) $item_id ) ),
+				'description'    => (string) ( $item['description'] ?? '' ),
+				'effect_summary' => (string) ( $item['effect_summary'] ?? '' ),
+				'cost_gold'      => max( 0, (int) ( $item['cost_gold'] ?? 0 ) ),
+				'available'      => ! array_key_exists( 'available', $item ) || ! empty( $item['available'] ),
+			];
+		}
+
+		return array_values( $entries );
+	}
+
+	private static function find_store_catalog_item( string $item_id ): ?array {
+		$item_id = sanitize_key( $item_id );
+		if ( '' === $item_id ) {
+			return null;
+		}
+
+		foreach ( IronQuestRegistryService::get_store_items_config()['items'] as $item ) {
+			if ( ! is_array( $item ) ) {
+				continue;
+			}
+
+			if ( sanitize_key( (string) ( $item['id'] ?? '' ) ) === $item_id ) {
+				return $item;
+			}
+		}
+
+		return null;
+	}
+
+	private static function find_store_item( array $sections, string $item_id ): ?array {
+		$item_id = sanitize_key( $item_id );
+		foreach ( $sections as $section_key => $items ) {
+			foreach ( (array) $items as $item ) {
+				if ( ! is_array( $item ) ) {
+					continue;
+				}
+
+				if ( sanitize_key( (string) ( $item['id'] ?? '' ) ) !== $item_id ) {
+					continue;
+				}
+
+				$item['category'] = sanitize_key( (string) ( $item['category'] ?? $section_key ) );
+
+				return $item;
+			}
+		}
+
+		return null;
+	}
+
+	private static function resolve_store_item_use_effect( array $item, array $profile, array $store_state ): array|WP_Error {
+		$item_id    = sanitize_key( (string) ( $item['id'] ?? '' ) );
+		$current_hp = max( 0, (int) ( $profile['hp_current'] ?? 0 ) );
+		$hp_max     = max( 1, (int) ( $profile['hp_max'] ?? 100 ) );
+		$definition = self::find_store_catalog_item( $item_id );
+		$use_effect = is_array( $item['use_effect'] ?? null ) && ! empty( $item['use_effect'] )
+			? $item['use_effect']
+			: ( is_array( $definition['use_effect'] ?? null ) ? $definition['use_effect'] : [] );
+		$effect_type = sanitize_key( (string) ( $use_effect['type'] ?? '' ) );
+
+		if ( 'restore_hp' === $effect_type ) {
+			$hp_restore = max( 0, (int) ( $use_effect['hp_restore'] ?? 0 ) );
+			if ( $current_hp >= $hp_max ) {
+				return new WP_Error( 'hp_full', 'HP is already full. Save that recovery item for a rougher day.' );
+			}
+
+			return [
+				'hp_delta' => min( $hp_restore, $hp_max - $current_hp ),
+			];
+		}
+
+		if ( 'activate_prep' === $effect_type ) {
+			if ( is_array( $store_state['active_prep'] ?? null ) ) {
+				return new WP_Error( 'already_prepped', 'A prep item is already active for the next mission.' );
+			}
+
+			return [
+				'active_prep' => [
+					'id'             => $item_id,
+					'name'           => (string) ( $item['name'] ?? $definition['name'] ?? self::humanize_key( $item_id ) ),
+					'effect_summary' => (string) ( $use_effect['active_effect_summary'] ?? $item['effect_summary'] ?? '' ),
+				],
+			];
+		}
+
+		return new WP_Error( 'invalid_item', 'That item cannot be used from inventory right now.' );
+	}
+
+	private static function build_store_sellback_entries( array $daily_state, array $sections ): array {
+		$consumables = self::extract_store_inventory_consumables( $daily_state );
+
+		return array_values(
+			array_map(
+				static function ( array $item ) use ( $sections ): array {
+					$item_id = sanitize_key( (string) ( $item['id'] ?? '' ) );
+					return array_merge(
+						$item,
+						[
+							'sell_value' => self::resolve_store_sell_value( $item_id, $sections ),
+						]
+					);
+				},
+				$consumables
+			)
+		);
+	}
+
+	private static function resolve_store_sell_value( string $item_id, array $sections ): int {
+		$item = self::find_store_item( $sections, $item_id );
+		if ( ! is_array( $item ) ) {
+			$item = self::find_store_catalog_item( $item_id );
+		}
+		$cost = max( 0, (int) ( $item['cost_gold'] ?? 0 ) );
+
+		return max( 1, (int) floor( $cost / 2 ) );
+	}
+
+	private static function build_store_inventory_entry_for_response( array $item ): array {
+		return [
+			'id'             => sanitize_key( (string) ( $item['id'] ?? '' ) ),
+			'name'           => (string) ( $item['name'] ?? self::humanize_key( (string) ( $item['id'] ?? 'item' ) ) ),
+			'effect_summary' => (string) ( $item['effect_summary'] ?? '' ),
+			'quantity'       => max( 1, (int) ( $item['quantity'] ?? 1 ) ),
+		];
+	}
+
+	private static function build_store_recommended_purchase( array $profile, array $sections, ?array $active_run ): array {
+		$hp_current = max( 0, (int) ( $profile['hp_current'] ?? 0 ) );
+		$hp_max     = max( 1, (int) ( $profile['hp_max'] ?? 100 ) );
+		$gold       = max( 0, (int) ( $profile['gold'] ?? 0 ) );
+
+		if ( $hp_current <= (int) floor( $hp_max * 0.45 ) ) {
+			$item = $sections['recovery_goods'][0] ?? [];
+
+			return [
+				'item_id' => (string) ( $item['id'] ?? 'field_bandage' ),
+				'label'   => 'You are running light on HP. Patch up before the next push.',
+			];
+		}
+
+		if ( is_array( $active_run ) && ! empty( $active_run['mission_slug'] ) ) {
+			$item = $sections['mission_prep'][0] ?? [];
+
+			return [
+				'item_id' => (string) ( $item['id'] ?? 'scouting_map' ),
+				'label'   => 'You already have a mission running. Buy prep that helps the next one, not more noise right now.',
+			];
+		}
+
+		if ( $gold >= 25 ) {
+			$item = $sections['utility_charms'][0] ?? [];
+
+			return [
+				'item_id' => (string) ( $item['id'] ?? 'coin_charm' ),
+				'label'   => 'You have enough gold to make the next mission pay back better.',
+			];
+		}
+
+		$item = $sections['recovery_goods'][1] ?? $sections['recovery_goods'][0] ?? [];
+
+		return [
+			'item_id' => (string) ( $item['id'] ?? 'hot_meal_kit' ),
+			'label'   => 'Keep it simple. Buy the next small thing that makes tomorrow feel easier.',
+		];
+	}
+
+	private static function extract_store_inventory_state( array $daily_state ): array {
+		$bonus_state = is_array( $daily_state['bonus_state'] ?? null ) ? $daily_state['bonus_state'] : [];
+		$store_state = is_array( $bonus_state['store'] ?? null ) ? $bonus_state['store'] : [];
+
+		return $store_state;
+	}
+
+	private static function extract_store_inventory_consumables( array $daily_state ): array {
+		$store_state  = self::extract_store_inventory_state( $daily_state );
+		$consumables  = is_array( $store_state['consumables'] ?? null ) ? $store_state['consumables'] : [];
+
+		return array_values(
+			array_filter(
+				array_map(
+					static function ( mixed $item ): ?array {
+						if ( ! is_array( $item ) ) {
+							return null;
+						}
+
+						return [
+							'id'             => sanitize_key( (string) ( $item['id'] ?? '' ) ),
+							'name'           => (string) ( $item['name'] ?? self::humanize_key( (string) ( $item['id'] ?? 'consumable' ) ) ),
+							'effect_summary' => (string) ( $item['effect_summary'] ?? '' ),
+							'category'       => sanitize_key( (string) ( $item['category'] ?? '' ) ),
+							'quantity'       => max( 1, (int) ( $item['quantity'] ?? 1 ) ),
+						];
+					},
+					$consumables
+				)
+			)
+		);
+	}
+
+	private static function build_character_sheet_unlock_entry( array $unlock ): array {
+		$label = trim( (string) ( $unlock['meta']['label'] ?? '' ) );
+		if ( '' === $label ) {
+			$label = self::humanize_key( (string) ( $unlock['unlock_key'] ?? $unlock['unlock_type'] ?? 'entry' ) );
+		}
+
+		$subtitle = trim( (string) ( $unlock['meta']['description'] ?? '' ) );
+		if ( '' === $subtitle ) {
+			$subtitle = ! empty( $unlock['source_run_id'] )
+				? sprintf( 'Granted from mission run %d.', (int) $unlock['source_run_id'] )
+				: 'Recorded in the IronQuest ledger.';
+		}
+
+		return [
+			'id'         => (string) ( $unlock['id'] ?? '' ),
+			'label'      => $label,
+			'subtitle'   => $subtitle,
+			'created_at' => (string) ( $unlock['created_at'] ?? '' ),
+		];
+	}
+
+	private static function build_tavern_state( int $user_id, ?string $state_date = null ): array {
+		$profile       = IronQuestProfileService::ensure_profile( $user_id );
+		$date          = is_string( $state_date ) && '' !== $state_date ? $state_date : null;
+		$daily_state   = IronQuestDailyStateService::get_state( $user_id, $date );
+		$location_slug = sanitize_key( (string) ( $profile['current_location_slug'] ?? '' ) );
+		$location      = $location_slug ? IronQuestRegistryService::get_location( $location_slug ) : [];
+		$tavern        = is_array( $location['tavern'] ?? null ) ? $location['tavern'] : [];
+		$resolved      = self::extract_tavern_resolution( $daily_state );
+
+		return [
+			'date'            => (string) ( $daily_state['state_date'] ?? $state_date ?? '' ),
+			'location_slug'   => $location_slug,
+			'location_name'   => (string) ( $location['name'] ?? self::humanize_key( $location_slug ) ),
+			'tavern'          => [
+				'name'        => (string) ( $tavern['name'] ?? 'The Tavern' ),
+				'tone_tags'   => array_values( array_filter( array_map( 'strval', (array) ( $tavern['tone_tags'] ?? [] ) ) ) ),
+				'flavor_text' => self::build_tavern_flavor_text( $location, $tavern ),
+			],
+			'profile'         => $profile,
+			'today_context'   => [
+				'day_type'              => 'rest',
+				'meal_quest_complete'   => ! empty( $daily_state['meal_quest_complete'] ),
+				'sleep_quest_complete'  => ! empty( $daily_state['sleep_quest_complete'] ),
+				'cardio_quest_complete' => ! empty( $daily_state['cardio_quest_complete'] ),
+				'steps_quest_complete'  => ! empty( $daily_state['steps_quest_complete'] ),
+				'travel_points_earned'  => (int) ( $daily_state['travel_points_earned'] ?? 0 ),
+			],
+			'available_actions' => self::build_tavern_actions( $location_slug, $profile, $resolved ),
+			'selected_action'   => $resolved,
+			'resolved_today'    => ! empty( $resolved ),
+			'johnny_line'       => ! empty( $resolved['johnny_line'] ?? '' )
+				? (string) $resolved['johnny_line']
+				: self::build_tavern_johnny_line( $location_slug, '', [] ),
+			'daily_state'       => $daily_state,
+		];
+	}
+
+	private static function apply_tavern_action( int $user_id, string $action_id, ?string $state_date = null ): array|WP_Error {
+		$action_id = sanitize_key( $action_id );
+		if ( '' === $action_id ) {
+			return new WP_Error( 'invalid_action', 'Choose a tavern action before resolving it.' );
+		}
+
+		$profile     = IronQuestProfileService::ensure_profile( $user_id );
+		$daily_state = IronQuestDailyStateService::get_state( $user_id, $state_date );
+		if ( ! empty( self::extract_tavern_resolution( $daily_state ) ) ) {
+			return new WP_Error( 'action_already_resolved', 'Today\'s tavern action is already locked in.' );
+		}
+
+		$location_slug = sanitize_key( (string) ( $profile['current_location_slug'] ?? '' ) );
+		$effects = [
+			'hp_delta'        => 0,
+			'gold_delta'      => 0,
+			'xp_delta'        => 0,
+			'mission_preview' => null,
+		];
+
+		switch ( $action_id ) {
+			case 'rest':
+				$next_hp = min( (int) ( $profile['hp_max'] ?? 100 ), (int) ( $profile['hp_current'] ?? 0 ) + 8 );
+				$effects['hp_delta'] = max( 0, $next_hp - (int) ( $profile['hp_current'] ?? 0 ) );
+				$profile = IronQuestProfileService::set_hp( $user_id, $next_hp, (int) ( $profile['hp_max'] ?? 100 ) );
+				break;
+
+			case 'side_job':
+				$profile = IronQuestProfileService::update_progression( $user_id, 0, 10 );
+				$effects['gold_delta'] = 10;
+				break;
+
+			case 'rumors':
+				$profile = IronQuestProfileService::update_progression( $user_id, 10, 0 );
+				$effects['xp_delta'] = 10;
+				$effects['mission_preview'] = self::build_tavern_mission_preview( $location_slug, (string) ( $profile['active_mission_slug'] ?? '' ) );
+				break;
+
+			default:
+				return new WP_Error( 'invalid_action', 'That tavern action is not available yet.' );
+		}
+
+		$bonus_state = is_array( $daily_state['bonus_state'] ?? null ) ? $daily_state['bonus_state'] : [];
+		$bonus_state['tavern_day'] = [
+			'action_id'       => $action_id,
+			'resolved_at'     => current_time( 'mysql' ),
+			'effects'         => $effects,
+			'johnny_line'     => self::build_tavern_johnny_line( $location_slug, $action_id, $effects ),
+			'mission_preview' => $effects['mission_preview'],
+		];
+
+		$updated_daily = IronQuestDailyStateService::upsert_state(
+			$user_id,
+			(string) ( $daily_state['state_date'] ?? $state_date ?? '' ),
+			[ 'bonus_state_json' => $bonus_state ]
+		);
+
+		return [
+			'resolved'        => true,
+			'action_id'       => $action_id,
+			'effects'         => $effects,
+			'profile'         => $profile,
+			'daily_state'     => $updated_daily,
+			'johnny_line'     => (string) ( $bonus_state['tavern_day']['johnny_line'] ?? '' ),
+			'mission_preview' => $effects['mission_preview'],
+			'state'           => self::build_tavern_state( $user_id, (string) ( $daily_state['state_date'] ?? $state_date ?? '' ) ),
+		];
+	}
+
+	private static function extract_tavern_resolution( array $daily_state ): ?array {
+		$bonus_state = is_array( $daily_state['bonus_state'] ?? null ) ? $daily_state['bonus_state'] : [];
+		$resolution  = is_array( $bonus_state['tavern_day'] ?? null ) ? $bonus_state['tavern_day'] : null;
+
+		return is_array( $resolution ) ? $resolution : null;
+	}
+
+	private static function build_tavern_actions( string $location_slug, array $profile, ?array $resolved ): array {
+		$disabled = ! empty( $resolved );
+
+		return [
+			[
+				'id'             => 'rest',
+				'label'          => 'Take a room',
+				'description'    => 'Recover quietly and let the day stay easy.',
+				'effect_summary' => '+8 HP',
+				'disabled'       => $disabled,
+			],
+			[
+				'id'             => 'side_job',
+				'label'          => 'Pick up a side job',
+				'description'    => 'Take the easy coin without turning the day into work.',
+				'effect_summary' => '+10 gold',
+				'disabled'       => $disabled,
+			],
+			[
+				'id'             => 'rumors',
+				'label'          => 'Listen for rumors',
+				'description'    => sprintf( 'Hear what %s is stirring up next.', self::humanize_key( $location_slug ) ),
+				'effect_summary' => '+10 XP and mission preview',
+				'disabled'       => $disabled,
+			],
+		];
+	}
+
+	private static function build_tavern_flavor_text( array $location, array $tavern ): string {
+		$name = trim( (string) ( $tavern['name'] ?? '' ) );
+		$tone_tags = array_values( array_filter( array_map( 'strval', (array) ( $tavern['tone_tags'] ?? [] ) ) ) );
+		$location_name = trim( (string) ( $location['name'] ?? '' ) );
+
+		if ( $name && ! empty( $tone_tags ) ) {
+			return sprintf( '%s holds a %s mood tonight.', $name, implode( ', ', $tone_tags ) );
+		}
+
+		if ( $location_name ) {
+			return sprintf( 'The tavern in %s is the place to reset before the next push.', $location_name );
+		}
+
+		return 'This is a good place to reset before the next push.';
+	}
+
+	private static function build_tavern_mission_preview( string $location_slug, string $active_mission_slug ): ?array {
+		$missions = IronQuestRegistryService::get_location_missions( $location_slug );
+		foreach ( $missions as $mission ) {
+			$mission_slug = sanitize_key( (string) ( $mission['slug'] ?? '' ) );
+			if ( '' !== $mission_slug && $mission_slug !== sanitize_key( $active_mission_slug ) ) {
+				return [
+					'slug'    => $mission_slug,
+					'name'    => (string) ( $mission['name'] ?? self::humanize_key( $mission_slug ) ),
+					'summary' => (string) ( $mission['goal'] ?? $mission['narrative'] ?? '' ),
+				];
+			}
+		}
+
+		$mission = $missions[0] ?? null;
+		if ( ! is_array( $mission ) ) {
+			return null;
+		}
+
+		return [
+			'slug'    => sanitize_key( (string) ( $mission['slug'] ?? '' ) ),
+			'name'    => (string) ( $mission['name'] ?? '' ),
+			'summary' => (string) ( $mission['goal'] ?? $mission['narrative'] ?? '' ),
+		];
+	}
+
+	private static function build_tavern_johnny_line( string $location_slug, string $action_id, array $effects ): string {
+		return match ( $action_id ) {
+			'rest' => 'Take the quiet win. A real reset tonight does more than forcing one more task.',
+			'side_job' => 'Easy coin is enough for today. Keep the day light and leave with something useful.',
+			'rumors' => 'Listen close, take the hint, and let tomorrow have a little direction.',
+			default => sprintf( 'Settle in at %s and keep the day simple.', self::humanize_key( $location_slug ) ),
+		};
 	}
 
 	private static function resolve_default_mission_slug( string $location_slug, string $run_type ): string {
@@ -1593,7 +2667,7 @@ class IronQuestController extends RestController {
 		return sanitize_key( (string) ( $missions[0]['slug'] ?? '' ) );
 	}
 
-	private static function apply_mission_side_effects( int $user_id, int $run_id, array $run, array $mission, string $result_band, array $awards ): array {
+	private static function apply_mission_side_effects( int $user_id, int $run_id, array $run, array $mission, string $result_band, array $awards, array $story_state = [] ): array {
 		$granted_rewards = [];
 		$travel_points_bonus = 0;
 
@@ -1663,7 +2737,7 @@ class IronQuestController extends RestController {
 				sprintf( 'Journal updated: %s.', (string) ( $mission['name'] ?? self::humanize_key( $mission_slug ) ) ),
 				[
 					'label'       => (string) ( $mission['name'] ?? self::humanize_key( $mission_slug ) ),
-					'entry'       => (string) ( $mission['outcomes']['victory'] ?? $mission['narrative'] ?? $mission['goal'] ?? '' ),
+					'entry'       => self::resolve_journal_entry_text( $mission, $story_state ),
 					'source'      => 'mission_effect',
 					'location'    => $location_slug,
 				]
@@ -1701,6 +2775,15 @@ class IronQuestController extends RestController {
 			'travel_points_bonus' => $travel_points_bonus,
 			'granted_rewards'     => array_values( array_filter( $granted_rewards ) ),
 		];
+	}
+
+	private static function resolve_journal_entry_text( array $mission, array $story_state ): string {
+		$summary = sanitize_textarea_field( (string) ( $story_state['conclusion']['summary'] ?? '' ) );
+		if ( '' !== $summary ) {
+			return $summary;
+		}
+
+		return sanitize_textarea_field( (string) ( $mission['outcomes']['victory'] ?? $mission['narrative'] ?? $mission['goal'] ?? '' ) );
 	}
 
 	private static function grant_inventory_unlock( int $user_id, string $unlock_type, string $unlock_key, int $source_run_id, string $description, array $meta = [] ): ?array {
@@ -1772,9 +2855,10 @@ class IronQuestController extends RestController {
 			return $progression;
 		}
 
+		$story_state          = IronQuestNarrativeService::complete_story( $user_id, $completed, $result_band, $awards );
 		$previous_daily_state = IronQuestDailyStateService::get_state( $user_id );
 		$daily_state          = IronQuestDailyStateService::mark_quest_complete( $user_id, 'workout' );
-		$mission_effects      = self::apply_mission_side_effects( $user_id, $run_id, $run, is_array( $mission ) ? $mission : [], $result_band, $awards );
+		$mission_effects      = self::apply_mission_side_effects( $user_id, $run_id, $run, is_array( $mission ) ? $mission : [], $result_band, $awards, $story_state );
 		$route_sync           = self::sync_route_progression(
 			$user_id,
 			[
@@ -1787,7 +2871,7 @@ class IronQuestController extends RestController {
 		return [
 			'run'           => $completed,
 			'awards'        => $awards,
-			'story_state'   => IronQuestNarrativeService::complete_story( $user_id, $completed, $result_band, $awards ),
+			'story_state'   => $story_state,
 			'progression'   => $progression,
 			'daily_state'   => $daily_state,
 			'changes'       => self::build_daily_progress_changes( $previous_daily_state, $daily_state ),

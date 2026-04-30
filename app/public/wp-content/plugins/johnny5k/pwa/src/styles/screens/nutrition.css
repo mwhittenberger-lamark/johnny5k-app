@@ -2248,6 +2248,420 @@ label.field-label.nutrition-saved-food-field {
   }
 }
 
+:root[data-experience-mode='ironquest'] .upgraded-nutrition-screen {
+  color: var(--text);
+  background: transparent;
+}
+
+:root[data-experience-mode='ironquest'] .nutrition-screen .dashboard-chip.ai {
+  border-color: color-mix(in srgb, var(--accent2) 36%, var(--border) 64%);
+  background: color-mix(in srgb, var(--accent2) 14%, var(--bg2) 86%);
+  color: color-mix(in srgb, var(--accent2) 72%, var(--text2) 28%);
+}
+
+:root[data-experience-mode='ironquest'] .nutrition-screen .dashboard-chip.nutrition,
+:root[data-experience-mode='ironquest'] .nutrition-screen .dashboard-chip:not(.ai):not(.subtle):not(.workout):not(.awards):not(.success):not(.coach) {
+  border-color: color-mix(in srgb, var(--border) 70%, white 30%);
+  background: color-mix(in srgb, var(--surface-pill) 82%, var(--bg2) 18%);
+  color: var(--text2);
+}
+
+:root[data-experience-mode='ironquest'] .nutrition-mode-tabs {
+  gap: var(--space-2);
+}
+
+:root[data-experience-mode='ironquest'] .macro-stat,
+:root[data-experience-mode='ironquest'] .meal-card,
+:root[data-experience-mode='ironquest'] .nutrition-meal-accordion,
+:root[data-experience-mode='ironquest'] .nutrition-mode-tab,
+:root[data-experience-mode='ironquest'] .nutrition-shortcut-card,
+:root[data-experience-mode='ironquest'] .nutrition-add-method-card,
+:root[data-experience-mode='ironquest'] .nutrition-composer-mode,
+:root[data-experience-mode='ironquest'] .nutrition-filter-accordion,
+:root[data-experience-mode='ironquest'] .nutrition-gap-bulk-bar,
+:root[data-experience-mode='ironquest'] .nutrition-gap-check-item,
+:root[data-experience-mode='ironquest'] .label-scan-status-chip,
+:root[data-experience-mode='ironquest'] .label-scan-capture,
+:root[data-experience-mode='ironquest'] .label-review-grid div,
+:root[data-experience-mode='ironquest'] .nutrition-pantry-filter-chips .onboarding-chip,
+:root[data-experience-mode='ironquest'] .pantry-row-remove-button {
+  border-color: var(--ironquest-subpanel-border);
+  background: var(--ironquest-panel-strong-bg);
+  box-shadow:
+    0 10px 22px rgba(3, 5, 12, 0.08),
+    inset 0 1px 0 color-mix(in srgb, white 18%, transparent);
+}
+
+:root[data-experience-mode='ironquest'] .nutrition-planning-card,
+:root[data-experience-mode='ironquest'] .nutrition-meals-card,
+:root[data-experience-mode='ironquest'] .nutrition-section-intro-card,
+:root[data-experience-mode='ironquest'] .nutrition-today-hero,
+:root[data-experience-mode='ironquest'] .nutrition-plan-accordion-card,
+:root[data-experience-mode='ironquest'] .nutrition-pantry-category-card,
+:root[data-experience-mode='ironquest'] .nutrition-meal-photo-panel,
+:root[data-experience-mode='ironquest'] .label-scan-panel {
+  position: relative;
+  overflow: hidden;
+}
+
+:root[data-experience-mode='ironquest'] .nutrition-planning-card::before,
+:root[data-experience-mode='ironquest'] .nutrition-meals-card::before,
+:root[data-experience-mode='ironquest'] .nutrition-section-intro-card::before,
+:root[data-experience-mode='ironquest'] .nutrition-today-hero::before,
+:root[data-experience-mode='ironquest'] .nutrition-plan-accordion-card::before,
+:root[data-experience-mode='ironquest'] .nutrition-pantry-category-card::before,
+:root[data-experience-mode='ironquest'] .nutrition-meal-photo-panel::before,
+:root[data-experience-mode='ironquest'] .label-scan-panel::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 3px;
+  background: var(--ironquest-accent-bar);
+  opacity: 0.95;
+}
+
+:root[data-experience-mode='ironquest'] .nutrition-today-hero,
+:root[data-experience-mode='ironquest'] .nutrition-section-intro-card,
+:root[data-experience-mode='ironquest'] .nutrition-micro-card,
+:root[data-experience-mode='ironquest'] .saved-food-row,
+:root[data-experience-mode='ironquest'] .saved-food-form,
+:root[data-experience-mode='ironquest'] .saved-food-ai-block,
+:root[data-experience-mode='ironquest'] .nutrition-composer-status-band,
+:root[data-experience-mode='ironquest'] .nutrition-recipe-filter-recommended {
+  border-color: var(--ironquest-subpanel-border);
+  box-shadow:
+    0 12px 26px rgba(3, 5, 12, 0.09),
+    inset 0 1px 0 color-mix(in srgb, white 18%, transparent);
+}
+
+:root[data-experience-mode='ironquest'] .nutrition-section-intro-card,
+:root[data-experience-mode='ironquest'] .nutrition-micro-card,
+:root[data-experience-mode='ironquest'] .saved-food-row,
+:root[data-experience-mode='ironquest'] .saved-food-form,
+:root[data-experience-mode='ironquest'] .saved-food-ai-block,
+:root[data-experience-mode='ironquest'] .nutrition-composer-status-band,
+:root[data-experience-mode='ironquest'] .nutrition-recipe-filter-recommended {
+  background: var(--ironquest-subpanel-bg);
+}
+
+:root[data-experience-mode='ironquest'] .nutrition-today-hero {
+  background:
+    radial-gradient(circle at top right, color-mix(in srgb, var(--accent2) 20%, transparent), transparent 34%),
+    radial-gradient(circle at bottom left, color-mix(in srgb, var(--yellow) 16%, transparent), transparent 28%),
+    var(--surface-hero);
+  border-color: color-mix(in srgb, var(--border-strong) 84%, transparent);
+  box-shadow: var(--ironquest-section-shadow);
+}
+
+:root[data-experience-mode='ironquest'] .nutrition-section-intro-card,
+:root[data-experience-mode='ironquest'] .nutrition-planning-card,
+:root[data-experience-mode='ironquest'] .nutrition-meals-card,
+:root[data-experience-mode='ironquest'] .nutrition-plan-accordion-card,
+:root[data-experience-mode='ironquest'] .nutrition-pantry-category-card,
+:root[data-experience-mode='ironquest'] .nutrition-meal-photo-panel,
+:root[data-experience-mode='ironquest'] .label-scan-panel {
+  background:
+    radial-gradient(circle at top right, color-mix(in srgb, var(--yellow) 8%, transparent), transparent 28%),
+    var(--ironquest-panel-bg);
+}
+
+:root[data-experience-mode='ironquest'] .nutrition-mode-tab {
+  align-items: flex-start;
+  justify-content: flex-start;
+  padding: var(--space-3) var(--space-3-5);
+  border-radius: 16px;
+  min-height: 84px;
+  text-align: left;
+  font-family: var(--font-ui);
+  position: relative;
+}
+
+:root[data-experience-mode='ironquest'] .nutrition-mode-tab::after {
+  content: '';
+  position: absolute;
+  left: var(--space-3);
+  right: var(--space-3);
+  bottom: 10px;
+  height: 2px;
+  background: color-mix(in srgb, var(--border) 72%, transparent);
+}
+
+:root[data-experience-mode='ironquest'] .nutrition-mode-tab.active::after {
+  background: var(--ironquest-accent-bar);
+}
+
+:root[data-experience-mode='ironquest'] .nutrition-mode-tab small {
+  font-size: 0.76rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ironquest-copy-muted);
+}
+
+:root[data-experience-mode='ironquest'] .nutrition-section-intro-card h2,
+:root[data-experience-mode='ironquest'] .nutrition-today-hero-head h2 {
+  font-family: var(--font-display);
+  letter-spacing: 0.02em;
+}
+
+:root[data-experience-mode='ironquest'] .nutrition-section-intro-card h2 {
+  position: relative;
+  padding-bottom: var(--space-2);
+}
+
+:root[data-experience-mode='ironquest'] .nutrition-section-intro-card h2::after {
+  content: '';
+  display: block;
+  width: 72px;
+  height: 2px;
+  margin-top: var(--space-2);
+  background: var(--ironquest-accent-bar);
+}
+
+:root[data-experience-mode='ironquest'] .nutrition-today-hero-head,
+:root[data-experience-mode='ironquest'] .nutrition-plan-accordion-head,
+:root[data-experience-mode='ironquest'] .nutrition-pantry-category-head {
+  position: relative;
+  z-index: 1;
+}
+
+:root[data-experience-mode='ironquest'] .nutrition-plan-accordion-head,
+:root[data-experience-mode='ironquest'] .nutrition-pantry-category-head {
+  padding-bottom: var(--space-2-5);
+  border-bottom: 1px solid var(--ironquest-header-rule);
+}
+
+:root[data-experience-mode='ironquest'] .nutrition-plan-accordion-body {
+  margin-top: var(--space-3);
+}
+
+:root[data-experience-mode='ironquest'] .nutrition-coach-card,
+:root[data-experience-mode='ironquest'] .nutrition-today-accordion,
+:root[data-experience-mode='ironquest'] .beverage-board-card {
+  position: relative;
+  overflow: hidden;
+}
+
+:root[data-experience-mode='ironquest'] .nutrition-coach-card::before,
+:root[data-experience-mode='ironquest'] .nutrition-today-accordion::before,
+:root[data-experience-mode='ironquest'] .beverage-board-card::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 3px;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--yellow) 88%, white 12%), color-mix(in srgb, var(--accent2) 84%, white 16%));
+  opacity: 0.95;
+}
+
+:root[data-experience-mode='ironquest'] .macro-stat-primary,
+:root[data-experience-mode='ironquest'] .macro-stat-primary.macro-stat-red,
+:root[data-experience-mode='ironquest'] .macro-stat-primary.macro-stat-yellow,
+:root[data-experience-mode='ironquest'] .macro-stat-primary.macro-stat-green,
+:root[data-experience-mode='ironquest'] .nutrition-coach-card,
+:root[data-experience-mode='ironquest'] .beverage-board-card,
+:root[data-experience-mode='ironquest'] .nutrition-today-accordion {
+  border-color: color-mix(in srgb, var(--accent2) 34%, var(--border) 66%);
+  background:
+    radial-gradient(circle at top right, color-mix(in srgb, var(--yellow) 18%, transparent), transparent 32%),
+    linear-gradient(135deg, color-mix(in srgb, var(--text) 84%, black 16%), color-mix(in srgb, var(--text) 72%, var(--accent) 28%));
+  box-shadow: 0 18px 40px rgba(3, 5, 12, 0.22);
+  color: var(--bg2);
+}
+
+:root[data-experience-mode='ironquest'] .nutrition-coach-card p,
+:root[data-experience-mode='ironquest'] .nutrition-coach-card h3,
+:root[data-experience-mode='ironquest'] .nutrition-today-accordion-trigger h3,
+:root[data-experience-mode='ironquest'] .macro-stat-primary .macro-val,
+:root[data-experience-mode='ironquest'] .macro-stat-primary .macro-callout {
+  color: var(--bg2);
+}
+
+:root[data-experience-mode='ironquest'] .nutrition-coach-card p,
+:root[data-experience-mode='ironquest'] .nutrition-coach-prompt span,
+:root[data-experience-mode='ironquest'] .nutrition-today-accordion-trigger p,
+:root[data-experience-mode='ironquest'] .macro-stat-primary .macro-label,
+:root[data-experience-mode='ironquest'] .macro-stat-primary .macro-target,
+:root[data-experience-mode='ironquest'] .macro-stat-primary .macro-action-label,
+:root[data-experience-mode='ironquest'] .macro-stat-primary .macro-warning {
+  color: color-mix(in srgb, var(--bg2) 82%, transparent);
+}
+
+:root[data-experience-mode='ironquest'] .nutrition-coach-prompt,
+:root[data-experience-mode='ironquest'] .nutrition-today-accordion-icon,
+:root[data-experience-mode='ironquest'] .macro-stat-primary .macro-detail,
+:root[data-experience-mode='ironquest'] .macro-stat-primary .bar-track,
+:root[data-experience-mode='ironquest'] .beverage-board-panel,
+:root[data-experience-mode='ironquest'] .beverage-board-suggestion,
+:root[data-experience-mode='ironquest'] .beverage-board-size-picks .onboarding-chip,
+:root[data-experience-mode='ironquest'] .beverage-water-glass,
+:root[data-experience-mode='ironquest'] .nutrition-screen .coaching-summary-panel.coaching-summary-panel-dark .btn-outline {
+  border-color: color-mix(in srgb, var(--bg2) 16%, transparent);
+  background: color-mix(in srgb, var(--bg2) 10%, transparent);
+  color: var(--bg2);
+}
+
+:root[data-experience-mode='ironquest'] .nutrition-coach-prompt {
+  border-radius: 14px;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 10%, transparent);
+}
+
+:root[data-experience-mode='ironquest'] .nutrition-micro-card::after {
+  background: color-mix(in srgb, var(--accent2) 10%, transparent);
+}
+
+:root[data-experience-mode='ironquest'] .nutrition-shortcut-card {
+  justify-content: center;
+}
+
+:root[data-experience-mode='ironquest'] .nutrition-shortcut-card strong {
+  font-family: var(--font-ui);
+}
+
+:root[data-experience-mode='ironquest'] .beverage-water-glass.filled,
+:root[data-experience-mode='ironquest'] .beverage-board-size-picks .onboarding-chip.active {
+  border-color: color-mix(in srgb, var(--accent2) 52%, var(--border) 48%);
+  background: color-mix(in srgb, var(--accent2) 18%, var(--bg2) 82%);
+  color: var(--bg2);
+}
+
+:root[data-experience-mode='ironquest'] .macro-stat .macro-label,
+:root[data-experience-mode='ironquest'] .macro-stat .macro-target,
+:root[data-experience-mode='ironquest'] .macro-stat .macro-val,
+:root[data-experience-mode='ironquest'] .meal-type,
+:root[data-experience-mode='ironquest'] .meal-item-name,
+:root[data-experience-mode='ironquest'] .meal-total-stat strong,
+:root[data-experience-mode='ironquest'] .nutrition-planning-card h3,
+:root[data-experience-mode='ironquest'] .nutrition-section-intro-card h2,
+:root[data-experience-mode='ironquest'] .nutrition-recipe-card strong,
+:root[data-experience-mode='ironquest'] .nutrition-item-row strong,
+:root[data-experience-mode='ironquest'] .nutrition-meal-accordion-copy strong,
+:root[data-experience-mode='ironquest'] .nutrition-add-method-card strong,
+:root[data-experience-mode='ironquest'] .nutrition-composer-status-band strong,
+:root[data-experience-mode='ironquest'] .nutrition-recipe-filter-recommended-copy strong {
+  color: var(--text);
+}
+
+:root[data-experience-mode='ironquest'] .nutrition-section-intro-card p,
+:root[data-experience-mode='ironquest'] .nutrition-today-hero-head p,
+:root[data-experience-mode='ironquest'] .nutrition-planning-card p,
+:root[data-experience-mode='ironquest'] .nutrition-list-note,
+:root[data-experience-mode='ironquest'] .nutrition-recipe-note,
+:root[data-experience-mode='ironquest'] .meal-card-meta,
+:root[data-experience-mode='ironquest'] .meal-item-serving,
+:root[data-experience-mode='ironquest'] .meal-item-calories span,
+:root[data-experience-mode='ironquest'] .nutrition-shortcut-card span,
+:root[data-experience-mode='ironquest'] .nutrition-composer-status-copy,
+:root[data-experience-mode='ironquest'] .nutrition-composer-row-status p,
+:root[data-experience-mode='ironquest'] .nutrition-picker-selection,
+:root[data-experience-mode='ironquest'] .nutrition-add-method-card span,
+:root[data-experience-mode='ironquest'] .nutrition-meal-accordion-copy p,
+:root[data-experience-mode='ironquest'] .meal-card-item-note,
+:root[data-experience-mode='ironquest'] .label-review-grid span,
+:root[data-experience-mode='ironquest'] .label-scan-status-chip span,
+:root[data-experience-mode='ironquest'] .label-scan-capture span {
+  color: var(--ironquest-copy-muted);
+}
+
+:root[data-experience-mode='ironquest'] .nutrition-coach-card p,
+:root[data-experience-mode='ironquest'] .nutrition-coach-card h3,
+:root[data-experience-mode='ironquest'] .nutrition-coach-prompt span,
+:root[data-experience-mode='ironquest'] .nutrition-today-accordion-trigger h3,
+:root[data-experience-mode='ironquest'] .nutrition-today-accordion-trigger p,
+:root[data-experience-mode='ironquest'] .beverage-board-suggestion strong,
+:root[data-experience-mode='ironquest'] .beverage-board-suggestion p {
+  color: var(--bg2);
+}
+
+:root[data-experience-mode='ironquest'] .nutrition-coach-card p,
+:root[data-experience-mode='ironquest'] .nutrition-coach-prompt span,
+:root[data-experience-mode='ironquest'] .nutrition-today-accordion-trigger p,
+:root[data-experience-mode='ironquest'] .beverage-board-suggestion p {
+  color: color-mix(in srgb, var(--bg2) 82%, transparent);
+}
+
+:root[data-experience-mode='ironquest'] .meal-total-stat,
+:root[data-experience-mode='ironquest'] .meal-item,
+:root[data-experience-mode='ironquest'] .meal-card-item-accordion,
+:root[data-experience-mode='ironquest'] .nutrition-micro-stat,
+:root[data-experience-mode='ironquest'] .nutrition-item-row,
+:root[data-experience-mode='ironquest'] .nutrition-gap-check-item.checked,
+:root[data-experience-mode='ironquest'] .nutrition-saved-food-field.active {
+  border-color: var(--ironquest-inset-border);
+  background: var(--ironquest-inset-bg);
+}
+
+:root[data-experience-mode='ironquest'] .meal-total-stat-calories {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--yellow) 18%, var(--bg2) 82%), color-mix(in srgb, var(--ironquest-inset-bg) 82%, var(--yellow) 18%));
+}
+
+:root[data-experience-mode='ironquest'] .meal-total-stat-protein {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--success) 16%, var(--bg2) 84%), color-mix(in srgb, var(--ironquest-inset-bg) 82%, var(--success) 18%));
+}
+
+:root[data-experience-mode='ironquest'] .meal-total-stat-carbs {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent2) 16%, var(--bg2) 84%), color-mix(in srgb, var(--ironquest-inset-bg) 82%, var(--accent2) 18%));
+}
+
+:root[data-experience-mode='ironquest'] .meal-total-stat-fat {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent3) 18%, var(--bg2) 82%), color-mix(in srgb, var(--ironquest-inset-bg) 84%, var(--accent3) 16%));
+}
+
+:root[data-experience-mode='ironquest'] .meal-cals,
+:root[data-experience-mode='ironquest'] .macro-stat-actionable .macro-action-label,
+:root[data-experience-mode='ironquest'] .nutrition-micro-value,
+:root[data-experience-mode='ironquest'] .nutrition-filter-pill,
+:root[data-experience-mode='ironquest'] .nutrition-gap-check-badge,
+:root[data-experience-mode='ironquest'] .nutrition-recipe-details summary,
+:root[data-experience-mode='ironquest'] .nutrition-meal-accordion-icon,
+:root[data-experience-mode='ironquest'] .nutrition-plan-accordion-icon,
+:root[data-experience-mode='ironquest'] .label-scan-status-chip strong {
+  color: color-mix(in srgb, var(--accent2) 72%, var(--text) 28%);
+}
+
+:root[data-experience-mode='ironquest'] .nutrition-meal-accordion-icon,
+:root[data-experience-mode='ironquest'] .nutrition-plan-accordion-icon,
+:root[data-experience-mode='ironquest'] .nutrition-filter-pill,
+:root[data-experience-mode='ironquest'] .nutrition-gap-check-badge,
+:root[data-experience-mode='ironquest'] .label-scan-status-chip strong {
+  border-color: var(--ironquest-inset-border);
+  background: color-mix(in srgb, var(--ironquest-inset-bg) 92%, white 8%);
+}
+
+:root[data-experience-mode='ironquest'] .nutrition-mode-tab.active,
+:root[data-experience-mode='ironquest'] .nutrition-add-method-card:hover,
+:root[data-experience-mode='ironquest'] .nutrition-add-method-card:focus-visible,
+:root[data-experience-mode='ironquest'] .nutrition-composer-mode.active,
+:root[data-experience-mode='ironquest'] .nutrition-suggestion-row.active,
+:root[data-experience-mode='ironquest'] .nutrition-recipe-idea.selected {
+  border-color: color-mix(in srgb, var(--accent2) 46%, var(--border) 54%);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent2) 10%, var(--bg2) 90%), color-mix(in srgb, var(--ironquest-panel-strong-bg) 92%, white 8%));
+  box-shadow: 0 12px 26px rgba(3, 5, 12, 0.12);
+}
+
+:root[data-experience-mode='ironquest'] .nutrition-filter-accordion-body,
+:root[data-experience-mode='ironquest'] .nutrition-meal-accordion-body {
+  border-top-color: color-mix(in srgb, var(--border) 56%, transparent);
+}
+
+:root[data-experience-mode='ironquest'] .macro-detail-green,
+:root[data-experience-mode='ironquest'] .nutrition-inline-badge.success,
+:root[data-experience-mode='ironquest'] .nutrition-inline-badge.on-hand {
+  background: color-mix(in srgb, var(--success) 16%, var(--bg2) 84%);
+  color: color-mix(in srgb, var(--success) 72%, var(--text) 28%);
+}
+
+:root[data-experience-mode='ironquest'] .macro-detail-yellow,
+:root[data-experience-mode='ironquest'] .nutrition-inline-badge.info,
+:root[data-experience-mode='ironquest'] .nutrition-inline-badge.missing {
+  background: color-mix(in srgb, var(--yellow) 18%, var(--bg2) 82%);
+  color: color-mix(in srgb, var(--yellow) 72%, var(--text) 28%);
+}
+
+:root[data-experience-mode='ironquest'] .macro-detail-red,
+:root[data-experience-mode='ironquest'] .nutrition-inline-badge.active {
+  background: color-mix(in srgb, var(--danger) 16%, var(--bg2) 84%);
+  color: color-mix(in srgb, var(--danger) 72%, var(--text) 28%);
+}
+
 :root[data-theme-mode='dark'] .macro-detail-green,
 :root[data-theme-mode='dark'] .badge.green {
   background: rgba(34, 196, 126, 0.2);

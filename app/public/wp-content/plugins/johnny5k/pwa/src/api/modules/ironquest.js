@@ -16,6 +16,27 @@ export const ironquestApi = {
   progressStory: (payload) => api.post('/ironquest/missions/story/progress', payload),
   refreshDailyState: (payload = {}) => api.post('/ironquest/daily/refresh', payload),
   updateDailyProgress: (payload = {}) => api.post('/ironquest/daily/progress', payload),
+  store: (payload = {}) => api.get(`/ironquest/store${buildQueryString(payload)}`),
+  purchaseStoreItem: (payload = {}) => api.post('/ironquest/store/purchase', payload),
+  useStoreItem: (payload = {}) => api.post('/ironquest/store/use', payload),
+  sellStoreItem: (payload = {}) => api.post('/ironquest/store/sell', payload),
+  tavern: (payload = {}) => api.get(`/ironquest/tavern${buildQueryString(payload)}`),
+  resolveTavernAction: (payload = {}) => api.post('/ironquest/tavern/action', payload),
   fastTravel: (payload = {}) => api.post('/ironquest/route/fast-travel', payload),
   travelToLocation: (payload = {}) => api.post('/ironquest/route/travel', payload),
+}
+
+function buildQueryString(payload) {
+  const params = new URLSearchParams()
+
+  Object.entries(payload).forEach(([key, value]) => {
+    if (value == null || value === '') {
+      return
+    }
+
+    params.set(key, String(value))
+  })
+
+  const queryString = params.toString()
+  return queryString ? `?${queryString}` : ''
 }

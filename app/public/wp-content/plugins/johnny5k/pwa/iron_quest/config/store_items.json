@@ -1,0 +1,178 @@
+{
+  "version": 1,
+  "seed_set": "v1_store_catalog",
+  "items": [
+    {
+      "id": "field_bandage",
+      "category": "recovery_goods",
+      "name": "Field Bandage",
+      "description": "A quick field wrap for rough exits and cleaner recoveries.",
+      "effect_summary": "Restore 15 HP before the next push",
+      "cost_gold": 20,
+      "available": true,
+      "source_doc": "docs/features/feature_general_goods_store.md",
+      "use_effect": {
+        "type": "restore_hp",
+        "hp_restore": 15
+      }
+    },
+    {
+      "id": "hot_meal_kit",
+      "category": "recovery_goods",
+      "name": "Hot Meal Kit",
+      "description": "A simple packed meal that helps the next day feel steadier.",
+      "effect_summary": "Restore 8 HP and settle the day",
+      "cost_gold": 18,
+      "available": true,
+      "source_doc": "docs/features/feature_general_goods_store.md",
+      "use_effect": {
+        "type": "restore_hp",
+        "hp_restore": 8
+      }
+    },
+    {
+      "id": "restglass_phial",
+      "category": "recovery_goods",
+      "name": "Restglass Phial",
+      "description": "A quiet recovery draught used by disciplined travelers and mages.",
+      "effect_summary": "Restore 10 HP before the next mission",
+      "cost_gold": 20,
+      "available": true,
+      "source_doc": "docs/items/gear_list.md",
+      "use_effect": {
+        "type": "restore_hp",
+        "hp_restore": 10
+      }
+    },
+    {
+      "id": "basic_supplies",
+      "category": "mission_prep",
+      "name": "Basic Supplies",
+      "description": "A low-cost bundle of bandages, water, and field basics for early pushes.",
+      "effect_summary": "Basic mission prep for the next run",
+      "cost_gold": 15,
+      "available": true,
+      "source_doc": "docs/items/gear_list.md",
+      "use_effect": {
+        "type": "activate_prep",
+        "active_effect_summary": "Basic supplies are packed for the next mission."
+      }
+    },
+    {
+      "id": "scouting_map",
+      "category": "mission_prep",
+      "name": "Scouting Map",
+      "description": "Marks the cleaner path into trouble before the next push begins.",
+      "effect_summary": "Improves the next mission preview",
+      "cost_gold": 25,
+      "available": true,
+      "source_doc": "docs/features/feature_general_goods_store.md",
+      "use_effect": {
+        "type": "activate_prep",
+        "active_effect_summary": "Mission preview improved for the next run."
+      }
+    },
+    {
+      "id": "standard_mission_kit",
+      "category": "mission_prep",
+      "name": "Standard Mission Kit",
+      "description": "A fuller adventure pack for routine travel, workouts, and location clears.",
+      "effect_summary": "Stronger field prep for the next mission",
+      "cost_gold": 25,
+      "available": true,
+      "source_doc": "docs/items/gear_list.md",
+      "use_effect": {
+        "type": "activate_prep",
+        "active_effect_summary": "A standard mission kit is packed for the next run."
+      }
+    },
+    {
+      "id": "packed_rations",
+      "category": "mission_prep",
+      "name": "Packed Rations",
+      "description": "Reliable fuel when the mission goes longer than expected.",
+      "effect_summary": "Reduce next mission HP loss slightly",
+      "cost_gold": 24,
+      "available": true,
+      "source_doc": "docs/features/feature_general_goods_store.md",
+      "use_effect": {
+        "type": "activate_prep",
+        "active_effect_summary": "Next mission HP loss will be slightly reduced."
+      }
+    },
+    {
+      "id": "elite_mission_supplies",
+      "category": "mission_prep",
+      "name": "Elite Mission Supplies",
+      "description": "A premium expedition bundle built for harsh zones and boss prep.",
+      "effect_summary": "Premium prep for the next dangerous mission",
+      "cost_gold": 40,
+      "available": true,
+      "source_doc": "docs/items/gear_list.md",
+      "use_effect": {
+        "type": "activate_prep",
+        "active_effect_summary": "Elite supplies are packed for the next dangerous push."
+      }
+    },
+    {
+      "id": "coin_charm",
+      "category": "utility_charms",
+      "name": "Coin Charm",
+      "description": "A small superstition for people who like their effort to pay back cleanly.",
+      "effect_summary": "Small bonus gold on the next mission",
+      "cost_gold": 25,
+      "available": true,
+      "source_doc": "docs/features/feature_general_goods_store.md"
+    },
+    {
+      "id": "ward_thread",
+      "category": "utility_charms",
+      "name": "Ward Thread",
+      "description": "Light protection against avoidable punishment.",
+      "effect_summary": "Slight protection against next mission HP loss",
+      "cost_gold": 26,
+      "available": true,
+      "source_doc": "docs/features/feature_general_goods_store.md"
+    },
+    {
+      "id": "apprentice_focus_charm",
+      "category": "utility_charms",
+      "name": "Apprentice Focus Charm",
+      "description": "A small magical focus that rewards cleaner, more consistent training.",
+      "effect_summary": "Small XP bonus on the next full workout",
+      "cost_gold": 22,
+      "available": true,
+      "source_doc": "docs/items/gear_list.md"
+    },
+    {
+      "id": "candleglass_token",
+      "category": "utility_charms",
+      "name": "Candleglass Token",
+      "description": "A beginner token that steadies rest, focus, and quiet recovery.",
+      "effect_summary": "Improves sleep recovery on the next rest cycle",
+      "cost_gold": 42,
+      "available": true,
+      "source_doc": "docs/items/artifacts_list.md"
+    },
+    {
+      "id": "waymarker_charm",
+      "category": "utility_charms",
+      "name": "Waymarker Charm",
+      "description": "A travel charm used by scouts to keep routes steady and efficient.",
+      "effect_summary": "Improves route efficiency on upcoming travel",
+      "cost_gold": 38,
+      "available": true,
+      "source_doc": "docs/items/artifacts_list.md"
+    },
+    {
+      "id": "shadecoin",
+      "category": "utility_charms",
+      "name": "Shadecoin",
+      "description": "A stealth-market coin that rewards quick, clean movement.",
+      "effect_summary": "Improves gold gain on short workout missions",
+      "cost_gold": 36,
+      "available": true,
+      "source_doc": "docs/items/artifacts_list.md"
+    }
+  ]
+}

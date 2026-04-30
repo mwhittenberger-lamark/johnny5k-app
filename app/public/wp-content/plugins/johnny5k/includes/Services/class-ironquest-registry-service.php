@@ -14,6 +14,7 @@ class IronQuestRegistryService {
 		return [
 			'locations'    => self::get_locations_config(),
 			'missions'     => self::get_missions_config(),
+			'store_items'  => self::get_store_items_config(),
 			'launch_graph' => self::get_launch_graph_config(),
 		];
 	}
@@ -49,6 +50,16 @@ class IronQuestRegistryService {
 			'recommended_path' => self::sanitize_key_list( (array) ( $config['recommended_path'] ?? [] ) ),
 			'nodes'            => array_values( array_map( [ __CLASS__, 'normalize_graph_node' ], (array) ( $config['nodes'] ?? [] ) ) ),
 			'edges'            => array_values( array_map( [ __CLASS__, 'normalize_graph_edge' ], (array) ( $config['edges'] ?? [] ) ) ),
+		];
+	}
+
+	public static function get_store_items_config(): array {
+		$config = self::read_json_config( 'store_items.json' );
+
+		return [
+			'version'  => (int) ( $config['version'] ?? 0 ),
+			'seed_set' => sanitize_key( (string) ( $config['seed_set'] ?? '' ) ),
+			'items'    => array_values( array_map( [ __CLASS__, 'normalize_store_item' ], (array) ( $config['items'] ?? [] ) ) ),
 		];
 	}
 
@@ -122,6 +133,7 @@ class IronQuestRegistryService {
 			'reward_profile' => self::normalize_reward_profile( $location['reward_profile'] ?? [] ),
 			'ai_prompt_anchor' => self::normalize_ai_prompt_anchor( $location['ai_prompt_anchor'] ?? [] ),
 			'tavern'         => self::normalize_tavern( $location['tavern'] ?? [] ),
+			'store'          => self::normalize_store( $location['store'] ?? [] ),
 			'source_graph'   => self::normalize_source_graph( $location['source_graph'] ?? [] ),
 		];
 	}
@@ -144,6 +156,7 @@ class IronQuestRegistryService {
 			'narrative'              => sanitize_textarea_field( (string) ( $mission['narrative'] ?? '' ) ),
 			'threat'                 => sanitize_text_field( (string) ( $mission['threat'] ?? '' ) ),
 			'workout_feel'           => sanitize_text_field( (string) ( $mission['workout_feel'] ?? '' ) ),
+			'encounter_seeds'        => self::normalize_encounter_seeds( $mission['encounter_seeds'] ?? [] ),
 			'boss_unlock_requirements' => self::normalize_boss_unlock_requirements( $mission['boss_unlock_requirements'] ?? [] ),
 			'outcomes'               => self::normalize_outcomes( $mission['outcomes'] ?? [] ),
 		];
@@ -242,6 +255,46 @@ class IronQuestRegistryService {
 		];
 	}
 
+	private static function normalize_store( $store ): array {
+		if ( ! is_array( $store ) ) {
+			return [];
+		}
+
+		return [
+			'name'      => sanitize_text_field( (string) ( $store['name'] ?? '' ) ),
+			'tone_tags' => self::sanitize_text_list( (array) ( $store['tone_tags'] ?? [] ) ),
+			'stock'     => [
+				'recovery_goods' => self::sanitize_key_list( (array) ( $store['stock']['recovery_goods'] ?? [] ) ),
+				'mission_prep'   => self::sanitize_key_list( (array) ( $store['stock']['mission_prep'] ?? [] ) ),
+				'utility_charms' => self::sanitize_key_list( (array) ( $store['stock']['utility_charms'] ?? [] ) ),
+			],
+		];
+	}
+
+	private static function normalize_store_item( $item ): array {
+		if ( ! is_array( $item ) ) {
+			return [];
+		}
+
+		$use_effect = is_array( $item['use_effect'] ?? null ) ? $item['use_effect'] : [];
+
+		return [
+			'id'             => sanitize_key( (string) ( $item['id'] ?? '' ) ),
+			'category'       => sanitize_key( (string) ( $item['category'] ?? '' ) ),
+			'name'           => sanitize_text_field( (string) ( $item['name'] ?? '' ) ),
+			'description'    => sanitize_text_field( (string) ( $item['description'] ?? '' ) ),
+			'effect_summary' => sanitize_text_field( (string) ( $item['effect_summary'] ?? '' ) ),
+			'cost_gold'      => max( 0, (int) ( $item['cost_gold'] ?? 0 ) ),
+			'available'      => ! array_key_exists( 'available', $item ) || ! empty( $item['available'] ),
+			'source_doc'     => sanitize_text_field( (string) ( $item['source_doc'] ?? '' ) ),
+			'use_effect'     => [
+				'type'                  => sanitize_key( (string) ( $use_effect['type'] ?? '' ) ),
+				'hp_restore'            => max( 0, (int) ( $use_effect['hp_restore'] ?? 0 ) ),
+				'active_effect_summary' => sanitize_text_field( (string) ( $use_effect['active_effect_summary'] ?? '' ) ),
+			],
+		];
+	}
+
 	private static function normalize_source_graph( $graph ): array {
 		if ( ! is_array( $graph ) ) {
 			return [];
@@ -280,6 +333,41 @@ class IronQuestRegistryService {
 			'partial' => sanitize_textarea_field( (string) ( $outcomes['partial'] ?? '' ) ),
 			'failure' => sanitize_textarea_field( (string) ( $outcomes['failure'] ?? '' ) ),
 		];
+	}
+
+	private static function normalize_encounter_seeds( $seeds ): array {
+		if ( ! is_array( $seeds ) ) {
+			return [];
+		}
+
+		$normalized = [];
+
+		foreach ( $seeds as $seed ) {
+			if ( ! is_array( $seed ) ) {
+				continue;
+			}
+
+				$normalized[] = [
+					'slug'           => sanitize_key( (string) ( $seed['slug'] ?? '' ) ),
+					'title'          => sanitize_text_field( (string) ( $seed['title'] ?? '' ) ),
+					'objective'      => sanitize_text_field( (string) ( $seed['objective'] ?? '' ) ),
+					'threat'         => sanitize_text_field( (string) ( $seed['threat'] ?? '' ) ),
+					'prop'           => sanitize_text_field( (string) ( $seed['prop'] ?? '' ) ),
+					'landmark'       => sanitize_text_field( (string) ( $seed['landmark'] ?? '' ) ),
+					'hazard'         => sanitize_text_field( (string) ( $seed['hazard'] ?? '' ) ),
+					'stakes'         => sanitize_text_field( (string) ( $seed['stakes'] ?? '' ) ),
+					'enemy_posture'  => sanitize_text_field( (string) ( $seed['enemy_posture'] ?? '' ) ),
+					'sensory_detail' => sanitize_text_field( (string) ( $seed['sensory_detail'] ?? '' ) ),
+					'pressure'       => sanitize_text_field( (string) ( $seed['pressure'] ?? '' ) ),
+					'success_turn'   => sanitize_text_field( (string) ( $seed['success_turn'] ?? '' ) ),
+					'advance_turn'   => sanitize_text_field( (string) ( $seed['advance_turn'] ?? '' ) ),
+				'struggle_turn'  => sanitize_text_field( (string) ( $seed['struggle_turn'] ?? '' ) ),
+				'crisis_turn'    => sanitize_text_field( (string) ( $seed['crisis_turn'] ?? '' ) ),
+				'transition'     => sanitize_text_field( (string) ( $seed['transition'] ?? '' ) ),
+			];
+		}
+
+		return array_values( $normalized );
 	}
 
 	private static function normalize_graph_requirements( $requirements ): array {

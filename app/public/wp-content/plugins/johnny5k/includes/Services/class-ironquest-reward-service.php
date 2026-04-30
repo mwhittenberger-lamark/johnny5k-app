@@ -233,6 +233,8 @@ class IronQuestRewardService {
 			);
 		}
 
+		$rows = self::repair_unlock_rows( $user_id, is_array( $rows ) ? $rows : [] );
+
 		return array_values(
 			array_map(
 				static function ( array $row ): array {
@@ -249,5 +251,92 @@ class IronQuestRewardService {
 				is_array( $rows ) ? $rows : []
 			)
 		);
+	}
+
+	private static function repair_unlock_rows( int $user_id, array $rows ): array {
+		foreach ( $rows as $index => $row ) {
+			$repaired = self::repair_journal_unlock_row( $user_id, is_array( $row ) ? $row : [] );
+			if ( ! empty( $repaired ) ) {
+				$rows[ $index ] = $repaired;
+			}
+		}
+
+		return $rows;
+	}
+
+	private static function repair_journal_unlock_row( int $user_id, array $row ): array {
+		if ( 'journal_entry' !== sanitize_key( (string) ( $row['unlock_type'] ?? '' ) ) ) {
+			return $row;
+		}
+
+		$unlock_id      = (int) ( $row['id'] ?? 0 );
+		$source_run_id  = (int) ( $row['source_run_id'] ?? 0 );
+		$meta           = json_decode( (string) ( $row['meta_json'] ?? '' ), true ) ?: [];
+		$current_entry  = sanitize_textarea_field( (string) ( $meta['entry'] ?? '' ) );
+
+		if ( $unlock_id <= 0 || $source_run_id <= 0 || '' === $current_entry || ! self::has_narrative_placeholders( $current_entry ) ) {
+			return $row;
+		}
+
+		$run = IronQuestMissionService::get_run( $source_run_id, $user_id );
+		if ( empty( $run ) || 'completed' !== sanitize_key( (string) ( $run['status'] ?? '' ) ) ) {
+			return $row;
+		}
+
+		$story_state = IronQuestNarrativeService::get_or_create_story_state( $user_id, $run );
+		$summary     = sanitize_textarea_field( (string) ( $story_state['conclusion']['summary'] ?? '' ) );
+
+		if ( '' === $summary && '' !== (string) ( $run['result_band'] ?? '' ) ) {
+			$story_state = IronQuestNarrativeService::complete_story(
+				$user_id,
+				$run,
+				(string) $run['result_band'],
+				[
+					'xp'   => (int) ( $run['xp_awarded'] ?? 0 ),
+					'gold' => (int) ( $run['gold_awarded'] ?? 0 ),
+				]
+			);
+			$summary = sanitize_textarea_field( (string) ( $story_state['conclusion']['summary'] ?? '' ) );
+		}
+
+		if ( '' === $summary || self::has_narrative_placeholders( $summary ) ) {
+			return $row;
+		}
+
+		$meta['entry'] = $summary;
+		$meta_json     = wp_json_encode( $meta );
+		if ( ! is_string( $meta_json ) || '' === $meta_json ) {
+			return $row;
+		}
+
+		if ( self::update_unlock_meta_json( $unlock_id, $user_id, $meta_json ) ) {
+			$row['meta_json'] = $meta_json;
+		}
+
+		return $row;
+	}
+
+	private static function update_unlock_meta_json( int $unlock_id, int $user_id, string $meta_json ): bool {
+		global $wpdb;
+
+		$table = $wpdb->prefix . 'fit_ironquest_unlocks';
+		$updated = $wpdb->update(
+			$table,
+			[
+				'meta_json' => $meta_json,
+			],
+			[
+				'id'      => $unlock_id,
+				'user_id' => $user_id,
+			],
+			[ '%s' ],
+			[ '%d', '%d' ]
+		);
+
+		return false !== $updated;
+	}
+
+	private static function has_narrative_placeholders( string $value ): bool {
+		return 1 === preg_match( '/\{[a-z_]+\}/', $value );
 	}
 }

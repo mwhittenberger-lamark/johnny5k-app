@@ -90,13 +90,13 @@ function buildRecoverySummary(input) {
     status: 'at_risk',
     statusLabel: 'Recovery first',
     headline: isPostWorkout
-      ? 'Good session. Recovery is the next job.'
+      ? 'Good session. Recover well now.'
       : isPreWorkout
-        ? 'Recovery needs to shape this session.'
-        : 'Recovery is the main variable right now.',
+        ? 'Recovery needs to shape today.'
+        : 'Recovery is the thing to respect right now.',
     summary: input.recommendedTimeTier
-      ? `Recovery signal is soft enough that the next training decision should stay closer to a ${input.recommendedTimeTier} session than a max-effort one.`
-      : `Recovery signal is soft enough that the next training decision should stay lighter and easier to recover from.`,
+      ? `Your recovery looks soft enough that the next training decision should stay closer to a ${input.recommendedTimeTier} session than a max-effort one.`
+      : 'Your recovery looks soft enough that the next training decision should stay lighter and easier to bounce back from.',
     wins: [
       input.completionReview ? `${input.completionReview.sessionLabel || 'This session'} is already banked.` : '',
       input.currentStreak >= 3 ? `A ${input.currentStreak}-day consistency run is already on the board.` : '',
@@ -138,8 +138,8 @@ function buildRecoverySummary(input) {
       type: isPreWorkout ? 'reduce_intensity' : 'take_recovery_day',
       title: isPreWorkout ? 'Scale this session down' : 'Review recovery',
       message: isPreWorkout
-        ? 'Keep today crisp, controlled, and easier to recover from.'
-        : 'Open Progress and check sleep and recovery before pushing the next session.',
+        ? 'Keep today crisp, controlled, and easy to recover from.'
+        : 'Open Progress and check sleep and recovery before you push the next session.',
       ctaLabel: isPreWorkout ? 'Open progress' : 'Open recovery',
       href: '/body',
       state: {
@@ -168,10 +168,10 @@ function buildAdherenceSummary(input) {
     contextLabel: 'Last 7 days',
     status: 'at_risk',
     statusLabel: 'Adherence risk',
-    headline: 'Consistency is the pressure point this week.',
+    headline: 'Consistency is the issue this week.',
     summary: input.trainingRecorded
-      ? 'Recent work is logged, but missed-session cleanup is still the clearest way to protect progress.'
-      : `The cleanest win is getting the open ${scheduledLabel} session handled before the schedule drifts further.`,
+      ? 'Recent work is logged, but missed sessions are still the clearest thing to clean up next.'
+      : `The biggest win is getting the open ${scheduledLabel} session done before the week drifts further.`,
     wins: [
       input.currentStreak >= 3 ? `You already have a ${input.currentStreak}-day run worth protecting.` : '',
       input.trainingRecorded ? `Recent ${scheduledLabel} work is already on the board.` : '',
@@ -244,7 +244,7 @@ function buildNutritionSummary(input) {
     ? `${input.mealDayBuckets.trainingLoggedDays} logged training day${input.mealDayBuckets.trainingLoggedDays === 1 ? '' : 's'} versus ${input.mealDayBuckets.restLoggedDays} logged rest day${input.mealDayBuckets.restLoggedDays === 1 ? '' : 's'}.`
     : ''
   const bodyContext = input.weightTrend.direction === 'stable'
-    ? 'Body trend is still basically flat, so consistency is a cleaner variable than another big plan change.'
+    ? 'Body trend is still basically flat, so consistency matters more than another big plan change.'
     : input.weightTrend.direction !== 'unknown'
       ? input.weightTrend.message
       : ''
@@ -260,12 +260,12 @@ function buildNutritionSummary(input) {
     contextLabel: 'Nutrition read',
     status: input.loggedDays <= 3 ? 'at_risk' : 'steady',
     statusLabel: 'Nutrition gap',
-    headline: 'Nutrition consistency is the next clean-up layer.',
+    headline: 'Food logging needs to get simpler.',
     summary: hasNutritionLoggingWindow && input.loggedDays <= 3
-      ? 'Logging is too patchy to trust the body signal yet. Tighten consistency before you change the bigger plan.'
+      ? 'Logging is too patchy to trust the trend yet. Tighten consistency before you change the bigger plan.'
       : input.proteinMetrics.pct < 0.75
-        ? 'Protein is trailing often enough that recovery and body outcomes both stay noisier than they need to be.'
-        : 'Weekly intake is partly on track, but the pattern still leaks enough to matter.',
+        ? 'Protein is trailing often enough that recovery and body results stay noisier than they need to.'
+        : 'Weekly intake is partly on track, but the pattern is still loose enough to matter.',
     wins: [
       input.proteinMetrics.target > 0 && input.proteinMetrics.pct >= 0.9 ? 'Protein support is mostly on pace right now.' : '',
       hasNutritionLoggingWindow && input.loggedDays >= 5 ? `${input.loggedDays} of the last 7 days are logged.` : '',
@@ -305,7 +305,7 @@ function buildNutritionSummary(input) {
         id: 'nutrition_outcome_link',
         type: 'body',
         title: 'Outcome link',
-        message: trendWindowMessage || bodyContext || 'Outcome linkage is limited until the logging pattern gets cleaner.',
+        message: trendWindowMessage || bodyContext || 'It is hard to judge the trend until the logging pattern gets cleaner.',
         evidence: [trendWindowMessage || bodyContext || 'Recent weight trend and weekly intake pattern.'],
         confidence: input.weightTrend.confidence || 'medium',
         priority: 30,
@@ -314,7 +314,7 @@ function buildNutritionSummary(input) {
     nextAction: makeAction({
       type: 'improve_nutrition_consistency',
       title: 'Tighten the next nutrition block',
-      message: 'Log the next meal, anchor it around protein, and close the weekly logging gap before you change anything bigger.',
+      message: 'Log the next meal, make protein the anchor, and stop trying to fix the whole week at once.',
       ctaLabel: 'Open nutrition',
       href: '/nutrition',
       state: {
@@ -358,13 +358,13 @@ function buildBodySummary(input) {
     status: input.weightTrend.direction === 'stable' ? 'steady' : 'improving',
     statusLabel: input.weightTrend.direction === 'stable' ? 'Body trend' : 'Body trend moving',
     headline: input.weightTrend.direction === 'stable'
-      ? 'Body trend is steady. Do not overreact to that.'
-      : 'Body trend is moving. Keep the plan boring and consistent.',
+      ? 'Your body trend is steady. Do not overreact.'
+      : 'Your body trend is moving. Keep the plan simple.',
     summary: input.weightTrend.direction === 'stable'
       ? nutritionRisk && input.workoutCountRecent > 0
-        ? 'Weight is stable, but training is still showing up. Nutrition consistency looks like the cleaner variable to tighten next.'
-        : 'The current read looks more like a consistency question than a reason to change everything.'
-      : 'You already have a directional body signal. Protect it with repeatable training, food, sleep, and movement instead of chasing novelty.',
+        ? 'Weight is stable, but training is still showing up. Food consistency looks like the cleaner thing to tighten next.'
+        : 'This looks more like a consistency problem than a reason to change everything.'
+      : 'You already have a real body trend. Protect it with repeatable training, food, sleep, and movement instead of chasing novelty.',
     wins: [
       input.workoutCountRecent > 0 ? `${input.workoutCountRecent} workout${input.workoutCountRecent === 1 ? '' : 's'} are on the board from ${input.workoutWindowLabel}.` : '',
       input.avgSleep3d >= Math.max(7, input.targetSleep - 0.5) ? 'Sleep support is holding up well enough to trust the trend read more.' : '',
@@ -411,7 +411,7 @@ function buildBodySummary(input) {
     nextAction: nutritionRisk ? makeAction({
       type: 'improve_nutrition_consistency',
       title: 'Tighten nutrition before changing the plan',
-      message: 'Weight is steady enough that nutrition consistency is the cleaner next variable to control.',
+      message: 'Weight is steady enough that food consistency is the cleaner thing to control next.',
       ctaLabel: 'Open nutrition',
       href: '/nutrition',
       state: {
@@ -420,7 +420,7 @@ function buildBodySummary(input) {
     }) : makeAction({
       type: 'stay_the_course',
       title: 'Review the 14-day to 28-day body trend',
-      message: `Open Progress and look at weight, sleep, movement, and workouts from ${input.workoutWindowLabel} together before changing anything bigger.`,
+      message: `Open Progress and look at weight, sleep, movement, and workouts from ${input.workoutWindowLabel} together before you change anything bigger.`,
       ctaLabel: 'Open progress',
       href: '/body',
       state: {
@@ -443,15 +443,15 @@ function buildMomentumSummary(input) {
     status: 'improving',
     statusLabel: 'Momentum',
     headline: input.surface === 'workout_post'
-      ? 'Session logged. Keep the run clean.'
+      ? 'Session logged. Finish the day well.'
       : input.weeklyScore >= 80
-        ? 'Protect the run today.'
-        : 'Keep the day moving.',
+        ? 'Protect the good run today.'
+        : 'Keep the day moving in the right direction.',
     summary: input.surface === 'workout_post'
-      ? 'The workout counts now. The next win is making recovery and nutrition support it instead of wasting the session.'
+      ? 'The workout counts now. The next win is making recovery and food support it.'
       : input.trainingRecorded
         ? `${focusLabel.charAt(0).toUpperCase()}${focusLabel.slice(1)} work is logged this week. Keep today simple and repeatable.`
-        : 'The board still needs one decisive move today.',
+        : 'You still need one clear move today.',
     wins: [
       input.currentStreak > 0 ? `You are carrying a ${input.currentStreak}-day consistency run.` : '',
       input.weeklyScore > 0 ? `Weekly score is ${input.weeklyScore} right now.` : '',
@@ -486,7 +486,7 @@ function buildMomentumSummary(input) {
         message: input.proteinMetrics.target > 0
           ? input.proteinMetrics.pct >= 0.75
             ? 'Protein is mostly on pace, which keeps recovery support useful.'
-            : 'Protein is still trailing a little, so the easiest way to protect momentum is the next meal.'
+              : 'Protein is still trailing a little, so the easiest way to protect momentum is the next meal.'
           : 'Protein support is not fully configured yet, so momentum coaching stays simpler.',
         evidence: ['Current protein total and target from the dashboard snapshot.'],
         confidence: input.proteinMetrics.target > 0 ? 'medium' : 'low',
@@ -497,10 +497,10 @@ function buildMomentumSummary(input) {
       type: input.proteinMetrics.target > 0 && input.proteinMetrics.pct < 0.75 ? 'improve_nutrition_consistency' : 'stay_the_course',
       title: input.proteinMetrics.target > 0 && input.proteinMetrics.pct < 0.75 ? 'Close protein cleanly' : 'Protect the run',
       message: input.proteinMetrics.target > 0 && input.proteinMetrics.pct < 0.75
-        ? 'Use the next meal to tighten protein and keep recovery support obvious.'
+        ? 'Use the next meal to close some protein and make recovery easier.'
         : input.trainingRecorded
-          ? 'Keep the next action small and repeatable so momentum survives the rest of the day.'
-          : 'Handle the next scheduled session before it turns into cleanup tomorrow.',
+          ? 'Keep the next action small and repeatable so the rest of the day stays easy.'
+          : 'Handle the next scheduled session before it becomes tomorrow\'s problem.',
       ctaLabel: input.proteinMetrics.target > 0 && input.proteinMetrics.pct < 0.75 ? 'Open nutrition' : (input.trainingRecorded ? 'Ask Johnny' : 'Open workout'),
       ...(input.proteinMetrics.target > 0 && input.proteinMetrics.pct < 0.75
         ? {

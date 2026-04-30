@@ -95,6 +95,7 @@ export default function LiveWorkoutMode({
   const [restToast, setRestToast] = useState(null)
   const [showIntroModal, setShowIntroModal] = useState(false)
   const [selectingStoryChoice, setSelectingStoryChoice] = useState('')
+  const [activeIronQuestPanel, setActiveIronQuestPanel] = useState('ironquest')
   const [restTiming, setRestTiming] = useState(DEFAULT_REST_TIMING)
   const [restTimerPausedAt, setRestTimerPausedAt] = useState(null)
   const [restTimerPausedMs, setRestTimerPausedMs] = useState(0)
@@ -168,9 +169,15 @@ export default function LiveWorkoutMode({
   const storyTranscript = Array.isArray(storyState?.transcript) ? storyState.transcript.slice(-3).reverse() : []
   const storyProgressPercent = Math.max(0, Math.min(100, Number(storyState?.progress?.percent || 0) || 0))
   const storyProgressLabel = String(storyState?.progress?.label || '').trim()
+  const storyEncounterPhase = String(storyState?.encounter_phase || activeIronQuestOverlay?.encounterPhase || ironQuestOverlay?.encounterPhase || 'intro').trim() || 'intro'
+  const storyTension = String(storyState?.tension || '').trim()
+  const storyHpCurrent = Math.max(0, Number(storyState?.hp_current ?? activeIronQuestOverlay?.hpCurrent ?? ironQuestOverlay?.hpCurrent ?? 0) || 0)
+  const storyHpMax = Math.max(0, Number(storyState?.hp_max ?? activeIronQuestOverlay?.hpMax ?? ironQuestOverlay?.hpMax ?? 0) || 0)
+  const storyHpLossThisSet = Math.max(0, Number(storyState?.hp_loss_this_set ?? activeIronQuestOverlay?.hpLossThisSet ?? ironQuestOverlay?.hpLossThisSet ?? 0) || 0)
   const storyBeat = String(storyState?.latest_beat || ironQuestOverlay?.latestBeat || '').trim()
   const storySituation = String(storyState?.current_situation || ironQuestOverlay?.currentSituation || '').trim()
   const storyPrompt = String(storyState?.decision_prompt || ironQuestOverlay?.decisionPrompt || '').trim()
+  const storyDebugPrompt = String(storyState?.debug_prompt || '').trim()
   const storyRoll = storyState?.roll && typeof storyState.roll === 'object' ? storyState.roll : null
   const liveVoiceMode = String(voicePrefs.liveModeVoiceMode || 'premium').trim().toLowerCase()
   const voiceLabel = formatOpenAiVoiceLabel(voicePrefs.openAiVoice)
@@ -182,6 +189,23 @@ export default function LiveWorkoutMode({
   const defaultLiveWorkoutFrames = useMemo(() => getDefaultLiveWorkoutFrames(appImages), [appImages])
   const voiceTestBusy = premiumVoiceTest.status === 'running' || instantVoiceTest.status === 'running'
   const scrollBehavior = getAccessibleScrollBehavior()
+  const ironQuestPanels = useMemo(() => (
+    hasIronQuestOverlay
+      ? [
+          { key: 'ironquest', label: 'Quest interface' },
+          { key: 'lift', label: 'Sets interface' },
+          { key: 'johnny', label: 'Johnny interface' },
+        ]
+      : []
+  ), [hasIronQuestOverlay])
+  const activeIronQuestPanelIndex = Math.max(0, ironQuestPanels.findIndex(panel => panel.key === activeIronQuestPanel))
+  const currentIronQuestPanel = ironQuestPanels[activeIronQuestPanelIndex] || null
+  const previousIronQuestPanel = ironQuestPanels.length
+    ? ironQuestPanels[(activeIronQuestPanelIndex - 1 + ironQuestPanels.length) % ironQuestPanels.length]
+    : null
+  const nextIronQuestPanel = ironQuestPanels.length
+    ? ironQuestPanels[(activeIronQuestPanelIndex + 1) % ironQuestPanels.length]
+    : null
   const applyVoicePrefs = useCallback((updater) => {
     setVoicePrefs(current => {
       const nextPrefs = typeof updater === 'function' ? updater(current) : updater
@@ -212,6 +236,16 @@ export default function LiveWorkoutMode({
   const dismissIntroModal = useCallback(() => {
     setShowIntroModal(false)
   }, [])
+  const cycleIronQuestPanel = useCallback((direction) => {
+    if (!ironQuestPanels.length) return
+
+    setActiveIronQuestPanel(current => {
+      const currentIndex = ironQuestPanels.findIndex(panel => panel.key === current)
+      const safeIndex = currentIndex >= 0 ? currentIndex : 0
+      const nextIndex = (safeIndex + direction + ironQuestPanels.length) % ironQuestPanels.length
+      return ironQuestPanels[nextIndex]?.key || ironQuestPanels[0].key
+    })
+  }, [ironQuestPanels])
 
   useEffect(() => {
     isOpenRef.current = isOpen
@@ -249,6 +283,15 @@ export default function LiveWorkoutMode({
       }
     }
   }, [isOpen, restTimerPausedAt])
+
+  useEffect(() => {
+    if (!hasIronQuestOverlay) {
+      setActiveIronQuestPanel('ironquest')
+      return
+    }
+
+    setActiveIronQuestPanel(current => ironQuestPanels.some(panel => panel.key === current) ? current : 'ironquest')
+  }, [hasIronQuestOverlay, ironQuestPanels])
 
   useEffect(() => () => recognitionRef.current?.stop(), [])
 
@@ -622,6 +665,7 @@ export default function LiveWorkoutMode({
     if (!isOpen || !workoutSessionId || voiceTestingOpen) return
     if (!lastTransition?.at || !lastTransition?.allowRestMessages || !restCueExerciseName) return
     if (!['sweet', 'drift'].includes(restGuidance.tone)) return
+    if (activeIronQuestOverlay && restGuidance.tone === 'sweet') return
 
     const nextKey = `${workoutSessionId}:${lastTransition.at}:${restGuidance.tone}`
     if (restGuidanceMessageKeyRef.current === nextKey) return
@@ -1247,24 +1291,377 @@ export default function LiveWorkoutMode({
         <span className={`dashboard-chip subtle live-workout-rest-chip ${restGuidance.tone}`}>{restGuidance.label}</span>
       </div>
       <nav className="live-workout-sticky-nav" aria-label="Live workout shortcuts">
-        <button
-          type="button"
-          className="btn-secondary small live-workout-sticky-arrow"
-          aria-label="Go to current lift"
-          onClick={() => scrollPanelToSection(currentLiftRef)}
-        >
-          ↑
-        </button>
-        <button
-          type="button"
-          className="btn-secondary small live-workout-sticky-arrow"
-          aria-label="Go to Johnny Live"
-          onClick={() => scrollPanelToSection(johnnyCardRef)}
-        >
-          ↓
-        </button>
+        {hasIronQuestOverlay ? (
+          <>
+            <button
+              type="button"
+              className="btn-secondary small live-workout-sticky-arrow"
+              aria-label={`Show ${previousIronQuestPanel?.label || 'previous interface'}`}
+              onClick={() => cycleIronQuestPanel(-1)}
+            >
+              ↑
+            </button>
+            <span className="live-workout-sticky-panel-label" aria-live="polite">{currentIronQuestPanel?.label || 'Quest interface'}</span>
+            <button
+              type="button"
+              className="btn-secondary small live-workout-sticky-arrow"
+              aria-label={`Show ${nextIronQuestPanel?.label || 'next interface'}`}
+              onClick={() => cycleIronQuestPanel(1)}
+            >
+              ↓
+            </button>
+          </>
+        ) : (
+          <>
+            <button
+              type="button"
+              className="btn-secondary small live-workout-sticky-arrow"
+              aria-label="Go to current lift"
+              onClick={() => scrollPanelToSection(currentLiftRef)}
+            >
+              ↑
+            </button>
+            <button
+              type="button"
+              className="btn-secondary small live-workout-sticky-arrow"
+              aria-label="Go to Johnny Live"
+              onClick={() => scrollPanelToSection(johnnyCardRef)}
+            >
+              ↓
+            </button>
+          </>
+        )}
       </nav>
     </div>
+  )
+
+  const ironQuestLivePanel = hasIronQuestOverlay ? (
+    <section className="dash-card live-workout-interface-card live-workout-ironquest-card">
+      <div className="dashboard-card-head">
+        <span className="dashboard-chip awards">IronQuest live</span>
+        <span className="dashboard-chip subtle">{ironQuestOverlay.locationLabel || 'Current region'}</span>
+      </div>
+      <div className="live-workout-interface-head">
+        <div>
+          <h3>{ironQuestOverlay.title || 'Mission attached'}</h3>
+          {ironQuestOverlay.objective ? <p className="settings-subtitle">{ironQuestOverlay.objective}</p> : null}
+        </div>
+        <div className="live-workout-interface-badges">
+          <span className="dashboard-chip subtle">{storyProgressLabel || 'Story live'}</span>
+          <span className="dashboard-chip subtle">{questBeatsEnabled ? `Beats on • ${formatToken(questStance)}` : 'Beats skipped'}</span>
+        </div>
+      </div>
+      <div className="live-workout-ironquest-hud" aria-label="IronQuest mission status">
+        <div className="live-workout-ironquest-hud-stat">
+          <span>Progress</span>
+          <strong>{storyProgressPercent > 0 ? `${storyProgressPercent}%` : 'Live'}</strong>
+          <small>{storyProgressLabel || 'Mission active'}</small>
+        </div>
+        <div className="live-workout-ironquest-hud-stat">
+          <span>HP</span>
+          <strong>{storyHpMax > 0 ? `${storyHpCurrent}/${storyHpMax}` : `${storyHpCurrent}`}</strong>
+          <small>{storyHpLossThisSet > 0 ? `Last hit ${storyHpLossThisSet}` : 'Holding steady'}</small>
+        </div>
+        <div className="live-workout-ironquest-hud-stat">
+          <span>Pressure</span>
+          <strong>{formatToken(storyTension || 'steady')}</strong>
+          <small>{storyTension ? 'Live tension' : 'No spike yet'}</small>
+        </div>
+        <div className="live-workout-ironquest-hud-stat">
+          <span>Phase</span>
+          <strong>{formatToken(storyEncounterPhase)}</strong>
+          <small>{questBeatsEnabled ? `Beats ${formatToken(questStance)}` : 'Beats skipped'}</small>
+        </div>
+      </div>
+      <details className="live-workout-ironquest-story-accordion" open>
+        <summary className="live-workout-ironquest-story-summary">
+          <div>
+            <strong>Mission story</strong>
+            <span>{storyProgressLabel || 'Open the current encounter details and choices.'}</span>
+          </div>
+        </summary>
+        <div className="live-workout-ironquest-story-body">
+          {storyDebugPrompt ? (
+            <details className="live-workout-ironquest-debug-prompt">
+              <summary className="live-workout-ironquest-debug-prompt-summary">
+                <strong>AI prompt</strong>
+                <span>See the exact prompt sent for this story state.</span>
+              </summary>
+              <pre className="live-workout-ironquest-debug-prompt-copy">{storyDebugPrompt}</pre>
+            </details>
+          ) : null}
+          {storySituation ? <p className="live-workout-ironquest-story-copy">{storySituation}</p> : null}
+          {storyProgressPercent > 0 ? (
+            <div className="live-workout-ironquest-progress" aria-label="IronQuest story progress">
+              <div className="live-workout-ironquest-progress-bar" aria-hidden="true">
+                <span style={{ width: `${storyProgressPercent}%` }} />
+              </div>
+              <strong>{storyProgressLabel || `Story ${storyProgressPercent}%`}</strong>
+            </div>
+          ) : null}
+          <div className="onboarding-review-list">
+            <div className="onboarding-review-row">
+              <span>Encounter phase</span>
+              <strong>{formatToken(storyEncounterPhase)}</strong>
+            </div>
+            <div className="onboarding-review-row">
+              <span>Readiness band</span>
+              <strong>{formatToken(ironQuestOverlay.readinessBand || 'unknown')}</strong>
+            </div>
+            <div className="onboarding-review-row">
+              <span>Quest beats</span>
+              <strong>{questBeatsEnabled ? `On • ${formatToken(questStance)}` : 'Skipped'}</strong>
+            </div>
+            {storyTension ? (
+              <div className="onboarding-review-row">
+                <span>Story tension</span>
+                <strong>{formatToken(storyTension)}</strong>
+              </div>
+            ) : null}
+            {storyHpMax > 0 ? (
+              <div className="onboarding-review-row">
+                <span>Mission HP</span>
+                <strong>{`${storyHpCurrent}/${storyHpMax}`}</strong>
+              </div>
+            ) : null}
+          </div>
+          {!selectedStoryChoiceId && storyChoices.length ? (
+            <div className="live-workout-ironquest-choice-block">
+              <p className="settings-subtitle">{storyPrompt || 'Pick your opening move before the encounter locks in.'}</p>
+              <div className="live-workout-ironquest-choice-grid">
+                {storyChoices.map((choice) => {
+                  const choiceId = String(choice?.id || '').trim()
+                  return (
+                    <button
+                      key={choiceId}
+                      type="button"
+                      className="btn-outline small live-workout-ironquest-choice"
+                      disabled={!choiceId || Boolean(selectingStoryChoice) || ironQuestStoryBusy}
+                      onClick={() => handleStoryChoice(choiceId)}
+                    >
+                      {selectingStoryChoice === choiceId ? 'Locking in...' : String(choice?.label || '').trim()}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          ) : null}
+          {selectedStoryChoiceId && storyRoll ? (
+            <div className="live-workout-ironquest-roll-row">
+              <span className="dashboard-chip subtle">{formatToken(storyRoll.roll_band || 'opening move')}</span>
+              <span className="settings-subtitle">Opening choice locked: {storyState?.opening_choice || storyState?.selected_choice?.label}</span>
+            </div>
+          ) : null}
+          {storyBeat ? <p className="live-workout-ironquest-story-copy live-workout-ironquest-beat">{storyBeat}</p> : null}
+        </div>
+      </details>
+      <div className="settings-actions">
+        <button type="button" className={questBeatsEnabled ? 'btn-secondary small' : 'btn-outline small'} onClick={() => onSetIronQuestBeatsEnabled?.(!questBeatsEnabled)}>
+          {questBeatsEnabled ? 'Skip quest beats' : 'Resume quest beats'}
+        </button>
+      </div>
+    </section>
+  ) : null
+
+  const currentLiftPanel = (
+    <section ref={currentLiftRef} className="dash-card live-workout-exercise-card live-workout-interface-card">
+      <div className="live-workout-section-head">
+        <span className="dashboard-chip workout">Current lift</span>
+        <span className="dashboard-chip subtle">Exercise {activeExerciseIdx + 1} of {totalExerciseCount}</span>
+      </div>
+      <div className="live-workout-exercise-head">
+        <div>
+          <h3>{activeExercise.exercise_name}</h3>
+          <p>
+            {formatToken(activeExercise.slot_type || 'accessory')} slot • {activeExercise.planned_sets || totalSetCount} planned sets • {formatRepRange(activeExercise)}
+          </p>
+        </div>
+        <div className="exercise-demo-actions live-workout-demo-actions">
+          <button type="button" className="btn-outline small" onClick={() => openDemoForExercise(activeExercise.exercise_name)}>Demo</button>
+          {activeExerciseDemoImageUrl ? (
+            <button type="button" className="btn-secondary small" onClick={() => setShowDemoImage(true)}>Show Me</button>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="live-workout-progress-grid">
+        <div className="live-workout-progress-card">
+          <span>Current set</span>
+          <strong>Set {currentSetIdx + 1} / {totalSetCount}</strong>
+          <small>{currentSet?.completed ? 'Logged already' : 'Ready to log'}</small>
+        </div>
+        <div className="live-workout-progress-card">
+          <span>Completed sets</span>
+          <strong>{activeExercise.sets?.filter(set => set.completed).length || 0}</strong>
+          <small>{activeExercise.planned_sets || totalSetCount} planned today</small>
+        </div>
+      </div>
+
+      <div className="live-workout-set-form">
+        <div className="live-workout-set-form-primary">
+          <label>
+            <span>Weight</span>
+            <input
+              inputMode="decimal"
+              value={currentDraft.weight}
+              onChange={event => setDraftField('weight', event.target.value)}
+              placeholder="0"
+            />
+          </label>
+          <label>
+            <span>Reps</span>
+            <input
+              inputMode="numeric"
+              value={currentDraft.reps}
+              onChange={event => setDraftField('reps', event.target.value)}
+              placeholder="0"
+            />
+          </label>
+        </div>
+        <div className="live-workout-set-form-secondary">
+          <label>
+            <span>RiR</span>
+            <input
+              inputMode="decimal"
+              value={currentDraft.rir}
+              onChange={event => setDraftField('rir', event.target.value)}
+              placeholder="Optional"
+            />
+          </label>
+          <button type="button" className="btn-primary live-workout-save" onClick={handleSaveSet} disabled={savingSet}>
+            {savingSet ? 'Saving…' : currentSet?.id ? 'Update set' : 'Save set'}
+          </button>
+        </div>
+      </div>
+      {setError ? <p className="error live-workout-inline-error">{setError}</p> : null}
+
+      <div className="live-workout-nav-grid">
+        <button type="button" className="btn-outline live-workout-nav-next-set" onClick={() => moveSet(1)} disabled={currentSetIdx >= totalSetCount - 1}>Next set</button>
+        <button type="button" className="btn-outline live-workout-nav-previous-set" onClick={() => moveSet(-1)} disabled={currentSetIdx <= 0}>Previous set</button>
+        <button type="button" className="btn-secondary live-workout-nav-next-exercise" onClick={() => moveExercise(1)} disabled={activeExerciseIdx >= totalExerciseCount - 1}>Next exercise</button>
+        <button type="button" className="btn-secondary live-workout-nav-previous-exercise" onClick={() => moveExercise(-1)} disabled={activeExerciseIdx <= 0}>Previous exercise</button>
+      </div>
+    </section>
+  )
+
+  const sessionMapPanel = (
+    <section className="dash-card live-workout-plan-card live-workout-interface-card">
+      <details open={sessionMapOpen} onToggle={event => setSessionMapOpen(event.currentTarget.open)}>
+        <summary className="live-workout-plan-summary">
+          <div className="live-workout-section-head">
+            <span className="dashboard-chip subtle">Session map</span>
+            <span className="settings-subtitle">{sessionMapOpen ? 'Hide the session map.' : 'Click me to see the exercises for todays session.'}</span>
+          </div>
+        </summary>
+        <div className="live-workout-session-strip">
+          {exercises.map((exercise, index) => (
+            <button
+              key={exercise.id}
+              type="button"
+              className={`live-workout-session-pill ${index === activeExerciseIdx ? 'active' : ''}`}
+              onClick={() => moveExercise(index - activeExerciseIdx)}
+            >
+              <strong>{index + 1}</strong>
+              <span>{exercise.exercise_name}</span>
+              <small>{exercise.sets?.filter(set => set.completed).length || 0}/{getLiveTotalSetCount(exercise)} sets</small>
+            </button>
+          ))}
+        </div>
+      </details>
+    </section>
+  )
+
+  const johnnyPanel = (
+    <section ref={johnnyCardRef} className="dash-card live-workout-johnny-card live-workout-interface-card">
+      <div className="live-workout-section-head">
+        <span className="dashboard-chip coach">Johnny live</span>
+      </div>
+
+      <div className="live-workout-johnny-hero">
+        <div className="live-workout-johnny-frame">
+          <img src={currentFrame.image} alt="" />
+        </div>
+        <div className="live-workout-johnny-latest">
+          <span className="live-workout-johnny-label">What Johnny is saying</span>
+          <p>{latestCoachMessage?.text || 'Johnny is waiting for the next move. Save a set, change a set, or ask a question to kick off live coaching.'}</p>
+        </div>
+      </div>
+
+      <details className="live-workout-coach-history" open={coachLogOpen} onToggle={event => setCoachLogOpen(event.currentTarget.open)}>
+        <summary className="live-workout-coach-history-summary">
+          <div>
+            <strong>Chat history</strong>
+            <span>{coachMessages.length ? `${Math.min(coachMessages.length, 6)} recent message${Math.min(coachMessages.length, 6) === 1 ? '' : 's'}` : 'Open to review Johnny updates and your questions.'}</span>
+          </div>
+        </summary>
+        <div ref={coachLogRef} className="live-workout-coach-log" role="log" aria-live="polite" aria-relevant="additions text" aria-busy={coachBusy}>
+          {coachMessages.length ? coachMessages.slice(-6).map((message, index) => (
+            <div key={`${message.role}-${message.createdAt || index}`} className={`live-workout-coach-bubble ${message.role}`}>
+              <span>{message.role === 'assistant' ? 'Johnny' : 'You'}</span>
+              <p>{message.text}</p>
+              {message.role === 'assistant' && Array.isArray(message.actions) && message.actions.length ? (
+                <div className="live-workout-coach-bubble-actions">
+                  {message.actions.map((action, actionIndex) => (
+                    <button
+                      key={`${action.type}-${actionIndex}`}
+                      type="button"
+                      className="btn-outline small"
+                      onClick={() => handleCoachAction(action)}
+                    >
+                      {formatLiveWorkoutActionLabel(action)}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          )) : (
+            <p className="settings-subtitle">Johnny will keep this feed updated as you move through the workout.</p>
+          )}
+          {coachBusy ? <div className="live-workout-coach-bubble assistant pending"><span>Johnny</span><p>Thinking through the current workout state…</p></div> : null}
+        </div>
+      </details>
+
+      {coachStatus ? <p className="settings-subtitle" role="status" aria-live="polite">{coachStatus}</p> : null}
+      {hasIronQuestOverlay && storyTranscript.length ? (
+        <details className="live-workout-ironquest-transcript" open>
+          <summary className="live-workout-ironquest-transcript-summary">
+            <div>
+              <strong>Recent mission beats</strong>
+              <span>{`${storyTranscript.length} recent beat${storyTranscript.length === 1 ? '' : 's'} from the encounter.`}</span>
+            </div>
+          </summary>
+          <div className="live-workout-ironquest-transcript-body" aria-live="polite">
+            {storyTranscript.map((entry, index) => (
+              <div key={`${entry.kind || 'story'}-${index}`} className="live-workout-ironquest-transcript-entry">
+                {entry.title ? <span>{entry.title}</span> : null}
+                <p>{entry.text}</p>
+              </div>
+            ))}
+          </div>
+        </details>
+      ) : null}
+      {!voiceSupported ? <p className="settings-subtitle" id="live-workout-voice-unavailable">Voice capture is unavailable in this browser. Type your question instead.</p> : null}
+
+      <div className="live-workout-coach-actions">
+        <textarea
+          ref={textareaRef}
+          value={coachInput}
+          onChange={event => setCoachInput(event.target.value)}
+          onKeyDown={handleCoachInputKeyDown}
+          aria-label="Ask Johnny a workout question"
+          placeholder="Type or record your question here."
+          rows={3}
+        />
+        <div className="live-workout-coach-buttons">
+          <button type="button" className={`btn-secondary ${listening ? 'recording' : ''}`} onClick={listening ? stopListening : startListening} disabled={!voiceSupported} aria-pressed={listening} aria-label={listening ? 'Stop recording workout question' : 'Record workout question'} aria-describedby={!voiceSupported ? 'live-workout-voice-unavailable' : undefined}>
+            {voiceSupported ? (listening ? 'Stop recording' : 'Record question') : 'Voice unavailable'}
+          </button>
+          <button type="button" className="btn-primary" onClick={handleAskJohnny} disabled={!coachInput.trim()}>
+            Ask Johnny
+          </button>
+        </div>
+      </div>
+    </section>
   )
 
   return (
@@ -1306,284 +1703,45 @@ export default function LiveWorkoutMode({
 
         {stickyMeta}
 
-        <div className="live-workout-grid">
+        {hasIronQuestOverlay ? (
+          <div className="live-workout-panel-switcher" role="tablist" aria-label="IronQuest live workout interfaces">
+            {ironQuestPanels.map(panel => (
+              <button
+                key={panel.key}
+                type="button"
+                role="tab"
+                aria-selected={activeIronQuestPanel === panel.key}
+                className={`live-workout-panel-switch ${activeIronQuestPanel === panel.key ? 'active' : ''}`}
+                onClick={() => setActiveIronQuestPanel(panel.key)}
+              >
+                {panel.label}
+              </button>
+            ))}
+          </div>
+        ) : null}
+
+        <div className={`live-workout-grid ${hasIronQuestOverlay ? 'live-workout-grid-ironquest' : ''}`}>
           <div className="live-workout-main">
             {hasIronQuestOverlay ? (
-              <section className="dash-card">
-                <div className="dashboard-card-head">
-                  <span className="dashboard-chip awards">IronQuest live</span>
-                  <span className="dashboard-chip subtle">{ironQuestOverlay.locationLabel || 'Current region'}</span>
-                </div>
-                <h3>{ironQuestOverlay.title || 'Mission attached'}</h3>
-                {ironQuestOverlay.objective ? <p className="settings-subtitle">{ironQuestOverlay.objective}</p> : null}
-                <details className="live-workout-ironquest-story-accordion" open>
-                  <summary className="live-workout-ironquest-story-summary">
-                    <div>
-                      <strong>Mission story</strong>
-                      <span>{storyProgressLabel || 'Open the current encounter details and choices.'}</span>
-                    </div>
-                  </summary>
-                  <div className="live-workout-ironquest-story-body">
-                    {storySituation ? <p className="live-workout-ironquest-story-copy">{storySituation}</p> : null}
-                    {storyProgressPercent > 0 ? (
-                      <div className="live-workout-ironquest-progress" aria-label="IronQuest story progress">
-                        <div className="live-workout-ironquest-progress-bar" aria-hidden="true">
-                          <span style={{ width: `${storyProgressPercent}%` }} />
-                        </div>
-                        <strong>{storyProgressLabel || `Story ${storyProgressPercent}%`}</strong>
-                      </div>
-                    ) : null}
-                    <div className="onboarding-review-list">
-                      <div className="onboarding-review-row">
-                        <span>Encounter phase</span>
-                        <strong>{formatToken(ironQuestOverlay.encounterPhase || 'intro')}</strong>
-                      </div>
-                      <div className="onboarding-review-row">
-                        <span>Readiness band</span>
-                        <strong>{formatToken(ironQuestOverlay.readinessBand || 'unknown')}</strong>
-                      </div>
-                      <div className="onboarding-review-row">
-                        <span>Quest beats</span>
-                        <strong>{questBeatsEnabled ? `On • ${formatToken(questStance)}` : 'Skipped'}</strong>
-                      </div>
-                      {storyState?.tension ? (
-                        <div className="onboarding-review-row">
-                          <span>Story tension</span>
-                          <strong>{formatToken(storyState.tension)}</strong>
-                        </div>
-                      ) : null}
-                    </div>
-                    {!selectedStoryChoiceId && storyChoices.length ? (
-                      <div className="live-workout-ironquest-choice-block">
-                        <p className="settings-subtitle">{storyPrompt || 'Pick your opening move before the encounter locks in.'}</p>
-                        <div className="live-workout-ironquest-choice-grid">
-                          {storyChoices.map((choice) => {
-                            const choiceId = String(choice?.id || '').trim()
-                            return (
-                              <button
-                                key={choiceId}
-                                type="button"
-                                className="btn-outline small live-workout-ironquest-choice"
-                                disabled={!choiceId || Boolean(selectingStoryChoice) || ironQuestStoryBusy}
-                                onClick={() => handleStoryChoice(choiceId)}
-                              >
-                                {selectingStoryChoice === choiceId ? 'Locking in...' : String(choice?.label || '').trim()}
-                              </button>
-                            )
-                          })}
-                        </div>
-                      </div>
-                    ) : null}
-                    {selectedStoryChoiceId && storyRoll ? (
-                      <div className="live-workout-ironquest-roll-row">
-                        <span className="dashboard-chip subtle">{formatToken(storyRoll.roll_band || 'opening move')}</span>
-                        <span className="settings-subtitle">Opening choice locked: {storyState?.opening_choice || storyState?.selected_choice?.label}</span>
-                      </div>
-                    ) : null}
-                    {storyBeat ? <p className="live-workout-ironquest-story-copy live-workout-ironquest-beat">{storyBeat}</p> : null}
-                  </div>
-                </details>
-                <div className="settings-actions">
-                  <button type="button" className={questBeatsEnabled ? 'btn-secondary small' : 'btn-outline small'} onClick={() => onSetIronQuestBeatsEnabled?.(!questBeatsEnabled)}>
-                    {questBeatsEnabled ? 'Skip quest beats' : 'Resume quest beats'}
-                  </button>
-                </div>
-              </section>
-            ) : null}
-
-            <section ref={currentLiftRef} className="dash-card live-workout-exercise-card">
-              <div className="live-workout-section-head">
-                <span className="dashboard-chip workout">Current lift</span>
-                <span className="dashboard-chip subtle">Exercise {activeExerciseIdx + 1} of {totalExerciseCount}</span>
-              </div>
-              <div className="live-workout-exercise-head">
-                <div>
-                  <h3>{activeExercise.exercise_name}</h3>
-                  <p>
-                    {formatToken(activeExercise.slot_type || 'accessory')} slot • {activeExercise.planned_sets || totalSetCount} planned sets • {formatRepRange(activeExercise)}
-                  </p>
-                </div>
-                <div className="exercise-demo-actions live-workout-demo-actions">
-                  <button type="button" className="btn-outline small" onClick={() => openDemoForExercise(activeExercise.exercise_name)}>Demo</button>
-                  {activeExerciseDemoImageUrl ? (
-                    <button type="button" className="btn-secondary small" onClick={() => setShowDemoImage(true)}>Show Me</button>
-                  ) : null}
-                </div>
-              </div>
-
-              <div className="live-workout-progress-grid">
-                <div className="live-workout-progress-card">
-                  <span>Current set</span>
-                  <strong>Set {currentSetIdx + 1} / {totalSetCount}</strong>
-                  <small>{currentSet?.completed ? 'Logged already' : 'Ready to log'}</small>
-                </div>
-                <div className="live-workout-progress-card">
-                  <span>Completed sets</span>
-                  <strong>{activeExercise.sets?.filter(set => set.completed).length || 0}</strong>
-                  <small>{activeExercise.planned_sets || totalSetCount} planned today</small>
-                </div>
-              </div>
-
-              <div className="live-workout-set-form">
-                <label>
-                  <span>Weight</span>
-                  <input
-                    inputMode="decimal"
-                    value={currentDraft.weight}
-                    onChange={event => setDraftField('weight', event.target.value)}
-                    placeholder="0"
-                  />
-                </label>
-                <label>
-                  <span>Reps</span>
-                  <input
-                    inputMode="numeric"
-                    value={currentDraft.reps}
-                    onChange={event => setDraftField('reps', event.target.value)}
-                    placeholder="0"
-                  />
-                </label>
-                <label>
-                  <span>RiR</span>
-                  <input
-                    inputMode="decimal"
-                    value={currentDraft.rir}
-                    onChange={event => setDraftField('rir', event.target.value)}
-                    placeholder="Optional"
-                  />
-                </label>
-                <button type="button" className="btn-primary live-workout-save" onClick={handleSaveSet} disabled={savingSet}>
-                  {savingSet ? 'Saving…' : currentSet?.id ? 'Update set' : 'Save set'}
-                </button>
-              </div>
-              {setError ? <p className="error live-workout-inline-error">{setError}</p> : null}
-
-              <div className="live-workout-nav-grid">
-                <button type="button" className="btn-outline live-workout-nav-next-set" onClick={() => moveSet(1)} disabled={currentSetIdx >= totalSetCount - 1}>Next set</button>
-                <button type="button" className="btn-outline live-workout-nav-previous-set" onClick={() => moveSet(-1)} disabled={currentSetIdx <= 0}>Previous set</button>
-                <button type="button" className="btn-secondary live-workout-nav-next-exercise" onClick={() => moveExercise(1)} disabled={activeExerciseIdx >= totalExerciseCount - 1}>Next exercise</button>
-                <button type="button" className="btn-secondary live-workout-nav-previous-exercise" onClick={() => moveExercise(-1)} disabled={activeExerciseIdx <= 0}>Previous exercise</button>
-              </div>
-            </section>
-
-            <section className="dash-card live-workout-plan-card">
-              <details open={sessionMapOpen} onToggle={event => setSessionMapOpen(event.currentTarget.open)}>
-                <summary className="live-workout-plan-summary">
-                  <div className="live-workout-section-head">
-                    <span className="dashboard-chip subtle">Session map</span>
-                    <span className="settings-subtitle">{sessionMapOpen ? 'Hide the session map.' : 'Click me to see the exercises for todays session.'}</span>
-                  </div>
-                </summary>
-                <div className="live-workout-session-strip">
-                  {exercises.map((exercise, index) => (
-                    <button
-                      key={exercise.id}
-                      type="button"
-                      className={`live-workout-session-pill ${index === activeExerciseIdx ? 'active' : ''}`}
-                      onClick={() => moveExercise(index - activeExerciseIdx)}
-                    >
-                      <strong>{index + 1}</strong>
-                      <span>{exercise.exercise_name}</span>
-                      <small>{exercise.sets?.filter(set => set.completed).length || 0}/{getLiveTotalSetCount(exercise)} sets</small>
-                    </button>
-                  ))}
-                </div>
-              </details>
-            </section>
+              <>
+                {activeIronQuestPanel === 'ironquest' ? ironQuestLivePanel : null}
+                {activeIronQuestPanel === 'lift' ? currentLiftPanel : null}
+                {activeIronQuestPanel === 'lift' ? sessionMapPanel : null}
+                {activeIronQuestPanel === 'johnny' ? johnnyPanel : null}
+              </>
+            ) : (
+              <>
+                {currentLiftPanel}
+                {sessionMapPanel}
+              </>
+            )}
           </div>
 
-          <aside className="live-workout-coach">
-            <section ref={johnnyCardRef} className="dash-card live-workout-johnny-card">
-              <div className="live-workout-section-head">
-                <span className="dashboard-chip coach">Johnny live</span>
-              </div>
-
-              <div className="live-workout-johnny-hero">
-                <div className="live-workout-johnny-frame">
-                  <img src={currentFrame.image} alt="" />
-                </div>
-                <div className="live-workout-johnny-latest">
-                  <span className="live-workout-johnny-label">What Johnny is saying</span>
-                  <p>{latestCoachMessage?.text || 'Johnny is waiting for the next move. Save a set, change a set, or ask a question to kick off live coaching.'}</p>
-                </div>
-              </div>
-
-              <details className="live-workout-coach-history" open={coachLogOpen} onToggle={event => setCoachLogOpen(event.currentTarget.open)}>
-                <summary className="live-workout-coach-history-summary">
-                  <div>
-                    <strong>Chat history</strong>
-                    <span>{coachMessages.length ? `${Math.min(coachMessages.length, 6)} recent message${Math.min(coachMessages.length, 6) === 1 ? '' : 's'}` : 'Open to review Johnny updates and your questions.'}</span>
-                  </div>
-                </summary>
-                <div ref={coachLogRef} className="live-workout-coach-log" role="log" aria-live="polite" aria-relevant="additions text" aria-busy={coachBusy}>
-                  {coachMessages.length ? coachMessages.slice(-6).map((message, index) => (
-                    <div key={`${message.role}-${message.createdAt || index}`} className={`live-workout-coach-bubble ${message.role}`}>
-                      <span>{message.role === 'assistant' ? 'Johnny' : 'You'}</span>
-                      <p>{message.text}</p>
-                      {message.role === 'assistant' && Array.isArray(message.actions) && message.actions.length ? (
-                        <div className="live-workout-coach-bubble-actions">
-                          {message.actions.map((action, actionIndex) => (
-                            <button
-                              key={`${action.type}-${actionIndex}`}
-                              type="button"
-                              className="btn-outline small"
-                              onClick={() => handleCoachAction(action)}
-                            >
-                              {formatLiveWorkoutActionLabel(action)}
-                            </button>
-                          ))}
-                        </div>
-                      ) : null}
-                    </div>
-                  )) : (
-                    <p className="settings-subtitle">Johnny will keep this feed updated as you move through the workout.</p>
-                  )}
-                  {coachBusy ? <div className="live-workout-coach-bubble assistant pending"><span>Johnny</span><p>Thinking through the current workout state…</p></div> : null}
-                </div>
-              </details>
-
-              {coachStatus ? <p className="settings-subtitle" role="status" aria-live="polite">{coachStatus}</p> : null}
-              {hasIronQuestOverlay && storyTranscript.length ? (
-                <details className="live-workout-ironquest-transcript" open>
-                  <summary className="live-workout-ironquest-transcript-summary">
-                    <div>
-                      <strong>Recent mission beats</strong>
-                      <span>{`${storyTranscript.length} recent beat${storyTranscript.length === 1 ? '' : 's'} from the encounter.`}</span>
-                    </div>
-                  </summary>
-                  <div className="live-workout-ironquest-transcript-body" aria-live="polite">
-                    {storyTranscript.map((entry, index) => (
-                      <div key={`${entry.kind || 'story'}-${index}`} className="live-workout-ironquest-transcript-entry">
-                        {entry.title ? <span>{entry.title}</span> : null}
-                        <p>{entry.text}</p>
-                      </div>
-                    ))}
-                  </div>
-                </details>
-              ) : null}
-              {!voiceSupported ? <p className="settings-subtitle" id="live-workout-voice-unavailable">Voice capture is unavailable in this browser. Type your question instead.</p> : null}
-
-              <div className="live-workout-coach-actions">
-                <textarea
-                  ref={textareaRef}
-                  value={coachInput}
-                  onChange={event => setCoachInput(event.target.value)}
-                  onKeyDown={handleCoachInputKeyDown}
-                  aria-label="Ask Johnny a workout question"
-                  placeholder="Type or record your question here."
-                  rows={3}
-                />
-                <div className="live-workout-coach-buttons">
-                  <button type="button" className={`btn-secondary ${listening ? 'recording' : ''}`} onClick={listening ? stopListening : startListening} disabled={!voiceSupported} aria-pressed={listening} aria-label={listening ? 'Stop recording workout question' : 'Record workout question'} aria-describedby={!voiceSupported ? 'live-workout-voice-unavailable' : undefined}>
-                    {voiceSupported ? (listening ? 'Stop recording' : 'Record question') : 'Voice unavailable'}
-                  </button>
-                  <button type="button" className="btn-primary" onClick={handleAskJohnny} disabled={!coachInput.trim()}>
-                    Ask Johnny
-                  </button>
-                </div>
-              </div>
-            </section>
-          </aside>
+          {!hasIronQuestOverlay ? (
+            <aside className="live-workout-coach">
+              {johnnyPanel}
+            </aside>
+          ) : null}
         </div>
 
         <section ref={voiceTestingCardRef} className="dash-card live-workout-voice-test-card">

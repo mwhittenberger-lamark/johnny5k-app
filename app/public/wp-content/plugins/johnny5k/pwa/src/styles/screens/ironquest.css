@@ -5,12 +5,30 @@
 }
 
 .ironquest-screen .dash-card {
+  position: relative;
+  overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--border-strong, var(--border)) 82%, transparent);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--surface-card) 82%, transparent), color-mix(in srgb, var(--surface-card-alt) 88%, transparent));
+  background: var(--ironquest-shell-bg);
   box-shadow:
-    0 16px 34px rgba(3, 5, 12, 0.12),
+    var(--ironquest-section-shadow),
     inset 0 1px 0 color-mix(in srgb, white 28%, transparent);
+}
+
+.ironquest-screen .dash-card::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 4px;
+  background: var(--ironquest-accent-bar);
+  opacity: 0.92;
+}
+
+.ironquest-screen .dashboard-card-head {
+  position: relative;
+  z-index: 1;
+  margin-bottom: var(--space-3);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--ironquest-header-rule);
 }
 
 .ironquest-header {
@@ -22,6 +40,16 @@
   display: flex;
   gap: var(--space-2);
   flex-wrap: wrap;
+}
+
+.ironquest-hero-helper {
+  margin: 0;
+  color: var(--ironquest-copy-muted);
+  font-size: 0.92rem;
+}
+
+.ironquest-hero-helper strong {
+  color: var(--text);
 }
 
 .ironquest-hero-card {
@@ -40,7 +68,8 @@
   border: 1px solid color-mix(in srgb, var(--border-strong, var(--border)) 84%, transparent);
   box-shadow:
     0 18px 36px rgba(3, 5, 12, 0.12),
-    inset 0 1px 0 color-mix(in srgb, white 24%, transparent);
+    inset 0 1px 0 color-mix(in srgb, white 24%, transparent),
+    inset 0 0 0 1px var(--ironquest-section-glow);
 }
 
 .ironquest-hero-shell-copy {
@@ -69,13 +98,13 @@
 
 .ironquest-hero-portrait-caption {
   margin: 0;
-  color: var(--text-muted);
+  color: var(--ironquest-copy-muted);
 }
 
 .ironquest-hero-copy,
 .ironquest-panel-copy {
   margin: 0;
-  color: var(--text-muted);
+  color: var(--ironquest-copy-muted);
   line-height: 1.55;
 }
 
@@ -90,16 +119,15 @@
   gap: var(--space-1);
   padding: var(--space-3);
   border-radius: var(--radius-md);
-  border: 1px solid color-mix(in srgb, var(--border-strong, var(--border)) 82%, transparent);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--surface-card-alt) 92%, white 8%), color-mix(in srgb, var(--surface-card) 72%, var(--surface-card-alt) 28%));
+  border: 1px solid var(--ironquest-inset-border);
+  background: var(--ironquest-subpanel-bg);
   box-shadow:
     0 10px 24px rgba(3, 5, 12, 0.1),
     inset 0 1px 0 color-mix(in srgb, white 24%, transparent);
 }
 
 .ironquest-stat-card span {
-  color: var(--text-muted);
+  color: var(--ironquest-copy-muted);
   font-size: 0.8rem;
 }
 
@@ -131,8 +159,8 @@
   min-width: 140px;
   padding: var(--space-2-5) var(--space-3);
   border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--border-strong, var(--border)) 84%, transparent);
-  background: linear-gradient(180deg, color-mix(in srgb, var(--surface-pill) 92%, white 8%), color-mix(in srgb, var(--surface-meta) 88%, transparent));
+  border: 1px solid var(--ironquest-inset-border);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--ironquest-inset-bg) 96%, white 4%), color-mix(in srgb, var(--surface-meta) 88%, transparent));
   box-shadow: inset 0 1px 0 color-mix(in srgb, white 24%, transparent);
 }
 
@@ -141,7 +169,7 @@
   font-size: 0.76rem;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--text-muted);
+  color: var(--ironquest-copy-muted);
 }
 
 .ironquest-meta-pill strong,
@@ -160,11 +188,12 @@
   gap: var(--space-3);
   padding: var(--space-3);
   border-radius: calc(var(--radius-lg) + 2px);
-  background: color-mix(in srgb, var(--surface-card) 82%, transparent);
+  background: var(--ironquest-panel-bg);
   border: 1px solid color-mix(in srgb, var(--border-strong, var(--border)) 80%, transparent);
   box-shadow:
     0 14px 30px rgba(3, 5, 12, 0.1),
-    inset 0 1px 0 color-mix(in srgb, white 18%, transparent);
+    inset 0 1px 0 color-mix(in srgb, white 18%, transparent),
+    inset 0 0 0 1px var(--ironquest-section-glow);
 }
 
 .ironquest-detail-list,
@@ -185,9 +214,8 @@
   gap: var(--space-1);
   padding: var(--space-3);
   border-radius: var(--radius-md);
-  border: 1px solid color-mix(in srgb, var(--border-strong, var(--border)) 80%, transparent);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--surface-card-alt) 92%, white 8%), color-mix(in srgb, var(--surface-card) 74%, var(--surface-card-alt) 26%));
+  border: 1px solid var(--ironquest-subpanel-border);
+  background: var(--ironquest-panel-strong-bg);
   box-shadow:
     0 10px 22px rgba(3, 5, 12, 0.09),
     inset 0 1px 0 color-mix(in srgb, white 22%, transparent);
@@ -206,7 +234,7 @@
 .ironquest-inline-error,
 .ironquest-route-notice {
   margin: 0;
-  color: var(--text-muted);
+  color: var(--ironquest-copy-muted);
 }
 
 .ironquest-route-notice {
@@ -258,22 +286,110 @@
 }
 
 .ironquest-item-meta small {
-  color: var(--text-muted);
+  color: var(--ironquest-copy-muted);
 }
 
 .ironquest-mission-card {
   gap: var(--space-2);
 }
 
+.ironquest-rumor-callout {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, #7a4a12 42%, var(--border) 58%);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, #e8c98b 18%, var(--surface-card-alt) 82%), color-mix(in srgb, var(--surface-card) 84%, #533215 16%));
+  box-shadow:
+    0 12px 24px rgba(3, 5, 12, 0.1),
+    inset 0 1px 0 color-mix(in srgb, white 20%, transparent);
+}
+
+.ironquest-rumor-callout p,
+.ironquest-rumor-callout strong {
+  margin: 0;
+}
+
+.ironquest-character-shell {
+  grid-template-columns: minmax(0, 220px) minmax(0, 1fr);
+}
+
+.ironquest-character-summary-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.ironquest-character-collection {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.ironquest-character-collection > strong {
+  color: var(--text);
+}
+
+.ironquest-store-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
+.ironquest-store-recommendation {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid color-mix(in srgb, var(--accent2) 32%, var(--border) 68%);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--surface-card-alt) 78%, var(--accent2) 22%), color-mix(in srgb, var(--surface-card) 92%, transparent));
+  box-shadow:
+    0 10px 22px rgba(3, 5, 12, 0.08),
+    inset 0 1px 0 color-mix(in srgb, white 20%, transparent);
+}
+
+.ironquest-store-recommendation strong,
+.ironquest-store-recommendation p {
+  margin: 0;
+}
+
+.ironquest-store-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-3);
+  align-items: start;
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--ironquest-subpanel-border);
+  background: var(--ironquest-panel-strong-bg);
+  box-shadow:
+    0 10px 22px rgba(3, 5, 12, 0.09),
+    inset 0 1px 0 color-mix(in srgb, white 22%, transparent);
+}
+
+.ironquest-store-item strong,
+.ironquest-store-item p,
+.ironquest-store-item small {
+  margin: 0;
+}
+
+.ironquest-store-item p,
+.ironquest-store-item small {
+  color: var(--ironquest-copy-muted);
+}
+
+.ironquest-store-price {
+  font-size: 0.84rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
 .ironquest-mission-card p {
   margin: 0;
-  color: var(--text-muted);
+  color: var(--ironquest-copy-muted);
 }
 
 .ironquest-mission-accordion {
   overflow: hidden;
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--surface-card-alt) 94%, white 6%), color-mix(in srgb, var(--surface-card) 72%, var(--surface-card-alt) 28%));
+  background: var(--ironquest-panel-strong-bg);
 }
 
 .ironquest-mission-accordion-trigger {
@@ -282,9 +398,10 @@
   gap: var(--space-2);
   align-items: start;
   width: 100%;
-  padding: var(--space-1);
+  padding: var(--space-2);
   border-radius: calc(var(--radius-md) - 2px);
-  background: color-mix(in srgb, var(--surface-card) 42%, transparent);
+  background: var(--ironquest-inset-bg);
+  border: 1px solid color-mix(in srgb, var(--ironquest-inset-border) 76%, transparent);
 }
 
 .ironquest-mission-accordion-copy {
@@ -313,12 +430,12 @@
   font-size: 0.78rem;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--text-muted);
+  color: var(--ironquest-copy-muted);
 }
 
 .ironquest-mission-accordion-subtitle {
   margin: 0;
-  color: var(--text-muted);
+  color: var(--ironquest-copy-muted);
 }
 
 .ironquest-mission-accordion-panel {
@@ -355,9 +472,8 @@
   gap: var(--space-2);
   padding: var(--space-3);
   border-radius: var(--radius-md);
-  border: 1px solid color-mix(in srgb, var(--border-strong, var(--border)) 82%, transparent);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--surface-card-alt) 92%, white 8%), color-mix(in srgb, var(--surface-card) 76%, var(--surface-card-alt) 24%));
+  border: 1px solid var(--ironquest-subpanel-border);
+  background: var(--ironquest-panel-strong-bg);
   box-shadow:
     0 10px 22px rgba(3, 5, 12, 0.09),
     inset 0 1px 0 color-mix(in srgb, white 20%, transparent);
@@ -390,7 +506,7 @@
 
 .ironquest-fast-travel-hint {
   margin: 0;
-  color: var(--text-muted);
+  color: var(--ironquest-copy-muted);
 }
 
 .ironquest-fast-travel-hint-warning {
@@ -417,6 +533,14 @@
 .ironquest-inventory-section {
   display: grid;
   gap: var(--space-2);
+  align-content: start;
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--ironquest-subpanel-border);
+  background: var(--ironquest-subpanel-bg);
+  box-shadow:
+    0 10px 22px rgba(3, 5, 12, 0.08),
+    inset 0 1px 0 color-mix(in srgb, white 18%, transparent);
 }
 
 .ironquest-reward-item.current {
@@ -426,11 +550,174 @@
     inset 0 0 0 1px color-mix(in srgb, var(--accent2) 18%, transparent);
 }
 
+.ironquest-map-layout {
+  align-items: start;
+}
+
+.ironquest-map-path {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.ironquest-map-node {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-3);
+  align-items: start;
+}
+
+.ironquest-map-node-rail {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  min-height: 100%;
+}
+
+.ironquest-map-node:not(:last-child) .ironquest-map-node-rail::after {
+  content: '';
+  position: absolute;
+  top: 34px;
+  bottom: calc(var(--space-3) * -1);
+  width: 2px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent2) 28%, transparent), color-mix(in srgb, var(--border-strong, var(--border)) 72%, transparent));
+}
+
+.ironquest-map-node-dot {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--border-strong, var(--border)) 72%, transparent);
+  background: var(--ironquest-panel-strong-bg);
+  color: var(--text);
+  font-size: 0.82rem;
+  font-weight: 700;
+  box-shadow: 0 10px 22px rgba(3, 5, 12, 0.1);
+}
+
+.ironquest-map-node-card {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--ironquest-subpanel-border);
+  background: var(--ironquest-panel-strong-bg);
+  box-shadow:
+    0 10px 22px rgba(3, 5, 12, 0.09),
+    inset 0 1px 0 color-mix(in srgb, white 22%, transparent);
+}
+
+.ironquest-map-banner {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-radius: calc(var(--radius-md) - 2px);
+  border: 1px solid color-mix(in srgb, var(--border-strong, var(--border)) 66%, transparent);
+  overflow: hidden;
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 18%, transparent),
+    0 10px 20px rgba(3, 5, 12, 0.08);
+}
+
+.ironquest-map-banner-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.ironquest-map-banner-copy span,
+.ironquest-map-banner-copy strong,
+.ironquest-map-banner-copy p {
+  margin: 0;
+}
+
+.ironquest-map-banner-copy span {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ironquest-copy-muted);
+}
+
+.ironquest-map-banner-copy strong {
+  color: var(--text);
+  font-size: 1rem;
+}
+
+.ironquest-map-banner-copy p {
+  color: var(--ironquest-copy-muted);
+}
+
+.ironquest-map-node-copy {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.ironquest-map-node-copy strong,
+.ironquest-map-node-copy p {
+  margin: 0;
+}
+
+.ironquest-map-node-copy p {
+  color: var(--ironquest-copy-muted);
+}
+
+.ironquest-map-node.current .ironquest-map-node-card,
+.ironquest-map-node.current .ironquest-map-node-dot {
+  border-color: color-mix(in srgb, var(--accent2) 72%, var(--border) 28%);
+  box-shadow:
+    0 14px 28px rgba(3, 5, 12, 0.12),
+    inset 0 0 0 1px color-mix(in srgb, var(--accent2) 18%, transparent);
+}
+
+.ironquest-map-node.complete .ironquest-map-node-card,
+.ironquest-map-node.complete .ironquest-map-node-dot {
+  border-color: color-mix(in srgb, var(--success) 65%, var(--border) 35%);
+}
+
+.ironquest-map-node.next-unlock .ironquest-map-node-card {
+  border-style: dashed;
+}
+
+.ironquest-map-mission-drawer,
+.ironquest-map-mission-list {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.ironquest-map-mission-card {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--ironquest-subpanel-border);
+  background: var(--ironquest-subpanel-bg);
+  box-shadow:
+    0 10px 20px rgba(3, 5, 12, 0.08),
+    inset 0 1px 0 color-mix(in srgb, white 18%, transparent);
+}
+
+.ironquest-map-mission-card strong,
+.ironquest-map-mission-card p {
+  margin: 0;
+}
+
+.ironquest-map-mission-card p {
+  color: var(--ironquest-copy-muted);
+}
+
+.ironquest-map-mission-card.boss {
+  border-color: color-mix(in srgb, var(--yellow) 58%, var(--border) 42%);
+}
+
 @media (max-width: 900px) {
   .ironquest-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .ironquest-store-summary-grid,
   .ironquest-inventory-grid,
   .ironquest-reward-stat-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -444,11 +731,13 @@
 }
 
 @media (max-width: 640px) {
+  .ironquest-character-shell,
   .ironquest-header-actions,
   .ironquest-actions,
   .ironquest-hero-meta,
   .ironquest-grid,
-  .ironquest-inventory-grid {
+  .ironquest-inventory-grid,
+  .ironquest-store-summary-grid {
     grid-template-columns: 1fr;
   }
 
@@ -466,5 +755,21 @@
 
   .ironquest-reward-item {
     grid-template-columns: 1fr;
+  }
+
+  .ironquest-store-item {
+    grid-template-columns: 1fr;
+  }
+
+  .ironquest-map-node {
+    grid-template-columns: 1fr;
+  }
+
+  .ironquest-map-node-rail {
+    justify-content: start;
+  }
+
+  .ironquest-map-node:not(:last-child) .ironquest-map-node-rail::after {
+    left: 14px;
   }
 }

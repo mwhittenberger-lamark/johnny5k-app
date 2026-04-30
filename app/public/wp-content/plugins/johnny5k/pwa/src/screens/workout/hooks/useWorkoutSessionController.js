@@ -635,6 +635,9 @@ export function useWorkoutSessionController({
     setMissionIntro((current) => current ? ({
       ...current,
       encounterPhase: String(payload?.run?.encounter_phase || current.encounterPhase || 'intro').trim() || 'intro',
+      hpCurrent: Math.max(0, Number(payload?.story_state?.hp_current ?? payload?.profile?.hp_current ?? current.hpCurrent ?? 0) || 0),
+      hpMax: Math.max(0, Number(payload?.story_state?.hp_max ?? payload?.profile?.hp_max ?? current.hpMax ?? 0) || 0),
+      hpLossThisSet: Math.max(0, Number(payload?.story_state?.hp_loss_this_set ?? current.hpLossThisSet ?? 0) || 0),
       storyState: payload?.story_state ?? current.storyState,
       currentSituation: String(payload?.story_state?.current_situation || current.currentSituation || '').trim(),
       decisionPrompt: String(payload?.story_state?.decision_prompt || current.decisionPrompt || '').trim(),

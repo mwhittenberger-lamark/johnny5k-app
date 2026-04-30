@@ -739,12 +739,12 @@ export function buildCoachNextStepMeta(snapshot, meta) {
 }
 
 export function buildCoachStarterPrompt(review, nextStepMeta) {
-  const basePrompt = String(review?.starterPrompt || '').trim() || 'Review my current dashboard stats and tell me exactly what I should do next today.'
+  const basePrompt = String(review?.starterPrompt || '').trim() || 'Look at my dashboard and tell me what matters most today and what I should do next.'
   const nextStep = String(review?.nextStep || '').trim()
   if (!nextStep) return basePrompt
 
   const label = String(nextStepMeta?.label || 'next step').trim().toLowerCase()
-  return `${basePrompt} My current recommended ${label} is: ${nextStep} Help me execute that plan, or tell me if there is a better move.`
+  return `${basePrompt} The current ${label} is: ${nextStep} Help me do that, or tell me if there is a smarter move.`
 }
 
 export function areDashboardActionsEquivalent(primaryAction, secondaryAction) {
@@ -905,97 +905,97 @@ export function buildJohnnyDashboardReview(snapshot) {
     { key: 'protein', label: 'Protein', value: proteinTarget > 0 ? `${Math.round(protein)} / ${Math.round(proteinTarget)}g` : `${Math.round(protein)}g` },
   ]
 
-  let title = 'Johnny reviewed your board'
-  let message = 'You have enough signal on the board to make the rest of today count.'
-  let nextStep = 'Pick the next clean action and close it before you chase anything extra.'
-  let encouragement = 'You do not need a perfect day here. One solid decision is enough to push momentum back in your favor.'
-  let starterPrompt = 'Review my current dashboard stats and tell me exactly what I should do next today.'
+  let title = 'Here’s the move for today.'
+  let message = 'You have enough here to make a good call. Keep it simple and handle the next thing that matters.'
+  let nextStep = 'Do the next useful thing first and leave the extra stuff alone.'
+  let encouragement = 'Today does not need to be perfect. It just needs one solid decision.'
+  let starterPrompt = 'Look at my dashboard and tell me what matters most today and what I should do next.'
   const timing = getLocalDayTimingContext()
 
   if (timing.lateNight) {
     title = 'Late-night decisions should get simpler.'
     message = trainingRecorded
-      ? 'Johnny sees the main work already on the board. At this hour, the best move is to wrap up the day and get to bed.'
-      : 'Johnny sees it is late. This is not the time to pile on more tasks or keep chasing logs. The smart move is to call it a night and get to bed.'
+      ? 'The main work is done. At this point, the best move is to shut the day down and get to bed.'
+      : 'It is late. This is not the time to pile on extra tasks. Call it here and get to bed.'
     nextStep = trainingRecorded
       ? 'Keep any last food light, stop scrolling for extra ideas, and start your bedtime routine now.'
       : 'Skip new training or food cleanup unless something is truly unfinished, log only what matters, and go to bed.'
     encouragement = 'A boring late-night shutdown usually does more for progress than one more forced task.'
-    starterPrompt = 'It is late here. Based on my dashboard, tell me what to close quickly and what to leave for tomorrow.'
+    starterPrompt = 'It is late here. Look at my dashboard and tell me what to finish quickly and what can wait until tomorrow.'
   } else if (recordedType === 'cardio') {
     title = 'Cardio is logged for today.'
-    message = 'Johnny sees your conditioning already recorded. The training box is checked, so the best use of the rest of today is recovery, food quality, and not creating cleanup for tomorrow.'
+    message = 'Your conditioning is already logged. The job now is to recover well and not leave a mess for tomorrow.'
     nextStep = sleepHours < targetSleep
       ? 'Get protein handled, keep the evening lighter, and make bedtime the next win.'
-      : 'Close calories and protein cleanly, then leave the rest of the day boring.'
+      : 'Handle calories and protein, then keep the rest of the day quiet.'
     encouragement = 'The work is already on the board. Let recovery turn it into progress.'
-    starterPrompt = 'My cardio is already logged today. Based on my dashboard, what should I focus on for the rest of the day?'
+    starterPrompt = 'My cardio is already logged today. Look at my dashboard and tell me what to focus on for the rest of the day.'
   } else if (recordedType === 'rest' || plannedDayType === 'rest') {
     title = 'Recovery day should stay intentional.'
     message = trainingRecorded
-      ? 'Johnny sees rest already logged for today. That only pays off if you still handle the simple stuff like food quality, easy movement, and sleep timing.'
-      : 'Johnny sees today is scheduled as a rest day. That is not a throwaway day. It is a good day to recover on purpose and make the next training session easier.'
+      ? 'Rest is already logged for today. That only helps if you still handle the basic stuff like food, easy movement, and sleep.'
+      : 'Today is set up as a rest day. Use it to feel better tomorrow, not to drift through the day.'
     nextStep = 'Keep steps reasonable, eat enough protein, and set tonight up so tomorrow starts with better energy.'
     encouragement = 'Rest days are part of progress when you treat them like part of the plan instead of a gap in the plan.'
-    starterPrompt = 'Today is my rest day. Based on my dashboard, what should I do to recover well and stay on track?'
+    starterPrompt = 'Today is my rest day. Look at my dashboard and tell me what to do so I recover well and stay on track.'
   } else if (trainingRecorded) {
-    title = 'Strong work. Today already has traction.'
-    message = `Johnny sees your workout logged${proteinTarget > 0 ? ` and ${Math.round(protein)}g of ${Math.round(proteinTarget)}g protein in so far` : ''}. The lift is done, so the win now is finishing recovery instead of drifting after the hard part.`
+    title = 'Good work. Finish the day well.'
+    message = `Your workout is logged${proteinTarget > 0 ? ` and you have ${Math.round(protein)}g of ${Math.round(proteinTarget)}g protein so far` : ''}. The hard part is done, so the next win is recovery.`
     nextStep = sleepHours < targetSleep
       ? nextMealMissing
         ? `Get ${nextMealLabelLower} protein handled, keep the rest of the day lighter, and protect bedtime so recovery catches up.`
-        : 'Keep the rest of intake light, stop adding cleanup, and protect bedtime so recovery catches up.'
+        : 'Keep the rest of intake light, stop adding extra cleanup, and protect bedtime so recovery catches up.'
       : nextMealMissing
-        ? `Close ${nextMealLabelLower} cleanly, hit the remaining protein on purpose, and shut the day down on time.`
-        : 'Close calories and protein cleanly, then shut the day down on time so tomorrow stays easy.'
-    encouragement = 'The hard part is already on the board. Finish the easy details and let the day count twice.'
-    starterPrompt = 'My workout is already logged. Based on my dashboard, what should I do to finish today strong?'
+        ? `Handle ${nextMealLabelLower}, hit the remaining protein, and shut the day down on time.`
+        : 'Handle calories and protein, then shut the day down on time so tomorrow stays easy.'
+    encouragement = 'The hard part is done. Finish the easy details and let the day work for you.'
+    starterPrompt = 'My workout is already logged. Look at my dashboard and tell me how to finish today well.'
   } else if (plannedDayType === 'cardio') {
     title = 'Cardio is the open box today.'
-    message = `Johnny sees cardio scheduled for today${sleepHours > 0 ? ` with ${formatNumber(sleepHours, 1)} hours of sleep on the board` : ''}. Get the conditioning logged so the day matches the plan, then let food and recovery do the rest.`
+    message = `Cardio is scheduled for today${sleepHours > 0 ? ` and you have ${formatNumber(sleepHours, 1)} hours of sleep logged` : ''}. Get it done, then let food and recovery do the rest.`
     nextStep = 'Log your cardio before the day gets late, then keep the rest of the day simple and easy to recover from.'
     encouragement = 'This does not need to be dramatic. Clean cardio work and a clean finish are enough.'
-    starterPrompt = 'Today is scheduled for cardio. Based on my dashboard, how should I handle it and what should I do after?'
+    starterPrompt = 'Today is scheduled for cardio. Look at my dashboard and tell me how to handle it and what to do after.'
   } else if (recoveryMode === 'maintenance' || (sleepHours > 0 && sleepHours < Math.max(6.5, targetSleep - 1))) {
     title = 'Recovery is the thing to respect today.'
-    message = `Johnny sees ${sleepHours > 0 ? `${formatNumber(sleepHours, 1)} hours of sleep` : 'a light recovery signal'}${plannedDayType ? ` going into your ${formatDayType(plannedDayType).toLowerCase()} day` : ''}. You are not off track, but this is a lower-friction execution day, not a hero day.`
+    message = `You are going into today with ${sleepHours > 0 ? `${formatNumber(sleepHours, 1)} hours of sleep` : 'a light recovery signal'}${plannedDayType ? ` before your ${formatDayType(plannedDayType).toLowerCase()} day` : ''}. This is not the day to force it.`
     nextStep = plannedDayType
       ? 'Keep the session crisp, eat protein early, and make movement easy instead of trying to force intensity.'
       : 'Prioritize a protein-first meal and an easy walk so recovery improves before you ask for more output.'
-    encouragement = 'Smart restraint is still progress. Hit the controllable stuff and you will be back with better signal tomorrow.'
-    starterPrompt = 'I am a little under-recovered today. Using my dashboard stats, give me the smartest plan for the rest of today.'
+    encouragement = 'Backing off a little today can be the smart move, not the weak one.'
+    starterPrompt = 'I am a little under-recovered today. Look at my dashboard and give me the smartest plan for the rest of today.'
   } else if (stepPct < 0.55) {
     title = 'Movement is the cleanest gap right now.'
-    message = `Johnny sees ${stepsToday.toLocaleString()} of ${stepTarget.toLocaleString()} steps so far${mealsLogged ? ` with ${mealsLogged} meal${mealsLogged === 1 ? '' : 's'} logged` : ''}. The day is still recoverable, but movement is the missing lever.`
+    message = `You are at ${stepsToday.toLocaleString()} of ${stepTarget.toLocaleString()} steps so far${mealsLogged ? ` with ${mealsLogged} meal${mealsLogged === 1 ? '' : 's'} logged` : ''}. Movement is the easiest thing to fix right now.`
     nextStep = mealTiming.daypartKey === 'evening'
       ? 'Get a 15 to 20 minute walk in now, then decide if you need one more short movement block before bed.'
       : `Get a 15 to 20 minute walk in before ${nextMealLabelLower}, then decide whether you need one more short block later.`
     encouragement = 'This is a very fixable board. A couple of clean movement blocks can change how the whole day feels.'
-    starterPrompt = 'I am behind on steps. Based on my dashboard, give me the simplest plan to recover the day.'
+    starterPrompt = 'I am behind on steps. Look at my dashboard and give me the simplest plan to recover the day.'
   } else if (mealsLogged === 0 || proteinPct < 0.55) {
     title = 'Today\'s intake is the next lever.'
     message = mealsLogged === 0
-      ? `Johnny sees a pretty open nutrition board right now. Logged meal types: ${mealTypesLabel}. That is not a problem yet, but the longer ${currentMealLogged ? 'the next anchor stays open' : `${currentMealLabel.toLowerCase()} stays unlogged`}, the harder the day gets to steer.`
-      : `Johnny sees protein sitting at ${Math.round(protein)}g of ${Math.round(proteinTarget)}g. The board is moving, but your recovery and appetite control will be better if ${nextMealMissing ? `${nextMealLabelLower} fixes that gap` : 'the next eating window fixes that gap'}.`
+      ? `Food logging is still pretty open right now. Logged meal types: ${mealTypesLabel}. That is fixable, but it gets harder if you keep waiting.`
+      : `Protein is at ${Math.round(protein)}g of ${Math.round(proteinTarget)}g. You will feel better later if ${nextMealMissing ? `${nextMealLabelLower} closes that gap` : 'the next meal closes that gap'}.`
     nextStep = mealsLogged === 0
-      ? `Log and eat ${currentMealLogged ? nextMealLabelLower : currentMealLabel.toLowerCase()} on purpose, with protein leading the plate, so the rest of the day has structure.`
-      : `${nextMealLabel}: hit 40g protein and keep the extras boring so you can close the target without chasing calories late.`
+      ? `Log and eat ${currentMealLogged ? nextMealLabelLower : currentMealLabel.toLowerCase()} with protein first so the rest of the day has structure.`
+      : `${nextMealLabel}: get about 40g protein and keep the extras simple so you do not have to chase calories late.`
     encouragement = 'You are not behind beyond repair. One intentional meal can steady the entire rest of the day.'
-    starterPrompt = 'Review my dashboard and tell me what my next meal should look like today.'
+    starterPrompt = 'Look at my dashboard and tell me what my next meal should look like today.'
   } else if (weeklyScore >= 80 || bestCurrentStreak >= 5) {
     title = 'You are building real momentum.'
-    message = `Johnny sees a ${weeklyScore} weekly score${bestCurrentStreak >= 5 ? ` and a live ${bestCurrentStreak}-day streak` : ''}. This is the stage where boring consistency starts paying off.`
+    message = `You have a ${weeklyScore} weekly score${bestCurrentStreak >= 5 ? ` and a live ${bestCurrentStreak}-day streak` : ''}. This is where steady days start paying off.`
     nextStep = plannedDayType && !trainingRecorded
-      ? `Protect your ${formatDayType(plannedDayType).toLowerCase()} session and keep meals clean enough that tomorrow starts with no cleanup.`
-      : 'Stay on script, avoid adding chaos to a good run, and close the day the same way you opened it.'
+      ? `Protect your ${formatDayType(plannedDayType).toLowerCase()} session and keep meals simple enough that tomorrow starts clean.`
+      : 'Stay on script, do not add chaos to a good run, and close the day the same way you started it.'
     encouragement = 'This is what progress looks like before it looks dramatic. Keep stacking ordinary wins.'
-    starterPrompt = 'My dashboard looks solid. What should I focus on today to keep momentum going without overdoing it?'
+    starterPrompt = 'My dashboard looks solid. Tell me what to focus on today so I keep this going without overdoing it.'
   } else {
     title = 'You are close to a solid day.'
-    message = `Johnny sees a board with useful signal: weekly score ${weeklyScore}, ${stepsToday.toLocaleString()} steps, and ${mealsLogged} meal${mealsLogged === 1 ? '' : 's'} logged. Nothing here needs a reset. It just needs one more deliberate close.`
+    message = `You have a weekly score of ${weeklyScore}, ${stepsToday.toLocaleString()} steps, and ${mealsLogged} meal${mealsLogged === 1 ? '' : 's'} logged. Nothing here needs a reset. It just needs one more deliberate move.`
     nextStep = plannedDayType && !trainingRecorded
-      ? `Start the ${formatDayType(plannedDayType).toLowerCase()} session if it is still open, or tighten food quality and steps if training is handled later.`
-      : 'Close whichever gap is still most open first: movement, protein, or recovery planning.'
+      ? `Start the ${formatDayType(plannedDayType).toLowerCase()} session if it is still open, or tighten food and steps if training happens later.`
+      : 'Close the biggest open gap first: movement, protein, or recovery.'
     encouragement = 'You are not chasing perfection. You are just keeping the day pointed in the right direction.'
   }
 
@@ -1036,12 +1036,12 @@ export function buildCoachBackupStep(snapshot, explicitBackupStep = '') {
   const protein = Number(snapshot?.nutrition_totals?.protein_g ?? 0)
   const mealTiming = getCoachMealTimingContext(snapshot)
 
-  if (timing.lateNight) return 'If the main move feels messy this late, skip the extra cleanup and start your bedtime routine.'
+  if (timing.lateNight) return 'If the main move feels messy this late, stop chasing cleanup and start getting ready for bed.'
   if (plannedType === 'cardio' && !training?.recorded) return 'If the full cardio block is not realistic yet, take a brisk 10-minute walk now so the day still moves forward.'
-  if (plannedType === 'rest' || training?.recorded_type === 'rest') return 'If recovery still feels hard to organize, start with a protein-first meal and an easy walk.'
-  if (sleepHours > 0 && sleepHours < Math.max(6.5, targetSleep - 1)) return 'If the full plan feels too aggressive, shrink the ask and just protect food quality plus bedtime.'
+  if (plannedType === 'rest' || training?.recorded_type === 'rest') return 'If recovery still feels messy, start with a protein-first meal and an easy walk.'
+  if (sleepHours > 0 && sleepHours < Math.max(6.5, targetSleep - 1)) return 'If the full plan feels too aggressive, shrink it and just protect food quality plus bedtime.'
   if (stepsToday < stepTarget * 0.55) return mealTiming.daypartKey === 'evening' ? 'If you cannot fit a longer walk, stack two short movement blocks before bed.' : `If you cannot fit a longer walk, stack two short movement blocks before ${mealTiming.nextAnchorLabel.toLowerCase()}.`
-  if (proteinTarget > 0 && protein < proteinTarget * 0.55) return `If a full ${mealTiming.nextAnchorLabel.toLowerCase()} is not realistic yet, start with a high-protein snack that keeps the board moving.`
+  if (proteinTarget > 0 && protein < proteinTarget * 0.55) return `If a full ${mealTiming.nextAnchorLabel.toLowerCase()} is not realistic yet, start with a high-protein snack and get moving again.`
 
   return 'If the main move is blocked, choose the smallest clean action you can finish in the next 10 minutes.'
 }

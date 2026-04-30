@@ -172,6 +172,13 @@ describe('LiveWorkoutMode helpers', () => {
         class_slug: 'warrior',
         motivation_slug: 'discipline',
         starter_portrait_attachment_id: 88,
+        hp_current: 96,
+        hp_max: 100,
+      },
+      story_state: {
+        hp_current: 95,
+        hp_max: 100,
+        hp_loss_this_set: 1,
       },
       location: {
         slug: 'the_training_grounds',
@@ -191,6 +198,9 @@ describe('LiveWorkoutMode helpers', () => {
     expect(intro.locationLabel).toBe('The Training Grounds')
     expect(intro.encounterPhase).toBe('intro')
     expect(intro.readinessBand).toBe('steady')
+    expect(intro.hpCurrent).toBe(95)
+    expect(intro.hpMax).toBe(100)
+    expect(intro.hpLossThisSet).toBe(1)
     expect(intro.aiAnchor).toEqual(['dust and iron', 'training banners'])
   })
 

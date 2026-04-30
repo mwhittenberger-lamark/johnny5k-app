@@ -291,6 +291,27 @@ export function useWorkoutPlanningController({
   }, [hasCustomWorkoutDraft, scheduledPlan?.day_type, selectedDayType, session, setPreviewDayType])
 
   useEffect(() => {
+    const shouldEnterTavern = Boolean(locationStateRef.current?.enterTavern)
+    if (!shouldEnterTavern || session) {
+      return undefined
+    }
+
+    if (hasCustomWorkoutDraft) {
+      clearCustomWorkoutDraft()
+    }
+
+    if (selectedDayType !== 'rest') {
+      setPreviewDayType('rest')
+    }
+
+    const nextState = { ...(locationStateRef.current || {}) }
+    delete nextState.enterTavern
+
+    navigate(location.pathname, { replace: true, state: Object.keys(nextState).length ? nextState : null })
+    return undefined
+  }, [clearCustomWorkoutDraft, hasCustomWorkoutDraft, location.pathname, locationStateRef, navigate, selectedDayType, session, setPreviewDayType])
+
+  useEffect(() => {
     const nextTier = normalizeWorkoutTimeTier(locationStateRef.current?.recoveryLoopWorkoutTier)
     const source = String(locationStateRef.current?.recoveryLoopWorkoutSource || '')
     const shouldApplyRecoveryLoopTier = !session && source === 'dashboard_recovery_loop' && nextTier

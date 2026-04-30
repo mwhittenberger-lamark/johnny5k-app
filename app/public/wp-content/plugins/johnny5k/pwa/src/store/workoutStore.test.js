@@ -134,6 +134,28 @@ describe('useWorkoutStore', () => {
     expect(state.timeTier).toBe('full')
   })
 
+  it('clears a stale persisted split selection when no active session is available', async () => {
+    const store = await loadWorkoutStore({
+      timeTier: 'medium',
+      readinessScore: 7,
+      sessionMode: 'normal',
+      offlineSessionSnapshot: false,
+      activeExerciseIdx: 0,
+      previewDayType: 'legs',
+      previewDrafts: {},
+      discardedSessions: {},
+      sessionId: null,
+    })
+    workoutApiMock.current.mockResolvedValue({
+      session: null,
+      custom_workout_draft: null,
+    })
+
+    await store.getState().bootstrapSession()
+
+    expect(store.getState().previewDayType).toBe('')
+  })
+
   it('normalizes legacy persisted time tier aliases during hydration', async () => {
     const store = await loadWorkoutStore({
       timeTier: 'full length',

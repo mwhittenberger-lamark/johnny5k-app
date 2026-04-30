@@ -5,6 +5,7 @@ import AppIcon from '../../components/ui/AppIcon'
 import AppLoadingScreen from '../../components/ui/AppLoadingScreen'
 import EmptyState from '../../components/ui/EmptyState'
 import { formatUsFriendlyDate } from '../../lib/dateFormat'
+import { getTavernJohnnyLine, getTavernMissionPreview, getTavernResolution } from '../../lib/ironquestTavern'
 import { useIronQuestStarterPortrait } from '../../hooks/useIronQuestStarterPortrait'
 import { useAuthStore } from '../../store/authStore'
 
@@ -199,7 +200,7 @@ export default function IronQuestScreen() {
       .map(unlock => ({
         key: `${unlock.id}-${unlock.unlock_key}`,
         title: unlock?.meta?.label || humanizeSlug(unlock.unlock_key),
-        subtitle: unlock?.meta?.entry || buildUnlockSubtitle(unlock),
+        subtitle: resolveJournalEntrySubtitle(unlock),
         createdAt: unlock.created_at,
       }))
   ), [unlockHistory])
@@ -208,6 +209,9 @@ export default function IronQuestScreen() {
     ...item,
     complete: Boolean(dailyState?.[item.key]),
   }))
+  const tavernResolution = useMemo(() => getTavernResolution(dailyState), [dailyState])
+  const tavernMissionPreview = useMemo(() => getTavernMissionPreview(dailyState), [dailyState])
+  const tavernJohnnyLine = useMemo(() => getTavernJohnnyLine(dailyState), [dailyState])
 
   useEffect(() => {
     if (!missionBoard.length) {
@@ -306,6 +310,15 @@ export default function IronQuestScreen() {
       setTravelingLocationSlug('')
     }
   }, [travelingLocationSlug])
+
+  const handleEnterTavern = useCallback(() => {
+    navigate('/workout', {
+      state: {
+        enterTavern: true,
+        johnnyActionNotice: `${location?.tavern?.name || 'The Tavern'} is open. Rest day is selected so you can take one Tavern action.`,
+      },
+    })
+  }, [location?.tavern?.name, navigate])
 
   if (loading && !hub) {
     return (
@@ -415,10 +428,26 @@ export default function IronQuestScreen() {
               <button type="button" className="btn-primary small" onClick={() => navigate('/workout')}>
                 Start mission
               </button>
+              <button type="button" className="btn-secondary small" onClick={() => navigate('/ironquest/map')}>
+                World map
+              </button>
+              <button type="button" className="btn-secondary small" onClick={() => navigate('/ironquest/character')}>
+                Character sheet
+              </button>
+              {location?.tavern?.name ? (
+                <button type="button" className="btn-secondary small" onClick={handleEnterTavern}>
+                  Enter Tavern
+                </button>
+              ) : null}
               <button type="button" className="btn-secondary small" onClick={() => navigate('/settings')}>
                 Mode settings
               </button>
             </div>
+            {location?.tavern?.name ? (
+              <p className="ironquest-hero-helper">
+                Tavern open now: <strong>{location.tavern.name}</strong>
+              </p>
+            ) : null}
           </section>
 
           <section className="ironquest-grid">
@@ -427,6 +456,29 @@ export default function IronQuestScreen() {
                 <span className="dashboard-chip workout">Mission board</span>
                 <span className="dashboard-chip subtle">{missionBoard.length} available</span>
               </div>
+              {tavernMissionPreview ? (
+                <div className="ironquest-rumor-callout">
+                  <div className="dashboard-card-head">
+                    <span className="dashboard-chip coach">Rumor from the tavern</span>
+                    <span className="dashboard-chip subtle">{tavernResolution?.action_id === 'rumors' ? 'Fresh lead' : 'Saved lead'}</span>
+                  </div>
+                  <strong>{tavernMissionPreview.name || 'Next mission lead'}</strong>
+                  <p>{tavernMissionPreview.summary || 'A lead is waiting on the board.'}</p>
+                  {tavernJohnnyLine ? <p>{tavernJohnnyLine}</p> : null}
+                  <div className="ironquest-actions">
+                    <button
+                      type="button"
+                      className="btn-secondary small"
+                      onClick={() => setOpenMissionSlug(tavernMissionPreview.slug || '')}
+                    >
+                      Open on board
+                    </button>
+                    <button type="button" className="btn-outline small" onClick={handleEnterTavern}>
+                      Enter Tavern
+                    </button>
+                  </div>
+                </div>
+              ) : null}
               {currentMission ? (
                 <>
                   <h3>{currentMission.name}</h3>
@@ -889,6 +941,19 @@ function buildUnlockSubtitle(unlock) {
     return `Granted from mission run ${unlock.source_run_id}.`
   }
   return 'Recorded in the IronQuest progression ledger.'
+}
+
+function resolveJournalEntrySubtitle(unlock) {
+  const entry = typeof unlock?.meta?.entry === 'string' ? unlock.meta.entry.trim() : ''
+  if (entry && !hasNarrativePlaceholders(entry)) {
+    return entry
+  }
+
+  return buildUnlockSubtitle(unlock)
+}
+
+function hasNarrativePlaceholders(value) {
+  return /\{[a-z_]+\}/.test(String(value || ''))
 }
 
 function boardRoleLabel(role) {

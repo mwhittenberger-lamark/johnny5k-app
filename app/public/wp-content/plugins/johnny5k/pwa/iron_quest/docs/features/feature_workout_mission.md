@@ -558,3 +558,193 @@ AI:
 The room quiets, but the floor below creaks open into darkness.
 
 That is the loop.
+
+21. Phase 2 Feature: Live Mission HUD
+
+If Phase 2 is meant to make the workout feel like an adventure, the player needs a small amount of live state visible on screen at all times.
+
+The HUD should not turn the workout into a dense RPG panel.
+
+It should answer five questions quickly:
+
+- How far through the mission am I?
+- How dangerous is the current moment?
+- How much HP do I have left?
+- What phase is this encounter in?
+- Did the last set help or hurt?
+
+### Recommended HUD Elements
+
+Show these in a compact card or sticky strip inside live coach mode:
+
+- Mission name
+- Encounter phase
+- Tension state
+- Mission progress percent
+- Current HP and max HP
+- Last HP change
+- Optional class badge
+
+Example:
+
+```json
+{
+  "mission_name": "Shadows in the Streets",
+  "encounter_phase": "clash",
+  "tension": "high",
+  "mission_progress_percent": 54,
+  "hp_current": 82,
+  "hp_max": 100,
+  "hp_loss_this_set": 1,
+  "class_slug": "mage"
+}
+```
+
+### HUD Behavior Rules
+
+- Update after every saved set
+- Animate only the values that changed
+- Keep labels short and readable mid-workout
+- Let the story text stay primary and the HUD stay supportive
+- Never require extra taps during a set-rest cycle
+
+### HUD Copy Style
+
+Prefer clear labels over RPG jargon when possible:
+
+- Mission progress
+- HP
+- Pressure
+- Phase
+- Last hit
+
+Avoid clutter like:
+
+- multiple currencies during live mode
+- inventory shortcuts during a set
+- long stat blocks
+- hidden modifier explanations
+
+### Why This Matters
+
+The narrative already tracks battle state. The HUD makes that state visible.
+
+Without it, the user only feels the story emotionally.
+
+With it, the user can feel both:
+
+- the drama of the mission
+- the consequences of workout performance
+
+22. Phase 2 Feature: Tavern Flow For Rest Days
+
+Rest days should still feel like part of IronQuest, but they should not pretend to be workout missions.
+
+The right Phase 2 move is to turn rest days into Tavern Days using the existing Tavern rule set instead of building a second recovery system.
+
+### Core Tavern Day Thesis
+
+On a scheduled rest day, the premium re-entry experience becomes:
+
+- recover
+- collect flavor
+- make one small choice
+- optionally log a healthy behavior
+- leave with a light reward or setup bonus
+
+This keeps IronQuest present on non-lifting days without pressuring the user into training.
+
+### Recommended Tavern Day Flow
+
+If today is a rest day:
+
+1. Dashboard or workout entry shows the current location tavern
+2. User sees a short tavern scene tied to that location
+3. User chooses one tavern action
+4. App grants the matching recovery or progression effect
+5. Optional follow-up actions encourage sleep, meal logging, walking, or prep for tomorrow
+
+### Baseline Tavern Actions
+
+These should come from the existing Tavern Day system:
+
+- Rest: recover HP
+- Side job: earn gold
+- Rumors: earn XP and reveal or preview a mission
+- Supplies: buy or prep a small advantage for the next mission
+
+### Recommended Rest-Day Additions
+
+To fit Johnny5k better, extend Tavern Day with behavior-linked actions:
+
+- Hearty meal: bonus if the user logs a protein-forward meal on a rest day
+- Early room: bonus if the user hits sleep logging or bedtime goals
+- Scout the roads: bonus if the user hits a light step or cardio threshold
+- Study the board: Johnny gives tomorrow-readiness advice in tavern flavor
+
+These should feel like recovery and setup, not like punishment for skipping training.
+
+### Tavern State Output
+
+The app should be able to render Tavern Day from a simple payload:
+
+```json
+{
+  "location_slug": "the_training_grounds",
+  "tavern_name": "The Iron Lantern",
+  "tavern_tone": "warm, practical, post-training refuge",
+  "flavor_text": "The benches are full of fighters rubbing sore shoulders and planning tomorrow.",
+  "available_actions": [
+    { "id": "rest", "label": "Take a room", "effect": "+8 HP" },
+    { "id": "rumors", "label": "Listen for rumors", "effect": "+10 XP and mission preview" },
+    { "id": "side_job", "label": "Pick up a side job", "effect": "+10 gold" },
+    { "id": "meal", "label": "Order the house plate", "effect": "Meal-log bonus" }
+  ]
+}
+```
+
+### UX Rules For Tavern Days
+
+- One meaningful action per rest day is enough
+- Keep the flow under 60 seconds
+- Show a recovery payoff immediately
+- Tie the tavern to the current location so the world feels continuous
+- Let users exit cleanly back to dashboard, body, nutrition, or tomorrow\'s workout prep
+
+### Johnny Integration
+
+Johnny should speak differently in taverns than in workout missions.
+
+He should sound more like:
+
+- a coach helping you recover
+- a guide pointing out the smart next move
+- a companion setting up tomorrow
+
+He should sound less like:
+
+- a combat narrator
+- a boss announcer
+- a quest generator shouting for urgency
+
+### Why Tavern Days Belong In Phase 2
+
+They support the same premium fantasy as workout missions while staying aligned with rest days, recovery, meal logging, and sleep.
+
+That makes them a better Phase 2 addition than deeper inventory, stores, or subclass mechanics.
+
+23. Recommended Implementation Order
+
+If both features are added in the same wave, build them in this order:
+
+1. Live mission HUD in live coach mode
+2. Story payload additions for HUD values
+3. Rest-day Tavern Day entry card on dashboard or workout launch
+4. Tavern action resolution and reward application
+5. Johnny tavern copy and follow-up prompts
+
+That sequence keeps the Phase 2 layer centered on the daily user loop:
+
+- train days feel like missions
+- rest days feel like recovery scenes
+- both paths strengthen the world without blocking the core app
