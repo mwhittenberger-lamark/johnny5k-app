@@ -72,6 +72,7 @@ import { useOnlineStatus } from '../../../lib/useOnlineStatus'
 import { buildCoachingPromptOptions, buildCoachingSummary } from '../../../lib/coachingSummary'
 import { trackCoachingPromptOpen } from '../../../lib/coaching/coachingAnalytics'
 import { resolveExperienceModeFromIronQuestPayload } from '../../../lib/experienceMode'
+import { subscribeIronQuestStateChanged } from '../../../lib/ironquestSync'
 import { useDashboardPreferences } from './useDashboardPreferences'
 import { useDashboardSupplementalData } from './useDashboardSupplementalData'
 
@@ -157,6 +158,12 @@ export function useDashboardViewModel() {
 
   useEffect(() => {
     void loadIronQuest()
+  }, [loadIronQuest])
+
+  useEffect(() => {
+    return subscribeIronQuestStateChanged(() => {
+      void loadIronQuest()
+    })
   }, [loadIronQuest])
 
   useEffect(() => {

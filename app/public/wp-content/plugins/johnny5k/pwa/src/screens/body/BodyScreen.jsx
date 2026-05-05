@@ -8,6 +8,7 @@ import ClearableInput from '../../components/ui/ClearableInput'
 import SupportIconButton from '../../components/ui/SupportIconButton'
 import { getAccessibleScrollBehavior } from '../../lib/accessibility'
 import { formatUsShortDate } from '../../lib/dateFormat'
+import { resolveIronQuestSleepStateDate } from '../../lib/ironquestDailyProgress'
 import { buildIronQuestDailyToast } from '../../lib/ironquestFeedback'
 import { settingsFormFromState } from '../../lib/onboarding'
 import { openSupportGuide } from '../../lib/supportHelp'
@@ -267,7 +268,7 @@ export default function BodyScreen() {
       if (!result?.queued) {
         const ironquestProgress = await syncIronQuestDailyProgress({
           quest_key: 'sleep',
-          state_date: sleepDate,
+          state_date: resolveIronQuestSleepStateDate(sleepDate),
         })
         const ironQuestToast = buildIronQuestDailyToast(ironquestProgress, {
           sourceLabel: 'Sleep logged',

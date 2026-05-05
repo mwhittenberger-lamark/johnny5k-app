@@ -1,8 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ironquestApi } from '../../api/modules/ironquest'
+import IronQuestRecentMissionUpdate from '../../components/ironquest/IronQuestRecentMissionUpdate'
+import AppIcon from '../../components/ui/AppIcon'
 import AppLoadingScreen from '../../components/ui/AppLoadingScreen'
 import EmptyState from '../../components/ui/EmptyState'
+import { useIronQuestWorldArt } from '../../hooks/useIronQuestWorldArt'
+import { useIronQuestRecentMissionUpdate } from '../../hooks/useIronQuestRecentMissionUpdate'
+import { dispatchIronQuestStateChanged, subscribeIronQuestStateChanged } from '../../lib/ironquestSync'
 
 export default function IronQuestMapScreen() {
   const navigate = useNavigate()
@@ -48,6 +53,35 @@ export default function IronQuestMapScreen() {
     void loadMap()
   }, [loadMap])
 
+  const refreshLocationPreview = useCallback(async (slug) => {
+    const normalizedSlug = String(slug || '').trim()
+    if (!normalizedSlug) {
+      return
+    }
+
+    try {
+      const detail = await ironquestApi.location(normalizedSlug)
+      setLocationDetailsBySlug((current) => ({
+        ...current,
+        [normalizedSlug]: {
+          location: detail?.location ?? null,
+          missions: Array.isArray(detail?.missions) ? detail.missions : [],
+        },
+      }))
+    } catch {
+      // Keep the prior preview if a background refresh fails.
+    }
+  }, [])
+
+  useEffect(() => {
+    return subscribeIronQuestStateChanged((detail) => {
+      void loadMap({ background: true })
+      if (detail?.reason === 'mission_resolved' && openNodeSlug) {
+        void refreshLocationPreview(openNodeSlug)
+      }
+    })
+  }, [loadMap, openNodeSlug, refreshLocationPreview])
+
   const entitlement = hub?.entitlement ?? {}
   const profile = hub?.profile ?? {}
   const routeState = hub?.route_state ?? {}
@@ -64,6 +98,7 @@ export default function IronQuestMapScreen() {
   const fastTravelPointsAvailable = Math.max(0, Number(nextUnlock?.fast_travel_points_available || 0) || 0)
   const fastTravelGoldCost = Math.max(0, Number(nextUnlock?.fast_travel_gold_cost || 0) || 0)
   const canFastTravel = Boolean(nextUnlock?.requirements_met) && fastTravelPointsAvailable > 0 && availableGold >= fastTravelGoldCost
+  const recentMissionUpdate = useIronQuestRecentMissionUpdate()
 
   const mapNodes = useMemo(() => pathSlugs.map((slug, index) => {
     const location = locations.find(entry => entry.slug === slug) ?? null
@@ -88,6 +123,9 @@ export default function IronQuestMapScreen() {
       nextUnlock: slug === nextUnlock?.location_slug,
     }
   }), [clearedLocations, currentLocationSlug, locations, nextUnlock?.location_slug, pathSlugs, unlockedLocations])
+  const currentNode = mapNodes.find(node => node.current) ?? null
+  const nextNode = mapNodes.find(node => node.nextUnlock) ?? null
+  const previewNode = mapNodes.find(node => node.slug === openNodeSlug) ?? null
 
   const handleTravelToLocation = useCallback(async (locationSlug) => {
     const destinationSlug = String(locationSlug || '').trim()
@@ -102,6 +140,10 @@ export default function IronQuestMapScreen() {
     try {
       const result = await ironquestApi.travelToLocation({ location_slug: destinationSlug })
       setHub(result)
+      dispatchIronQuestStateChanged({
+        reason: 'travel',
+        locationSlug: destinationSlug,
+      })
       setRouteNotice({
         title: 'Region changed',
         message: result?.message || 'Region changed.',
@@ -172,6 +214,10 @@ export default function IronQuestMapScreen() {
         message: `Spent ${Math.max(0, Number(result?.gold_spent || 0) || 0)} gold for ${Math.max(0, Number(result?.travel_points || 0) || 0)} travel point.`,
       })
       await loadMap({ background: true })
+      dispatchIronQuestStateChanged({
+        reason: 'fast_travel',
+        locationSlug: nextUnlock.location_slug,
+      })
     } catch (routeError) {
       setError(routeError?.data?.message || routeError?.message || 'Could not apply fast travel.')
     } finally {
@@ -228,6 +274,59 @@ export default function IronQuestMapScreen() {
 
       {error ? <p className="ironquest-inline-error">{error}</p> : null}
 
+      <section className="dash-card ironquest-panel ironquest-map-atlas-card">
+        <div className="dashboard-card-head">
+          <span className="dashboard-chip coach">Atlas overview</span>
+          <span className="dashboard-chip subtle">{mapNodes.length} route nodes</span>
+        </div>
+        <div className="ironquest-map-atlas-grid">
+          <div className="ironquest-map-atlas-hero">
+            <div className="ironquest-map-atlas-hero-copy">
+              <span className="ironquest-map-atlas-kicker">Current road</span>
+              <strong>{currentNode?.name || 'Unknown region'}</strong>
+              <p>{currentNode?.tone || currentNode?.theme || 'Follow the marked road, preview coming threats, and move the route deliberately.'}</p>
+            </div>
+            <div className="ironquest-map-atlas-stats">
+              <MapStatCard label="Unlocked" value={String(unlockedLocations.length)} icon="map" />
+              <MapStatCard label="Cleared" value={String(clearedLocations.length)} icon="trophy" />
+              <MapStatCard label="Gold" value={String(availableGold)} icon="award" />
+              <MapStatCard label="Next gate" value={nextUnlock ? `${nextUnlock.travel_remaining || 0}` : '0'} icon="bolt" />
+            </div>
+          </div>
+          <div className="ironquest-map-atlas-sidecard">
+            <span className="ironquest-map-atlas-sidecard-label">Next destination</span>
+            <strong>{nextNode?.name || 'All seeded regions unlocked'}</strong>
+            <p>
+              {nextUnlock
+                ? nextUnlock.requirements_met
+                  ? `${nextUnlock.travel_remaining || 0} travel point${nextUnlock.travel_remaining === 1 ? '' : 's'} remain. Fast travel is available.`
+                  : `Clear ${humanizeSlug(nextUnlock.required_arc_clear || 'the current arc')} before this road opens.`
+                : 'Use the map to revisit regions, preview missions, or travel between unlocked stops.'}
+            </p>
+            <div className="ironquest-chip-row">
+              <span className="dashboard-chip success">Current</span>
+              <span className="dashboard-chip coach">Unlocked</span>
+              <span className="dashboard-chip awards">Next unlock</span>
+              <span className="dashboard-chip subtle">Locked</span>
+            </div>
+          </div>
+          <div className="ironquest-map-atlas-sidecard">
+            <span className="ironquest-map-atlas-sidecard-label">Focused preview</span>
+            <strong>{previewNode?.name || currentNode?.name || 'Open a node preview'}</strong>
+            <p>
+              {previewNode
+                ? `Mission preview is open for ${previewNode.name}.`
+                : 'Use Preview missions on any node to inspect threats and mission feel before you travel.'}
+            </p>
+            <div className="ironquest-map-legend-list">
+              <span className="ironquest-map-legend-pill"><span className="ironquest-map-legend-swatch current" /> Active region</span>
+              <span className="ironquest-map-legend-pill"><span className="ironquest-map-legend-swatch unlocked" /> Reachable stop</span>
+              <span className="ironquest-map-legend-pill"><span className="ironquest-map-legend-swatch next" /> Route target</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <section className="ironquest-grid ironquest-map-layout">
         <article className="dash-card ironquest-panel">
           <div className="dashboard-card-head">
@@ -239,13 +338,26 @@ export default function IronQuestMapScreen() {
               <div key={node.slug} className={`ironquest-map-node ${node.current ? 'current' : ''} ${node.unlocked ? 'reached' : ''} ${node.cleared ? 'complete' : ''} ${node.nextUnlock ? 'next-unlock' : ''}`}>
                 <div className="ironquest-map-node-rail" aria-hidden="true">
                   <span className="ironquest-map-node-dot">{node.index + 1}</span>
+                  {node.unlocksToward.length ? (
+                    <span className={`ironquest-map-node-forks forks-${Math.min(node.unlocksToward.length, 2)}`}>
+                      {node.unlocksToward.slice(0, 2).map((targetSlug, forkIndex) => (
+                        <span
+                          key={`${node.slug}-${targetSlug}`}
+                          className={`ironquest-map-node-fork ${forkIndex === 0 ? 'left' : 'right'}`}
+                        />
+                      ))}
+                    </span>
+                  ) : null}
                 </div>
                 <div className="ironquest-map-node-card">
                   <div className="ironquest-map-banner" style={resolveRegionBannerStyle(node)}>
-                    <div className="ironquest-map-banner-copy">
-                      <span>{node.aiPromptAnchor?.tone || node.levelRange || 'Region'}</span>
-                      <strong>{node.aiPromptAnchor?.theme || node.theme || node.name}</strong>
-                      <p>{node.tone || node.theme || 'This route segment is waiting for its next push.'}</p>
+                    <div className="ironquest-map-banner-head">
+                      <RegionEmblem node={node} />
+                      <div className="ironquest-map-banner-copy">
+                        <span>{node.aiPromptAnchor?.tone || node.levelRange || 'Region'}</span>
+                        <strong>{node.aiPromptAnchor?.theme || node.theme || node.name}</strong>
+                        <p>{node.tone || node.theme || 'This route segment is waiting for its next push.'}</p>
+                      </div>
                     </div>
                     {Array.isArray(node.aiPromptAnchor?.enemy_types) && node.aiPromptAnchor.enemy_types.length ? (
                       <div className="ironquest-chip-row">
@@ -255,35 +367,65 @@ export default function IronQuestMapScreen() {
                       </div>
                     ) : null}
                   </div>
-                  <div className="dashboard-card-head">
-                    <span className="dashboard-chip awards">{node.levelRange || 'Region'}</span>
-                    <span className="dashboard-chip subtle">
-                      {node.cleared
-                        ? 'Arc cleared'
-                        : node.current
-                          ? 'Current region'
-                          : node.unlocked
-                            ? 'Unlocked'
-                            : node.nextUnlock
-                              ? 'Next unlock'
-                              : 'Locked'}
-                    </span>
+                  <div className="ironquest-map-node-head">
+                    <div className="ironquest-map-node-copy">
+                      <strong>{node.name}</strong>
+                      {node.theme ? <p>{node.theme}</p> : null}
+                    </div>
+                    <div className="ironquest-chip-row ironquest-map-node-status-row">
+                      <span className="dashboard-chip awards">{node.levelRange || 'Region'}</span>
+                      <span className="dashboard-chip subtle">
+                        {node.cleared
+                          ? 'Arc cleared'
+                          : node.current
+                            ? 'Current region'
+                            : node.unlocked
+                              ? 'Unlocked'
+                              : node.nextUnlock
+                                ? 'Next unlock'
+                                : 'Locked'}
+                      </span>
+                    </div>
                   </div>
-                  <div className="ironquest-map-node-copy">
-                    <strong>{node.name}</strong>
-                    {node.theme ? <p>{node.theme}</p> : null}
+                  <div className="ironquest-map-node-meta-grid">
+                    <div className="ironquest-map-node-meta-card">
+                      <span>Travel gate</span>
+                      <strong>{resolveTravelRequirement(node.travelRequirement)}</strong>
+                    </div>
+                    <div className="ironquest-map-node-meta-card">
+                      <span>Status</span>
+                      <strong>{resolveNodeStatus(node)}</strong>
+                    </div>
+                    {node.connectedFrom.length ? (
+                      <div className="ironquest-map-node-meta-card">
+                        <span>Connected from</span>
+                        <strong>{node.connectedFrom.map(humanizeSlug).join(', ')}</strong>
+                      </div>
+                    ) : null}
+                    {node.unlocksToward.length ? (
+                      <div className="ironquest-map-node-meta-card">
+                        <span>Unlocks toward</span>
+                        <strong>{node.unlocksToward.map(humanizeSlug).join(', ')}</strong>
+                      </div>
+                    ) : null}
                   </div>
+                  {node.unlocksToward.length ? (
+                    <div className="ironquest-map-branch-row">
+                      <span className="ironquest-map-branch-label">Branch paths</span>
+                      <div className="ironquest-chip-row ironquest-map-branch-pill-row">
+                        {node.unlocksToward.map(targetSlug => (
+                          <span key={`${node.slug}-branch-${targetSlug}`} className="ironquest-map-branch-pill">
+                            {humanizeSlug(targetSlug)}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
                   <div className="ironquest-hero-meta">
-                    {node.connectedFrom.length ? <span className="dashboard-chip subtle">From {node.connectedFrom.map(humanizeSlug).join(', ')}</span> : null}
-                    {node.unlocksToward.length ? <span className="dashboard-chip workout">Toward {node.unlocksToward.map(humanizeSlug).join(', ')}</span> : null}
                     {node.tavernName ? <span className="dashboard-chip coach">Tavern: {node.tavernName}</span> : null}
                     {node.storeName ? <span className="dashboard-chip awards">Store: {node.storeName}</span> : null}
                   </div>
-                  <div className="ironquest-detail-list">
-                    <DetailRow label="Travel gate" value={resolveTravelRequirement(node.travelRequirement)} />
-                    <DetailRow label="Status" value={resolveNodeStatus(node)} />
-                  </div>
-                  <div className="ironquest-item-actions">
+                  <div className="ironquest-actions ironquest-map-node-actions">
                     <button
                       type="button"
                       className="btn-secondary small"
@@ -322,6 +464,19 @@ export default function IronQuestMapScreen() {
                       node={node}
                       preview={locationDetailsBySlug[node.slug] ?? null}
                       loading={loadingPreviewSlug === node.slug}
+                      onPreviewUpdate={(updater) => {
+                        setLocationDetailsBySlug((current) => {
+                          const existing = current[node.slug]
+                          if (!existing) {
+                            return current
+                          }
+                          const nextValue = typeof updater === 'function' ? updater(existing) : updater
+                          return {
+                            ...current,
+                            [node.slug]: nextValue,
+                          }
+                        })
+                      }}
                     />
                   ) : null}
                 </div>
@@ -348,6 +503,7 @@ export default function IronQuestMapScreen() {
               <p className="ironquest-route-notice">{routeNotice.message}</p>
             </div>
           ) : null}
+          {recentMissionUpdate ? <IronQuestRecentMissionUpdate update={recentMissionUpdate} compact /> : null}
           {nextUnlock ? (
             <div className="ironquest-fast-travel-card">
               <strong>Next route gate</strong>
@@ -376,7 +532,28 @@ function DetailRow({ label, value }) {
   )
 }
 
-function MapMissionDrawer({ node, preview, loading }) {
+function MapStatCard({ icon, label, value }) {
+  return (
+    <div className="ironquest-stat-card">
+      <span className="ironquest-stat-icon"><AppIcon name={icon} /></span>
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  )
+}
+
+function RegionEmblem({ node }) {
+  const emblem = resolveRegionEmblem(node)
+
+  return (
+    <div className={`ironquest-map-emblem ironquest-map-emblem-${emblem.tone}`} aria-hidden="true">
+      <span className="ironquest-map-emblem-icon"><AppIcon name={emblem.icon} /></span>
+      <span className="ironquest-map-emblem-sigil">{emblem.sigil}</span>
+    </div>
+  )
+}
+
+function MapMissionDrawer({ node, preview, loading, onPreviewUpdate }) {
   const missions = Array.isArray(preview?.missions) ? preview.missions : []
 
   if (loading) {
@@ -393,30 +570,304 @@ function MapMissionDrawer({ node, preview, loading }) {
 
   return (
     <div className="ironquest-map-mission-drawer">
+      <MapRegionArtPreview node={node} preview={preview} onPreviewUpdate={onPreviewUpdate} />
       <div className="dashboard-card-head">
         <span className="dashboard-chip workout">Mission preview</span>
         <span className="dashboard-chip subtle">{missions.length} missions</span>
       </div>
       <div className="ironquest-map-mission-list">
         {missions.map((mission) => (
-          <div key={mission.slug} className={`ironquest-map-mission-card ${mission.is_boss ? 'boss' : ''}`}>
-            <div className="dashboard-card-head">
-              <span className={`dashboard-chip ${mission.is_boss ? 'awards' : 'subtle'}`}>
-                {mission.is_boss ? 'Boss' : humanizeSlug(mission.mission_type || 'mission')}
-              </span>
-              <span className="dashboard-chip subtle">{mission.workout_feel || 'Quest activity'}</span>
-            </div>
-            <strong>{mission.name}</strong>
-            <p>{mission.goal || mission.narrative || 'Mission details are being prepared.'}</p>
-            <div className="ironquest-detail-list">
-              <DetailRow label="Threat" value={mission.threat || 'Unknown'} />
-              <DetailRow label="Replayable" value={mission.replayable ? 'Yes' : 'No'} />
-            </div>
-          </div>
+          <MapMissionPreviewCard key={mission.slug} mission={mission} node={node} />
         ))}
       </div>
     </div>
   )
+}
+
+function MapRegionArtPreview({ node, preview, onPreviewUpdate }) {
+  const [tavernRefreshKey, setTavernRefreshKey] = useState(0)
+  const [merchantRefreshKey, setMerchantRefreshKey] = useState(0)
+  const [generatingTavernArt, setGeneratingTavernArt] = useState(false)
+  const [generatingMerchantArt, setGeneratingMerchantArt] = useState(false)
+  const [artError, setArtError] = useState('')
+  const tavern = preview?.location?.tavern ?? {}
+  const store = preview?.location?.store ?? {}
+  const merchant = store?.merchant ?? {}
+  const tavernArt = tavern?.art ?? null
+  const merchantArt = merchant?.art ?? null
+  const tavernImage = useIronQuestWorldArt(
+    tavernArt?.art_key,
+    tavernArt?.label || `${tavern?.name || node?.tavernName || node?.name} scene`,
+    `${tavernArt?.status || ''}:${tavernRefreshKey}`,
+  )
+  const merchantImage = useIronQuestWorldArt(
+    merchantArt?.art_key,
+    merchantArt?.label || `${merchant?.name || node?.storeName || node?.name} portrait`,
+    `${merchantArt?.status || ''}:${merchantRefreshKey}`,
+  )
+
+  const handleGenerateTavernArt = useCallback(async () => {
+    setGeneratingTavernArt(true)
+    setArtError('')
+
+    try {
+      const result = await ironquestApi.generateWorldArt({
+        art_type: 'tavern_scene',
+        location_slug: node?.slug || '',
+      })
+      const nextArt = result?.tavern?.tavern?.art ?? result?.art ?? null
+      if (nextArt && onPreviewUpdate) {
+        onPreviewUpdate((current) => ({
+          ...current,
+          location: {
+            ...(current?.location ?? {}),
+            tavern: {
+              ...((current?.location?.tavern) ?? {}),
+              art: nextArt,
+            },
+          },
+        }))
+      }
+      setTavernRefreshKey((value) => value + 1)
+    } catch (error) {
+      setArtError(error?.message || 'Could not forge the tavern scene right now.')
+    } finally {
+      setGeneratingTavernArt(false)
+    }
+  }, [node?.slug, onPreviewUpdate])
+
+  const handleGenerateMerchantArt = useCallback(async () => {
+    setGeneratingMerchantArt(true)
+    setArtError('')
+
+    try {
+      const result = await ironquestApi.generateWorldArt({
+        art_type: 'store_owner',
+        location_slug: node?.slug || '',
+      })
+      const nextArt = result?.store?.merchant?.art ?? result?.art ?? null
+      if (nextArt && onPreviewUpdate) {
+        onPreviewUpdate((current) => ({
+          ...current,
+          location: {
+            ...(current?.location ?? {}),
+            store: {
+              ...((current?.location?.store) ?? {}),
+              merchant: {
+                ...((current?.location?.store?.merchant) ?? {}),
+                art: nextArt,
+              },
+            },
+          },
+        }))
+      }
+      setMerchantRefreshKey((value) => value + 1)
+    } catch (error) {
+      setArtError(error?.message || 'Could not forge the merchant portrait right now.')
+    } finally {
+      setGeneratingMerchantArt(false)
+    }
+  }, [node?.slug, onPreviewUpdate])
+
+  return (
+    <div className="ironquest-map-region-art-grid">
+      <div className="ironquest-map-region-art-card">
+        <div className="ironquest-world-art-shell ironquest-world-art-shell-scene">
+          <div className="ironquest-world-art-frame ironquest-world-art-frame-scene">
+            {tavernImage?.src ? (
+              <img
+                className="ironquest-world-art-image"
+                src={tavernImage.src}
+                alt={tavernArt?.alt || `${tavern?.name || node?.tavernName || node?.name} scene`}
+              />
+            ) : (
+              <div className="ironquest-world-art-placeholder">
+                <span>{tavern?.name || node?.tavernName || `${node?.name} tavern`} scene pending</span>
+              </div>
+            )}
+          </div>
+          <div className="ironquest-world-art-copy">
+            <span className="ironquest-world-art-kicker">Region scene</span>
+            <strong>{tavern?.name || node?.tavernName || 'Local tavern'}</strong>
+            <p>{tavern?.flavor_text || `Forge a scene for ${node?.name || 'this region'} so the map preview carries the local mood.`}</p>
+            <button
+              type="button"
+              className="btn-outline small"
+              onClick={() => void handleGenerateTavernArt()}
+              disabled={generatingTavernArt}
+            >
+              {generatingTavernArt
+                ? 'Forging scene…'
+                : tavernImage?.src || tavernArt?.status === 'ready'
+                  ? 'Refresh scene'
+                  : 'Forge scene'}
+            </button>
+          </div>
+        </div>
+      </div>
+      <div className="ironquest-map-region-art-card">
+        <div className="ironquest-world-art-shell ironquest-world-art-shell-store">
+          <div className="ironquest-world-art-frame ironquest-world-art-frame-portrait">
+            {merchantImage?.src ? (
+              <img
+                className="ironquest-world-art-image"
+                src={merchantImage.src}
+                alt={merchantArt?.alt || `${merchant?.name || node?.storeName || 'Storekeeper'} portrait`}
+              />
+            ) : (
+              <div className="ironquest-world-art-placeholder">
+                <span>{merchant?.name || node?.storeName || 'Storekeeper'} portrait pending</span>
+              </div>
+            )}
+          </div>
+          <div className="ironquest-world-art-copy">
+            <span className="ironquest-world-art-kicker">Merchant portrait</span>
+            <strong>{merchant?.name || node?.storeName || 'Storekeeper'}</strong>
+            <p>{merchant?.description || `Forge the storekeeper portrait for ${node?.name || 'this region'} directly from the map preview.`}</p>
+            <button
+              type="button"
+              className="btn-outline small"
+              onClick={() => void handleGenerateMerchantArt()}
+              disabled={generatingMerchantArt}
+            >
+              {generatingMerchantArt
+                ? 'Forging portrait…'
+                : merchantImage?.src || merchantArt?.status === 'ready'
+                  ? 'Refresh portrait'
+                  : 'Forge portrait'}
+            </button>
+          </div>
+        </div>
+      </div>
+      {artError ? <p className="ironquest-inline-error">{artError}</p> : null}
+    </div>
+  )
+}
+
+function MapMissionPreviewCard({ mission, node }) {
+  const [artRefreshKey, setArtRefreshKey] = useState(0)
+  const [generatingArt, setGeneratingArt] = useState(false)
+  const [artError, setArtError] = useState('')
+  const progressState = mission?.progress_state || {}
+  const rewardState = mission?.reward_state || {}
+  const missionStatusChips = buildMissionStatusChips(mission)
+  const missionArt = useIronQuestWorldArt(
+    mission?.art?.art_key,
+    mission?.art?.label || mission?.name || 'Mission art',
+    artRefreshKey,
+  )
+
+  const handleGenerateMissionArt = useCallback(async () => {
+    setGeneratingArt(true)
+    setArtError('')
+
+    try {
+      await ironquestApi.generateWorldArt({
+        art_type: 'mission_card',
+        location_slug: mission?.location_slug || node?.slug || '',
+        mission_slug: mission?.slug || '',
+      })
+      setArtRefreshKey((value) => value + 1)
+    } catch (error) {
+      setArtError(error?.message || 'Could not forge mission art right now.')
+    } finally {
+      setGeneratingArt(false)
+    }
+  }, [mission?.location_slug, mission?.slug, node?.slug])
+
+  return (
+    <div className={`ironquest-map-mission-card ${mission.is_boss ? 'boss' : ''}`}>
+      <div className="dashboard-card-head">
+        <span className={`dashboard-chip ${mission.is_boss ? 'awards' : 'subtle'}`}>
+          {mission.is_boss ? 'Boss' : humanizeSlug(mission.mission_type || 'mission')}
+        </span>
+        <span className="dashboard-chip subtle">{mission.workout_feel || 'Quest activity'}</span>
+        {mission?.rival_presence?.name ? <span className="dashboard-chip coach">Rival</span> : null}
+        {missionStatusChips.map((chip) => (
+          <span key={chip.label} className={`dashboard-chip ${chip.tone}`}>{chip.label}</span>
+        ))}
+      </div>
+      <div className="ironquest-mission-art-shell">
+        <div className="ironquest-mission-art-frame">
+          {missionArt?.src ? (
+            <img
+              className="ironquest-world-art-image"
+              src={missionArt.src}
+              alt={mission?.art?.alt || mission?.name || 'Mission art'}
+            />
+          ) : (
+            <div className="ironquest-world-art-placeholder">
+              <span>{mission?.name || 'Mission art pending'}</span>
+            </div>
+          )}
+        </div>
+        <div className="ironquest-mission-art-copy">
+          <strong>{mission.name}</strong>
+          <p>{mission.goal || mission.narrative || 'Mission details are being prepared.'}</p>
+          <button
+            type="button"
+            className="btn-outline small"
+            onClick={() => void handleGenerateMissionArt()}
+            disabled={generatingArt}
+          >
+            {generatingArt
+              ? 'Forging art…'
+              : missionArt?.src || mission?.art?.status === 'ready'
+                ? 'Refresh art'
+                : 'Forge art'}
+          </button>
+        </div>
+      </div>
+      {mission?.rival_presence?.taunt ? <p className="ironquest-mission-status-copy">{mission.rival_presence.taunt}</p> : null}
+      {progressState?.description ? <p className="ironquest-mission-status-copy">{progressState.description}</p> : null}
+      <div className="ironquest-detail-list">
+        <DetailRow label="Run status" value={progressState?.label || 'Standard mission'} />
+        <DetailRow label="Reward state" value={rewardState?.primary_label || 'Standard mission rewards'} />
+        <DetailRow label="History" value={rewardState?.secondary_label || formatMissionHistory(mission?.completion_count)} />
+        <DetailRow label="Threat" value={mission.threat || 'Unknown'} />
+        <DetailRow label="Replayable" value={mission.replayable ? 'Yes' : 'No'} />
+      </div>
+      {Array.isArray(rewardState?.available_labels) && rewardState.available_labels.length ? (
+        <div className="ironquest-mission-reward-band">
+          {rewardState.available_labels.map(label => (
+            <span key={`available-${label}`} className="dashboard-chip workout">{label}</span>
+          ))}
+        </div>
+      ) : null}
+      {Array.isArray(rewardState?.claimed_labels) && rewardState.claimed_labels.length ? (
+        <div className="ironquest-mission-reward-band">
+          {rewardState.claimed_labels.map(label => (
+            <span key={`claimed-${label}`} className="dashboard-chip subtle">{label}</span>
+          ))}
+        </div>
+      ) : null}
+      {artError ? <p className="ironquest-inline-error">{artError}</p> : null}
+    </div>
+  )
+}
+
+function buildMissionStatusChips(mission) {
+  const state = String(mission?.progress_state?.state || '').trim()
+
+  switch (state) {
+    case 'first_clear_available':
+      return [{ label: 'First clear', tone: 'workout' }]
+    case 'replay':
+      return [{ label: 'Replay', tone: 'subtle' }]
+    case 'boss_ready':
+      return [{ label: 'Boss ready', tone: 'awards' }]
+    case 'boss_cleared':
+      return [{ label: 'Boss cleared', tone: 'success' }]
+    case 'boss_locked':
+      return [{ label: 'Boss path', tone: 'subtle' }]
+    default:
+      return []
+  }
+}
+
+function formatMissionHistory(completionCount) {
+  const count = Number(completionCount || 0) || 0
+  return count > 0 ? `Cleared ${count}x` : 'No clears yet'
 }
 
 function resolveRegionBannerStyle(node) {
@@ -469,6 +920,40 @@ function resolveTravelRequirement(requirement) {
   }
 
   return `${value} ${humanizeSlug(unit || 'travel points')}`
+}
+
+function resolveRegionEmblem(node) {
+  const slug = String(node?.slug || '').trim()
+
+  switch (slug) {
+    case 'the_training_grounds':
+      return { icon: 'trophy', sigil: 'TG', tone: 'brass' }
+    case 'grim_hollow_village':
+      return { icon: 'award', sigil: 'GH', tone: 'ash' }
+    case 'the_emberforge':
+      return { icon: 'bolt', sigil: 'EF', tone: 'ember' }
+    case 'whispering_wilds':
+      return { icon: 'map', sigil: 'WW', tone: 'grove' }
+    default:
+      return {
+        icon: 'map',
+        sigil: buildRegionSigil(node?.name || slug),
+        tone: 'codex',
+      }
+  }
+}
+
+function buildRegionSigil(value) {
+  const parts = String(value || '')
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+
+  if (!parts.length) {
+    return 'IQ'
+  }
+
+  return parts.map(part => part.charAt(0).toUpperCase()).join('')
 }
 
 function humanizeSlug(value) {

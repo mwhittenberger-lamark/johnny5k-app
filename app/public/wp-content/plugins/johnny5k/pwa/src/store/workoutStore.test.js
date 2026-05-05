@@ -23,7 +23,14 @@ const workoutApiMock = vi.hoisted(() => ({
   updateSet: vi.fn(),
 }))
 
+const ironquestApiMock = vi.hoisted(() => ({
+  activeMission: vi.fn(),
+  resolveMission: vi.fn(),
+  startMission: vi.fn(),
+}))
+
 vi.mock('../api/modules/workout', () => ({ workoutApi: workoutApiMock }))
+vi.mock('../api/modules/ironquest', () => ({ ironquestApi: ironquestApiMock }))
 
 function createSessionStorage() {
   const store = new Map()
@@ -57,6 +64,11 @@ async function loadWorkoutStore(persistedWorkoutState = null) {
 
 beforeEach(() => {
   Object.values(workoutApiMock).forEach((mockFn) => {
+    if (typeof mockFn?.mockReset === 'function') {
+      mockFn.mockReset()
+    }
+  })
+  Object.values(ironquestApiMock).forEach((mockFn) => {
     if (typeof mockFn?.mockReset === 'function') {
       mockFn.mockReset()
     }
@@ -332,5 +344,27 @@ describe('useWorkoutStore', () => {
     expect(state.sessionId).toBeNull()
     expect(state.previewDayType).toBe('')
     expect(state.previewDrafts).toEqual({})
+  })
+
+  it('resolves IronQuest with the provided run id when completing a workout', async () => {
+    const store = await loadWorkoutStore()
+    store.setState({
+      sessionId: 321,
+      session: {
+        session: { id: 321, session_date: '2026-04-13' },
+        exercises: [],
+      },
+    })
+    workoutApiMock.complete.mockResolvedValue({ completed: true })
+    ironquestApiMock.resolveMission.mockResolvedValue({ awards: { result_band: 'victory' } })
+
+    const result = await store.getState().completeSession({ ironQuestRunId: 44 })
+
+    expect(ironquestApiMock.resolveMission).toHaveBeenCalledWith({
+      run_id: 44,
+      result_band: 'victory',
+    })
+    expect(ironquestApiMock.activeMission).not.toHaveBeenCalled()
+    expect(result.ironquest).toEqual({ awards: { result_band: 'victory' } })
   })
 })

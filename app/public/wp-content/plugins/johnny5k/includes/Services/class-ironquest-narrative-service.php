@@ -189,7 +189,30 @@ class IronQuestNarrativeService {
 		$state_with_scene['encounter_type'] = $encounter_type;
 		$state_with_scene['encounter_seed'] = $encounter_seed;
 		$state_with_scene['scene_state']    = $scene_state;
-		$fallback_latest_beat = self::build_set_story_text( $state_with_scene, $exercise_name, $set_number, $sets_total, $set_result, $event_type, $completed_exercise, $encounter_type, $beat_context );
+		$story_engine_bundle = self::build_story_engine_set_progression_bundle(
+			$mission,
+			$run,
+			$state_with_scene,
+			[
+				'slot'           => 'set_progression',
+				'set_result'     => $set_result,
+				'exercise_order' => $exercise_order,
+				'stage'          => (string) ( $beat_context['stage'] ?? '' ),
+				'tension'        => (string) ( $state['tension'] ?? 'rising' ),
+				'stance'         => (string) ( $state['stance'] ?? 'steady' ),
+				'progress_phase' => (string) ( $state['encounter_phase'] ?? 'intro' ),
+				'mechanics'      => [
+					'hp_loss_this_set'   => $hp_loss_this_set,
+					'completed_exercise' => $completed_exercise,
+				],
+			],
+			$encounter_seed,
+			$scene_state,
+			$completed_exercise
+		);
+		$fallback_latest_beat = '' !== (string) ( $story_engine_bundle['latest_beat'] ?? '' )
+			? (string) $story_engine_bundle['latest_beat']
+			: self::build_set_story_text( $state_with_scene, $exercise_name, $set_number, $sets_total, $set_result, $event_type, $completed_exercise, $encounter_type, $beat_context );
 		$set_beat_bundle   = ! $completed_exercise
 			? IronQuestAiNarrativeService::build_set_beat_bundle(
 				$user_id,
@@ -207,6 +230,8 @@ class IronQuestNarrativeService {
 					'gear_effects'   => self::resolve_story_effects_for_ai_prompt( $state, $run, $exercise_name, 'gear' ),
 					'spell_effects'  => self::resolve_story_effects_for_ai_prompt( $state, $run, $exercise_name, 'spell' ),
 					'encounter_type' => $encounter_type,
+					'story_engine_draft' => (array) ( $story_engine_bundle['draft'] ?? [] ),
+					'story_engine_template' => (array) ( $story_engine_bundle['template'] ?? [] ),
 				],
 				$beat_context
 			)
@@ -236,6 +261,9 @@ class IronQuestNarrativeService {
 		$state['encounter_phase'] = self::resolve_progress_phase( $next_percent );
 		$state['tension']         = $next_tension;
 		$state['latest_beat']     = $latest_beat;
+		$state['story_engine']    = is_array( $story_engine_bundle['story_engine'] ?? null )
+			? (array) $story_engine_bundle['story_engine']
+			: (array) ( $state['story_engine'] ?? [] );
 		$state['encounter_type']  = $encounter_type;
 		$state['encounter_seed']  = $encounter_seed;
 		$state['scene_state']     = $scene_state;
@@ -247,10 +275,14 @@ class IronQuestNarrativeService {
 			? self::build_transition_situation( $state_with_scene, $exercise_name, $encounter_type )
 			: ( '' !== (string) ( $set_beat_bundle['current_situation'] ?? '' )
 				? (string) $set_beat_bundle['current_situation']
-				: self::build_follow_up_situation( $state_with_scene, $exercise_name, $set_result, $encounter_type, $beat_context ) );
+				: ( '' !== (string) ( $story_engine_bundle['current_situation'] ?? '' )
+					? (string) $story_engine_bundle['current_situation']
+					: self::build_follow_up_situation( $state_with_scene, $exercise_name, $set_result, $encounter_type, $beat_context ) ) );
 			$state['decision_prompt'] = ! $completed_exercise && '' !== (string) ( $set_beat_bundle['decision_prompt'] ?? '' )
 				? (string) $set_beat_bundle['decision_prompt']
-				: 'Press into the encounter and let the next set decide the pace.';
+				: ( '' !== (string) ( $story_engine_bundle['decision_prompt'] ?? '' )
+					? (string) $story_engine_bundle['decision_prompt']
+					: 'Press into the encounter and let the next set decide the pace.' );
 			$state['debug_prompt'] = ! $completed_exercise
 				? sanitize_textarea_field( (string) ( $set_beat_bundle['debug_prompt'] ?? '' ) )
 				: sanitize_textarea_field( (string) ( $state['debug_prompt'] ?? '' ) );
@@ -288,6 +320,20 @@ class IronQuestNarrativeService {
 			$next_encounter_type      = self::resolve_encounter_type_for_exercise( $next_exercise_name, $next_slot_type, (string) ( $run['run_type'] ?? '' ) );
 			$next_encounter_seed      = self::resolve_encounter_seed( $mission, $next_encounter_index, $next_encounter_type, (string) ( $state['enemy'] ?? '' ) );
 			$next_scene_state         = self::build_scene_state_from_seed( $next_encounter_seed, $next_encounter_index, $exercise_count );
+			$transition_story_engine_bundle = self::build_story_engine_transition_bundle(
+				$mission,
+				$run,
+				$state,
+				$state['exercise_context'],
+				[
+					'exercise_name'  => $next_exercise_name,
+					'exercise_order' => $next_encounter_index,
+					'exercise_count' => $exercise_count,
+					'encounter_type' => $next_encounter_type,
+					'encounter_seed' => $next_encounter_seed,
+				],
+				$next_scene_state
+			);
 			$transition_state         = $state;
 			$transition_state['encounter_type'] = $next_encounter_type;
 			$transition_state['encounter_seed'] = $next_encounter_seed;
@@ -305,6 +351,8 @@ class IronQuestNarrativeService {
 					'exercise_count' => $exercise_count,
 					'encounter_type' => $next_encounter_type,
 					'encounter_seed' => $next_encounter_seed,
+					'story_engine_draft' => (array) ( $transition_story_engine_bundle['draft'] ?? [] ),
+					'story_engine_template' => (array) ( $transition_story_engine_bundle['template'] ?? [] ),
 				]
 			);
 			$next_choices             = ! empty( $transition_bundle['choices'] )
@@ -316,15 +364,24 @@ class IronQuestNarrativeService {
 			$state['encounter_seed']  = $next_encounter_seed;
 			$state['scene_state']     = $next_scene_state;
 			$state['encounter_index'] = $next_encounter_index;
+			$state['story_engine']    = is_array( $transition_story_engine_bundle['story_engine'] ?? null )
+				? (array) $transition_story_engine_bundle['story_engine']
+				: (array) ( $state['story_engine'] ?? [] );
 			$state['latest_beat']     = '' !== (string) ( $transition_bundle['latest_beat'] ?? '' )
 				? (string) $transition_bundle['latest_beat']
-				: $latest_beat;
+				: ( '' !== (string) ( $transition_story_engine_bundle['latest_beat'] ?? '' )
+					? (string) $transition_story_engine_bundle['latest_beat']
+					: $latest_beat );
 			$state['current_situation'] = '' !== (string) ( $transition_bundle['current_situation'] ?? '' )
 				? (string) $transition_bundle['current_situation']
-				: self::build_next_encounter_situation( $transition_state, $next_exercise_name, $next_encounter_type, $next_encounter_index, $exercise_count );
+				: ( '' !== (string) ( $transition_story_engine_bundle['current_situation'] ?? '' )
+					? (string) $transition_story_engine_bundle['current_situation']
+					: self::build_next_encounter_situation( $transition_state, $next_exercise_name, $next_encounter_type, $next_encounter_index, $exercise_count ) );
 				$state['decision_prompt'] = '' !== (string) ( $transition_bundle['decision_prompt'] ?? '' )
 					? (string) $transition_bundle['decision_prompt']
-					: self::build_next_encounter_prompt( $transition_state, $next_exercise_name, $next_encounter_index, $exercise_count );
+					: ( '' !== (string) ( $transition_story_engine_bundle['decision_prompt'] ?? '' )
+						? (string) $transition_story_engine_bundle['decision_prompt']
+						: self::build_next_encounter_prompt( $transition_state, $next_exercise_name, $next_encounter_index, $exercise_count ) );
 				$state['debug_prompt']    = sanitize_textarea_field( (string) ( $transition_bundle['debug_prompt'] ?? '' ) );
 				$state['choices']         = $next_choices;
 			$state['default_choice_id'] = (string) ( $next_choices[1]['id'] ?? $next_choices[0]['id'] ?? 'steady_approach' );
@@ -449,6 +506,14 @@ class IronQuestNarrativeService {
 					'title' => 'Mission opening',
 					'text'  => $opening,
 				],
+			],
+			'story_engine'      => [
+				'recent_template_ids' => [],
+				'recent_tags'         => [],
+				'recent_phrases'      => [],
+				'slot_counts'         => [],
+				'last_selected'       => [],
+				'variation_seed'      => sanitize_text_field( sprintf( 'run-%d', max( 0, (int) ( $run['id'] ?? 0 ) ) ) ),
 			],
 			'conclusion'        => [],
 			'result_band'       => '',
@@ -1740,6 +1805,7 @@ class IronQuestNarrativeService {
 		];
 		$normalized['progress'] = self::merge_progress_state( (array) ( $state['progress'] ?? [] ), [] );
 		$normalized['transcript'] = array_values( array_filter( array_map( [ __CLASS__, 'sanitize_story_entry' ], (array) ( $state['transcript'] ?? [] ) ) ) );
+		$normalized['story_engine'] = self::sanitize_story_engine_state( (array) ( $state['story_engine'] ?? [] ) );
 		$normalized['conclusion'] = [
 			'title'    => sanitize_text_field( (string) ( $state['conclusion']['title'] ?? '' ) ),
 			'summary'  => sanitize_textarea_field( (string) ( $state['conclusion']['summary'] ?? '' ) ),
@@ -1756,6 +1822,129 @@ class IronQuestNarrativeService {
 		$normalized['class_slug'] = sanitize_key( (string) ( $state['class_slug'] ?? $profile['class_slug'] ?? '' ) );
 
 		return $normalized;
+	}
+
+	private static function build_story_engine_set_progression_bundle( array $mission, array $run, array $state, array $payload, array $encounter_seed, array $scene_state, bool $completed_exercise ): array {
+		if ( $completed_exercise || empty( $mission['beat_templates'] ) ) {
+			return [];
+		}
+
+		$slot = sanitize_key( (string) ( $payload['slot'] ?? 'set_progression' ) );
+		if ( 'set_progression' !== $slot ) {
+			return [];
+		}
+
+		$request = IronQuestStoryEngineService::build_beat_request( $run, $state, $payload, $slot );
+		$candidate = IronQuestStoryEngineService::select_candidate( $mission, $request, $state );
+		if ( ! is_array( $candidate ) ) {
+			return [];
+		}
+
+		$rendered = IronQuestStoryEngineService::render_candidate( $candidate, $encounter_seed, $scene_state, $request );
+		$state_for_record = $state;
+		$state_for_record['story_profile'] = is_array( $mission['story_profile'] ?? null ) ? $mission['story_profile'] : [];
+		$state_for_record['encounter_seed'] = $encounter_seed;
+		$updated_state = IronQuestStoryEngineService::record_selection( $state_for_record, $candidate, $rendered );
+
+		return [
+			'latest_beat' => sanitize_textarea_field( (string) ( $rendered['draft']['summary'] ?? '' ) ),
+			'current_situation' => sanitize_textarea_field( (string) ( $rendered['draft']['follow_up'] ?? '' ) ),
+			'decision_prompt' => sanitize_text_field( (string) ( $rendered['draft']['decision_prompt'] ?? '' ) ),
+			'draft' => [
+				'summary' => sanitize_textarea_field( (string) ( $rendered['draft']['summary'] ?? '' ) ),
+				'follow_up' => sanitize_textarea_field( (string) ( $rendered['draft']['follow_up'] ?? '' ) ),
+				'decision_prompt' => sanitize_text_field( (string) ( $rendered['draft']['decision_prompt'] ?? '' ) ),
+			],
+			'template' => [
+				'id' => sanitize_key( (string) ( $candidate['id'] ?? '' ) ),
+				'slot' => sanitize_key( (string) ( $candidate['slot'] ?? '' ) ),
+				'tags' => array_values( array_filter( array_map( 'sanitize_key', (array) ( $candidate['tags'] ?? [] ) ) ) ),
+			],
+			'story_engine' => self::sanitize_story_engine_state( (array) ( $updated_state['story_engine'] ?? [] ) ),
+		];
+	}
+
+	private static function build_story_engine_transition_bundle( array $mission, array $run, array $state, array $current_exercise, array $next_encounter, array $next_scene_state ): array {
+		if ( empty( $mission['beat_templates'] ) ) {
+			return [];
+		}
+
+		$next_encounter_seed = is_array( $next_encounter['encounter_seed'] ?? null ) ? $next_encounter['encounter_seed'] : [];
+		if ( [] === $next_encounter_seed ) {
+			return [];
+		}
+
+		$slot = 'transition_setup';
+		$state_for_request = $state;
+		$state_for_request['encounter_seed'] = $next_encounter_seed;
+		$state_for_request['scene_state'] = $next_scene_state;
+
+		$request = IronQuestStoryEngineService::build_beat_request(
+			$run,
+			$state_for_request,
+			[
+				'slot' => $slot,
+				'stage' => 'transition',
+				'tension' => (string) ( $state['tension'] ?? 'rising' ),
+				'stance' => (string) ( $state['stance'] ?? 'steady' ),
+				'progress_phase' => 'transition',
+				'set_result' => (string) ( $current_exercise['set_result'] ?? '' ),
+				'previous_landmark' => (string) ( $state['encounter_seed']['landmark'] ?? '' ),
+				'previous_objective' => (string) ( $state['encounter_seed']['objective'] ?? '' ),
+			],
+			$slot
+		);
+		$candidate = IronQuestStoryEngineService::select_candidate( $mission, $request, $state_for_request );
+		if ( ! is_array( $candidate ) ) {
+			return [];
+		}
+
+		$rendered = IronQuestStoryEngineService::render_candidate( $candidate, $next_encounter_seed, $next_scene_state, $request );
+		$state_for_record = $state_for_request;
+		$state_for_record['story_profile'] = is_array( $mission['story_profile'] ?? null ) ? $mission['story_profile'] : [];
+		$updated_state = IronQuestStoryEngineService::record_selection( $state_for_record, $candidate, $rendered );
+
+		return [
+			'latest_beat' => sanitize_textarea_field( (string) ( $rendered['draft']['summary'] ?? '' ) ),
+			'current_situation' => sanitize_textarea_field( (string) ( $rendered['draft']['follow_up'] ?? '' ) ),
+			'decision_prompt' => sanitize_text_field( (string) ( $rendered['draft']['decision_prompt'] ?? '' ) ),
+			'draft' => [
+				'summary' => sanitize_textarea_field( (string) ( $rendered['draft']['summary'] ?? '' ) ),
+				'follow_up' => sanitize_textarea_field( (string) ( $rendered['draft']['follow_up'] ?? '' ) ),
+				'decision_prompt' => sanitize_text_field( (string) ( $rendered['draft']['decision_prompt'] ?? '' ) ),
+			],
+			'template' => [
+				'id' => sanitize_key( (string) ( $candidate['id'] ?? '' ) ),
+				'slot' => sanitize_key( (string) ( $candidate['slot'] ?? '' ) ),
+				'tags' => array_values( array_filter( array_map( 'sanitize_key', (array) ( $candidate['tags'] ?? [] ) ) ) ),
+			],
+			'story_engine' => self::sanitize_story_engine_state( (array) ( $updated_state['story_engine'] ?? [] ) ),
+		];
+	}
+
+	private static function sanitize_story_engine_state( array $story_engine ): array {
+		$slot_counts = [];
+		foreach ( (array) ( $story_engine['slot_counts'] ?? [] ) as $key => $value ) {
+			$key = sanitize_key( (string) $key );
+			if ( '' === $key ) {
+				continue;
+			}
+
+			$slot_counts[ $key ] = max( 0, (int) $value );
+		}
+
+		return [
+			'recent_template_ids' => array_values( array_filter( array_map( 'sanitize_key', (array) ( $story_engine['recent_template_ids'] ?? [] ) ) ) ),
+			'recent_tags' => array_values( array_filter( array_map( 'sanitize_key', (array) ( $story_engine['recent_tags'] ?? [] ) ) ) ),
+			'recent_phrases' => array_values( array_filter( array_map( 'sanitize_textarea_field', (array) ( $story_engine['recent_phrases'] ?? [] ) ) ) ),
+			'slot_counts' => $slot_counts,
+			'last_selected' => [
+				'template_id' => sanitize_key( (string) ( $story_engine['last_selected']['template_id'] ?? '' ) ),
+				'slot' => sanitize_key( (string) ( $story_engine['last_selected']['slot'] ?? '' ) ),
+				'encounter_seed_slug' => sanitize_key( (string) ( $story_engine['last_selected']['encounter_seed_slug'] ?? '' ) ),
+			],
+			'variation_seed' => sanitize_text_field( (string) ( $story_engine['variation_seed'] ?? '' ) ),
+		];
 	}
 
 	private static function resolve_hp_loss_for_set( string $set_result, array $beat_context ): int {

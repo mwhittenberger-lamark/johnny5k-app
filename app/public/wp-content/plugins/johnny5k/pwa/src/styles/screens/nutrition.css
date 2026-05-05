@@ -549,6 +549,134 @@
   justify-content: space-between;
   gap: var(--space-3-5);
 }
+.nutrition-next-step-card {
+  display: grid;
+  gap: var(--space-3);
+  margin: var(--space-3) 0 var(--space-2-5);
+  padding: var(--space-3-5);
+  border-radius: 20px;
+  border: 1px solid rgba(8, 21, 51, 0.1);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.95), rgba(246, 250, 253, 0.98));
+  box-shadow: 0 14px 30px rgba(8, 21, 51, 0.08);
+}
+.nutrition-next-step-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-2-5);
+}
+.nutrition-next-step-copy {
+  display: grid;
+  gap: var(--space-1);
+}
+.nutrition-next-step-eyebrow {
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(11, 29, 73, 0.64);
+}
+.nutrition-next-step-copy h3 {
+  margin: 0;
+  color: #081533;
+}
+.nutrition-next-step-copy p {
+  margin: 0;
+  color: rgba(11, 29, 73, 0.72);
+  line-height: 1.5;
+}
+.nutrition-next-step-status {
+  white-space: nowrap;
+}
+.nutrition-next-step-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--space-2);
+}
+.nutrition-next-step-actions .btn-primary,
+.nutrition-next-step-actions .btn-secondary {
+  width: 100%;
+}
+.nutrition-next-step-shortcuts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+.nutrition-next-step-shortcuts .btn-secondary {
+  width: 100%;
+}
+.nutrition-next-step-more {
+  border: 1px solid rgba(8, 21, 51, 0.08);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.82);
+  overflow: hidden;
+}
+.nutrition-next-step-more summary {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-3-5);
+  cursor: pointer;
+}
+.nutrition-next-step-more summary::-webkit-details-marker {
+  display: none;
+}
+.nutrition-next-step-more summary span:first-child {
+  color: #081533;
+  font-weight: 800;
+}
+.nutrition-next-step-more-meta {
+  color: rgba(11, 29, 73, 0.66);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+.nutrition-next-step-more-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--space-2);
+  padding: 0 var(--space-3-5) var(--space-3-5);
+}
+.nutrition-next-step-more-actions .btn-secondary {
+  width: 100%;
+}
+.nutrition-next-step-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--space-2);
+}
+.nutrition-next-step-item {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+  padding: var(--space-2-5);
+  border-radius: 16px;
+  border: 1px solid rgba(8, 21, 51, 0.08);
+  background: rgba(255, 255, 255, 0.78);
+}
+.nutrition-next-step-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: rgba(0, 188, 222, 0.12);
+  color: #0b4d72;
+  font-size: 0.82rem;
+  font-weight: 900;
+}
+.nutrition-next-step-item strong {
+  color: #081533;
+  font-size: 0.92rem;
+}
+.nutrition-next-step-item p {
+  margin: 0;
+  color: rgba(11, 29, 73, 0.7);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
 .nutrition-today-shortcuts {
   display: grid;
   grid-template-columns: 1fr;
@@ -753,6 +881,13 @@
   display: grid;
   gap: var(--space-3);
   padding: 0 var(--space-4) var(--space-3-5);
+}
+.nutrition-today-support-stack {
+  display: grid;
+  gap: var(--space-3-5);
+}
+.nutrition-today-support-stack > .nutrition-coach-card {
+  margin-top: 0;
 }
 .nutrition-today-accordion-panel {
   display: grid;
@@ -2103,6 +2238,9 @@ label.field-label.nutrition-saved-food-field {
     grid-template-columns: minmax(0, 1fr);
     gap: var(--space-2);
   }
+  .nutrition-header-secondary-action {
+    display: none;
+  }
   .nutrition-header-actions > .header-action-button {
     min-height: 48px;
     padding: 10px 6px;
@@ -2146,6 +2284,18 @@ label.field-label.nutrition-saved-food-field {
   }
   .nutrition-today-hero-head {
     flex-direction: column;
+  }
+  .nutrition-next-step-head {
+    flex-direction: column;
+  }
+  .nutrition-next-step-status {
+    white-space: normal;
+  }
+  .nutrition-next-step-actions,
+  .nutrition-next-step-shortcuts,
+  .nutrition-next-step-grid,
+  .nutrition-next-step-more-actions {
+    grid-template-columns: 1fr;
   }
   .nutrition-pantry-category-actions {
     width: 100%;
@@ -2472,7 +2622,7 @@ label.field-label.nutrition-saved-food-field {
 :root[data-experience-mode='ironquest'] .nutrition-today-accordion-trigger h3,
 :root[data-experience-mode='ironquest'] .macro-stat-primary .macro-val,
 :root[data-experience-mode='ironquest'] .macro-stat-primary .macro-callout {
-  color: var(--bg2);
+  color: #f7f0e4;
 }
 
 :root[data-experience-mode='ironquest'] .nutrition-coach-card p,
@@ -2482,7 +2632,7 @@ label.field-label.nutrition-saved-food-field {
 :root[data-experience-mode='ironquest'] .macro-stat-primary .macro-target,
 :root[data-experience-mode='ironquest'] .macro-stat-primary .macro-action-label,
 :root[data-experience-mode='ironquest'] .macro-stat-primary .macro-warning {
-  color: color-mix(in srgb, var(--bg2) 82%, transparent);
+  color: rgba(247, 240, 228, 0.84);
 }
 
 :root[data-experience-mode='ironquest'] .nutrition-coach-prompt,
@@ -2497,6 +2647,17 @@ label.field-label.nutrition-saved-food-field {
   border-color: color-mix(in srgb, var(--bg2) 16%, transparent);
   background: color-mix(in srgb, var(--bg2) 10%, transparent);
   color: var(--bg2);
+}
+
+:root[data-experience-mode='ironquest'] .macro-stat-primary .macro-detail {
+  border: 1px solid rgba(247, 240, 228, 0.12);
+  background: rgba(247, 240, 228, 0.12);
+  color: #f7f0e4;
+}
+
+:root[data-experience-mode='ironquest'] .macro-stat-primary .macro-target strong,
+:root[data-experience-mode='ironquest'] .macro-stat-primary .macro-warning strong {
+  color: #f7f0e4;
 }
 
 :root[data-experience-mode='ironquest'] .nutrition-coach-prompt {
@@ -2615,6 +2776,18 @@ label.field-label.nutrition-saved-food-field {
 :root[data-experience-mode='ironquest'] .nutrition-plan-accordion-icon,
 :root[data-experience-mode='ironquest'] .label-scan-status-chip strong {
   color: color-mix(in srgb, var(--accent2) 72%, var(--text) 28%);
+}
+
+:root[data-experience-mode='ironquest'] .macro-stat-primary .macro-label,
+:root[data-experience-mode='ironquest'] .macro-stat-primary .macro-target,
+:root[data-experience-mode='ironquest'] .macro-stat-primary .macro-val,
+:root[data-experience-mode='ironquest'] .macro-stat-primary .macro-callout,
+:root[data-experience-mode='ironquest'] .macro-stat-primary .macro-action-label {
+  color: #f7f0e4;
+}
+
+:root[data-experience-mode='ironquest'] .macro-stat-primary .macro-warning {
+  color: rgba(247, 240, 228, 0.84);
 }
 
 :root[data-experience-mode='ironquest'] .nutrition-meal-accordion-icon,

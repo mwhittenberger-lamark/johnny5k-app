@@ -61,6 +61,8 @@ class IronQuestTavernDayTest extends ServiceTestCase {
 		$this->assertSame( 200, $response->get_status() );
 		$this->assertSame( 'the_training_grounds', $data['location_slug'] );
 		$this->assertSame( 'The First Rest', $data['tavern']['name'] );
+		$this->assertSame( 'tavern_scene_the_training_grounds', $data['tavern']['art']['art_key'] );
+		$this->assertSame( 'missing', $data['tavern']['art']['status'] );
 		$this->assertSame( 82, $data['profile']['hp_current'] );
 		$this->assertSame( 'rest', $data['available_actions'][0]['id'] );
 		$this->assertSame( 'rumors', $data['available_actions'][2]['id'] );

@@ -101,6 +101,36 @@ class IronQuestMissionService {
 		return self::get_run( $run_id, $user_id ) ?? [];
 	}
 
+	public static function cancel_active_run( int $user_id ): array|\WP_Error {
+		global $wpdb;
+
+		$active = self::get_active_run( $user_id );
+		if ( empty( $active['id'] ) ) {
+			return new \WP_Error( 'ironquest_no_active_mission', 'No active IronQuest mission is available for this user.' );
+		}
+
+		$table   = $wpdb->prefix . 'fit_ironquest_mission_runs';
+		$updated = $wpdb->update(
+			$table,
+			[
+				'status'       => 'cancelled',
+				'completed_at' => current_time( 'mysql', true ),
+			],
+			[
+				'id'      => (int) $active['id'],
+				'user_id' => $user_id,
+			],
+			[ '%s', '%s' ],
+			[ '%d', '%d' ]
+		);
+
+		if ( false === $updated ) {
+			return new \WP_Error( 'ironquest_mission_run_cancel_failed', 'Could not cancel the active IronQuest mission run.' );
+		}
+
+		return self::get_run( (int) $active['id'], $user_id ) ?? [];
+	}
+
 	public static function set_encounter_phase( int $run_id, int $user_id, string $encounter_phase ): array|\WP_Error {
 		global $wpdb;
 
@@ -122,6 +152,37 @@ class IronQuestMissionService {
 
 	public static function get_location_missions( string $location_slug ): array {
 		return IronQuestRegistryService::get_location_missions( sanitize_key( $location_slug ) );
+	}
+
+	public static function get_victory_completion_counts( int $user_id, string $location_slug = '' ): array {
+		global $wpdb;
+
+		$table         = $wpdb->prefix . 'fit_ironquest_mission_runs';
+		$location_slug = sanitize_key( $location_slug );
+		$where         = [ 'user_id = %d', "status = 'completed'", "result_band = 'victory'" ];
+		$params        = [ $user_id ];
+
+		if ( '' !== $location_slug ) {
+			$where[]  = 'location_slug = %s';
+			$params[] = $location_slug;
+		}
+
+		$query = "SELECT location_slug, mission_slug, COUNT(*) AS completion_count FROM {$table} WHERE "
+			. implode( ' AND ', $where )
+			. ' GROUP BY location_slug, mission_slug';
+		$rows = $wpdb->get_results( $wpdb->prepare( $query, ...$params ), ARRAY_A );
+
+		$counts = [];
+		foreach ( $rows as $row ) {
+			$mission_slug = sanitize_key( (string) ( $row['mission_slug'] ?? '' ) );
+			if ( '' === $mission_slug ) {
+				continue;
+			}
+
+			$counts[ $mission_slug ] = max( 0, (int) ( $row['completion_count'] ?? 0 ) );
+		}
+
+		return $counts;
 	}
 
 	private static function find_registry_mission( string $mission_slug, string $location_slug ): ?array {

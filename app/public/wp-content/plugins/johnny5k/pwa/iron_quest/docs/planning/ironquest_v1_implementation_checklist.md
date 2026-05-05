@@ -6,6 +6,23 @@ This document converts the premium architecture into an implementation checklist
 
 This is a v1 execution artifact, not a lore or expansion artifact.
 
+## Status Note
+
+This checklist is the original execution plan, not the best source of truth for the current shipped Phase 2 screen shell.
+
+For current product shape, prefer:
+
+- `docs/screens/ironquest_screen_architecture.md`
+- current feature docs under `docs/features/`
+
+Use this checklist as:
+
+- a historical planning reference
+- a remaining-work tracker
+- a guardrail against scope creep
+
+Do not read this file as proof that every unchecked item is still part of the current Phase 2 screen architecture.
+
 ## V1 Scope Lock
 
 These constraints are fixed for v1 unless this document is explicitly revised:

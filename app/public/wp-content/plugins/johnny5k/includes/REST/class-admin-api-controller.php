@@ -9,8 +9,10 @@ use Johnny5k\Services\CostTracker;
 use Johnny5k\Services\GeminiImageService;
 use Johnny5k\Services\InternalDiagnosticsLogger;
 use Johnny5k\Services\IronQuestEntitlementService;
+use Johnny5k\Services\IronQuestAiNarrativeService;
 use Johnny5k\Services\IronQuestProfileService;
 use Johnny5k\Services\IronQuestRegistryService;
+use Johnny5k\Services\IronQuestStoryEngineService;
 use Johnny5k\Services\PushService;
 use Johnny5k\Services\SupportGuideService;
 use Johnny5k\Services\UserTime;
@@ -42,6 +44,9 @@ class AdminApiController {
 		'dash',
 		'whole30',
 	];
+	private const IRONQUEST_STORY_WORKBENCH_SESSIONS_OPTION = 'jf_ironquest_story_workbench_sessions';
+	private const IRONQUEST_STORY_WORKBENCH_APPROVALS_OPTION = 'jf_ironquest_story_workbench_approvals';
+	private const IRONQUEST_STORY_WORKBENCH_SESSION_LIMIT = 24;
 
 	public static function default_color_schemes(): array {
 		return [
@@ -454,6 +459,72 @@ class AdminApiController {
 			'permission_callback' => $admin,
 		] );
 
+		register_rest_route( $ns, '/admin/ironquest/story-workbench-preview', [
+			'methods'             => 'POST',
+			'callback'            => [ __CLASS__, 'preview_ironquest_story_workbench' ],
+			'permission_callback' => $admin,
+		] );
+
+		register_rest_route( $ns, '/admin/ironquest/story-workbench-review', [
+			'methods'             => 'POST',
+			'callback'            => [ __CLASS__, 'review_ironquest_story_workbench_candidate' ],
+			'permission_callback' => $admin,
+		] );
+
+		register_rest_route( $ns, '/admin/ironquest/story-workbench-export', [
+			'methods'             => 'POST',
+			'callback'            => [ __CLASS__, 'export_ironquest_story_workbench' ],
+			'permission_callback' => $admin,
+		] );
+
+		register_rest_route( $ns, '/admin/ironquest/story-workbench-apply', [
+			'methods'             => 'POST',
+			'callback'            => [ __CLASS__, 'apply_ironquest_story_workbench_export' ],
+			'permission_callback' => $admin,
+		] );
+
+		register_rest_route( $ns, '/admin/ironquest/story-workbench-scene', [
+			'methods'             => 'POST',
+			'callback'            => [ __CLASS__, 'save_ironquest_story_workbench_scene' ],
+			'permission_callback' => $admin,
+		] );
+
+		register_rest_route( $ns, '/admin/ironquest/story-workbench-scene-suggest', [
+			'methods'             => 'POST',
+			'callback'            => [ __CLASS__, 'suggest_ironquest_story_workbench_scene' ],
+			'permission_callback' => $admin,
+		] );
+
+		register_rest_route( $ns, '/admin/ironquest/story-workbench-location', [
+			'methods'             => 'POST',
+			'callback'            => [ __CLASS__, 'save_ironquest_story_workbench_location' ],
+			'permission_callback' => $admin,
+		] );
+
+		register_rest_route( $ns, '/admin/ironquest/story-workbench-location-suggest', [
+			'methods'             => 'POST',
+			'callback'            => [ __CLASS__, 'suggest_ironquest_story_workbench_location' ],
+			'permission_callback' => $admin,
+		] );
+
+		register_rest_route( $ns, '/admin/ironquest/story-workbench-mission', [
+			'methods'             => 'POST',
+			'callback'            => [ __CLASS__, 'save_ironquest_story_workbench_mission' ],
+			'permission_callback' => $admin,
+		] );
+
+		register_rest_route( $ns, '/admin/ironquest/story-workbench-mission-suggest', [
+			'methods'             => 'POST',
+			'callback'            => [ __CLASS__, 'suggest_ironquest_story_workbench_mission' ],
+			'permission_callback' => $admin,
+		] );
+
+		register_rest_route( $ns, '/admin/ironquest/story-workbench-bootstrap', [
+			'methods'             => 'POST',
+			'callback'            => [ __CLASS__, 'bootstrap_ironquest_story_workbench_mission' ],
+			'permission_callback' => $admin,
+		] );
+
 		register_rest_route( $ns, '/client-diagnostics', [
 			'methods'             => 'POST',
 			'callback'            => [ __CLASS__, 'log_client_diagnostic' ],
@@ -667,6 +738,1232 @@ class AdminApiController {
 				],
 			]
 		);
+	}
+
+	public static function preview_ironquest_story_workbench( \WP_REST_Request $req ): \WP_REST_Response {
+		$mission_slug = sanitize_key( (string) ( $req->get_param( 'mission_slug' ) ?: '' ) );
+		$slot = sanitize_key( (string) ( $req->get_param( 'slot' ) ?: '' ) );
+		$encounter_seed_slug = sanitize_key( (string) ( $req->get_param( 'encounter_seed_slug' ) ?: '' ) );
+		$count = max( 1, min( 24, (int) ( $req->get_param( 'count' ) ?: 12 ) ) );
+
+		if ( '' === $mission_slug || '' === $slot ) {
+			return new \WP_REST_Response( [ 'message' => 'mission_slug and slot are required.' ], 400 );
+		}
+
+		$mission = self::find_ironquest_mission( $mission_slug );
+		if ( [] === $mission ) {
+			return new \WP_REST_Response( [ 'message' => 'Mission not found.' ], 404 );
+		}
+
+		$location = IronQuestRegistryService::get_location( (string) ( $mission['location_slug'] ?? '' ) ) ?? [];
+		$encounter_seed = self::find_encounter_seed( $mission, $encounter_seed_slug );
+		if ( [] === $encounter_seed ) {
+			return new \WP_REST_Response( [ 'message' => 'Encounter seed not found.' ], 404 );
+		}
+
+		$filters = [
+			'slot' => $slot,
+			'encounter_seed_slug' => (string) ( $encounter_seed['slug'] ?? '' ),
+			'stage' => sanitize_key( (string) ( $req->get_param( 'stage' ) ?: 'mid' ) ),
+			'tension' => sanitize_key( (string) ( $req->get_param( 'tension' ) ?: 'rising' ) ),
+			'stance' => sanitize_key( (string) ( $req->get_param( 'stance' ) ?: 'steady' ) ),
+			'set_result' => sanitize_key( (string) ( $req->get_param( 'set_result' ) ?: 'target_met' ) ),
+			'result_band' => sanitize_key( (string) ( $req->get_param( 'result_band' ) ?: 'victory' ) ),
+			'progress_phase' => sanitize_key( (string) ( $req->get_param( 'progress_phase' ) ?: 'encounter' ) ),
+		];
+
+		$working_state = [
+			'run_id' => 0,
+			'story_profile' => is_array( $mission['story_profile'] ?? null ) ? $mission['story_profile'] : [],
+			'story_engine' => [
+				'recent_template_ids' => [],
+				'recent_tags' => [],
+				'recent_phrases' => [],
+				'slot_counts' => [],
+				'last_selected' => [],
+				'variation_seed' => sanitize_text_field( sprintf( 'workbench-%s-%s', $mission_slug, $slot ) ),
+			],
+			'encounter_seed' => $encounter_seed,
+			'scene_state' => [],
+		];
+		$approved_lookup = [];
+		foreach ( self::get_story_workbench_approved_candidates( $mission_slug, $slot ) as $approved_candidate ) {
+			$approved_lookup[ self::story_workbench_candidate_key( (array) ( $approved_candidate['candidate'] ?? [] ) ) ] = true;
+		}
+		$selection_diagnostics = self::build_story_workbench_selection_diagnostics( $mission, $filters, $working_state );
+		$coverage_report = self::build_story_workbench_coverage_report( $mission, $filters, $working_state );
+
+		$candidates = [];
+		$current_user_id = max( 0, (int) get_current_user_id() );
+		for ( $index = 0; $index < $count; $index++ ) {
+			$request = IronQuestStoryEngineService::build_beat_request(
+				[ 'mission_slug' => $mission_slug ],
+				$working_state,
+				$filters,
+				$slot
+			);
+			$candidate = IronQuestStoryEngineService::select_candidate( $mission, $request, $working_state );
+			if ( ! is_array( $candidate ) ) {
+				break;
+			}
+
+			$rendered = IronQuestStoryEngineService::render_candidate( $candidate, $encounter_seed, [], $request );
+			$ai_preview = IronQuestAiNarrativeService::build_story_workbench_branch_preview(
+				$current_user_id,
+				$mission,
+				$encounter_seed,
+				$request,
+				(array) ( $rendered['draft'] ?? [] ),
+				$candidate
+			);
+			if ( is_array( $ai_preview ) ) {
+				$rendered['draft'] = [
+					'summary' => sanitize_textarea_field( (string) ( $ai_preview['summary'] ?? $rendered['draft']['summary'] ?? '' ) ),
+					'follow_up' => sanitize_textarea_field( (string) ( $ai_preview['follow_up'] ?? $rendered['draft']['follow_up'] ?? '' ) ),
+					'decision_prompt' => sanitize_text_field( (string) ( $ai_preview['decision_prompt'] ?? $rendered['draft']['decision_prompt'] ?? '' ) ),
+				];
+				$rendered['debug_prompt'] = sanitize_textarea_field( (string) ( $ai_preview['debug_prompt'] ?? '' ) );
+				$rendered['source'] = 'ai_scene_brief';
+			}
+			$working_state = IronQuestStoryEngineService::record_selection( $working_state, $candidate, $rendered );
+			$candidate_payload = [
+				'candidate_id' => sanitize_key( sprintf( 'draft_%d', $index + 1 ) ),
+				'template_id' => sanitize_key( (string) ( $candidate['id'] ?? '' ) ),
+				'tags' => array_values( array_filter( array_map( 'sanitize_key', (array) ( $candidate['tags'] ?? [] ) ) ) ),
+				'draft' => [
+					'summary' => sanitize_textarea_field( (string) ( $rendered['draft']['summary'] ?? '' ) ),
+					'follow_up' => sanitize_textarea_field( (string) ( $rendered['draft']['follow_up'] ?? '' ) ),
+					'decision_prompt' => sanitize_text_field( (string) ( $rendered['draft']['decision_prompt'] ?? '' ) ),
+				],
+				'source' => sanitize_key( (string) ( $rendered['source'] ?? 'authored_template' ) ),
+				'status' => 'unreviewed',
+			];
+			$candidate_payload['status'] = isset( $approved_lookup[ self::story_workbench_candidate_key( $candidate_payload ) ] ) ? 'approved' : 'unreviewed';
+			$candidates[] = $candidate_payload;
+		}
+
+		$session_id = sanitize_key( sprintf( 'story_session_%s_%s_%s', $mission_slug, $slot, gmdate( 'YmdHis' ) ) );
+		$session = [
+			'session_id' => $session_id,
+			'mission' => [
+				'slug' => (string) ( $mission['slug'] ?? '' ),
+				'name' => (string) ( $mission['name'] ?? '' ),
+				'goal' => (string) ( $mission['goal'] ?? '' ),
+				'location_slug' => (string) ( $mission['location_slug'] ?? '' ),
+				'location_name' => (string) ( $location['name'] ?? '' ),
+			],
+			'filters' => $filters,
+			'promptContext' => [
+				'storyProfile' => (array) ( $mission['story_profile'] ?? [] ),
+				'encounterSeed' => $encounter_seed,
+				'recentTemplates' => (array) ( $working_state['story_engine']['recent_template_ids'] ?? [] ),
+				'recentPhrases' => (array) ( $working_state['story_engine']['recent_phrases'] ?? [] ),
+			],
+			'candidateSession' => [
+				'session_id' => $session_id,
+				'status' => 'ready',
+				'generated_at' => gmdate( 'c' ),
+				'approved_count' => count( $approved_lookup ),
+				'candidates' => $candidates,
+			],
+		];
+		self::store_story_workbench_session( $session );
+
+		return new \WP_REST_Response(
+			[
+				'mission' => $session['mission'],
+				'filters' => $session['filters'],
+				'promptContext' => $session['promptContext'],
+				'candidateSession' => $session['candidateSession'],
+				'selectionDiagnostics' => $selection_diagnostics,
+				'coverageReport' => $coverage_report,
+				'approvedCandidates' => self::get_story_workbench_approved_candidates( $mission_slug, $slot ),
+			]
+		);
+	}
+
+	public static function review_ironquest_story_workbench_candidate( \WP_REST_Request $req ): \WP_REST_Response {
+		$session_id = sanitize_key( (string) ( $req->get_param( 'session_id' ) ?: '' ) );
+		$candidate_id = sanitize_key( (string) ( $req->get_param( 'candidate_id' ) ?: '' ) );
+		$approved = filter_var( $req->get_param( 'approved' ), FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE );
+
+		if ( '' === $session_id || '' === $candidate_id ) {
+			return new \WP_REST_Response( [ 'message' => 'session_id and candidate_id are required.' ], 400 );
+		}
+
+		$session = self::get_story_workbench_session( $session_id );
+		if ( [] === $session ) {
+			return new \WP_REST_Response( [ 'message' => 'Story workbench session not found.' ], 404 );
+		}
+
+		$candidate = self::find_story_workbench_candidate( $session, $candidate_id );
+		if ( [] === $candidate ) {
+			return new \WP_REST_Response( [ 'message' => 'Candidate not found in this session.' ], 404 );
+		}
+
+		$mission_slug = sanitize_key( (string) ( $session['mission']['slug'] ?? '' ) );
+		$slot = sanitize_key( (string) ( $session['filters']['slot'] ?? '' ) );
+		$approval_key = self::story_workbench_candidate_key( $candidate );
+		$approvals = self::get_story_workbench_approval_store();
+
+		if ( false === $approved ) {
+			unset( $approvals[ $mission_slug ][ $slot ][ $approval_key ] );
+			$message = 'Candidate approval removed.';
+		} else {
+			$approvals[ $mission_slug ][ $slot ][ $approval_key ] = self::sanitize_story_workbench_approval( [
+				'mission_slug' => $mission_slug,
+				'slot' => $slot,
+				'encounter_seed_slug' => (string) ( $session['promptContext']['encounterSeed']['slug'] ?? '' ),
+				'filters' => (array) ( $session['filters'] ?? [] ),
+				'candidate' => $candidate,
+				'approved_at' => gmdate( 'c' ),
+				'session_id' => $session_id,
+			] );
+			$message = 'Candidate approved for export.';
+		}
+
+		self::store_story_workbench_approval_store( $approvals );
+
+		$approved_candidates = self::get_story_workbench_approved_candidates( $mission_slug, $slot );
+		$approved_candidate_lookup = [];
+		foreach ( $approved_candidates as $approved_candidate ) {
+			$approved_candidate_lookup[ self::story_workbench_candidate_key( (array) ( $approved_candidate['candidate'] ?? [] ) ) ] = true;
+		}
+
+		$session['candidateSession']['approved_count'] = count( $approved_candidates );
+		$session['candidateSession']['candidates'] = array_values(
+			array_map(
+				static function ( array $session_candidate ) use ( $approved_candidate_lookup ): array {
+					$session_candidate['status'] = isset( $approved_candidate_lookup[ self::story_workbench_candidate_key( $session_candidate ) ] ) ? 'approved' : 'unreviewed';
+					return $session_candidate;
+				},
+				(array) ( $session['candidateSession']['candidates'] ?? [] )
+			)
+		);
+		self::store_story_workbench_session( $session );
+
+		return new \WP_REST_Response(
+			[
+				'message' => $message,
+				'candidateSession' => $session['candidateSession'],
+				'approvedCandidates' => $approved_candidates,
+			]
+		);
+	}
+
+	public static function export_ironquest_story_workbench( \WP_REST_Request $req ): \WP_REST_Response {
+		$mission_slug = sanitize_key( (string) ( $req->get_param( 'mission_slug' ) ?: '' ) );
+		$slot = sanitize_key( (string) ( $req->get_param( 'slot' ) ?: '' ) );
+
+		if ( '' === $mission_slug ) {
+			return new \WP_REST_Response( [ 'message' => 'mission_slug is required.' ], 400 );
+		}
+		$export_payload = self::build_story_workbench_export_payload( $mission_slug, $slot );
+
+		return new \WP_REST_Response(
+			[
+				'mission_slug' => $mission_slug,
+				'slot' => $slot,
+				'approved_count' => count( (array) ( $export_payload['beat_templates'] ?? [] ) ),
+				'file_name' => sanitize_file_name( $mission_slug . ( '' !== $slot ? '-' . $slot : '' ) . '-story-workbench-export.json' ),
+				'export' => $export_payload,
+				'export_json' => wp_json_encode( $export_payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ),
+			]
+		);
+	}
+
+	public static function apply_ironquest_story_workbench_export( \WP_REST_Request $req ): \WP_REST_Response {
+		$mission_slug = sanitize_key( (string) ( $req->get_param( 'mission_slug' ) ?: '' ) );
+		$slot = sanitize_key( (string) ( $req->get_param( 'slot' ) ?: '' ) );
+
+		if ( '' === $mission_slug ) {
+			return new \WP_REST_Response( [ 'message' => 'mission_slug is required.' ], 400 );
+		}
+
+		$export_payload = self::build_story_workbench_export_payload( $mission_slug, $slot );
+		$beat_templates = array_values( array_filter( (array) ( $export_payload['beat_templates'] ?? [] ), 'is_array' ) );
+		if ( [] === $beat_templates ) {
+			return new \WP_REST_Response( [ 'message' => 'No approved story workbench candidates are ready to apply.' ], 400 );
+		}
+
+		$mission_config_path = IronQuestRegistryService::get_config_file_path( 'missions.json' );
+		if ( '' === $mission_config_path || ! file_exists( $mission_config_path ) || ! is_readable( $mission_config_path ) || ! is_writable( $mission_config_path ) ) {
+			return new \WP_REST_Response( [ 'message' => 'missions.json is not writable.' ], 500 );
+		}
+
+		$raw = file_get_contents( $mission_config_path );
+		$decoded = is_string( $raw ) ? json_decode( $raw, true ) : null;
+		if ( ! is_array( $decoded ) ) {
+			return new \WP_REST_Response( [ 'message' => 'missions.json could not be parsed.' ], 500 );
+		}
+
+		$missions = array_values( array_filter( (array) ( $decoded['missions'] ?? [] ), 'is_array' ) );
+		$mission_index = null;
+		foreach ( $missions as $index => $mission ) {
+			if ( $mission_slug === sanitize_key( (string) ( $mission['slug'] ?? '' ) ) ) {
+				$mission_index = $index;
+				break;
+			}
+		}
+
+		if ( null === $mission_index ) {
+			return new \WP_REST_Response( [ 'message' => 'Mission not found in missions.json.' ], 404 );
+		}
+
+		$slots_to_replace = [];
+		foreach ( $beat_templates as $template ) {
+			$template_slot = sanitize_key( (string) ( $template['slot'] ?? '' ) );
+			if ( '' !== $template_slot ) {
+				$slots_to_replace[ $template_slot ] = true;
+			}
+		}
+
+		$existing_templates = array_values( array_filter( (array) ( $missions[ $mission_index ]['beat_templates'] ?? [] ), 'is_array' ) );
+		$preserved_templates = array_values(
+			array_filter(
+				$existing_templates,
+				static function ( array $template ) use ( $slots_to_replace ): bool {
+					$template_slot = sanitize_key( (string) ( $template['slot'] ?? '' ) );
+					return '' === $template_slot || ! isset( $slots_to_replace[ $template_slot ] );
+				}
+			)
+		);
+
+		$missions[ $mission_index ]['beat_templates'] = array_values( array_merge( $preserved_templates, $beat_templates ) );
+		$decoded['missions'] = $missions;
+
+		$encoded = wp_json_encode( $decoded, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE );
+		if ( ! is_string( $encoded ) || false === file_put_contents( $mission_config_path, $encoded . PHP_EOL ) ) {
+			return new \WP_REST_Response( [ 'message' => 'Failed to write missions.json.' ], 500 );
+		}
+
+		IronQuestRegistryService::reset_cache();
+
+		return new \WP_REST_Response(
+			[
+				'message' => sprintf( 'Applied %d story workbench %s to missions.json.', count( $beat_templates ), 1 === count( $beat_templates ) ? 'template' : 'templates' ),
+				'mission_slug' => $mission_slug,
+				'slot' => $slot,
+				'applied_count' => count( $beat_templates ),
+				'config_path' => $mission_config_path,
+				'export' => $export_payload,
+			]
+		);
+	}
+
+	public static function save_ironquest_story_workbench_scene( \WP_REST_Request $req ): \WP_REST_Response {
+		$mission_slug = sanitize_key( (string) ( $req->get_param( 'mission_slug' ) ?: '' ) );
+		$encounter_seed_slug = sanitize_key( (string) ( $req->get_param( 'encounter_seed_slug' ) ?: '' ) );
+
+		if ( '' === $mission_slug || '' === $encounter_seed_slug ) {
+			return new \WP_REST_Response( [ 'message' => 'mission_slug and encounter_seed_slug are required.' ], 400 );
+		}
+
+		$mission_config_path = IronQuestRegistryService::get_config_file_path( 'missions.json' );
+		if ( '' === $mission_config_path || ! file_exists( $mission_config_path ) || ! is_readable( $mission_config_path ) || ! is_writable( $mission_config_path ) ) {
+			return new \WP_REST_Response( [ 'message' => 'missions.json is not writable.' ], 500 );
+		}
+
+		$raw = file_get_contents( $mission_config_path );
+		$decoded = is_string( $raw ) ? json_decode( $raw, true ) : null;
+		if ( ! is_array( $decoded ) ) {
+			return new \WP_REST_Response( [ 'message' => 'missions.json could not be parsed.' ], 500 );
+		}
+
+		$missions = array_values( array_filter( (array) ( $decoded['missions'] ?? [] ), 'is_array' ) );
+		$mission_index = null;
+		foreach ( $missions as $index => $mission ) {
+			if ( $mission_slug === sanitize_key( (string) ( $mission['slug'] ?? '' ) ) ) {
+				$mission_index = $index;
+				break;
+			}
+		}
+
+		if ( null === $mission_index ) {
+			return new \WP_REST_Response( [ 'message' => 'Mission not found in missions.json.' ], 404 );
+		}
+
+		$encounter_seeds = array_values( array_filter( (array) ( $missions[ $mission_index ]['encounter_seeds'] ?? [] ), 'is_array' ) );
+		$seed_index = null;
+		foreach ( $encounter_seeds as $index => $seed ) {
+			if ( $encounter_seed_slug === sanitize_key( (string) ( $seed['slug'] ?? '' ) ) ) {
+				$seed_index = $index;
+				break;
+			}
+		}
+
+		if ( null === $seed_index ) {
+			return new \WP_REST_Response( [ 'message' => 'Encounter seed not found in missions.json.' ], 404 );
+		}
+
+		$scene_fields = self::sanitize_story_workbench_scene_fields( (array) ( $req->get_param( 'scene' ) ?? [] ) );
+		foreach ( $scene_fields as $key => $value ) {
+			$encounter_seeds[ $seed_index ][ $key ] = $value;
+		}
+		$missions[ $mission_index ]['encounter_seeds'] = $encounter_seeds;
+		$decoded['missions'] = $missions;
+
+		$encoded = wp_json_encode( $decoded, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE );
+		if ( ! is_string( $encoded ) || false === file_put_contents( $mission_config_path, $encoded . PHP_EOL ) ) {
+			return new \WP_REST_Response( [ 'message' => 'Failed to write missions.json.' ], 500 );
+		}
+
+		IronQuestRegistryService::reset_cache();
+
+		return new \WP_REST_Response(
+			[
+				'message' => 'Scene brief saved to missions.json.',
+				'mission_slug' => $mission_slug,
+				'encounter_seed_slug' => $encounter_seed_slug,
+				'scene' => $scene_fields,
+			]
+		);
+	}
+
+	public static function suggest_ironquest_story_workbench_scene( \WP_REST_Request $req ): \WP_REST_Response {
+		$mission_slug = sanitize_key( (string) ( $req->get_param( 'mission_slug' ) ?: '' ) );
+		$encounter_seed_slug = sanitize_key( (string) ( $req->get_param( 'encounter_seed_slug' ) ?: '' ) );
+
+		if ( '' === $mission_slug || '' === $encounter_seed_slug ) {
+			return new \WP_REST_Response( [ 'message' => 'mission_slug and encounter_seed_slug are required.' ], 400 );
+		}
+
+		$mission = self::find_ironquest_mission( $mission_slug );
+		if ( [] === $mission ) {
+			return new \WP_REST_Response( [ 'message' => 'Mission not found.' ], 404 );
+		}
+
+		$encounter_seed = self::find_encounter_seed( $mission, $encounter_seed_slug );
+		if ( [] === $encounter_seed ) {
+			return new \WP_REST_Response( [ 'message' => 'Encounter seed not found.' ], 404 );
+		}
+
+		$suggested = IronQuestAiNarrativeService::build_story_workbench_scene_fields(
+			max( 0, (int) get_current_user_id() ),
+			$mission,
+			$encounter_seed
+		);
+
+		if ( is_wp_error( $suggested ) ) {
+			return new \WP_REST_Response( [ 'message' => $suggested->get_error_message() ], 500 );
+		}
+
+		return new \WP_REST_Response(
+			[
+				'mission_slug' => $mission_slug,
+				'encounter_seed_slug' => $encounter_seed_slug,
+				'scene' => self::sanitize_story_workbench_scene_fields( (array) $suggested ),
+				'debug_prompt' => sanitize_textarea_field( (string) ( $suggested['debug_prompt'] ?? '' ) ),
+			]
+		);
+	}
+
+	public static function save_ironquest_story_workbench_location( \WP_REST_Request $req ): \WP_REST_Response {
+		$location_slug = sanitize_key( (string) ( $req->get_param( 'location_slug' ) ?: '' ) );
+
+		if ( '' === $location_slug ) {
+			return new \WP_REST_Response( [ 'message' => 'location_slug is required.' ], 400 );
+		}
+
+		$location_config_path = IronQuestRegistryService::get_config_file_path( 'locations.json' );
+		if ( '' === $location_config_path || ! file_exists( $location_config_path ) || ! is_readable( $location_config_path ) || ! is_writable( $location_config_path ) ) {
+			return new \WP_REST_Response( [ 'message' => 'locations.json is not writable.' ], 500 );
+		}
+
+		$raw = file_get_contents( $location_config_path );
+		$decoded = is_string( $raw ) ? json_decode( $raw, true ) : null;
+		if ( ! is_array( $decoded ) ) {
+			return new \WP_REST_Response( [ 'message' => 'locations.json could not be parsed.' ], 500 );
+		}
+
+		$locations = array_values( array_filter( (array) ( $decoded['locations'] ?? [] ), 'is_array' ) );
+		$location_index = null;
+		foreach ( $locations as $index => $location ) {
+			if ( $location_slug === sanitize_key( (string) ( $location['slug'] ?? '' ) ) ) {
+				$location_index = $index;
+				break;
+			}
+		}
+
+		if ( null === $location_index ) {
+			return new \WP_REST_Response( [ 'message' => 'Location not found in locations.json.' ], 404 );
+		}
+
+		$foundation = self::sanitize_story_workbench_location_foundation( (array) ( $req->get_param( 'location' ) ?? [] ) );
+		$locations[ $location_index ]['theme'] = $foundation['theme'];
+		$locations[ $location_index ]['tone'] = $foundation['tone'];
+		$locations[ $location_index ]['story_context'] = $foundation['story_context'];
+		$anchor = is_array( $locations[ $location_index ]['ai_prompt_anchor'] ?? null ) ? $locations[ $location_index ]['ai_prompt_anchor'] : [];
+		$anchor['theme'] = $foundation['ai_theme'];
+		$anchor['tone'] = $foundation['ai_tone'];
+		$anchor['enemy_types'] = $foundation['enemy_types'];
+		$locations[ $location_index ]['ai_prompt_anchor'] = $anchor;
+		$decoded['locations'] = $locations;
+
+		$encoded = wp_json_encode( $decoded, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE );
+		if ( ! is_string( $encoded ) || false === file_put_contents( $location_config_path, $encoded . PHP_EOL ) ) {
+			return new \WP_REST_Response( [ 'message' => 'Failed to write locations.json.' ], 500 );
+		}
+
+		IronQuestRegistryService::reset_cache();
+
+		return new \WP_REST_Response(
+			[
+				'message' => 'Location foundation saved to locations.json.',
+				'location_slug' => $location_slug,
+				'location' => $foundation,
+			]
+		);
+	}
+
+	public static function suggest_ironquest_story_workbench_location( \WP_REST_Request $req ): \WP_REST_Response {
+		$location_slug = sanitize_key( (string) ( $req->get_param( 'location_slug' ) ?: '' ) );
+		$mission_slug = sanitize_key( (string) ( $req->get_param( 'mission_slug' ) ?: '' ) );
+
+		if ( '' === $location_slug ) {
+			return new \WP_REST_Response( [ 'message' => 'location_slug is required.' ], 400 );
+		}
+
+		$location = IronQuestRegistryService::get_location( $location_slug ) ?? [];
+		if ( [] === $location ) {
+			return new \WP_REST_Response( [ 'message' => 'Location not found.' ], 404 );
+		}
+
+		$mission = '' !== $mission_slug ? self::find_ironquest_mission( $mission_slug ) : [];
+
+		$suggested = IronQuestAiNarrativeService::build_story_workbench_location_foundation(
+			max( 0, (int) get_current_user_id() ),
+			$location,
+			$mission
+		);
+
+		if ( is_wp_error( $suggested ) ) {
+			return new \WP_REST_Response( [ 'message' => $suggested->get_error_message() ], 500 );
+		}
+
+		return new \WP_REST_Response(
+			[
+				'location_slug' => $location_slug,
+				'mission_slug' => $mission_slug,
+				'location' => self::sanitize_story_workbench_location_foundation( (array) $suggested ),
+				'debug_prompt' => sanitize_textarea_field( (string) ( $suggested['debug_prompt'] ?? '' ) ),
+			]
+		);
+	}
+
+	public static function save_ironquest_story_workbench_mission( \WP_REST_Request $req ): \WP_REST_Response {
+		$mission_slug = sanitize_key( (string) ( $req->get_param( 'mission_slug' ) ?: '' ) );
+
+		if ( '' === $mission_slug ) {
+			return new \WP_REST_Response( [ 'message' => 'mission_slug is required.' ], 400 );
+		}
+
+		$mission_config_path = IronQuestRegistryService::get_config_file_path( 'missions.json' );
+		if ( '' === $mission_config_path || ! file_exists( $mission_config_path ) || ! is_readable( $mission_config_path ) || ! is_writable( $mission_config_path ) ) {
+			return new \WP_REST_Response( [ 'message' => 'missions.json is not writable.' ], 500 );
+		}
+
+		$raw = file_get_contents( $mission_config_path );
+		$decoded = is_string( $raw ) ? json_decode( $raw, true ) : null;
+		if ( ! is_array( $decoded ) ) {
+			return new \WP_REST_Response( [ 'message' => 'missions.json could not be parsed.' ], 500 );
+		}
+
+		$missions = array_values( array_filter( (array) ( $decoded['missions'] ?? [] ), 'is_array' ) );
+		$mission_index = null;
+		foreach ( $missions as $index => $mission ) {
+			if ( $mission_slug === sanitize_key( (string) ( $mission['slug'] ?? '' ) ) ) {
+				$mission_index = $index;
+				break;
+			}
+		}
+
+		if ( null === $mission_index ) {
+			return new \WP_REST_Response( [ 'message' => 'Mission not found in missions.json.' ], 404 );
+		}
+
+		$foundation = self::sanitize_story_workbench_mission_foundation( (array) ( $req->get_param( 'mission' ) ?? [] ) );
+		$missions[ $mission_index ]['goal'] = $foundation['goal'];
+		$missions[ $mission_index ]['threat'] = $foundation['threat'];
+		$missions[ $mission_index ]['narrative'] = $foundation['narrative'];
+		$missions[ $mission_index ]['workout_feel'] = $foundation['workout_feel'];
+		$story_profile = is_array( $missions[ $mission_index ]['story_profile'] ?? null ) ? $missions[ $mission_index ]['story_profile'] : [];
+		$story_profile['genre'] = $foundation['story_profile']['genre'];
+		$story_profile['voice'] = $foundation['story_profile']['voice'];
+		$story_profile['pacing'] = $foundation['story_profile']['pacing'];
+		$missions[ $mission_index ]['story_profile'] = $story_profile;
+		$decoded['missions'] = $missions;
+
+		$encoded = wp_json_encode( $decoded, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE );
+		if ( ! is_string( $encoded ) || false === file_put_contents( $mission_config_path, $encoded . PHP_EOL ) ) {
+			return new \WP_REST_Response( [ 'message' => 'Failed to write missions.json.' ], 500 );
+		}
+
+		IronQuestRegistryService::reset_cache();
+
+		return new \WP_REST_Response(
+			[
+				'message' => 'Mission foundation saved to missions.json.',
+				'mission_slug' => $mission_slug,
+				'mission' => $foundation,
+			]
+		);
+	}
+
+	public static function suggest_ironquest_story_workbench_mission( \WP_REST_Request $req ): \WP_REST_Response {
+		$mission_slug = sanitize_key( (string) ( $req->get_param( 'mission_slug' ) ?: '' ) );
+
+		if ( '' === $mission_slug ) {
+			return new \WP_REST_Response( [ 'message' => 'mission_slug is required.' ], 400 );
+		}
+
+		$mission = self::find_ironquest_mission( $mission_slug );
+		if ( [] === $mission ) {
+			return new \WP_REST_Response( [ 'message' => 'Mission not found.' ], 404 );
+		}
+
+		$location = IronQuestRegistryService::get_location( (string) ( $mission['location_slug'] ?? '' ) ) ?? [];
+
+		$suggested = IronQuestAiNarrativeService::build_story_workbench_mission_foundation(
+			max( 0, (int) get_current_user_id() ),
+			$location,
+			$mission
+		);
+
+		if ( is_wp_error( $suggested ) ) {
+			return new \WP_REST_Response( [ 'message' => $suggested->get_error_message() ], 500 );
+		}
+
+		return new \WP_REST_Response(
+			[
+				'mission_slug' => $mission_slug,
+				'mission' => self::sanitize_story_workbench_mission_foundation( (array) $suggested ),
+				'debug_prompt' => sanitize_textarea_field( (string) ( $suggested['debug_prompt'] ?? '' ) ),
+			]
+		);
+	}
+
+	public static function bootstrap_ironquest_story_workbench_mission( \WP_REST_Request $req ): \WP_REST_Response {
+		$mission_slug = sanitize_key( (string) ( $req->get_param( 'mission_slug' ) ?: '' ) );
+		if ( '' === $mission_slug ) {
+			return new \WP_REST_Response( [ 'message' => 'mission_slug is required.' ], 400 );
+		}
+
+		$mission_config_path = IronQuestRegistryService::get_config_file_path( 'missions.json' );
+		if ( '' === $mission_config_path || ! file_exists( $mission_config_path ) || ! is_readable( $mission_config_path ) || ! is_writable( $mission_config_path ) ) {
+			return new \WP_REST_Response( [ 'message' => 'missions.json is not writable.' ], 500 );
+		}
+
+		$raw = file_get_contents( $mission_config_path );
+		$decoded = is_string( $raw ) ? json_decode( $raw, true ) : null;
+		if ( ! is_array( $decoded ) ) {
+			return new \WP_REST_Response( [ 'message' => 'missions.json could not be parsed.' ], 500 );
+		}
+
+		$missions = array_values( array_filter( (array) ( $decoded['missions'] ?? [] ), 'is_array' ) );
+		$mission_index = null;
+		foreach ( $missions as $index => $mission ) {
+			if ( $mission_slug === sanitize_key( (string) ( $mission['slug'] ?? '' ) ) ) {
+				$mission_index = $index;
+				break;
+			}
+		}
+
+		if ( null === $mission_index ) {
+			return new \WP_REST_Response( [ 'message' => 'Mission not found in missions.json.' ], 404 );
+		}
+
+		$mission = $missions[ $mission_index ];
+		$existing_story_profile = is_array( $mission['story_profile'] ?? null ) ? $mission['story_profile'] : [];
+		$existing_story_slots = is_array( $mission['story_slots'] ?? null ) ? $mission['story_slots'] : [];
+		$existing_beat_templates = array_values( array_filter( (array) ( $mission['beat_templates'] ?? [] ), 'is_array' ) );
+
+		if ( [] === $existing_story_profile ) {
+			$mission['story_profile'] = self::build_story_workbench_bootstrap_story_profile();
+		}
+		if ( [] === $existing_story_slots ) {
+			$mission['story_slots'] = self::build_story_workbench_bootstrap_story_slots();
+		}
+		if ( [] === $existing_beat_templates ) {
+			$mission['beat_templates'] = self::build_story_workbench_bootstrap_templates( $mission_slug );
+		}
+
+		$missions[ $mission_index ] = $mission;
+		$decoded['missions'] = $missions;
+
+		$encoded = wp_json_encode( $decoded, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE );
+		if ( ! is_string( $encoded ) || false === file_put_contents( $mission_config_path, $encoded . PHP_EOL ) ) {
+			return new \WP_REST_Response( [ 'message' => 'Failed to write missions.json.' ], 500 );
+		}
+
+		IronQuestRegistryService::reset_cache();
+
+		return new \WP_REST_Response(
+			[
+				'message' => 'Mission bootstrapped for the story workbench.',
+				'mission_slug' => $mission_slug,
+				'story_slot_count' => count( (array) ( $mission['story_slots'] ?? [] ) ),
+				'beat_template_count' => count( (array) ( $mission['beat_templates'] ?? [] ) ),
+			]
+		);
+	}
+
+	private static function build_story_workbench_export_payload( string $mission_slug, string $slot ): array {
+		$mission_slug = sanitize_key( $mission_slug );
+		$slot = sanitize_key( $slot );
+
+		$approvals = self::get_story_workbench_approval_store();
+		$mission_approvals = is_array( $approvals[ $mission_slug ] ?? null ) ? $approvals[ $mission_slug ] : [];
+		if ( '' !== $slot ) {
+			$mission_approvals = isset( $mission_approvals[ $slot ] ) ? [ $slot => $mission_approvals[ $slot ] ] : [];
+		}
+
+		$beat_templates = [];
+		foreach ( $mission_approvals as $slot_key => $slot_candidates ) {
+			$position = 0;
+			foreach ( (array) $slot_candidates as $approved_candidate ) {
+				$position++;
+				$template = self::build_story_workbench_export_template( $mission_slug, sanitize_key( (string) $slot_key ), (array) $approved_candidate, $position );
+				if ( [] !== $template ) {
+					$beat_templates[] = $template;
+				}
+			}
+		}
+
+		return [
+			'mission_slug' => $mission_slug,
+			'beat_templates' => $beat_templates,
+		];
+	}
+
+	private static function build_story_workbench_selection_diagnostics( array $mission, array $filters, array $story_state ): array {
+		$slot = sanitize_key( (string) ( $filters['slot'] ?? '' ) );
+		$slot_templates = array_values(
+			array_filter(
+				(array) ( $mission['beat_templates'] ?? [] ),
+				static fn( array $template ): bool => $slot === sanitize_key( (string) ( $template['slot'] ?? '' ) )
+			)
+		);
+		$matching_candidates = IronQuestStoryEngineService::list_matching_candidates( $mission, $filters, $story_state );
+
+		return [
+			'slot_template_count' => count( $slot_templates ),
+			'matching_template_ids' => array_values(
+				array_filter(
+					array_map(
+						static fn( array $template ): string => sanitize_key( (string) ( $template['id'] ?? '' ) ),
+						$matching_candidates
+					)
+				)
+			),
+		];
+	}
+
+	private static function build_story_workbench_coverage_report( array $mission, array $filters, array $story_state ): array {
+		$rows = [];
+		foreach ( self::story_workbench_coverage_set_result_options() as $set_result => $label ) {
+			$cells = [];
+			foreach ( self::story_workbench_coverage_stance_options() as $stance => $stance_label ) {
+				$request = $filters;
+				$request['set_result'] = $set_result;
+				$request['stance'] = $stance;
+				$candidates = IronQuestStoryEngineService::list_matching_candidates( $mission, $request, $story_state );
+				$top_candidate = is_array( $candidates[0] ?? null ) ? $candidates[0] : [];
+				$cells[] = [
+					'stance' => $stance,
+					'stance_label' => $stance_label,
+					'template_id' => sanitize_key( (string) ( $top_candidate['id'] ?? '' ) ),
+				];
+			}
+
+			$rows[] = [
+				'set_result' => $set_result,
+				'set_result_label' => $label,
+				'cells' => $cells,
+			];
+		}
+
+		return [
+			'stances' => self::story_workbench_coverage_stance_options(),
+			'rows' => $rows,
+		];
+	}
+
+	private static function find_ironquest_mission( string $mission_slug ): array {
+		$mission_slug = sanitize_key( $mission_slug );
+		foreach ( (array) ( IronQuestRegistryService::get_missions_config()['missions'] ?? [] ) as $mission ) {
+			if ( $mission_slug === sanitize_key( (string) ( $mission['slug'] ?? '' ) ) ) {
+				return (array) $mission;
+			}
+		}
+
+		return [];
+	}
+
+	private static function find_encounter_seed( array $mission, string $encounter_seed_slug ): array {
+		$seeds = array_values( array_filter( (array) ( $mission['encounter_seeds'] ?? [] ), 'is_array' ) );
+		if ( [] === $seeds ) {
+			return [];
+		}
+
+		$encounter_seed_slug = sanitize_key( $encounter_seed_slug );
+		if ( '' === $encounter_seed_slug ) {
+			return (array) $seeds[0];
+		}
+
+		foreach ( $seeds as $seed ) {
+			if ( $encounter_seed_slug === sanitize_key( (string) ( $seed['slug'] ?? '' ) ) ) {
+				return (array) $seed;
+			}
+		}
+
+		return [];
+	}
+
+	private static function store_story_workbench_session( array $session ): void {
+		$session_id = sanitize_key( (string) ( $session['session_id'] ?? '' ) );
+		if ( '' === $session_id ) {
+			return;
+		}
+
+		$sessions = self::get_story_workbench_sessions();
+		$sessions[ $session_id ] = self::sanitize_story_workbench_session( $session );
+		$sessions = array_slice( $sessions, -1 * self::IRONQUEST_STORY_WORKBENCH_SESSION_LIMIT, null, true );
+		update_option( self::IRONQUEST_STORY_WORKBENCH_SESSIONS_OPTION, $sessions, false );
+	}
+
+	private static function get_story_workbench_session( string $session_id ): array {
+		$session_id = sanitize_key( $session_id );
+		if ( '' === $session_id ) {
+			return [];
+		}
+
+		$sessions = self::get_story_workbench_sessions();
+
+		return is_array( $sessions[ $session_id ] ?? null ) ? $sessions[ $session_id ] : [];
+	}
+
+	private static function get_story_workbench_sessions(): array {
+		$value = get_option( self::IRONQUEST_STORY_WORKBENCH_SESSIONS_OPTION, [] );
+		if ( ! is_array( $value ) ) {
+			return [];
+		}
+
+		$clean = [];
+		foreach ( $value as $session_id => $session ) {
+			$session_id = sanitize_key( (string) $session_id );
+			if ( '' === $session_id || ! is_array( $session ) ) {
+				continue;
+			}
+
+			$clean[ $session_id ] = self::sanitize_story_workbench_session( $session );
+		}
+
+		return $clean;
+	}
+
+	private static function sanitize_story_workbench_session( array $session ): array {
+		$candidates = [];
+		foreach ( (array) ( $session['candidateSession']['candidates'] ?? [] ) as $candidate ) {
+			if ( ! is_array( $candidate ) ) {
+				continue;
+			}
+
+			$candidates[] = self::sanitize_story_workbench_candidate( $candidate );
+		}
+
+		return [
+			'session_id' => sanitize_key( (string) ( $session['session_id'] ?? $session['candidateSession']['session_id'] ?? '' ) ),
+			'mission' => [
+				'slug' => sanitize_key( (string) ( $session['mission']['slug'] ?? '' ) ),
+				'name' => sanitize_text_field( (string) ( $session['mission']['name'] ?? '' ) ),
+				'goal' => sanitize_text_field( (string) ( $session['mission']['goal'] ?? '' ) ),
+				'location_slug' => sanitize_key( (string) ( $session['mission']['location_slug'] ?? '' ) ),
+				'location_name' => sanitize_text_field( (string) ( $session['mission']['location_name'] ?? '' ) ),
+			],
+			'filters' => self::sanitize_story_workbench_filters( (array) ( $session['filters'] ?? [] ) ),
+			'promptContext' => [
+				'storyProfile' => self::sanitize_story_workbench_struct( (array) ( $session['promptContext']['storyProfile'] ?? [] ) ),
+				'encounterSeed' => self::sanitize_story_workbench_struct( (array) ( $session['promptContext']['encounterSeed'] ?? [] ) ),
+				'recentTemplates' => array_values( array_filter( array_map( 'sanitize_key', (array) ( $session['promptContext']['recentTemplates'] ?? [] ) ) ) ),
+				'recentPhrases' => array_values( array_filter( array_map( 'sanitize_textarea_field', (array) ( $session['promptContext']['recentPhrases'] ?? [] ) ) ) ),
+			],
+			'candidateSession' => [
+				'session_id' => sanitize_key( (string) ( $session['candidateSession']['session_id'] ?? $session['session_id'] ?? '' ) ),
+				'status' => sanitize_key( (string) ( $session['candidateSession']['status'] ?? 'ready' ) ),
+				'generated_at' => sanitize_text_field( (string) ( $session['candidateSession']['generated_at'] ?? '' ) ),
+				'approved_count' => max( 0, (int) ( $session['candidateSession']['approved_count'] ?? 0 ) ),
+				'candidates' => $candidates,
+			],
+		];
+	}
+
+	private static function sanitize_story_workbench_filters( array $filters ): array {
+		return [
+			'slot' => sanitize_key( (string) ( $filters['slot'] ?? '' ) ),
+			'encounter_seed_slug' => sanitize_key( (string) ( $filters['encounter_seed_slug'] ?? '' ) ),
+			'stage' => sanitize_key( (string) ( $filters['stage'] ?? '' ) ),
+			'tension' => sanitize_key( (string) ( $filters['tension'] ?? '' ) ),
+			'stance' => sanitize_key( (string) ( $filters['stance'] ?? '' ) ),
+			'set_result' => sanitize_key( (string) ( $filters['set_result'] ?? '' ) ),
+			'result_band' => sanitize_key( (string) ( $filters['result_band'] ?? '' ) ),
+			'progress_phase' => sanitize_key( (string) ( $filters['progress_phase'] ?? '' ) ),
+		];
+	}
+
+	private static function sanitize_story_workbench_candidate( array $candidate ): array {
+		return [
+			'candidate_id' => sanitize_key( (string) ( $candidate['candidate_id'] ?? '' ) ),
+			'template_id' => sanitize_key( (string) ( $candidate['template_id'] ?? '' ) ),
+			'tags' => array_values( array_filter( array_map( 'sanitize_key', (array) ( $candidate['tags'] ?? [] ) ) ) ),
+			'draft' => [
+				'summary' => sanitize_textarea_field( (string) ( $candidate['draft']['summary'] ?? '' ) ),
+				'follow_up' => sanitize_textarea_field( (string) ( $candidate['draft']['follow_up'] ?? '' ) ),
+				'decision_prompt' => sanitize_text_field( (string) ( $candidate['draft']['decision_prompt'] ?? '' ) ),
+			],
+			'source' => sanitize_key( (string) ( $candidate['source'] ?? 'authored_template' ) ),
+			'status' => sanitize_key( (string) ( $candidate['status'] ?? 'unreviewed' ) ),
+		];
+	}
+
+	private static function sanitize_story_workbench_struct( array $data ): array {
+		$clean = [];
+		foreach ( $data as $key => $value ) {
+			$key = sanitize_key( (string) $key );
+			if ( '' === $key || is_array( $value ) ) {
+				continue;
+			}
+
+			if ( is_numeric( $value ) ) {
+				$clean[ $key ] = $value + 0;
+				continue;
+			}
+
+			$clean[ $key ] = sanitize_text_field( (string) $value );
+		}
+
+		return $clean;
+	}
+
+	private static function sanitize_story_workbench_scene_fields( array $scene ): array {
+		return [
+			'scene_brief' => sanitize_textarea_field( (string) ( $scene['scene_brief'] ?? '' ) ),
+			'player_goal' => sanitize_textarea_field( (string) ( $scene['player_goal'] ?? '' ) ),
+			'opponent_pressure' => sanitize_textarea_field( (string) ( $scene['opponent_pressure'] ?? '' ) ),
+			'failure_cost' => sanitize_textarea_field( (string) ( $scene['failure_cost'] ?? '' ) ),
+			'setting_detail' => sanitize_textarea_field( (string) ( $scene['setting_detail'] ?? '' ) ),
+		];
+	}
+
+	private static function sanitize_story_workbench_location_foundation( array $location ): array {
+		$enemy_types = [];
+		foreach ( (array) ( $location['enemy_types'] ?? [] ) as $enemy_type ) {
+			$value = sanitize_text_field( (string) $enemy_type );
+			if ( '' !== $value ) {
+				$enemy_types[] = $value;
+			}
+		}
+
+		return [
+			'theme' => sanitize_text_field( (string) ( $location['theme'] ?? '' ) ),
+			'tone' => sanitize_text_field( (string) ( $location['tone'] ?? '' ) ),
+			'story_context' => sanitize_textarea_field( (string) ( $location['story_context'] ?? '' ) ),
+			'ai_theme' => sanitize_text_field( (string) ( $location['ai_theme'] ?? '' ) ),
+			'ai_tone' => sanitize_text_field( (string) ( $location['ai_tone'] ?? '' ) ),
+			'enemy_types' => array_values( array_slice( $enemy_types, 0, 8 ) ),
+		];
+	}
+
+	private static function sanitize_story_workbench_mission_foundation( array $mission ): array {
+		return [
+			'goal' => sanitize_text_field( (string) ( $mission['goal'] ?? '' ) ),
+			'threat' => sanitize_text_field( (string) ( $mission['threat'] ?? '' ) ),
+			'narrative' => sanitize_textarea_field( (string) ( $mission['narrative'] ?? '' ) ),
+			'workout_feel' => sanitize_text_field( (string) ( $mission['workout_feel'] ?? '' ) ),
+			'story_profile' => [
+				'genre' => sanitize_key( (string) ( $mission['story_profile']['genre'] ?? $mission['genre'] ?? '' ) ),
+				'voice' => sanitize_key( (string) ( $mission['story_profile']['voice'] ?? $mission['voice'] ?? '' ) ),
+				'pacing' => sanitize_key( (string) ( $mission['story_profile']['pacing'] ?? $mission['pacing'] ?? '' ) ),
+			],
+		];
+	}
+
+	private static function build_story_workbench_bootstrap_story_profile(): array {
+		return [
+			'genre' => 'mission_fantasy',
+			'voice' => 'grounded_heroic',
+			'pacing' => 'steady_pressure',
+			'repetition_window' => 6,
+			'stance_bias' => [
+				'steady' => [ 'control', 'advance' ],
+				'aggressive' => [ 'pressure', 'defiance' ],
+				'cautious' => [ 'recovery', 'control' ],
+			],
+			'banned_terms' => [ 'bench press', 'rep', 'set' ],
+			'allowed_mechanics_mentions' => [ 'hp_loss_this_set', 'roll_band', 'set_result' ],
+		];
+	}
+
+	private static function build_story_workbench_bootstrap_story_slots(): array {
+		return [
+			'set_progression' => [
+				'count_target' => 12,
+				'notes' => 'Bootstrapped slot for between-set progression beats.',
+			],
+			'transition_setup' => [
+				'count_target' => 6,
+				'notes' => 'Bootstrapped slot for carrying story continuity into the next encounter.',
+			],
+		];
+	}
+
+	private static function build_story_workbench_bootstrap_templates( string $mission_slug ): array {
+		$mission_slug = sanitize_key( $mission_slug );
+
+		return [
+			[
+				'id' => sanitize_key( $mission_slug . '_progression_control_01' ),
+				'slot' => 'set_progression',
+				'tags' => [ 'advance', 'control', 'steady' ],
+				'weight' => 4,
+				'conditions' => [
+					'set_result' => [ 'target_met', 'recovered' ],
+				],
+				'tokens_required' => [ 'success_turn', 'enemy_posture' ],
+				'skeleton' => [
+					'summary' => '{success_turn}',
+					'follow_up' => '{enemy_posture}',
+					'decision_prompt' => 'Press the opening before the scene can settle against you.',
+				],
+			],
+			[
+				'id' => sanitize_key( $mission_slug . '_progression_pressure_01' ),
+				'slot' => 'set_progression',
+				'tags' => [ 'pressure', 'recovery', 'cautious' ],
+				'weight' => 3,
+				'conditions' => [
+					'set_result' => [ 'close_call', 'slipped' ],
+				],
+				'tokens_required' => [ 'pressure', 'hazard' ],
+				'skeleton' => [
+					'summary' => '{pressure}',
+					'follow_up' => '{hazard}',
+					'decision_prompt' => 'Settle the next answer before the pressure hardens into a loss.',
+				],
+			],
+			[
+				'id' => sanitize_key( $mission_slug . '_progression_crisis_01' ),
+				'slot' => 'set_progression',
+				'tags' => [ 'crisis', 'defiance', 'aggressive' ],
+				'weight' => 2,
+				'conditions' => [
+					'set_result' => [ 'strain', 'struggle' ],
+				],
+				'tokens_required' => [ 'crisis_turn', 'stakes' ],
+				'skeleton' => [
+					'summary' => '{crisis_turn}',
+					'follow_up' => '{stakes}',
+					'decision_prompt' => 'Hold the next exchange together before the whole scene turns on you.',
+				],
+			],
+			[
+				'id' => sanitize_key( $mission_slug . '_transition_control_01' ),
+				'slot' => 'transition_setup',
+				'tags' => [ 'transition', 'control', 'steady' ],
+				'weight' => 3,
+				'conditions' => [
+					'set_result' => [ 'target_met', 'recovered' ],
+				],
+				'tokens_required' => [ 'transition', 'landmark' ],
+				'skeleton' => [
+					'summary' => '{transition}',
+					'follow_up' => 'The next ground is {landmark}.',
+					'decision_prompt' => 'Move before the next scene decides itself without you.',
+				],
+			],
+			[
+				'id' => sanitize_key( $mission_slug . '_transition_pressure_01' ),
+				'slot' => 'transition_setup',
+				'tags' => [ 'transition', 'pressure', 'cautious' ],
+				'weight' => 2,
+				'conditions' => [
+					'set_result' => [ 'close_call', 'slipped', 'strain', 'struggle' ],
+				],
+				'tokens_required' => [ 'transition', 'stakes' ],
+				'skeleton' => [
+					'summary' => '{transition}',
+					'follow_up' => '{stakes}',
+					'decision_prompt' => 'Choose the next step before the danger closes fully around it.',
+				],
+			],
+		];
+	}
+
+	private static function find_story_workbench_candidate( array $session, string $candidate_id ): array {
+		$candidate_id = sanitize_key( $candidate_id );
+		foreach ( (array) ( $session['candidateSession']['candidates'] ?? [] ) as $candidate ) {
+			if ( $candidate_id === sanitize_key( (string) ( $candidate['candidate_id'] ?? '' ) ) ) {
+				return self::sanitize_story_workbench_candidate( (array) $candidate );
+			}
+		}
+
+		return [];
+	}
+
+	private static function story_workbench_candidate_key( array $candidate ): string {
+		$key = sanitize_key( (string) ( $candidate['template_id'] ?? '' ) );
+		if ( '' !== $key ) {
+			return $key;
+		}
+
+		return sanitize_key( (string) ( $candidate['candidate_id'] ?? '' ) );
+	}
+
+	private static function get_story_workbench_approval_store(): array {
+		$value = get_option( self::IRONQUEST_STORY_WORKBENCH_APPROVALS_OPTION, [] );
+		if ( ! is_array( $value ) ) {
+			return [];
+		}
+
+		$clean = [];
+		foreach ( $value as $mission_slug => $mission_approvals ) {
+			$mission_slug = sanitize_key( (string) $mission_slug );
+			if ( '' === $mission_slug || ! is_array( $mission_approvals ) ) {
+				continue;
+			}
+
+			foreach ( $mission_approvals as $slot => $slot_approvals ) {
+				$slot = sanitize_key( (string) $slot );
+				if ( '' === $slot || ! is_array( $slot_approvals ) ) {
+					continue;
+				}
+
+				foreach ( $slot_approvals as $approval_key => $approval ) {
+					$approval_key = sanitize_key( (string) $approval_key );
+					if ( '' === $approval_key || ! is_array( $approval ) ) {
+						continue;
+					}
+
+					$clean[ $mission_slug ][ $slot ][ $approval_key ] = self::sanitize_story_workbench_approval( $approval );
+				}
+			}
+		}
+
+		return $clean;
+	}
+
+	private static function store_story_workbench_approval_store( array $approvals ): void {
+		update_option( self::IRONQUEST_STORY_WORKBENCH_APPROVALS_OPTION, self::get_sanitized_story_workbench_approval_store( $approvals ), false );
+	}
+
+	private static function get_sanitized_story_workbench_approval_store( array $approvals ): array {
+		$clean = [];
+		foreach ( $approvals as $mission_slug => $mission_approvals ) {
+			$mission_slug = sanitize_key( (string) $mission_slug );
+			if ( '' === $mission_slug || ! is_array( $mission_approvals ) ) {
+				continue;
+			}
+
+			foreach ( $mission_approvals as $slot => $slot_approvals ) {
+				$slot = sanitize_key( (string) $slot );
+				if ( '' === $slot || ! is_array( $slot_approvals ) ) {
+					continue;
+				}
+
+				foreach ( $slot_approvals as $approval_key => $approval ) {
+					$approval_key = sanitize_key( (string) $approval_key );
+					if ( '' === $approval_key || ! is_array( $approval ) ) {
+						continue;
+					}
+
+					$clean[ $mission_slug ][ $slot ][ $approval_key ] = self::sanitize_story_workbench_approval( $approval );
+				}
+			}
+		}
+
+		return $clean;
+	}
+
+	private static function sanitize_story_workbench_approval( array $approval ): array {
+		return [
+			'mission_slug' => sanitize_key( (string) ( $approval['mission_slug'] ?? '' ) ),
+			'slot' => sanitize_key( (string) ( $approval['slot'] ?? '' ) ),
+			'encounter_seed_slug' => sanitize_key( (string) ( $approval['encounter_seed_slug'] ?? '' ) ),
+			'filters' => self::sanitize_story_workbench_filters( (array) ( $approval['filters'] ?? [] ) ),
+			'candidate' => self::sanitize_story_workbench_candidate( (array) ( $approval['candidate'] ?? [] ) ),
+			'approved_at' => sanitize_text_field( (string) ( $approval['approved_at'] ?? '' ) ),
+			'session_id' => sanitize_key( (string) ( $approval['session_id'] ?? '' ) ),
+		];
+	}
+
+	private static function get_story_workbench_approved_candidates( string $mission_slug, string $slot ): array {
+		$approvals = self::get_story_workbench_approval_store();
+		$mission_slug = sanitize_key( $mission_slug );
+		$slot = sanitize_key( $slot );
+
+		return array_values( is_array( $approvals[ $mission_slug ][ $slot ] ?? null ) ? $approvals[ $mission_slug ][ $slot ] : [] );
+	}
+
+	private static function build_story_workbench_export_template( string $mission_slug, string $slot, array $approved_candidate, int $position ): array {
+		$candidate = self::sanitize_story_workbench_candidate( (array) ( $approved_candidate['candidate'] ?? [] ) );
+		if ( '' === (string) ( $candidate['draft']['summary'] ?? '' ) ) {
+			return [];
+		}
+
+		$filters = self::sanitize_story_workbench_filters( (array) ( $approved_candidate['filters'] ?? [] ) );
+		$encounter_seed_slug = sanitize_key( (string) ( $approved_candidate['encounter_seed_slug'] ?? '' ) );
+		$conditions = [];
+		if ( '' !== $encounter_seed_slug ) {
+			$conditions['encounter_seed_slug'] = [ $encounter_seed_slug ];
+		}
+		if ( '' !== (string) ( $filters['set_result'] ?? '' ) ) {
+			$conditions['set_result'] = [ (string) $filters['set_result'] ];
+		}
+		if ( '' !== (string) ( $filters['stance'] ?? '' ) ) {
+			$conditions['stance'] = [ (string) $filters['stance'] ];
+		}
+
+		$template_id = sanitize_key(
+			sprintf(
+				'%s_%s_%s_%02d',
+				$mission_slug,
+				$slot,
+				'' !== $encounter_seed_slug ? $encounter_seed_slug : 'draft',
+				$position
+			)
+		);
+
+		return [
+			'id' => $template_id,
+			'slot' => $slot,
+			'tags' => array_values( array_filter( array_map( 'sanitize_key', (array) ( $candidate['tags'] ?? [] ) ) ) ),
+			'weight' => 1,
+			'conditions' => $conditions,
+			'skeleton' => [
+				'summary' => sanitize_textarea_field( (string) ( $candidate['draft']['summary'] ?? '' ) ),
+				'follow_up' => sanitize_textarea_field( (string) ( $candidate['draft']['follow_up'] ?? '' ) ),
+				'decision_prompt' => sanitize_text_field( (string) ( $candidate['draft']['decision_prompt'] ?? '' ) ),
+			],
+		];
+	}
+
+	private static function story_workbench_coverage_set_result_options(): array {
+		return [
+			'target_met' => 'Target met',
+			'recovered' => 'Recovered',
+			'close_call' => 'Close call',
+			'slipped' => 'Slipped',
+			'strain' => 'Strain',
+			'struggle' => 'Struggle',
+		];
+	}
+
+	private static function story_workbench_coverage_stance_options(): array {
+		return [
+			'steady' => 'Steady',
+			'aggressive' => 'Aggressive',
+			'cautious' => 'Cautious',
+		];
 	}
 
 	public static function list_exercises( \WP_REST_Request $req ): \WP_REST_Response {

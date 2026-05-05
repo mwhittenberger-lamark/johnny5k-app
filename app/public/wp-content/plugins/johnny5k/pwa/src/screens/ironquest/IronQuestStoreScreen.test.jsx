@@ -10,6 +10,8 @@ const profileMock = vi.hoisted(() => vi.fn())
 const storeMock = vi.hoisted(() => vi.fn())
 const purchaseStoreItemMock = vi.hoisted(() => vi.fn())
 const sellStoreItemMock = vi.hoisted(() => vi.fn())
+const generateWorldArtMock = vi.hoisted(() => vi.fn())
+const useIronQuestWorldArtMock = vi.hoisted(() => vi.fn())
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
@@ -19,7 +21,12 @@ vi.mock('../../api/modules/ironquest', () => ({
     store: storeMock,
     purchaseStoreItem: purchaseStoreItemMock,
     sellStoreItem: sellStoreItemMock,
+    generateWorldArt: generateWorldArtMock,
   },
+}))
+
+vi.mock('../../hooks/useIronQuestWorldArt', () => ({
+  useIronQuestWorldArt: (...args) => useIronQuestWorldArtMock(...args),
 }))
 
 vi.mock('../../components/ui/AppLoadingScreen', () => ({
@@ -35,6 +42,25 @@ function buildProfilePayload() {
     location: {
       name: 'The Training Grounds',
       tavern: { name: 'The First Rest' },
+    },
+    mission_modifiers: {
+      summary: 'Coin Charm is queued for the next mission. Tavern lead is shaping the mission board today.',
+      entries: [
+        {
+          id: 'store_charm_coin_charm',
+          label: 'Coin Charm',
+          effect_summary: 'Small bonus gold on the next mission',
+          applies_to_label: 'Next mission payout',
+          consumes_on_label: 'Stays active until replaced',
+        },
+        {
+          id: 'tavern_preview_captain_of_the_yard',
+          label: 'Tavern lead',
+          effect_summary: 'Captain of the Yard is highlighted on the mission board.',
+          applies_to_label: 'Mission board guidance',
+          consumes_on_label: 'Visible until daily reset',
+        },
+      ],
     },
     profile: {
       gold: 54,
@@ -64,6 +90,16 @@ function buildStorePayload(overrides = {}) {
       active_charm: null,
       active_prep: null,
       sellback: [],
+    },
+    merchant: {
+      name: 'Quartermaster Vale',
+      description: 'seasoned quartermaster with practical field leathers',
+      art: {
+        art_key: 'store_owner_the_training_grounds',
+        label: 'Quartermaster Vale Portrait',
+        alt: 'Quartermaster Vale, storekeeper of The Training Grounds.',
+        status: 'missing',
+      },
     },
     sections: {
       recovery_goods: [
@@ -115,6 +151,7 @@ describe('IronQuestStoreScreen', () => {
   let root
 
   beforeEach(() => {
+    window.localStorage.clear()
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
@@ -122,6 +159,9 @@ describe('IronQuestStoreScreen', () => {
     storeMock.mockReset()
     purchaseStoreItemMock.mockReset()
     sellStoreItemMock.mockReset()
+    generateWorldArtMock.mockReset()
+    useIronQuestWorldArtMock.mockReset()
+    useIronQuestWorldArtMock.mockReturnValue(null)
   })
 
   afterEach(async () => {
@@ -130,6 +170,7 @@ describe('IronQuestStoreScreen', () => {
         root.unmount()
       })
     }
+    window.localStorage.clear()
     container?.remove()
   })
 
@@ -151,6 +192,20 @@ describe('IronQuestStoreScreen', () => {
   }
 
   it('renders the store route with recommendation and local stock', async () => {
+    window.localStorage.setItem('johnny5k:ironquest:last-mission-update', JSON.stringify({
+      missionTitle: 'The Necromancer of Hollow',
+      outcome: 'victory',
+      rewardHeadline: 'Boss defeated and region cleared.',
+      resultHighlights: ['Boss victory'],
+      clearedLocations: ['Grim Hollow Village'],
+      clearedLocationSlugs: ['grim_hollow_village'],
+      grantedRewardEntries: [
+        { key: 'breaker_of_voss', label: 'Breaker of Voss', source: 'rival_victory', unlockType: 'title' },
+      ],
+      unlockedPortraitEntries: [
+        { key: 'necromancer_portrait', label: 'Necromancer Portrait', generatedImageId: 'portrait_1' },
+      ],
+    }))
     profileMock.mockResolvedValue(buildProfilePayload())
     storeMock.mockResolvedValue(buildStorePayload())
 
@@ -159,8 +214,13 @@ describe('IronQuestStoreScreen', () => {
     expect(container.textContent).toContain('General Store')
     expect(container.textContent).toContain('Quartermaster Vale')
     expect(container.textContent).toContain('You have enough gold to make the next mission pay back better.')
+    expect(container.textContent).toContain('Active consequences')
+    expect(container.textContent).toContain('Stays active until replaced')
+    expect(container.textContent).toContain('New since last mission')
+    expect(container.textContent).toContain('Breaker of Voss')
     expect(container.textContent).toContain('Field Bandage')
     expect(container.textContent).toContain('Coin Charm')
+    expect(container.textContent).toContain('Forge portrait')
   })
 
   it('purchases an item and routes to the character sheet with purchase state', async () => {
@@ -254,5 +314,25 @@ describe('IronQuestStoreScreen', () => {
     expect(sellStoreItemMock).toHaveBeenCalledWith({ item_id: 'field_bandage' })
     expect(container.textContent).toContain('Field Bandage sold for 10 gold.')
     expect(container.textContent).toContain('1 in pack.')
+  })
+
+  it('reloads the store when IronQuest travel state changes', async () => {
+    profileMock.mockResolvedValue(buildProfilePayload())
+    storeMock.mockResolvedValue(buildStorePayload())
+
+    await renderScreen()
+
+    expect(profileMock).toHaveBeenCalledTimes(1)
+    expect(storeMock).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent('johnny5k:ironquest-state-changed', {
+        detail: { reason: 'travel', locationSlug: 'grim_hollow_village' },
+      }))
+    })
+    await flushPromises()
+
+    expect(profileMock).toHaveBeenCalledTimes(2)
+    expect(storeMock).toHaveBeenCalledTimes(2)
   })
 })

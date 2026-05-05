@@ -23,6 +23,8 @@ import { useLiveWorkoutFrames } from './hooks/useLiveWorkoutFrames'
 import { useWorkoutPlanningController } from './hooks/useWorkoutPlanningController'
 import { useWorkoutSessionController } from './hooks/useWorkoutSessionController'
 import { useIronQuestStarterPortrait } from '../../hooks/useIronQuestStarterPortrait'
+import { useIronQuestRecentMissionUpdate } from '../../hooks/useIronQuestRecentMissionUpdate'
+import { subscribeIronQuestStateChanged } from '../../lib/ironquestSync'
 import { weekdayLabelForDate, weekdayOrderForDate } from './workoutScreenUtils'
 
 export default function WorkoutScreen() {
@@ -48,6 +50,7 @@ export default function WorkoutScreen() {
     setTimeTier,
     setReadinessScore,
     setActiveExerciseIdx,
+    dismissResumedSessionGate,
     setPreviewDayType,
     resetPlanningState,
     setPreviewExerciseOrder,
@@ -202,6 +205,12 @@ export default function WorkoutScreen() {
     enabled: planning.isRestSelection && experienceMode === 'ironquest',
     staleTime: 60_000,
   })
+  const ironQuestProfileQuery = useQuery({
+    queryKey: ['ironquest-profile-preview'],
+    queryFn: ironquestApi.profile,
+    enabled: experienceMode === 'ironquest' && !session?.session?.id,
+    staleTime: 60_000,
+  })
   const workoutCoachingSummary = useMemo(() => buildCoachingSummary({
     surface: 'workout_post',
     snapshot: dashboardSnapshot,
@@ -217,6 +226,20 @@ export default function WorkoutScreen() {
   const tavernState = tavernStateOverride ?? tavernQuery.data ?? null
   const tavernMissionPreview = useMemo(() => getTavernMissionPreview(tavernState), [tavernState])
   const tavernResolvedAction = useMemo(() => getTavernResolution(tavernState), [tavernState])
+  const recentMissionUpdate = useIronQuestRecentMissionUpdate()
+
+  useEffect(() => {
+    return subscribeIronQuestStateChanged((detail) => {
+      if (detail?.reason !== 'mission_resolved' || experienceMode !== 'ironquest') {
+        return
+      }
+
+      void ironQuestProfileQuery.refetch()
+      if (planning.isRestSelection) {
+        void tavernQuery.refetch()
+      }
+    })
+  }, [experienceMode, ironQuestProfileQuery, planning.isRestSelection, tavernQuery])
 
   const recoverWorkoutState = useCallback(async (message = 'Connection restored. Your workout data was refreshed from the server.') => {
     setRecoveringWorkout(true)
@@ -492,10 +515,16 @@ export default function WorkoutScreen() {
           resolvedAction: tavernResolvedAction,
           resolvingActionId: resolvingTavernActionId,
           onResolveAction: handleResolveTavernAction,
+          onRefresh: () => tavernQuery.refetch(),
         }}
+        recentMissionUpdate={recentMissionUpdate}
+        missionModifiers={ironQuestProfileQuery.data?.mission_modifiers ?? null}
         sessionController={sessionController}
         resumedSession={session}
-        onResumeSession={() => setShowPreWorkoutScreen(false)}
+        onResumeSession={() => {
+          dismissResumedSessionGate()
+          setShowPreWorkoutScreen(false)
+        }}
       />
     )
   }

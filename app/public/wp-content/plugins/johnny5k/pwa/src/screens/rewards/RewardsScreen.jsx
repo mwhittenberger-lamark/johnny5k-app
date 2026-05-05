@@ -34,7 +34,7 @@ export default function RewardsScreen() {
       <AppLoadingScreen
         eyebrow="Rewards"
         title="Loading your momentum board"
-        message="Johnny is counting earned awards, weekly rhythm, and streak signals so this page opens with real context."
+        message="Johnny is loading your earned awards, weekly rhythm, and streaks so this page opens with real context."
         variant="rewards"
       />
     )
@@ -46,7 +46,7 @@ export default function RewardsScreen() {
         <div>
           <p className="dashboard-eyebrow">Momentum</p>
           <h1>Rewards</h1>
-          <p className="dashboard-subtitle">Your earned awards, current weekly rhythm, and the consistency signals that feed both.</p>
+          <p className="dashboard-subtitle">Your earned awards, current weekly rhythm, and the habits behind both.</p>
         </div>
         <button type="button" className="btn-outline small" onClick={() => navigate('/dashboard')}>Back to dashboard</button>
       </header>
@@ -154,16 +154,16 @@ function RewardCard({ award, locked = false, snapshot = null }) {
 }
 
 function buildRewardsHeadline(weeklyScore, earnedCount) {
-  if (weeklyScore >= 80) return 'Your recent board has real traction.'
+  if (weeklyScore >= 80) return 'Your week looks solid.'
   if (weeklyScore >= 50) return 'The rhythm is building.'
   if (earnedCount > 0) return 'Your earlier wins are still on the board.'
   return 'This is where the first visible streaks start to show up.'
 }
 
 function buildRewardsBody(weeklyScore, earnedCount) {
-  if (weeklyScore >= 80) return 'Keep the week boring in the best way. Repeating the same clean behaviors is what turns awards into something you see often instead of something you chase.'
-  if (weeklyScore >= 50) return 'You are not looking for a perfect day. You are looking for repeated logged meals, training, sleep, steps, and movement so the score keeps compounding.'
-  if (earnedCount > 0) return 'You already have proof of traction. The next lift is rebuilding fresh seven-day signal from the logs you are putting in now.'
+  if (weeklyScore >= 80) return 'Keep the week simple. Repeating the same clean behaviors is what turns awards into something you keep earning.'
+  if (weeklyScore >= 50) return 'You do not need a perfect day. Repeated meals, training, sleep, steps, and movement are what keep this moving.'
+  if (earnedCount > 0) return 'You already have earlier wins on the board. The next job is building this week back up with meals, workouts, and recovery entries.'
   return 'Awards unlock as the app sees real consistency. Logging across the week matters more than trying to make one huge day carry everything.'
 }
 

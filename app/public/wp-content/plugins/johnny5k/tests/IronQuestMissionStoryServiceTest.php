@@ -304,6 +304,65 @@ class IronQuestMissionStoryServiceTest extends ServiceTestCase {
 		$this->assertSame( 99, (int) ( $this->wpdb()->updated[0]['data']['hp_current'] ?? 0 ) );
 	}
 
+	public function test_set_progression_uses_story_engine_template_before_ai_fallback(): void {
+		$user_id = 42;
+		$profile = [
+			'id'                    => 7,
+			'user_id'               => $user_id,
+			'enabled'               => false,
+			'class_slug'            => '',
+			'motivation_slug'       => '',
+			'level'                 => 1,
+			'xp'                    => 0,
+			'gold'                  => 0,
+			'hp_current'            => 100,
+			'hp_max'                => 100,
+			'current_location_slug' => 'the_training_grounds',
+			'active_mission_slug'   => 'captain_of_the_yard',
+		];
+		$this->queueProfileLookups( $user_id, $profile, 12 );
+
+		add_filter( 'johnny5k_ironquest_ai_response', static function ( $response, string $prompt_type ) {
+			if ( 'set_progression' === $prompt_type ) {
+				return new WP_Error( 'ai_down', 'AI unavailable' );
+			}
+
+			return $response;
+		}, 10, 2 );
+
+		$run = [
+			'id'             => 68,
+			'mission_slug'   => 'captain_of_the_yard',
+			'location_slug'  => 'the_training_grounds',
+			'encounter_phase'=> 'intro',
+			'status'         => 'active',
+		];
+
+		IronQuestNarrativeService::choose_opening_action( $user_id, $run, 'steady_approach', 'steady' );
+		$progressed = IronQuestNarrativeService::advance_story_after_set(
+			$user_id,
+			$run,
+			[
+				'event_type'     => 'set_saved',
+				'exercise_name'  => 'Bench Press',
+				'slot_type'      => 'main',
+				'exercise_order' => 1,
+				'exercise_count' => 3,
+				'set_number'     => 1,
+				'sets_total'     => 3,
+				'rep_target_min' => 8,
+				'rep_target_max' => 10,
+				'reps_completed' => 8,
+			]
+		);
+
+		$this->assertSame( 'the captain\'s first read stops working, and you begin taking control of the exchange.', strtolower( $progressed['latest_beat'] ) );
+		$this->assertStringContainsString( 'losing the clean read', strtolower( $progressed['current_situation'] ) );
+		$this->assertSame( 'Keep the lane honest before he can reset the terms.', $progressed['decision_prompt'] );
+		$this->assertSame( 'captain_progression_control_01', $progressed['story_engine']['last_selected']['template_id'] );
+		$this->assertSame( 1, $progressed['story_engine']['slot_counts']['set_progression'] );
+	}
+
 	public function test_ironquest_mode_instructions_match_premium_system_contract(): void {
 		$instructions = $this->invokePrivateStatic( AiPromptService::class, 'get_mode_instructions', [ 'ironquest', [] ] );
 
@@ -327,24 +386,190 @@ class IronQuestMissionStoryServiceTest extends ServiceTestCase {
 				'current_visual' => 'At the market square, the dead keep crowding the lane.',
 				'stakes_now'     => 'one more clean answer could hold the square before the doors fail',
 			],
+			'story_engine' => [
+				'draft' => [
+					'summary' => 'The square opens for one answer before the line starts closing again.',
+					'follow_up' => 'The dead are losing their clean approach, but not their hunger.',
+					'decision_prompt' => 'Take the next push before the square chokes shut again.',
+				],
+				'template' => [
+					'id' => 'grim_hollow_progression_01',
+					'tags' => [ 'advance', 'control' ],
+				],
+			],
 		];
 
 		$opening = $this->invokePrivateStatic( IronQuestAiNarrativeService::class, 'build_user_prompt', [ 'mission_opening', $payload ] );
 		$set = $this->invokePrivateStatic( IronQuestAiNarrativeService::class, 'build_user_prompt', [ 'set_progression', $payload ] );
 		$transition = $this->invokePrivateStatic( IronQuestAiNarrativeService::class, 'build_user_prompt', [ 'exercise_transition', $payload ] );
 
-		$this->assertStringContainsString( 'encounter_seed.landmark', $opening );
-		$this->assertStringContainsString( 'encounter_seed.hazard', $opening );
-		$this->assertStringContainsString( 'encounter_seed.stakes', $opening );
-		$this->assertStringContainsString( 'encounter_seed.enemy_posture', $opening );
-		$this->assertStringContainsString( 'encounter_seed.sensory_detail', $opening );
-		$this->assertStringContainsString( 'scene_state.current_visual', $set );
+		$this->assertStringContainsString( 'encounter_seed.scene_brief', $opening );
+		$this->assertStringContainsString( 'encounter_seed.player_goal', $opening );
+		$this->assertStringContainsString( 'encounter_seed.opponent_pressure', $opening );
+		$this->assertStringContainsString( 'encounter_seed.failure_cost', $opening );
+		$this->assertStringContainsString( 'encounter_seed.setting_detail', $opening );
+		$this->assertStringContainsString( 'encounter_seed.scene_brief', $set );
 		$this->assertStringContainsString( 'scene_state.stakes_now', $set );
+		$this->assertStringContainsString( 'story_engine.draft.summary', $set );
+		$this->assertStringContainsString( 'story_engine.draft.follow_up', $set );
+		$this->assertStringContainsString( 'story_engine.draft.decision_prompt', $set );
+		$this->assertStringContainsString( 'story_engine.template.id', $set );
+		$this->assertStringContainsString( 'authored continuity notes', $set );
 		$this->assertStringContainsString( 'Match the brevity and concreteness of these examples', $set );
 		$this->assertStringContainsString( 'Example strong beat', $set );
 		$this->assertStringContainsString( 'Example strained beat', $set );
+		$this->assertStringContainsString( 'story_engine.draft.summary', $transition );
+		$this->assertStringContainsString( 'story_engine.draft.follow_up', $transition );
+		$this->assertStringContainsString( 'story_engine.draft.decision_prompt', $transition );
+		$this->assertStringContainsString( 'authored continuity anchor for the transition', $transition );
 		$this->assertStringContainsString( 'what landmark or prop is now behind the player', $transition );
 		$this->assertStringContainsString( 'what new landmark is ahead', $transition );
+	}
+
+	public function test_set_progression_payload_includes_story_engine_draft_for_pilot_mission(): void {
+		$user_id = 42;
+		$profile = [
+			'id'                    => 7,
+			'user_id'               => $user_id,
+			'enabled'               => false,
+			'class_slug'            => '',
+			'motivation_slug'       => '',
+			'level'                 => 1,
+			'xp'                    => 0,
+			'gold'                  => 0,
+			'hp_current'            => 100,
+			'hp_max'                => 100,
+			'current_location_slug' => 'the_training_grounds',
+			'active_mission_slug'   => 'captain_of_the_yard',
+		];
+		$this->queueProfileLookups( $user_id, $profile, 12 );
+
+		$captured_payload = null;
+		add_filter( 'johnny5k_ironquest_ai_response', static function ( $response, string $prompt_type, array $payload ) use ( &$captured_payload ) {
+			if ( 'set_progression' !== $prompt_type ) {
+				return $response;
+			}
+
+			$captured_payload = $payload;
+
+			return [
+				'latest_beat' => 'The captain has to work harder for the next read.',
+				'current_situation' => 'The lane is still live and the captain has not lost interest.',
+				'decision_prompt' => 'Keep the lane honest before he resets it.',
+			];
+		}, 10, 3 );
+
+		$run = [
+			'id'             => 69,
+			'mission_slug'   => 'captain_of_the_yard',
+			'location_slug'  => 'the_training_grounds',
+			'encounter_phase'=> 'intro',
+			'status'         => 'active',
+		];
+
+		IronQuestNarrativeService::choose_opening_action( $user_id, $run, 'steady_approach', 'steady' );
+		IronQuestNarrativeService::advance_story_after_set(
+			$user_id,
+			$run,
+			[
+				'event_type'     => 'set_saved',
+				'exercise_name'  => 'Bench Press',
+				'slot_type'      => 'main',
+				'exercise_order' => 1,
+				'exercise_count' => 3,
+				'set_number'     => 1,
+				'sets_total'     => 3,
+				'rep_target_min' => 8,
+				'rep_target_max' => 10,
+				'reps_completed' => 8,
+			]
+		);
+
+		$this->assertIsArray( $captured_payload );
+		$this->assertSame( 'captain_progression_control_01', $captured_payload['story_engine']['template']['id'] ?? '' );
+		$this->assertContains( 'advance', $captured_payload['story_engine']['template']['tags'] ?? [] );
+		$this->assertStringContainsString( 'begin taking control of the exchange', strtolower( (string) ( $captured_payload['story_engine']['draft']['summary'] ?? '' ) ) );
+		$this->assertStringContainsString( 'losing the clean read', strtolower( (string) ( $captured_payload['story_engine']['draft']['follow_up'] ?? '' ) ) );
+	}
+
+	public function test_transition_payload_includes_story_engine_draft_for_pilot_mission(): void {
+		$user_id = 42;
+		$profile = [
+			'id'                    => 7,
+			'user_id'               => $user_id,
+			'enabled'               => false,
+			'class_slug'            => '',
+			'motivation_slug'       => '',
+			'level'                 => 1,
+			'xp'                    => 0,
+			'gold'                  => 0,
+			'hp_current'            => 100,
+			'hp_max'                => 100,
+			'current_location_slug' => 'the_training_grounds',
+			'active_mission_slug'   => 'captain_of_the_yard',
+		];
+		$this->queueProfileLookups( $user_id, $profile, 12 );
+
+		$captured_transition_payload = null;
+		add_filter( 'johnny5k_ironquest_ai_response', static function ( $response, string $prompt_type, array $payload ) use ( &$captured_transition_payload ) {
+			if ( 'exercise_transition' === $prompt_type ) {
+				$captured_transition_payload = $payload;
+
+				return [
+					'latest_beat' => 'The lane gives way and the painted mark becomes the only ground that matters.',
+					'current_situation' => 'The captain is already shaping the final exchange around the mark.',
+					'decision_prompt' => 'Choose how you take the mark before he names it for you.',
+				];
+			}
+
+			if ( 'choice_generation' === $prompt_type ) {
+				return [
+					'choices' => [
+						[ 'tone' => 'aggressive', 'label' => 'Crash straight onto the mark.' ],
+						[ 'tone' => 'cautious', 'label' => 'Enter the mark under guard.' ],
+						[ 'tone' => 'creative', 'label' => 'Fake the lane and steal the center.' ],
+					],
+				];
+			}
+
+			return $response;
+		}, 10, 3 );
+
+		$run = [
+			'id'             => 70,
+			'mission_slug'   => 'captain_of_the_yard',
+			'location_slug'  => 'the_training_grounds',
+			'encounter_phase'=> 'intro',
+			'status'         => 'active',
+		];
+
+		IronQuestNarrativeService::choose_opening_action( $user_id, $run, 'steady_approach', 'steady' );
+		IronQuestNarrativeService::advance_story_after_set(
+			$user_id,
+			$run,
+			[
+				'event_type'         => 'exercise_completed',
+				'exercise_name'      => 'Bench Press',
+				'slot_type'          => 'main',
+				'exercise_order'     => 1,
+				'exercise_count'     => 2,
+				'set_number'         => 3,
+				'sets_total'         => 3,
+				'rep_target_min'     => 8,
+				'rep_target_max'     => 10,
+				'reps_completed'     => 10,
+				'completed_exercise' => true,
+				'has_next_exercise'  => true,
+				'next_exercise_name' => 'Incline Press',
+				'next_slot_type'     => 'main',
+			]
+		);
+
+		$this->assertIsArray( $captured_transition_payload );
+		$this->assertSame( 'captain_transition_control_01', $captured_transition_payload['story_engine']['template']['id'] ?? '' );
+		$this->assertSame( 'transition_setup', $captured_transition_payload['story_engine']['template']['slot'] ?? '' );
+		$this->assertStringContainsString( 'the mark is yours', strtolower( (string) ( $captured_transition_payload['story_engine']['draft']['summary'] ?? '' ) ) );
+		$this->assertStringContainsString( 'painted mark', strtolower( (string) ( $captured_transition_payload['story_engine']['draft']['follow_up'] ?? '' ) ) );
 	}
 
 	public function test_ai_failures_fall_back_to_deterministic_story_generation(): void {

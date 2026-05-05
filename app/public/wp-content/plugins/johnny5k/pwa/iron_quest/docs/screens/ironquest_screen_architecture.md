@@ -1,379 +1,381 @@
 # Johnny5k: IronQuest
-## Full App Screen Architecture (v1)
+## Phase 2 Screen Architecture
 
----
+This document describes the actual Phase 2 product shell inside the Johnny5k PWA and WordPress plugin.
 
-# CORE SCREEN ARCHITECTURE
+It replaces the older "full RPG shell" screen plan as the source of truth for current architecture.
 
-## 1. Onboarding / Entry Flow
+## Product Rule
 
-### Purpose
-Create identity + hook
+IronQuest can deepen motivation, identity, progression, and reward payoff.
 
-### Includes
-- Title / entry screen  
-- Class selection (Warrior / Ranger / Mage / Rogue)  
-- Motivation selection (optional)  
-- Face upload (Gemini integration)  
-- Character reveal screen  
+It must never make the user fight the workout app to train.
 
-### Key Elements
-- Large visual focus (portrait)
-- Minimal text
-- “Start Training” CTA
+## What Phase 2 Is
 
----
+Phase 2 is:
 
-## 2. Training Grounds Screen
+- a quest layer on top of the existing Johnny5k workout product
+- a campaign shell that makes workouts, recovery, travel, and rewards feel connected
+- a guided motivation system with portraits, world art, rival beats, and mission progression
 
-### Purpose
-Safe onboarding gameplay
+Phase 2 is not:
 
-### Includes
-- Current mission (training)
-- Start workout button
-- Simple Johnny5k guidance
-- No HP (or hidden)
+- a full inventory RPG
+- a separate combat client
+- a spell-management app
+- an equipment-grid game
 
-### Key Elements
-- Clean UI (low complexity)
-- Progress indicator (training completion)
-- Light narrative
+## Core Experience Model
 
----
+The player loop is:
 
-## 3. Main Hub / Dashboard
+1. see current campaign state on the IronQuest hub
+2. review missions on the hub or map
+3. start a workout-attached mission from the workout flow
+4. get story, progress, and mission payoff without slowing logging
+5. return to hub, tavern, store, or character sheet with updated state
 
-### Purpose
-Home screen
+Support loops:
 
-### Includes
+- rest days route through Tavern Day
+- gold routes through the General Store
+- rewards route into the Character Sheet and gallery/history surfaces
+- world art and portraits reinforce location and progression identity
 
-#### Top Section
-- Character portrait (dynamic)
-- Level + title
-- HP bar
-- XP bar
+## Screen Inventory
 
-#### Middle Section
-- Current location
-- Active mission or objective
-- “Continue Mission” or “Start Mission”
+### 1. IronQuest Onboarding Flow
 
-#### Bottom Section (Actions)
-- Map
-- Inventory
-- Store
-- Tavern
-- Chat with Johnny5k
+Purpose:
 
-### Key Elements
-- Everything important at a glance
-- Fast re-entry into gameplay
+- enable IronQuest
+- pick class and motivation
+- generate a starter portrait
+- hand the user into the first campaign state
 
----
+Includes:
 
-## 4. Map Screen
+- class selection
+- motivation selection
+- face upload / portrait generation
+- reveal screen
 
-### Purpose
-Progression + motivation
+Notes:
 
-### Includes
-- Visual map (nodes / paths)
-- Current location highlighted
-- Locked locations (with travel requirements)
-- Completed locations (marked)
+- this is a premium extension of the main product, not a second app shell
+- a user can continue without a generated portrait if needed
 
-### Interaction
-- Tap location → view missions
-- Shows:
-  - Travel points required
-  - Available missions
-  - Boss availability
+### 2. IronQuest Hub
 
-### Key Elements
-- Travel options:
-  - Walk
-  - Cardio
-  - Spend gold
+Purpose:
 
----
+- primary campaign home
+- fastest answer to "where am I, what matters now, what should I do next?"
 
-## 5. Mission Preview Screen
+Includes:
 
-### Purpose
-Set expectations before workout
+- current mission summary
+- daily objective status
+- route and travel progress
+- active consequences
+- rival state when present
+- recent mission update / "new since last mission"
+- direct actions to workout, map, character sheet, tavern, and settings
 
-### Includes
-- Mission name
-- Location flavor text
-- Difficulty
-- Modifiers (heavier lifts, HP penalties)
-- Rewards preview (XP / gold / item)
+Notes:
 
-### Key Elements
-- “Start Mission” CTA
-- Johnny5k narrative line
+- this is the home of mission-board clarity, not a passive dashboard only
+- mission preview is embedded here rather than being a separate mandatory screen
 
----
+### 3. Map Screen
 
-## 6. Workout / Live Mission Screen
+Purpose:
 
-### Purpose
-Core experience
+- show route progression and location identity
+- let the player inspect regions, missions, and travel status
 
-### Layout
+Includes:
 
-#### TOP
-- HP bar
-- Progress (mission % or boss %)
-- Current encounter name
+- region nodes and unlock paths
+- current location highlight
+- mission previews for the selected region
+- fast travel / normal travel actions
+- location art hooks:
+  - tavern scene
+  - store owner portrait
+  - mission card art
 
-#### MIDDLE
-- Story text (updates after roll + sets)
-- Choices (before encounter)
-- Dice result feedback
+Notes:
 
-#### BOTTOM
-- Exercise name
-- Set tracker
-- Input reps / weight
-- “Log Set” button
+- the map is a progression and inspection surface, not a standalone game board
+- location preview is expandable in-place instead of routing through a separate "location detail" screen
 
-### During Rest
-- Story updates
-- 30–60 sec rest timer
-- Subtle animation
+### 4. Workout Launchpad
 
-### Flow
-1. Story → choice  
-2. Roll  
-3. Log set  
-4. Story update  
-5. Repeat  
+Purpose:
 
-### Key Elements
-- Fast logging
-- Clean UI
-- Readable story
+- bridge normal workout planning into IronQuest mission context
 
----
+Includes:
 
-## 7. Dice Roll Overlay
+- normal Johnny5k workout setup
+- queued next-mission modifiers
+- mission intro framing
+- rest-day tavern framing when appropriate
 
-### Purpose
-Make randomness exciting
+Notes:
 
-### Includes
-- d20 animation
-- Modifier breakdown:
-  - Base roll
-  - Gear
-  - Spells
-  - Performance
+- this is where mission start clarity lives in practice
+- there is no separate mandatory "mission preview" route before every workout
 
-### Output
-- Final result (e.g., Strong Success)
+### 5. Live Workout / Mission Overlay
 
-### Key Elements
-- Fast (<2 sec)
-- Skippable
+Purpose:
 
----
+- keep mission state readable during training without competing with set logging
 
-## 8. Mission Complete Screen
+Includes:
 
-### Purpose
-Reward + closure
+- mission intro and story choices
+- compact HUD
+- rest-window narrative beats
+- story progress after set saves
 
-### Includes
-- Final story
-- XP gained
-- Gold gained
-- HP remaining
+Notes:
 
-### Optional
-- Item drop
-- Portrait trigger
+- the workout remains the primary interaction surface
+- there is no separate dice overlay screen in the current product
+- roll/result feedback is integrated into the mission narrative flow
 
-### Key Elements
-- Emotional payoff
-- Clear progress
+### 6. Mission Result / Reward Reveal
 
----
+Purpose:
 
-## 9. Boss Result Screen
+- turn workout completion into campaign payoff
 
-### Includes
-- Cinematic outcome
-- Big reward reveal
-- Artifact animation
-- Victory portrait
+Includes:
 
-### Key Elements
-- High impact
-- Shareable
+- mission outcome
+- XP and gold
+- first-clear or replay framing
+- rival outcome when present
+- applied and consumed modifiers
+- portrait/reward reveal
+- route and unlock carry-through
 
----
+Notes:
 
-## 10. Inventory & Gear Screen
+- this currently lives inside the workout completion flow rather than as a separate permanent route
+- boss payoff uses the same result flow with stronger reward treatment, not a separate boss-result architecture
 
-### Purpose
-Ownership + strategy
+### 7. Character Sheet
 
-### Includes
+Purpose:
 
-#### Equipped
-- Weapon
-- Armor
-- Accessory
+- permanent home for identity, owned rewards, active effects, and campaign context
 
-#### Inventory
-- All gear
-- Consumables
+Includes:
 
-### Interactions
-- Equip
-- Compare
-- Sell
+- starter portrait and current-form portrait
+- class, motivation, title, level, HP, gold, XP
+- current region and mission
+- active consequence ledger
+- relic, consumable, title, portrait, and journal collections
+- recent history
 
-### Key Elements
-- Simple UI
-- Visual feedback
+Notes:
 
----
+- this is where inventory-like ownership lives in Phase 2
+- there is no separate gear screen or deep inventory route in the current architecture
 
-## 11. Store (General Goods)
+### 8. General Store
 
-### Purpose
-Economy decisions
+Purpose:
 
-### Sections
-- Supplies
-- Potions
-- Gear
-- Sell
+- convert gold into readable, next-mission preparation
 
-### Includes
-- Gold balance
-- Item effects
-- Buy / sell
+Includes:
 
-### Key Elements
-- Suggested items
-- Fast purchasing
+- region-specific merchant identity
+- shared merchant portrait art
+- recommendation line
+- active consequence ledger
+- category-based stock:
+  - recovery goods
+  - mission prep
+  - utility charms
+  - inventory sellback
 
----
+Notes:
 
-## 12. Tavern Screen
+- the store is deliberately narrow
+- there is no large gear catalog in the current product
 
-### Purpose
-Recovery + flavor
+### 9. Tavern Day
 
-### Includes
-- Sleep logging
-- Recovery bonuses
-- Streak tracking
-- Narrative
+Purpose:
 
-### Optional
-- Social features
+- make rest days feel like part of the campaign
 
----
+Includes:
 
-## 13. Spells / Abilities Screen
+- tavern scene art
+- one action choice per day
+- Johnny tavern line
+- mission rumor preview
+- clear consequence display for what resolved now and what lasts until daily reset
 
-### Purpose
-Customization
+Current action shape:
 
-### Includes
-- Equipped spells
-- Spell list
-- Unlock requirements
-- Purchase options
+- rest
+- side job
+- rumors
 
-### Key Elements
-- Clear effects
-- Easy equip
+Notes:
 
----
+- Tavern Day is the rest-day counterpart to workout missions
+- it is intentionally short and light
 
-## 14. Johnny5k Chat Screen
+### 10. WP Plugin Admin: IronQuest Admin
 
-### Purpose
-AI assistant
+Purpose:
 
-### Includes
-- Chat UI
-- Input field
-- Suggested prompts:
-  - Create workout
-  - Log meal
-  - What next
+- support, debugging, recovery, and admin-only generation controls
 
-### Key Elements
-- Companion feel
-- Simple UX
+Location:
 
----
+- `WP Admin -> Johnny5k -> IronQuest Admin`
 
-## 15. Profile / Progress Screen
+Includes:
 
-### Purpose
-Long-term motivation
+- user lookup
+- profile snapshot
+- route / daily / mission / unlock state
+- image regeneration actions
+- recovery actions for stuck mission or route state
+- analytics and failure review
 
-### Includes
-- Stats (workouts, XP, steps)
-- Achievements
-- Progress history
-- Portrait timeline
+Notes:
 
----
+- this is part of the Phase 2 architecture even though it is not player-facing
+- support tooling belongs in WordPress admin, not in the PWA
 
-# CRITICAL UX FLOWS
+## Shared Cross-Screen Systems
 
-## Daily Loop
-Dashboard → Mission → Workout → Rewards → Dashboard
+These are not standalone screens, but they are part of the architecture:
 
-## Progression Loop
-Dashboard → Map → Travel → New Location → Mission
+### Active Consequences
 
-## Economy Loop
-Mission → Rewards → Store → Gear → Mission
+Used on:
 
-## Identity Loop
-Workout → XP → Level → Gear → Portrait
+- hub
+- store
+- tavern flow
+- character sheet
+- workout launchpad
 
----
+Purpose:
 
-# MOST IMPORTANT SCREEN
+- show what is active
+- show where it applies
+- show when it expires
 
-Workout / Live Mission Screen
+### Recent Mission Update
 
-Must be:
-- Fast
-- Clear
-- Immersive
+Used on:
 
----
+- hub
+- map
+- store
+- tavern / workout launchpad
 
-# DESIGN PRINCIPLES
+Purpose:
 
-## 1. Fast Logging > Everything
+- show "new since last mission"
+- carry mission-result state across surfaces without manual refresh
 
-## 2. Story Fits Rest Time
+### Shared World Art
 
-## 3. Simple Choices
+Types:
 
-## 4. Immersion First
+- tavern scene
+- store owner portrait
+- mission card art
 
----
+Used on:
 
-# SUMMARY
+- tavern
+- store
+- map
+- mission previews
 
-The app structure supports:
+### Reward Portraits
 
-- Gameplay loop
-- Fitness tracking
-- RPG immersion
-- Long-term retention
+Types:
+
+- starter portrait
+- current-form portrait
+- milestone and victory portraits
+
+Used on:
+
+- onboarding
+- character sheet
+- mission result flow
+- reward/gallery surfaces
+
+### Rival Layer
+
+Used on:
+
+- hub mission board
+- map previews
+- mission intros
+- mission result flow
+
+Purpose:
+
+- create continuity across missions and regions without adding a new combat system
+
+## Explicit Non-Screens In Phase 2
+
+The following are not part of the current architecture and should not be treated as active Phase 2 requirements:
+
+- standalone Inventory & Gear screen
+- equipped weapon / armor / accessory screen
+- spells or abilities screen
+- standalone dice-roll overlay screen
+- mandatory standalone mission preview route before workout start
+- separate boss-result screen hierarchy
+
+If these appear in older docs, treat them as future-state exploration only.
+
+## Data Ownership
+
+### Backend owns:
+
+- mission state
+- reward resolution
+- route progression
+- active modifiers and expiry
+- world art registry
+- portrait generation state
+- rival state
+- analytics and failure logging
+
+### Frontend owns:
+
+- rendering
+- screen composition
+- local reveal and sync behavior
+- fail-soft placeholders for missing art or delayed generation
+
+## Acceptance Standard For Docs
+
+Any IronQuest screen doc is current only if it matches all of the following:
+
+- it does not require a separate RPG shell outside Johnny5k
+- it does not assume a gear-grid or spell-management system in Phase 2
+- it maps to an actual current surface in the PWA or WP plugin admin
+- it preserves workout speed as the primary constraint

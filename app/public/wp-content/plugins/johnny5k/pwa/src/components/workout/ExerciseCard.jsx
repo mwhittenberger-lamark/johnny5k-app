@@ -27,6 +27,13 @@ function ExerciseCard({
   onSwapExercise,
   onRemoveExercise,
   onSaveExerciseNote,
+  hasPreviousExercise = false,
+  hasNextExercise = false,
+  nextExerciseName = '',
+  currentExerciseIndex = 0,
+  totalExercises = 0,
+  onGoToPreviousExercise = null,
+  onGoToNextExercise = null,
 }) {
   const [setDrafts, setSetDrafts] = useState({})
   const [savingRowKey, setSavingRowKey] = useState('')
@@ -35,6 +42,7 @@ function ExerciseCard({
   const [showSwapOptions, setShowSwapOptions] = useState(false)
   const [showNoteEditor, setShowNoteEditor] = useState(false)
   const [showCuesDrawer, setShowCuesDrawer] = useState(false)
+  const [showDetailsPanel, setShowDetailsPanel] = useState(false)
   const [noteDraft, setNoteDraft] = useState(exercise?.notes || '')
   const [savingNote, setSavingNote] = useState(false)
   const [removingExercise, setRemovingExercise] = useState(false)
@@ -55,6 +63,13 @@ function ExerciseCard({
   const librarySlots = parseStringList(exercise?.slot_types ?? exercise?.slot_types_json)
   const demoImageUrl = String(exercise?.demo_image_url || '').trim()
   const nextRowKey = getNewRowKey(exercise)
+  const loggedSetCount = Array.isArray(exercise?.sets) ? exercise.sets.length : 0
+  const completedSetCount = Array.isArray(exercise?.sets) ? exercise.sets.filter(set => Boolean(set?.completed)).length : 0
+  const plannedSetCount = Math.max(1, Number(exercise?.planned_sets || 0), loggedSetCount)
+  const remainingSetCount = Math.max(0, plannedSetCount - completedSetCount)
+  const lastCompletedSet = Array.isArray(exercise?.sets)
+    ? [...exercise.sets].reverse().find(set => Boolean(set?.completed)) ?? null
+    : null
   const {
     myExercises,
     loadingMyExercises,
@@ -82,6 +97,7 @@ function ExerciseCard({
     setShowSwapOptions(false)
     setShowNoteEditor(false)
     setShowCuesDrawer(false)
+    setShowDetailsPanel(false)
     setSwapError('')
     setAiSwapReply('')
     setAiSwapError('')
@@ -112,7 +128,22 @@ function ExerciseCard({
         reps: parseInt(draft.reps, 10) || 0,
         rir: draft.rir !== '' ? parseFloat(draft.rir) : undefined,
         completed: true,
+      }, {
+        exerciseId: exercise.id,
+        exerciseName: exercise.exercise_name,
+        autoAdvance: hasNextExercise && completedSetCount + 1 >= plannedSetCount,
+        nextExerciseIndex: hasNextExercise ? currentExerciseIndex + 1 : null,
+        nextExerciseName,
       })
+
+      setSetDrafts(current => ({
+        ...current,
+        [nextRowKey]: buildNextDraftFromValues({
+          weight: parseFloat(draft.weight) || 0,
+          reps: parseInt(draft.reps, 10) || 0,
+          rir: draft.rir !== '' ? parseFloat(draft.rir) : null,
+        }, exercise),
+      }))
     } finally {
       setSavingRowKey('')
     }
@@ -131,6 +162,12 @@ function ExerciseCard({
         reps: parseInt(draft.reps, 10) || 0,
         rir: draft.rir !== '' ? parseFloat(draft.rir) : null,
         completed: nextCompleted,
+      }, {
+        exerciseId: exercise.id,
+        exerciseName: exercise.exercise_name,
+        autoAdvance: !set.completed && nextCompleted && hasNextExercise && completedSetCount + 1 >= plannedSetCount,
+        nextExerciseIndex: hasNextExercise ? currentExerciseIndex + 1 : null,
+        nextExerciseName,
       })
     } finally {
       setSavingRowKey('')
@@ -300,6 +337,7 @@ function ExerciseCard({
       <div className="exercise-card-header">
         <div className="exercise-card-header-copy">
           <h2>{exercise.exercise_name}</h2>
+          <p className="exercise-card-flow-kicker">Exercise {currentExerciseIndex + 1} of {totalExercises || currentExerciseIndex + 1}</p>
           <div className="exercise-card-header-meta">
             <span className="exercise-card-tag subtle">{humanizeToken(exercise.slot_type || librarySlots[0] || 'accessory')} slot</span>
             <span className="dashboard-chip subtle">{exercise.planned_sets} x {exercise.planned_rep_min}-{exercise.planned_rep_max}</span>
@@ -330,8 +368,8 @@ function ExerciseCard({
 
             {menuOpen ? (
               <div className="exercise-card-menu" role="menu">
-                <button type="button" onClick={() => { setShowSwapOptions(open => !open); setMenuOpen(false) }}>Swap exercise</button>
-                <button type="button" onClick={() => { setShowNoteEditor(open => !open); setMenuOpen(false) }}>Add note</button>
+                <button type="button" onClick={() => { setShowDetailsPanel(true); setShowSwapOptions(open => !open); setMenuOpen(false) }}>Swap exercise</button>
+                <button type="button" onClick={() => { setShowDetailsPanel(true); setShowNoteEditor(open => !open); setMenuOpen(false) }}>Add note</button>
                 <button type="button" onClick={() => { setShowCuesDrawer(true); setMenuOpen(false) }} disabled={!coachingCues.length}>Coaching cues</button>
                 <button type="button" onClick={handleRemoveExercise} disabled={removingExercise}>{removingExercise ? 'Removing...' : 'Remove exercise'}</button>
               </div>
@@ -360,58 +398,225 @@ function ExerciseCard({
         ) : null}
       </div>
 
-      <div className="exercise-card-summary">
-        <div className="exercise-card-summary-block">
-          <span className="exercise-card-label">Last</span>
-          <strong>{formatLastSessionSummary(exercise.recent_history)}</strong>
-        </div>
-        <div className="exercise-card-summary-block exercise-card-summary-prescription">
-          <span className="exercise-card-label">Prescription</span>
+      <div className="exercise-session-strip">
+        <div className="exercise-session-strip-card emphasis">
+          <span className="exercise-card-label">Next set target</span>
           <strong>{formatTargetSummary(exercise)}</strong>
-          <span className="exercise-card-target-note">{exercise.planned_sets} planned sets in the {humanizeToken(exercise.slot_type || librarySlots[0] || 'accessory')} slot.</span>
+          <span>{remainingSetCount > 0 ? `${remainingSetCount} planned set${remainingSetCount === 1 ? '' : 's'} left` : 'Planned work is covered'}</span>
+        </div>
+        <div className="exercise-session-strip-card">
+          <span className="exercise-card-label">Last completed</span>
+          <strong>{lastCompletedSet ? formatLoggedSetSummary(lastCompletedSet) : 'No completed sets yet'}</strong>
+          <span>{completedSetCount}/{plannedSetCount} sets finished</span>
         </div>
       </div>
 
-      {exercise.suggestion_note ? (
-        <div className="exercise-smart-prompt">
-          <strong>Coach cue</strong>
-          <p>{exercise.suggestion_note}</p>
-        </div>
-      ) : null}
-
-      <div className="exercise-panel exercise-description-panel">
-        <div className="exercise-description-head">
+      <div className="exercise-set-rail">
+        <div className="exercise-set-rail-head">
           <div>
-            <strong>How this works</strong>
-            <p>{exercise.exercise_description || exercise.exercise_summary || buildExerciseDescription(exercise, coachingCues)}</p>
+            <span className="exercise-card-label">Log work</span>
+            <strong>{remainingSetCount > 0 ? `Take set ${loggedSetCount + 1}` : 'Review or move on'}</strong>
           </div>
-          <div className="exercise-description-actions">
-            <button type="button" className="btn-outline small" onClick={() => setShowSwapOptions(open => !open)}>
-              {showSwapOptions ? 'Hide swaps' : 'Swap exercise'}
+          <div className="exercise-set-rail-nav">
+            <button type="button" className="btn-outline small" onClick={onGoToPreviousExercise} disabled={!hasPreviousExercise || typeof onGoToPreviousExercise !== 'function'}>
+              Previous
+            </button>
+            <button type="button" className="btn-outline small" onClick={onGoToNextExercise} disabled={!hasNextExercise || typeof onGoToNextExercise !== 'function'}>
+              Next
             </button>
           </div>
         </div>
+
+        <div className="set-editor">
+          {(exercise.sets ?? []).map((set, index) => {
+            const rowKey = String(set.id)
+            const draft = setDrafts[rowKey] ?? {}
+            const isCompleted = Boolean(set.completed)
+            const isDirty = isSetDirty(set, draft)
+            const syncStatusLabel = getSetSyncStatusLabel(set)
+
+            return (
+              <div key={set.id} className={`set-editor-row exercise-set-row ${isCompleted ? 'completed' : ''}`}>
+                <div className="set-editor-head">
+                  <strong>Set {index + 1}</strong>
+                  <span className="exercise-set-head-status">
+                    {syncStatusLabel ? <span className={`exercise-set-sync-badge ${set.sync_status}`}>{syncStatusLabel}</span> : null}
+                    <span>{isCompleted ? 'Completed' : 'In progress'}</span>
+                  </span>
+                </div>
+                <div className="exercise-set-grid">
+                  <span className="exercise-set-number" aria-hidden="true">{index + 1}</span>
+                  <input
+                    type="number"
+                    step="2.5"
+                    min="0"
+                    inputMode="decimal"
+                    aria-label={`Set ${index + 1} weight`}
+                    placeholder="Weight"
+                    value={draft.weight ?? ''}
+                    onChange={event => handleSetDraftChange(rowKey, 'weight', event.target.value)}
+                  />
+                  <input
+                    type="number"
+                    min="1"
+                    max="30"
+                    inputMode="numeric"
+                    aria-label={`Set ${index + 1} reps`}
+                    placeholder="Reps"
+                    value={draft.reps ?? ''}
+                    onChange={event => handleSetDraftChange(rowKey, 'reps', event.target.value)}
+                  />
+                  <button
+                    type="button"
+                    className={`exercise-set-complete ${isCompleted ? 'completed' : ''}`}
+                    onClick={() => handleCommitSet(set)}
+                    disabled={savingRowKey === rowKey || !draft.reps}
+                    aria-label={isCompleted && !isDirty ? `Reopen set ${index + 1}` : `Complete set ${index + 1}`}
+                  >
+                    {savingRowKey === rowKey ? '...' : isCompleted && !isDirty ? 'Reopen' : 'Complete'}
+                  </button>
+                </div>
+                <div className="exercise-set-row-footer">
+                  <input
+                    type="number"
+                    min="0"
+                    max="5"
+                    step="0.5"
+                    inputMode="decimal"
+                    aria-label={`Set ${index + 1} RIR`}
+                    placeholder="RIR"
+                    value={draft.rir ?? ''}
+                    onChange={event => handleSetDraftChange(rowKey, 'rir', event.target.value)}
+                  />
+                  <button type="button" className="exercise-set-remove" onClick={() => handleDeleteSet(set.id)} disabled={deletingSetId === set.id}>
+                    {deletingSetId === set.id ? 'Removing...' : 'Remove'}
+                  </button>
+                </div>
+              </div>
+            )
+          })}
+
+          <div className="set-editor-row set-editor-row-new exercise-set-row draft-row">
+            <div className="set-editor-head">
+              <strong>Set {(exercise.sets?.length ?? 0) + 1}</strong>
+              <span>{remainingSetCount > 0 ? 'Ready to log' : 'Optional extra set'}</span>
+            </div>
+            <div className="exercise-set-grid">
+              <span className="exercise-set-number" aria-hidden="true">{(exercise.sets?.length ?? 0) + 1}</span>
+              <input
+                type="number"
+                step="2.5"
+                min="0"
+                inputMode="decimal"
+                aria-label="Next set weight"
+                placeholder="Weight"
+                value={setDrafts[nextRowKey]?.weight ?? ''}
+                onChange={event => handleSetDraftChange(nextRowKey, 'weight', event.target.value)}
+              />
+              <input
+                type="number"
+                min="1"
+                max="30"
+                inputMode="numeric"
+                aria-label="Next set reps"
+                placeholder="Reps"
+                value={setDrafts[nextRowKey]?.reps ?? ''}
+                onChange={event => handleSetDraftChange(nextRowKey, 'reps', event.target.value)}
+              />
+              <button
+                type="button"
+                className="exercise-set-complete"
+                onClick={handleCreateSet}
+                disabled={savingRowKey === nextRowKey || !setDrafts[nextRowKey]?.reps}
+                aria-label="Add set"
+              >
+                {savingRowKey === nextRowKey ? '...' : 'Add set'}
+              </button>
+            </div>
+            <div className="exercise-set-row-footer">
+              <input
+                type="number"
+                min="0"
+                max="5"
+                step="0.5"
+                inputMode="decimal"
+                aria-label="Next set RIR"
+                placeholder="RIR"
+                value={setDrafts[nextRowKey]?.rir ?? ''}
+                onChange={event => handleSetDraftChange(nextRowKey, 'rir', event.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="set-quick-actions">
+            <button type="button" className="btn-outline small" onClick={() => adjustNextSetWeight(2.5)}>+2.5</button>
+            <button type="button" className="btn-outline small" onClick={() => adjustNextSetWeight(5)}>+5</button>
+            <button type="button" className="btn-outline small" onClick={() => adjustNextSetWeight(-5)}>-5</button>
+            <button type="button" className="btn-outline small" onClick={duplicateLastSetIntoDraft} disabled={!exercise.sets?.length}>Use last set</button>
+          </div>
+        </div>
+
+        <p className="rir-help">RIR means reps in reserve: how many reps you had left before failure.</p>
       </div>
 
-      {showNoteEditor ? (
-        <div className="exercise-panel exercise-note-panel">
-          <label className="exercise-note-label" htmlFor={`exercise-note-${exercise.id}`}>Session note</label>
-          <textarea
-            id={`exercise-note-${exercise.id}`}
-            value={noteDraft}
-            onChange={event => setNoteDraft(event.target.value)}
-            placeholder="Add a quick note about pain, setup, or coaching cues."
-          />
-          <div className="exercise-panel-actions">
-            <button type="button" className="btn-primary" onClick={handleSaveNote} disabled={savingNote}>
-              {savingNote ? 'Saving...' : 'Save note'}
-            </button>
-            <button type="button" className="btn-secondary" onClick={() => setShowNoteEditor(false)}>Close</button>
-          </div>
-        </div>
-      ) : null}
+      <div className="exercise-secondary-actions">
+        <button type="button" className="btn-outline small" onClick={() => setShowDetailsPanel(open => !open)}>
+          {showDetailsPanel ? 'Hide details' : 'Show details'}
+        </button>
+        <button type="button" className="btn-outline small" onClick={() => { setShowDetailsPanel(true); setShowSwapOptions(open => !open) }}>
+          {showSwapOptions ? 'Hide swaps' : 'Swap exercise'}
+        </button>
+      </div>
 
-      <div className="workout-context-grid">
+      {showDetailsPanel ? (
+        <>
+          <div className="exercise-card-summary">
+            <div className="exercise-card-summary-block">
+              <span className="exercise-card-label">Last session</span>
+              <strong>{formatLastSessionSummary(exercise.recent_history)}</strong>
+            </div>
+            <div className="exercise-card-summary-block exercise-card-summary-prescription">
+              <span className="exercise-card-label">Prescription</span>
+              <strong>{formatTargetSummary(exercise)}</strong>
+              <span className="exercise-card-target-note">{exercise.planned_sets} planned sets in the {humanizeToken(exercise.slot_type || librarySlots[0] || 'accessory')} slot.</span>
+            </div>
+          </div>
+
+          {exercise.suggestion_note ? (
+            <div className="exercise-smart-prompt">
+              <strong>Coach cue</strong>
+              <p>{exercise.suggestion_note}</p>
+            </div>
+          ) : null}
+
+          <div className="exercise-panel exercise-description-panel">
+            <div className="exercise-description-head">
+              <div>
+                <strong>How this works</strong>
+                <p>{exercise.exercise_description || exercise.exercise_summary || buildExerciseDescription(exercise, coachingCues)}</p>
+              </div>
+            </div>
+          </div>
+
+          {showNoteEditor ? (
+            <div className="exercise-panel exercise-note-panel">
+              <label className="exercise-note-label" htmlFor={`exercise-note-${exercise.id}`}>Session note</label>
+              <textarea
+                id={`exercise-note-${exercise.id}`}
+                value={noteDraft}
+                onChange={event => setNoteDraft(event.target.value)}
+                placeholder="Add a quick note about pain, setup, or coaching cues."
+              />
+              <div className="exercise-panel-actions">
+                <button type="button" className="btn-primary" onClick={handleSaveNote} disabled={savingNote}>
+                  {savingNote ? 'Saving...' : 'Save note'}
+                </button>
+                <button type="button" className="btn-secondary" onClick={() => setShowNoteEditor(false)}>Close</button>
+              </div>
+            </div>
+          ) : null}
+
+          <div className="workout-context-grid">
         <section className="workout-context-card">
           <div className="dashboard-card-head">
             <span className="dashboard-chip subtle">Workout context</span>
@@ -656,138 +861,9 @@ function ExerciseCard({
             })()}
           </section>
         ) : null}
-      </div>
-
-      <div className="set-editor">
-        {(exercise.sets ?? []).map((set, index) => {
-          const rowKey = String(set.id)
-          const draft = setDrafts[rowKey] ?? {}
-          const isCompleted = Boolean(set.completed)
-          const isDirty = isSetDirty(set, draft)
-          const syncStatusLabel = getSetSyncStatusLabel(set)
-
-          return (
-            <div key={set.id} className={`set-editor-row exercise-set-row ${isCompleted ? 'completed' : ''}`}>
-              <div className="set-editor-head">
-                <strong>Set {index + 1}</strong>
-                <span className="exercise-set-head-status">
-                  {syncStatusLabel ? <span className={`exercise-set-sync-badge ${set.sync_status}`}>{syncStatusLabel}</span> : null}
-                  <span>{isCompleted ? 'Completed' : 'In progress'}</span>
-                </span>
-              </div>
-              <div className="exercise-set-grid">
-                <span className="exercise-set-number" aria-hidden="true">{index + 1}</span>
-                <input
-                  type="number"
-                  step="2.5"
-                  min="0"
-                  inputMode="decimal"
-                  aria-label={`Set ${index + 1} weight`}
-                  placeholder="Weight"
-                  value={draft.weight ?? ''}
-                  onChange={event => handleSetDraftChange(rowKey, 'weight', event.target.value)}
-                />
-                <input
-                  type="number"
-                  min="1"
-                  max="30"
-                  inputMode="numeric"
-                  aria-label={`Set ${index + 1} reps`}
-                  placeholder="Reps"
-                  value={draft.reps ?? ''}
-                  onChange={event => handleSetDraftChange(rowKey, 'reps', event.target.value)}
-                />
-                <button
-                  type="button"
-                  className={`exercise-set-complete ${isCompleted ? 'completed' : ''}`}
-                  onClick={() => handleCommitSet(set)}
-                  disabled={savingRowKey === rowKey || !draft.reps}
-                  aria-label={isCompleted && !isDirty ? `Reopen set ${index + 1}` : `Complete set ${index + 1}`}
-                >
-                  {savingRowKey === rowKey ? '...' : isCompleted && !isDirty ? 'Reopen' : 'Complete'}
-                </button>
-              </div>
-              <div className="exercise-set-row-footer">
-                <input
-                  type="number"
-                  min="0"
-                  max="5"
-                  step="0.5"
-                  inputMode="decimal"
-                  aria-label={`Set ${index + 1} RIR`}
-                  placeholder="RIR"
-                  value={draft.rir ?? ''}
-                  onChange={event => handleSetDraftChange(rowKey, 'rir', event.target.value)}
-                />
-                <button type="button" className="exercise-set-remove" onClick={() => handleDeleteSet(set.id)} disabled={deletingSetId === set.id}>
-                  {deletingSetId === set.id ? 'Removing...' : 'Remove'}
-                </button>
-              </div>
-            </div>
-          )
-        })}
-
-        <div className="set-editor-row set-editor-row-new exercise-set-row draft-row">
-          <div className="set-editor-head">
-            <strong>Set {(exercise.sets?.length ?? 0) + 1}</strong>
-            <span>Ready to log</span>
           </div>
-          <div className="exercise-set-grid">
-            <span className="exercise-set-number" aria-hidden="true">{(exercise.sets?.length ?? 0) + 1}</span>
-            <input
-              type="number"
-              step="2.5"
-              min="0"
-              inputMode="decimal"
-              aria-label="Next set weight"
-              placeholder="Weight"
-              value={setDrafts[nextRowKey]?.weight ?? ''}
-              onChange={event => handleSetDraftChange(nextRowKey, 'weight', event.target.value)}
-            />
-            <input
-              type="number"
-              min="1"
-              max="30"
-              inputMode="numeric"
-              aria-label="Next set reps"
-              placeholder="Reps"
-              value={setDrafts[nextRowKey]?.reps ?? ''}
-              onChange={event => handleSetDraftChange(nextRowKey, 'reps', event.target.value)}
-            />
-            <button
-              type="button"
-              className="exercise-set-complete"
-              onClick={handleCreateSet}
-              disabled={savingRowKey === nextRowKey || !setDrafts[nextRowKey]?.reps}
-              aria-label="Add set"
-            >
-              {savingRowKey === nextRowKey ? '...' : 'Add set'}
-            </button>
-          </div>
-          <div className="exercise-set-row-footer">
-            <input
-              type="number"
-              min="0"
-              max="5"
-              step="0.5"
-              inputMode="decimal"
-              aria-label="Next set RIR"
-              placeholder="RIR"
-              value={setDrafts[nextRowKey]?.rir ?? ''}
-              onChange={event => handleSetDraftChange(nextRowKey, 'rir', event.target.value)}
-            />
-          </div>
-        </div>
-
-        <div className="set-quick-actions">
-          <button type="button" className="btn-outline small" onClick={() => adjustNextSetWeight(2.5)}>+2.5</button>
-          <button type="button" className="btn-outline small" onClick={() => adjustNextSetWeight(5)}>+5</button>
-          <button type="button" className="btn-outline small" onClick={() => adjustNextSetWeight(-5)}>-5</button>
-          <button type="button" className="btn-outline small" onClick={duplicateLastSetIntoDraft} disabled={!exercise.sets?.length}>Duplicate</button>
-        </div>
-      </div>
-
-      <p className="rir-help">RIR means reps in reserve: how many reps you had left before failure.</p>
+        </>
+      ) : null}
 
       {showCuesDrawer && coachingCues.length ? (
         <AppDrawer
@@ -851,6 +927,16 @@ function buildSetDrafts(exercise) {
   return drafts
 }
 
+function buildNextDraftFromValues(values, exercise) {
+  const targetReps = Number(exercise?.planned_rep_max || exercise?.planned_rep_min || values?.reps || 0)
+
+  return {
+    weight: values?.weight != null && values.weight !== '' ? String(values.weight) : '',
+    reps: targetReps > 0 ? String(targetReps) : '',
+    rir: values?.rir != null && values.rir !== '' ? String(values.rir) : '',
+  }
+}
+
 function getNewRowKey(exercise) {
   return `new-${exercise?.id ?? 'exercise'}`
 }
@@ -902,6 +988,25 @@ function formatHistoryEntry(entry) {
 function formatLastSessionSummary(history) {
   if (!history?.length) return 'No prior work logged'
   return formatHistoryEntry(history[0])
+}
+
+function formatLoggedSetSummary(set) {
+  if (!set) {
+    return 'No completed sets yet'
+  }
+
+  const parts = []
+  if (set.weight != null && set.weight !== '') {
+    parts.push(`${set.weight} lbs`)
+  }
+  if (set.reps != null && set.reps !== '') {
+    parts.push(`${set.reps} reps`)
+  }
+  if (set.rir != null && set.rir !== '') {
+    parts.push(`RIR ${set.rir}`)
+  }
+
+  return parts.join(' · ') || 'Completed set logged'
 }
 
 function formatTargetSummary(exercise) {

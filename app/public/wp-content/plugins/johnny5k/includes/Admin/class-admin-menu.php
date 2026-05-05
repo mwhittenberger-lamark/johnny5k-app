@@ -29,6 +29,8 @@ class AdminMenu {
 		add_submenu_page( 'johnny5k', 'API Cost Dashboard','API Cost Dashboard','manage_options', 'jf-cost-dashboard',     [ CostDashboard::class,      'render' ] );
 		add_submenu_page( 'johnny5k', 'Johnny5k Persona','Personality Editor','manage_options','jf-personality-editor', [ PersonalityEditor::class,  'render' ] );
 		add_submenu_page( 'johnny5k', 'User Analytics','User Analytics','manage_options','jf-retention-dashboard', [ RetentionDashboard::class, 'render' ] );
+		add_submenu_page( 'johnny5k', 'IronQuest User Admin', 'IronQuest User Admin', 'manage_options', 'jf-ironquest-admin', [ IronQuestAdmin::class, 'render' ] );
+		add_submenu_page( 'johnny5k', 'IronQuest Story Workbench', 'IronQuest Story Workbench', 'manage_options', 'jf-ironquest-story-workbench', [ IronQuestAdmin::class, 'render_story_workbench' ] );
 		add_submenu_page( 'johnny5k', 'Exercise Library',  'Exercise Library',  'manage_options', 'jf-exercise-library',   [ ExerciseLibrary::class,    'render' ] );
 		add_submenu_page( 'johnny5k', 'Prebuilt Workouts', 'Prebuilt Workouts', 'manage_options', 'jf-prebuilt-workouts',  [ PrebuiltWorkoutLibrary::class, 'render' ] );
 		add_submenu_page( 'johnny5k', 'Recipe Library',    'Recipe Library',    'manage_options', 'jf-recipe-library',     [ RecipeLibrary::class,      'render' ] );

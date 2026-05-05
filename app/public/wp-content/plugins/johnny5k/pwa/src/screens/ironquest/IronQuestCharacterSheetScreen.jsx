@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { ironquestApi } from '../../api/modules/ironquest'
+import IronQuestConsequenceLedger from '../../components/ironquest/IronQuestConsequenceLedger'
 import AppIcon from '../../components/ui/AppIcon'
 import AppLoadingScreen from '../../components/ui/AppLoadingScreen'
 import EmptyState from '../../components/ui/EmptyState'
+import { useIronQuestGeneratedImage } from '../../hooks/useIronQuestGeneratedImage'
 import { formatUsFriendlyDate } from '../../lib/dateFormat'
+import { subscribeIronQuestStateChanged } from '../../lib/ironquestSync'
 import { useIronQuestStarterPortrait } from '../../hooks/useIronQuestStarterPortrait'
 
 export default function IronQuestCharacterSheetScreen() {
@@ -15,6 +18,8 @@ export default function IronQuestCharacterSheetScreen() {
   const [refreshing, setRefreshing] = useState(false)
   const [usingItemId, setUsingItemId] = useState('')
   const [inventoryNotice, setInventoryNotice] = useState('')
+  const [portraitNotice, setPortraitNotice] = useState('')
+  const [generatingPortrait, setGeneratingPortrait] = useState(false)
   const [error, setError] = useState('')
 
   const loadCharacterSheet = useCallback(async ({ background = false } = {}) => {
@@ -43,19 +48,63 @@ export default function IronQuestCharacterSheetScreen() {
     void loadCharacterSheet()
   }, [loadCharacterSheet])
 
+  useEffect(() => {
+    return subscribeIronQuestStateChanged(() => {
+      void loadCharacterSheet({ background: true })
+    })
+  }, [loadCharacterSheet])
+
   const profile = hub?.profile ?? {}
   const location = hub?.location ?? null
   const characterSheet = hub?.character_sheet ?? {}
   const entitlement = hub?.entitlement ?? {}
+  const currentForm = characterSheet?.identity?.current_form ?? {}
   const starterPortrait = useIronQuestStarterPortrait(characterSheet?.identity?.portrait_attachment_id || profile?.starter_portrait_attachment_id)
+  const currentFormPortrait = useIronQuestGeneratedImage(currentForm?.generated_image_id, currentForm?.label || 'Current form portrait')
+  const displayPortrait = currentFormPortrait || starterPortrait
+  const currentFormTokens = useMemo(() => {
+    const tokens = [
+      currentForm?.visual_loadout?.level_band_label,
+      currentForm?.visual_loadout?.title ? `Title: ${currentForm.visual_loadout.title}` : '',
+      currentForm?.visual_loadout?.active_charm ? `Charm: ${currentForm.visual_loadout.active_charm}` : '',
+      currentForm?.visual_loadout?.active_prep ? `Prep: ${currentForm.visual_loadout.active_prep}` : '',
+    ]
+
+    return tokens.filter(Boolean)
+  }, [currentForm])
   const activeEffects = useMemo(() => Array.isArray(characterSheet?.active_effects) ? characterSheet.active_effects : [], [characterSheet?.active_effects])
   const recentHistory = useMemo(() => Array.isArray(characterSheet?.recent_history) ? characterSheet.recent_history : [], [characterSheet?.recent_history])
   const titleCollection = useMemo(() => Array.isArray(characterSheet?.collections?.titles) ? characterSheet.collections.titles : [], [characterSheet?.collections?.titles])
   const relicCollection = useMemo(() => Array.isArray(characterSheet?.collections?.relics) ? characterSheet.collections.relics : [], [characterSheet?.collections?.relics])
+  const portraitCollection = useMemo(() => Array.isArray(characterSheet?.collections?.portraits) ? characterSheet.collections.portraits : [], [characterSheet?.collections?.portraits])
   const journalCollection = useMemo(() => Array.isArray(characterSheet?.collections?.journal) ? characterSheet.collections.journal : [], [characterSheet?.collections?.journal])
   const equippedRelics = useMemo(() => Array.isArray(characterSheet?.inventory_summary?.equipped_relics) ? characterSheet.inventory_summary.equipped_relics : [], [characterSheet?.inventory_summary?.equipped_relics])
   const consumables = useMemo(() => Array.isArray(characterSheet?.inventory_summary?.consumables) ? characterSheet.inventory_summary.consumables : [], [characterSheet?.inventory_summary?.consumables])
   const purchaseResult = locationState?.state?.purchaseResult ?? null
+
+  const handleForgeCurrentForm = useCallback(async () => {
+    setGeneratingPortrait(true)
+    setError('')
+    setPortraitNotice('')
+
+    try {
+      const result = await ironquestApi.generateCharacterSheetPortrait()
+      setHub((current) => ({
+        ...(current ?? {}),
+        profile: result.profile ?? current?.profile ?? null,
+        character_sheet: result.character_sheet ?? current?.character_sheet ?? null,
+      }))
+      if (result?.generated) {
+        setPortraitNotice('Current form portrait forged.')
+      } else {
+        setPortraitNotice('Current form portrait is already up to date.')
+      }
+    } catch (generationError) {
+      setError(generationError?.message || 'Could not forge the current-form portrait right now.')
+    } finally {
+      setGeneratingPortrait(false)
+    }
+  }, [])
 
   const handleUseConsumable = useCallback(async (itemId) => {
     if (!itemId) {
@@ -153,21 +202,32 @@ export default function IronQuestCharacterSheetScreen() {
             </p>
           </div>
         ) : null}
+        {portraitNotice ? <p className="ironquest-panel-copy">{portraitNotice}</p> : null}
         <div className="ironquest-hero-shell ironquest-character-shell">
-          {starterPortrait?.src ? (
+          {displayPortrait?.src ? (
             <div className="ironquest-hero-portrait-frame">
-              <img src={starterPortrait.src} alt={starterPortrait.label || 'Starter portrait'} className="ironquest-hero-portrait" />
+              <img src={displayPortrait.src} alt={displayPortrait.label || 'Character portrait'} className="ironquest-hero-portrait" />
             </div>
           ) : null}
           <div className="ironquest-hero-shell-copy">
             <p className="ironquest-hero-copy">
-              {activeEffects[0]?.effect_summary || 'This sheet is where IronQuest stops feeling like a mode toggle and starts feeling like a campaign.'}
+              {currentForm?.description || activeEffects[0]?.effect_summary || 'This sheet is where IronQuest stops feeling like a mode toggle and starts feeling like a campaign.'}
             </p>
             <div className="ironquest-hero-meta">
               <MetaPill label="Class" value={humanizeSlug(characterSheet?.identity?.class_slug || profile?.class_slug || 'unchosen')} />
               <MetaPill label="Motivation" value={humanizeSlug(characterSheet?.identity?.motivation_slug || profile?.motivation_slug || 'unchosen')} />
               <MetaPill label="Region" value={characterSheet?.campaign?.current_location_name || location?.name || 'Unknown'} />
             </div>
+            {currentFormTokens.length ? (
+              <div className="ironquest-hero-meta">
+                {currentFormTokens.map((token) => (
+                  <span key={token} className="dashboard-chip coach">{token}</span>
+                ))}
+              </div>
+            ) : null}
+            {currentForm?.visual_loadout?.summary_line ? (
+              <p className="ironquest-panel-copy">{currentForm.visual_loadout.summary_line}</p>
+            ) : null}
           </div>
         </div>
         <div className="ironquest-stat-grid ironquest-character-summary-grid">
@@ -187,6 +247,9 @@ export default function IronQuestCharacterSheetScreen() {
           ) : null}
           <button type="button" className="btn-outline small" onClick={() => navigate('/ironquest/store')}>
             General Store
+          </button>
+          <button type="button" className="btn-secondary small" onClick={() => void handleForgeCurrentForm()} disabled={generatingPortrait}>
+            {generatingPortrait ? 'Forging…' : (currentForm?.generated_image_id ? (currentForm?.stale ? 'Refresh current form' : 'Current form ready') : 'Forge current form')}
           </button>
         </div>
       </section>
@@ -211,21 +274,12 @@ export default function IronQuestCharacterSheetScreen() {
             <span className="dashboard-chip coach">Active effects</span>
             <span className="dashboard-chip subtle">{activeEffects.length}</span>
           </div>
-          {activeEffects.length ? (
-            <div className="ironquest-detail-list">
-              {activeEffects.map(effect => (
-                <div key={effect.id} className="ironquest-detail-row">
-                  <span>{effect.label}</span>
-                  <strong>{effect.effect_summary}</strong>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <EmptyState
-              title="No active effects yet"
-              message="Temporary buffs, mission pressure, and Tavern Day follow-through will show up here as the rest of Phase 2 comes online."
-            />
-          )}
+          <IronQuestConsequenceLedger
+            title="What is active now"
+            summary="Every temporary consequence is tracked here with where it applies and when it clears."
+            entries={activeEffects}
+            emptyMessage="No active effects are live right now. Tavern follow-through, mission pressure, prep, and charms will appear here once they are active."
+          />
         </article>
       </section>
 
@@ -251,10 +305,11 @@ export default function IronQuestCharacterSheetScreen() {
         <article className="dash-card ironquest-panel">
           <div className="dashboard-card-head">
             <span className="dashboard-chip subtle">Collections</span>
-            <span className="dashboard-chip subtle">Titles, relics, and journal</span>
+            <span className="dashboard-chip subtle">Titles, relics, portraits, and journal</span>
           </div>
           <CollectionSection title="Titles" entries={titleCollection} />
           <CollectionSection title="Relics" entries={relicCollection} />
+          <PortraitCollectionSection entries={portraitCollection} />
           <CollectionSection title="Journal" entries={journalCollection} />
         </article>
       </section>
@@ -308,6 +363,46 @@ function CollectionSection({ title, entries, emptyMessage = `No ${title.toLowerC
         <p className="ironquest-panel-copy">{emptyMessage}</p>
       )}
     </div>
+  )
+}
+
+function PortraitCollectionSection({ entries }) {
+  return (
+    <div className="ironquest-character-collection">
+      <strong>Portraits</strong>
+      {entries.length ? (
+        <div className="ironquest-portrait-grid">
+          {entries.map((entry) => (
+            <PortraitCollectionCard key={`portrait-${entry.id}`} entry={entry} />
+          ))}
+        </div>
+      ) : (
+        <p className="ironquest-panel-copy">Reward portraits will appear here when major IronQuest milestones are forged.</p>
+      )}
+    </div>
+  )
+}
+
+function PortraitCollectionCard({ entry }) {
+  const portraitImage = useIronQuestGeneratedImage(entry.generated_image_id, entry.label || 'IronQuest reward portrait')
+
+  return (
+    <article className="ironquest-portrait-card">
+      {portraitImage?.src ? (
+        <div className="ironquest-portrait-frame">
+          <img src={portraitImage.src} alt={portraitImage.label || entry.label || 'IronQuest reward portrait'} className="ironquest-portrait-image" />
+        </div>
+      ) : (
+        <div className="ironquest-portrait-frame ironquest-portrait-frame-placeholder">
+          <span>{entry.trigger === 'level_milestone' ? 'Level milestone' : 'Victory portrait'}</span>
+        </div>
+      )}
+      <div className="ironquest-portrait-copy">
+        <strong>{entry.label}</strong>
+        <p>{entry.subtitle}</p>
+        <small>{entry.created_at ? formatUsFriendlyDate(entry.created_at) : 'Recent'}</small>
+      </div>
+    </article>
   )
 }
 

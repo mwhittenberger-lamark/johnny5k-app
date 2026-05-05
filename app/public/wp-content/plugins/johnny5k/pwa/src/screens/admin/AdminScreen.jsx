@@ -1,4 +1,4 @@
-import { startTransition, useCallback, useEffect, useState } from 'react'
+import { startTransition, useCallback, useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { adminApi } from '../../api/modules/admin'
 import { mediaApi } from '../../api/modules/media'
@@ -22,6 +22,38 @@ const QA_ONLY_TABS = ['label-tests']
 const IRONQUEST_DAILY_QUEST_OPTIONS = ['meal', 'sleep', 'cardio', 'steps', 'workout']
 const IRONQUEST_MISSION_RESULT_OPTIONS = ['victory', 'partial', 'failure']
 const IRONQUEST_RUN_TYPE_OPTIONS = ['workout', 'cardio', 'recovery', 'mobility']
+const IRONQUEST_WORKBENCH_TABS = ['debug', 'workbench']
+const IRONQUEST_WORKBENCH_SET_RESULT_OPTIONS = [
+  ['target_met', 'Target met'],
+  ['recovered', 'Recovered'],
+  ['close_call', 'Close call'],
+  ['slipped', 'Slipped'],
+  ['strain', 'Strain'],
+  ['struggle', 'Struggle'],
+]
+const IRONQUEST_WORKBENCH_STANCE_OPTIONS = [
+  ['steady', 'Steady'],
+  ['aggressive', 'Aggressive'],
+  ['cautious', 'Cautious'],
+]
+const IRONQUEST_WORKBENCH_STAGE_OPTIONS = [
+  ['opening', 'Opening'],
+  ['middle', 'Middle'],
+  ['closing', 'Closing'],
+  ['resolution', 'Resolution'],
+]
+const IRONQUEST_WORKBENCH_TENSION_OPTIONS = [
+  ['controlled', 'Controlled'],
+  ['rising', 'Rising'],
+  ['high', 'High'],
+  ['critical', 'Critical'],
+]
+const IRONQUEST_WORKBENCH_PROGRESS_PHASE_OPTIONS = [
+  ['engaged', 'Engaged'],
+  ['clash', 'Clash'],
+  ['final_push', 'Final push'],
+  ['transition', 'Transition'],
+]
 const RECIPE_DIETARY_TAG_OPTIONS = [
   { value: 'vegan', label: 'Vegan' },
   { value: 'vegetarian', label: 'Vegetarian' },
@@ -126,6 +158,40 @@ function reorderItems(items, fromIndex, toIndex) {
   const [moved] = next.splice(fromIndex, 1)
   next.splice(toIndex, 0, moved)
   return next
+}
+
+function optionLabel(options, value, fallback = 'Unknown') {
+  return options.find(([optionValue]) => optionValue === value)?.[1] || fallback
+}
+
+function listMissionStoryTemplates(mission, slot) {
+  const templates = Array.isArray(mission?.beat_templates) ? mission.beat_templates : []
+  return templates.filter(template => String(template?.slot || '') === String(slot || ''))
+}
+
+function listWorkbenchMissingBranches(coverageReport) {
+  const rows = Array.isArray(coverageReport?.rows) ? coverageReport.rows : []
+  return rows.flatMap(row => {
+    const cells = Array.isArray(row?.cells) ? row.cells : []
+    return cells
+      .filter(cell => !String(cell?.template_id || '').trim())
+      .map(cell => ({
+        set_result: String(row?.set_result || ''),
+        set_result_label: String(row?.set_result_label || row?.set_result || ''),
+        stance: String(cell?.stance || ''),
+        stance_label: String(cell?.stance_label || cell?.stance || ''),
+      }))
+  })
+}
+
+function createEmptyWorkbenchSceneDraft() {
+  return {
+    scene_brief: '',
+    player_goal: '',
+    opponent_pressure: '',
+    failure_cost: '',
+    setting_detail: '',
+  }
 }
 
 function tabFromPathname(pathname, isAdmin) {
@@ -554,7 +620,7 @@ function PersonaTab() {
       </div>
 
       <h3>Persona Contract QA</h3>
-      <p className="settings-subtitle">Run fixed checks for concise coaching, non-corporate tone, data use, and honest next-step guidance.</p>
+      <p className="settings-subtitle">Run fixed checks for concise coaching, plainspoken language, non-corporate tone, data use, honest next-step guidance, and avoidance of synthetic coaching phrases.</p>
       <div className="test-chat-form">
         <button type="button" className="btn-secondary" onClick={handleRunAllContractChecks} disabled={runningContractChecks}>
           {runningContractChecks ? 'Running checks…' : 'Run all checks'}
@@ -1289,7 +1355,562 @@ function DiagnosticsTab() {
   )
 }
 
+function IronQuestStoryWorkbenchPanel({
+  missionCatalog,
+  selectedMission,
+  selectedScene,
+  missionSlug,
+  setMissionSlug,
+  encounterSeeds,
+  encounterSeedSlug,
+  setEncounterSeedSlug,
+  sceneDraft,
+  setSceneDraft,
+  storySlots,
+  slot,
+  setSlot,
+  setResult,
+  setSetResult,
+  stance,
+  setStance,
+  stage,
+  setStage,
+  tension,
+  setTension,
+  progressPhase,
+  setProgressPhase,
+  resultBand,
+  setResultBand,
+  count,
+  setCount,
+  preview,
+  exportPayload,
+  busy,
+  showAdvanced,
+  setShowAdvanced,
+  currentSlotTemplates,
+  approvedCandidates,
+  missingBranches,
+  onAnalyze,
+  onReviewCandidate,
+  onExport,
+  onApply,
+  onSaveScene,
+  onSuggestScene,
+}) {
+  const branchPreviewRef = useRef(null)
+  const candidates = Array.isArray(preview?.candidateSession?.candidates) ? preview.candidateSession.candidates : []
+  const coverageRows = Array.isArray(preview?.coverageReport?.rows) ? preview.coverageReport.rows : []
+  const selectionDiagnostics = preview?.selectionDiagnostics || null
+  const approvedCount = Array.isArray(approvedCandidates) ? approvedCandidates.length : 0
+  const liveTemplateCount = Array.isArray(currentSlotTemplates) ? currentSlotTemplates.length : 0
+  const missionOptions = Array.isArray(missionCatalog) ? missionCatalog : []
+  const sceneOptions = Array.isArray(encounterSeeds) ? encounterSeeds : []
+  const storyMomentOptions = Array.isArray(storySlots) ? storySlots : []
+  const hasPreview = Boolean(preview?.candidateSession?.session_id)
+  const canExport = Boolean(selectedMission && slot && approvedCount)
+  const canApply = Boolean(exportPayload?.approved_count)
+
+  useEffect(() => {
+    if (!hasPreview || !branchPreviewRef.current) return
+    branchPreviewRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [hasPreview, preview?.candidateSession?.session_id])
+
+  if (!missionOptions.length) {
+    return (
+      <div className="admin-settings-section">
+        <div className="admin-settings-section-head">
+          <h3>Story Workbench</h3>
+        </div>
+        <EmptyState
+          title="No workbench-ready missions"
+          message="A mission needs encounter seeds, story slots, and beat templates before it can be authored here."
+        />
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ display: 'grid', gap: 'var(--space-4)' }}>
+      <div className="admin-settings-section">
+        <div className="admin-settings-section-head">
+          <div>
+            <h3>Story Workbench</h3>
+            <p>Choose a mission, review branch coverage, then approve and publish stronger workout story drafts.</p>
+          </div>
+        </div>
+
+        <div className="admin-list" style={{ marginBottom: 'var(--space-4)' }}>
+          <div className="admin-card-row">
+            <div>
+              <strong>1. Pick mission</strong>
+              <p>Changing the mission refreshes the scene and story moment controls automatically.</p>
+            </div>
+          </div>
+          <div className="admin-card-row">
+            <div>
+              <strong>2. Pick branch</strong>
+              <p>Start with the author-facing filters, then open advanced controls only when you need to target a specific branch.</p>
+            </div>
+          </div>
+          <div className="admin-card-row">
+            <div>
+              <strong>3. Review coverage and drafts</strong>
+              <p>Use the matrix to find missing branches, then approve only the drafts worth keeping.</p>
+            </div>
+          </div>
+          <div className="admin-card-row">
+            <div>
+              <strong>4. Publish carefully</strong>
+              <p>Export or apply only after checking how many live templates the selected story moment will replace.</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="admin-stack-form">
+          <label>
+            <span>Mission</span>
+            <select value={missionSlug} onChange={event => setMissionSlug(event.target.value)}>
+              {missionOptions.map(mission => (
+                <option key={String(mission?.slug || '')} value={String(mission?.slug || '')}>
+                  {mission?.name || mission?.slug}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <div className="admin-card-row">
+            <div>
+              <strong>{selectedMission?.name || 'Selected mission'}</strong>
+              <p>{selectedMission?.goal || 'No mission goal available.'}</p>
+              <p>
+                {selectedMission?.location_slug ? `Location: ${selectedMission.location_slug}` : 'No location set'}
+                {' · '}
+                {sceneOptions.length} scene{sceneOptions.length === 1 ? '' : 's'}
+                {' · '}
+                {storyMomentOptions.length} story moment{storyMomentOptions.length === 1 ? '' : 's'}
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="admin-settings-section">
+        <div className="admin-settings-section-head">
+          <div>
+            <h3>Authoring Branch</h3>
+            <p>Start with the basic branch controls. The mission-specific scene and story moment lists stay in sync with the mission selection.</p>
+          </div>
+        </div>
+
+        <div className="admin-stack-form">
+          <label>
+            <span>Scene</span>
+            <select value={encounterSeedSlug} onChange={event => setEncounterSeedSlug(event.target.value)} disabled={!sceneOptions.length}>
+              {!sceneOptions.length ? <option value="">No scenes available</option> : null}
+              {sceneOptions.map(seed => (
+                <option key={String(seed?.slug || '')} value={String(seed?.slug || '')}>
+                  {seed?.label || seed?.name || seed?.slug}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label>
+            <span>Story moment</span>
+            <select value={slot} onChange={event => setSlot(event.target.value)} disabled={!storyMomentOptions.length}>
+              {!storyMomentOptions.length ? <option value="">No story moments available</option> : null}
+              {storyMomentOptions.map(([slotId, slotConfig]) => (
+                <option key={String(slotId || '')} value={String(slotId || '')}>
+                  {slotConfig?.label || slotId}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label>
+            <span>Workout outcome</span>
+            <select value={setResult} onChange={event => setSetResult(event.target.value)}>
+              {IRONQUEST_WORKBENCH_SET_RESULT_OPTIONS.map(([value, label]) => (
+                <option key={value} value={value}>{label}</option>
+              ))}
+            </select>
+          </label>
+
+          <label>
+            <span>Tone</span>
+            <select value={stance} onChange={event => setStance(event.target.value)}>
+              {IRONQUEST_WORKBENCH_STANCE_OPTIONS.map(([value, label]) => (
+                <option key={value} value={value}>{label}</option>
+              ))}
+            </select>
+          </label>
+
+          <label>
+            <span>Draft count</span>
+            <input
+              type="number"
+              min="1"
+              max="24"
+              value={count}
+              onChange={event => setCount(Math.max(1, Math.min(24, Number(event.target.value) || 1)))}
+            />
+          </label>
+        </div>
+
+        <div style={{ marginTop: 'var(--space-4)' }}>
+          <button type="button" className="btn-secondary small" onClick={() => setShowAdvanced(current => !current)}>
+            {showAdvanced ? 'Hide advanced branch controls' : 'Show advanced branch controls'}
+          </button>
+          {showAdvanced ? (
+            <div className="admin-stack-form" style={{ marginTop: 'var(--space-4)' }}>
+              <label>
+                <span>Stage</span>
+                <select value={stage} onChange={event => setStage(event.target.value)}>
+                  {IRONQUEST_WORKBENCH_STAGE_OPTIONS.map(([value, label]) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                <span>Tension</span>
+                <select value={tension} onChange={event => setTension(event.target.value)}>
+                  {IRONQUEST_WORKBENCH_TENSION_OPTIONS.map(([value, label]) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                <span>Progress phase</span>
+                <select value={progressPhase} onChange={event => setProgressPhase(event.target.value)}>
+                  {IRONQUEST_WORKBENCH_PROGRESS_PHASE_OPTIONS.map(([value, label]) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                <span>Mission result band</span>
+                <select value={resultBand} onChange={event => setResultBand(event.target.value)}>
+                  {IRONQUEST_MISSION_RESULT_OPTIONS.map(value => (
+                    <option key={value} value={value}>{value}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          ) : null}
+        </div>
+
+        <div className="nutrition-card-actions" style={{ marginTop: 'var(--space-4)' }}>
+          <button type="button" className="btn-primary" onClick={() => void onAnalyze()} disabled={busy === 'preview' || !selectedMission || !slot}>
+            {busy === 'preview' ? 'Analyzing…' : 'Analyze story moment'}
+          </button>
+        </div>
+      </div>
+
+      <div className="admin-settings-section">
+        <div className="admin-settings-section-head">
+          <div>
+            <h3>Scene Brief</h3>
+            <p>Edit only the five scene fields that drive AI narration. Legacy token fragments stay hidden from this screen.</p>
+          </div>
+        </div>
+
+        <div className="admin-list" style={{ marginBottom: 'var(--space-4)' }}>
+          <div className="admin-card-row">
+            <div>
+              <strong>{selectedScene?.title || selectedScene?.slug || 'Selected scene'}</strong>
+              <p>{selectedScene?.slug ? `Scene slug: ${selectedScene.slug}` : 'Pick a scene to edit its plain-language brief.'}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="admin-stack-form">
+          <label>
+            <span>Scene brief</span>
+            <textarea
+              rows="3"
+              value={sceneDraft?.scene_brief || ''}
+              onChange={event => setSceneDraft(current => ({ ...current, scene_brief: event.target.value }))}
+              placeholder="What is happening in this scene, in plain language?"
+              disabled={!selectedScene}
+            />
+          </label>
+
+          <label>
+            <span>Player goal</span>
+            <textarea
+              rows="2"
+              value={sceneDraft?.player_goal || ''}
+              onChange={event => setSceneDraft(current => ({ ...current, player_goal: event.target.value }))}
+              placeholder="What is the player trying to do here?"
+              disabled={!selectedScene}
+            />
+          </label>
+
+          <label>
+            <span>Opponent pressure</span>
+            <textarea
+              rows="2"
+              value={sceneDraft?.opponent_pressure || ''}
+              onChange={event => setSceneDraft(current => ({ ...current, opponent_pressure: event.target.value }))}
+              placeholder="How is the scene pushing back on the player?"
+              disabled={!selectedScene}
+            />
+          </label>
+
+          <label>
+            <span>Failure cost</span>
+            <textarea
+              rows="2"
+              value={sceneDraft?.failure_cost || ''}
+              onChange={event => setSceneDraft(current => ({ ...current, failure_cost: event.target.value }))}
+              placeholder="What does failure mean in this moment?"
+              disabled={!selectedScene}
+            />
+          </label>
+
+          <label>
+            <span>Setting detail</span>
+            <textarea
+              rows="2"
+              value={sceneDraft?.setting_detail || ''}
+              onChange={event => setSceneDraft(current => ({ ...current, setting_detail: event.target.value }))}
+              placeholder="One concrete visual or sensory detail that grounds the scene."
+              disabled={!selectedScene}
+            />
+          </label>
+        </div>
+
+        <div className="nutrition-card-actions" style={{ marginTop: 'var(--space-4)' }}>
+          <button type="button" className="btn-secondary" onClick={() => void onSuggestScene()} disabled={busy === 'suggestScene' || !selectedScene}>
+            {busy === 'suggestScene' ? 'Generating…' : 'Generate with AI'}
+          </button>
+          <button type="button" className="btn-secondary" onClick={() => void onSaveScene()} disabled={busy === 'saveScene' || !selectedScene}>
+            {busy === 'saveScene' ? 'Saving scene…' : 'Save scene brief'}
+          </button>
+        </div>
+      </div>
+
+      <div className="admin-settings-section">
+        <div className="admin-settings-section-head">
+          <div>
+            <h3>Coverage</h3>
+            <p>Missing branches are the fastest place to improve the story library. Use the matrix to jump directly into a branch.</p>
+          </div>
+        </div>
+
+        <div className="admin-list">
+          <div className="admin-card-row">
+            <div>
+              <strong>Selected story moment</strong>
+              <p>{storyMomentOptions.find(([slotId]) => slotId === slot)?.[1]?.label || slot || 'No story moment selected'}</p>
+              <p>{liveTemplateCount} live template{liveTemplateCount === 1 ? '' : 's'} in this moment</p>
+            </div>
+          </div>
+          <div className="admin-card-row">
+            <div>
+              <strong>Coverage gaps</strong>
+              <p>
+                {missingBranches.length
+                  ? `${missingBranches.length} missing branch${missingBranches.length === 1 ? '' : 'es'} need authored coverage.`
+                  : 'No missing branches in the current coverage report.'}
+              </p>
+            </div>
+          </div>
+          {selectionDiagnostics ? (
+            <div className="admin-card-row">
+              <div>
+                <strong>Selection diagnostics</strong>
+                <p>{selectionDiagnostics.slot_template_count || 0} matching templates are available for this story moment.</p>
+                <p>{Array.isArray(selectionDiagnostics.matching_template_ids) && selectionDiagnostics.matching_template_ids.length ? selectionDiagnostics.matching_template_ids.join(', ') : 'No matching template ids returned.'}</p>
+              </div>
+            </div>
+          ) : null}
+        </div>
+
+        {coverageRows.length ? (
+          <div style={{ overflowX: 'auto', marginTop: 'var(--space-4)' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr>
+                  <th align="left" style={{ padding: '0.75rem', borderBottom: '1px solid var(--border)' }}>Workout outcome</th>
+                  {IRONQUEST_WORKBENCH_STANCE_OPTIONS.map(([, label]) => (
+                    <th key={label} align="left" style={{ padding: '0.75rem', borderBottom: '1px solid var(--border)' }}>{label}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {coverageRows.map(row => (
+                  <tr key={String(row?.set_result || '')}>
+                    <td style={{ padding: '0.75rem', borderBottom: '1px solid var(--border)', verticalAlign: 'top' }}>
+                      <strong>{row?.set_result_label || row?.set_result || 'Unknown'}</strong>
+                    </td>
+                    {(Array.isArray(row?.cells) ? row.cells : []).map(cell => {
+                      const hasTemplate = Boolean(String(cell?.template_id || '').trim())
+                      return (
+                        <td key={`${row?.set_result}-${cell?.stance}`} style={{ padding: '0.75rem', borderBottom: '1px solid var(--border)', verticalAlign: 'top' }}>
+                          <p style={{ marginBottom: '0.5rem' }}>
+                            <span className={hasTemplate ? 'badge green' : 'badge grey'}>
+                              {hasTemplate ? 'Live' : 'Missing'}
+                            </span>
+                          </p>
+                          <p>{cell?.template_id || 'No authored template yet.'}</p>
+                          <button
+                            type="button"
+                            className="btn-secondary small"
+                            onClick={() => void onAnalyze({ set_result: row?.set_result || '', stance: cell?.stance || '' })}
+                            disabled={busy === 'preview'}
+                          >
+                            {hasTemplate ? 'Preview branch' : 'Generate branch'}
+                          </button>
+                        </td>
+                      )
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <EmptyState
+            title="No coverage report yet"
+            message="Analyze the selected story moment to load branch coverage and preview candidates."
+          />
+        )}
+
+        {missingBranches.length ? (
+          <div className="admin-list" style={{ marginTop: 'var(--space-4)' }}>
+            {missingBranches.slice(0, 6).map(branch => (
+              <div key={`${branch.set_result}-${branch.stance}`} className="admin-card-row">
+                <div>
+                  <strong>{branch.set_result_label} · {branch.stance_label}</strong>
+                  <p>This branch does not have a live authored template.</p>
+                </div>
+                <button
+                  type="button"
+                  className="btn-secondary small"
+                  onClick={() => void onAnalyze({ set_result: branch.set_result, stance: branch.stance })}
+                  disabled={busy === 'preview'}
+                >
+                  Generate branch
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </div>
+
+      <div ref={branchPreviewRef} className="admin-settings-section">
+        <div className="admin-settings-section-head">
+          <div>
+            <h3>Branch Preview</h3>
+            <p>Review the current authored output for this branch, then approve any draft you want to keep for export.</p>
+          </div>
+        </div>
+
+        {!hasPreview ? (
+          <EmptyState
+            title="No branch preview yet"
+            message="Analyze a mission branch to load the current output and candidate story drafts."
+          />
+        ) : null}
+
+        {candidates.length ? (
+          <div className="admin-list">
+            {candidates.map(candidate => {
+              const isApproved = candidate?.status === 'approved'
+              const reviewBusy = busy === `review:${candidate?.candidate_id}`
+              return (
+                <div key={String(candidate?.candidate_id || candidate?.template_id || 'candidate')} className="admin-card-row">
+                  <div>
+                    <p style={{ marginBottom: '0.5rem' }}>
+                      <span className={isApproved ? 'badge green' : 'badge grey'}>
+                        {isApproved ? 'Approved' : 'Draft'}
+                      </span>
+                    </p>
+                    <strong>{candidate?.template_id || 'Generated draft'}</strong>
+                    <p>{candidate?.draft?.summary || 'No summary generated.'}</p>
+                    {candidate?.draft?.follow_up ? <p>{candidate.draft.follow_up}</p> : null}
+                    {candidate?.draft?.decision_prompt ? <p><em>{candidate.draft.decision_prompt}</em></p> : null}
+                    {Array.isArray(candidate?.tags) && candidate.tags.length ? <p>{candidate.tags.join(' · ')}</p> : null}
+                  </div>
+                  <div className="nutrition-card-actions">
+                    <button
+                      type="button"
+                      className="btn-primary small"
+                      onClick={() => void onReviewCandidate(candidate?.candidate_id, !isApproved)}
+                      disabled={reviewBusy}
+                    >
+                      {reviewBusy ? 'Saving…' : isApproved ? 'Remove approval' : 'Approve draft'}
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        ) : null}
+      </div>
+
+      <div className="admin-settings-section">
+        <div className="admin-settings-section-head">
+          <div>
+            <h3>Publish</h3>
+            <p>Export approved drafts first. Apply writes them into `missions.json` and replaces the selected story moment’s live templates.</p>
+          </div>
+        </div>
+
+        <div className="admin-list">
+          <div className="admin-card-row">
+            <div>
+              <strong>Live impact</strong>
+              <p>{liveTemplateCount} live template{liveTemplateCount === 1 ? '' : 's'} currently occupy this story moment.</p>
+            </div>
+          </div>
+          <div className="admin-card-row">
+            <div>
+              <strong>Approved drafts</strong>
+              <p>{approvedCount} approved draft{approvedCount === 1 ? '' : 's'} queued for export.</p>
+            </div>
+          </div>
+          <div className="admin-card-row">
+            <div>
+              <strong>Apply impact</strong>
+              <p>
+                {approvedCount
+                  ? `Applying now will replace the ${liveTemplateCount} live template${liveTemplateCount === 1 ? '' : 's'} in ${slot || 'this story moment'} with ${approvedCount} approved draft${approvedCount === 1 ? '' : 's'}.`
+                  : 'Approve at least one draft before applying changes to mission config.'}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="nutrition-card-actions" style={{ marginTop: 'var(--space-4)' }}>
+          <button type="button" className="btn-secondary" onClick={() => void onExport()} disabled={busy === 'export' || !canExport}>
+            {busy === 'export' ? 'Exporting…' : 'Export approved drafts'}
+          </button>
+          <button type="button" className="btn-primary" onClick={() => void onApply()} disabled={busy === 'apply' || !canApply}>
+            {busy === 'apply' ? 'Applying…' : 'Apply to mission config'}
+          </button>
+        </div>
+
+        {exportPayload?.export_json ? (
+          <div style={{ marginTop: 'var(--space-4)' }}>
+            <p><strong>Export preview</strong></p>
+            <pre style={{ maxHeight: 320, overflow: 'auto', padding: '1rem', borderRadius: 12, background: 'var(--panel)' }}>
+              {exportPayload.export_json}
+            </pre>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
 function IronQuestTab() {
+  const [ironQuestTab, setIronQuestTab] = useState('debug')
   const [users, setUsers] = useState([])
   const [selectedUserId, setSelectedUserId] = useState('')
   const [payload, setPayload] = useState(null)
@@ -1306,6 +1927,21 @@ function IronQuestTab() {
   const [resultBand, setResultBand] = useState('victory')
   const [xpOverride, setXpOverride] = useState('')
   const [goldOverride, setGoldOverride] = useState('')
+  const [workbenchMissionSlug, setWorkbenchMissionSlug] = useState('')
+  const [workbenchEncounterSeedSlug, setWorkbenchEncounterSeedSlug] = useState('')
+  const [workbenchSlot, setWorkbenchSlot] = useState('')
+  const [workbenchSetResult, setWorkbenchSetResult] = useState('target_met')
+  const [workbenchStance, setWorkbenchStance] = useState('steady')
+  const [workbenchStage, setWorkbenchStage] = useState('middle')
+  const [workbenchTension, setWorkbenchTension] = useState('rising')
+  const [workbenchProgressPhase, setWorkbenchProgressPhase] = useState('engaged')
+  const [workbenchResultBand, setWorkbenchResultBand] = useState('victory')
+  const [workbenchCount, setWorkbenchCount] = useState(8)
+  const [workbenchPreview, setWorkbenchPreview] = useState(null)
+  const [workbenchExport, setWorkbenchExport] = useState(null)
+  const [workbenchBusy, setWorkbenchBusy] = useState('')
+  const [showWorkbenchAdvanced, setShowWorkbenchAdvanced] = useState(false)
+  const [workbenchSceneDraft, setWorkbenchSceneDraft] = useState(createEmptyWorkbenchSceneDraft())
 
   const loadState = useCallback(async (userId) => {
     if (!userId) return
@@ -1374,13 +2010,90 @@ function IronQuestTab() {
   }, [loadState, selectedUserId])
 
   const locations = Array.isArray(payload?.config?.locations) ? payload.config.locations : []
-  const missionsByLocation = payload?.config?.seed?.missions_by_location ?? {}
-  const selectedLocationMissions = Array.isArray(missionsByLocation?.[locationSlug]) ? missionsByLocation[locationSlug] : []
+  const missionCatalog = Array.isArray(payload?.config?.seed?.missions?.missions) ? payload.config.seed.missions.missions : []
+  const selectedLocationMissions = missionCatalog.filter(mission => String(mission?.location_slug || '') === locationSlug)
+  const workbenchMissionCatalog = missionCatalog.filter(mission => {
+    const encounterSeeds = Array.isArray(mission?.encounter_seeds) ? mission.encounter_seeds : []
+    const storySlots = mission?.story_slots && typeof mission.story_slots === 'object' ? Object.keys(mission.story_slots) : []
+    const beatTemplates = Array.isArray(mission?.beat_templates) ? mission.beat_templates : []
+    return encounterSeeds.length && storySlots.length && beatTemplates.length
+  })
+  const selectedWorkbenchMission = workbenchMissionCatalog.find(mission => String(mission?.slug || '') === workbenchMissionSlug) || workbenchMissionCatalog[0] || null
+  const workbenchEncounterSeeds = Array.isArray(selectedWorkbenchMission?.encounter_seeds) ? selectedWorkbenchMission.encounter_seeds : []
+  const selectedWorkbenchScene = workbenchEncounterSeeds.find(seed => String(seed?.slug || '') === String(workbenchEncounterSeedSlug || '')) || workbenchEncounterSeeds[0] || null
+  const workbenchStorySlots = selectedWorkbenchMission?.story_slots && typeof selectedWorkbenchMission.story_slots === 'object'
+    ? Object.entries(selectedWorkbenchMission.story_slots)
+    : []
+  const workbenchCurrentSlotTemplates = listMissionStoryTemplates(selectedWorkbenchMission, workbenchSlot)
+  const workbenchApprovedCandidates = Array.isArray(workbenchPreview?.approvedCandidates) ? workbenchPreview.approvedCandidates : []
+  const workbenchCoverageReport = workbenchPreview?.coverageReport || null
+  const workbenchMissingBranches = listWorkbenchMissingBranches(workbenchCoverageReport)
   const state = payload?.state ?? {}
   const profile = state?.profile ?? {}
   const routeState = state?.route_state ?? {}
   const dailyState = state?.daily_state ?? {}
   const activeRun = state?.active_run ?? null
+
+  useEffect(() => {
+    if (!locationSlug) return
+    if (missionSlug && selectedLocationMissions.some(mission => String(mission?.slug || '') === missionSlug)) {
+      return
+    }
+    setMissionSlug(String(selectedLocationMissions[0]?.slug || ''))
+  }, [locationSlug, missionSlug, selectedLocationMissions])
+
+  useEffect(() => {
+    if (!selectedWorkbenchMission) {
+      setWorkbenchMissionSlug('')
+      return
+    }
+
+    if (String(selectedWorkbenchMission?.slug || '') !== String(workbenchMissionSlug || '')) {
+      setWorkbenchMissionSlug(String(selectedWorkbenchMission?.slug || ''))
+    }
+  }, [selectedWorkbenchMission, workbenchMissionSlug])
+
+  useEffect(() => {
+    if (!selectedWorkbenchMission) {
+      setWorkbenchEncounterSeedSlug('')
+      setWorkbenchSlot('')
+      setWorkbenchPreview(null)
+      setWorkbenchExport(null)
+      return
+    }
+
+    const nextEncounterSeeds = Array.isArray(selectedWorkbenchMission?.encounter_seeds) ? selectedWorkbenchMission.encounter_seeds : []
+    const nextSlots = selectedWorkbenchMission?.story_slots && typeof selectedWorkbenchMission.story_slots === 'object'
+      ? Object.keys(selectedWorkbenchMission.story_slots)
+      : []
+    const encounterStillValid = nextEncounterSeeds.some(seed => String(seed?.slug || '') === String(workbenchEncounterSeedSlug || ''))
+    const slotStillValid = nextSlots.some(slot => String(slot || '') === String(workbenchSlot || ''))
+
+    if (!encounterStillValid) {
+      setWorkbenchEncounterSeedSlug(String(nextEncounterSeeds[0]?.slug || ''))
+    }
+    if (!slotStillValid) {
+      setWorkbenchSlot(String(nextSlots[0] || ''))
+    }
+
+    setWorkbenchPreview(null)
+    setWorkbenchExport(null)
+  }, [selectedWorkbenchMission, workbenchEncounterSeedSlug, workbenchSlot])
+
+  useEffect(() => {
+    if (!selectedWorkbenchScene) {
+      setWorkbenchSceneDraft(createEmptyWorkbenchSceneDraft())
+      return
+    }
+
+    setWorkbenchSceneDraft({
+      scene_brief: String(selectedWorkbenchScene?.scene_brief || ''),
+      player_goal: String(selectedWorkbenchScene?.player_goal || ''),
+      opponent_pressure: String(selectedWorkbenchScene?.opponent_pressure || ''),
+      failure_cost: String(selectedWorkbenchScene?.failure_cost || ''),
+      setting_detail: String(selectedWorkbenchScene?.setting_detail || ''),
+    })
+  }, [selectedWorkbenchScene])
 
   async function runAction(action, extra = {}) {
     if (!selectedUserId) return
@@ -1414,6 +2127,212 @@ function IronQuestTab() {
     }
   }
 
+  async function runWorkbenchPreview(overrides = {}) {
+    if (!selectedWorkbenchMission || !workbenchSlot) {
+      setMsg('Error: Pick a mission and story moment before analyzing the workbench.')
+      return
+    }
+
+    setWorkbenchBusy('preview')
+    setMsg('')
+    try {
+      const response = await adminApi.storyWorkbenchPreview({
+        mission_slug: overrides.mission_slug ?? String(selectedWorkbenchMission?.slug || ''),
+        encounter_seed_slug: overrides.encounter_seed_slug ?? workbenchEncounterSeedSlug,
+        slot: overrides.slot ?? workbenchSlot,
+        set_result: overrides.set_result ?? workbenchSetResult,
+        stance: overrides.stance ?? workbenchStance,
+        stage: overrides.stage ?? workbenchStage,
+        tension: overrides.tension ?? workbenchTension,
+        progress_phase: overrides.progress_phase ?? workbenchProgressPhase,
+        result_band: overrides.result_band ?? workbenchResultBand,
+        count: overrides.count ?? workbenchCount,
+      })
+      setWorkbenchPreview(response)
+      setWorkbenchExport(null)
+      setMsg(`Story moment analyzed. ${Array.isArray(response?.candidateSession?.candidates) ? response.candidateSession.candidates.length : 0} draft(s) loaded.`)
+    } catch (error) {
+      handleAdminDiagnostic({
+        source: 'admin_ironquest_story_workbench_preview',
+        message: 'Could not analyze the story workbench branch.',
+        error,
+        setMsg,
+        context: {
+          tab: 'ironquest',
+          view: 'workbench',
+          missionSlug: workbenchMissionSlug,
+          slot: workbenchSlot,
+        },
+      })
+    } finally {
+      setWorkbenchBusy('')
+    }
+  }
+
+  async function reviewWorkbenchCandidate(candidateId, approved) {
+    const sessionId = String(workbenchPreview?.candidateSession?.session_id || '')
+    if (!sessionId || !candidateId) return
+
+    setWorkbenchBusy(`review:${candidateId}`)
+    setMsg('')
+    try {
+      await adminApi.storyWorkbenchReview({
+        session_id: sessionId,
+        candidate_id: candidateId,
+        approved,
+      })
+      await runWorkbenchPreview()
+    } catch (error) {
+      handleAdminDiagnostic({
+        source: 'admin_ironquest_story_workbench_review',
+        message: 'Could not update story draft approval.',
+        error,
+        setMsg,
+        context: {
+          tab: 'ironquest',
+          view: 'workbench',
+          candidateId,
+          approved,
+        },
+      })
+      setWorkbenchBusy('')
+    }
+  }
+
+  async function exportWorkbench() {
+    if (!selectedWorkbenchMission || !workbenchSlot) return
+
+    setWorkbenchBusy('export')
+    setMsg('')
+    try {
+      const response = await adminApi.storyWorkbenchExport({
+        mission_slug: String(selectedWorkbenchMission?.slug || ''),
+        slot: workbenchSlot,
+      })
+      setWorkbenchExport(response)
+      setMsg(`Export ready. ${response?.approved_count || 0} approved draft(s) included.`)
+    } catch (error) {
+      handleAdminDiagnostic({
+        source: 'admin_ironquest_story_workbench_export',
+        message: 'Could not export approved story drafts.',
+        error,
+        setMsg,
+        context: {
+          tab: 'ironquest',
+          view: 'workbench',
+          missionSlug: workbenchMissionSlug,
+          slot: workbenchSlot,
+        },
+      })
+    } finally {
+      setWorkbenchBusy('')
+    }
+  }
+
+  async function applyWorkbench() {
+    if (!selectedWorkbenchMission || !workbenchSlot) return
+
+    setWorkbenchBusy('apply')
+    setMsg('')
+    try {
+      const response = await adminApi.storyWorkbenchApply({
+        mission_slug: String(selectedWorkbenchMission?.slug || ''),
+        slot: workbenchSlot,
+      })
+      setWorkbenchExport(response?.export ? {
+        export: response.export,
+        export_json: JSON.stringify(response.export, null, 2),
+        approved_count: response.applied_count || 0,
+      } : null)
+      setMsg(response?.message || 'Story templates applied.')
+      await runWorkbenchPreview()
+    } catch (error) {
+      handleAdminDiagnostic({
+        source: 'admin_ironquest_story_workbench_apply',
+        message: 'Could not apply approved story drafts to mission config.',
+        error,
+        setMsg,
+        context: {
+          tab: 'ironquest',
+          view: 'workbench',
+          missionSlug: workbenchMissionSlug,
+          slot: workbenchSlot,
+        },
+      })
+    } finally {
+      setWorkbenchBusy('')
+    }
+  }
+
+  async function saveWorkbenchScene() {
+    if (!selectedWorkbenchMission || !selectedWorkbenchScene) return
+
+    setWorkbenchBusy('saveScene')
+    setMsg('')
+    try {
+      await adminApi.storyWorkbenchSaveScene({
+        mission_slug: String(selectedWorkbenchMission?.slug || ''),
+        encounter_seed_slug: String(selectedWorkbenchScene?.slug || ''),
+        scene: workbenchSceneDraft,
+      })
+      await loadState(selectedUserId)
+      setWorkbenchPreview(null)
+      setWorkbenchExport(null)
+      setMsg('Scene brief saved. Preview the branch again to inspect the updated narration.')
+    } catch (error) {
+      handleAdminDiagnostic({
+        source: 'admin_ironquest_story_workbench_save_scene',
+        message: 'Could not save the scene brief.',
+        error,
+        setMsg,
+        context: {
+          tab: 'ironquest',
+          view: 'workbench',
+          missionSlug: workbenchMissionSlug,
+          encounterSeedSlug: workbenchEncounterSeedSlug,
+        },
+      })
+    } finally {
+      setWorkbenchBusy('')
+    }
+  }
+
+  async function suggestWorkbenchScene() {
+    if (!selectedWorkbenchMission || !selectedWorkbenchScene) return
+
+    setWorkbenchBusy('suggestScene')
+    setMsg('')
+    try {
+      const response = await adminApi.storyWorkbenchSuggestScene({
+        mission_slug: String(selectedWorkbenchMission?.slug || ''),
+        encounter_seed_slug: String(selectedWorkbenchScene?.slug || ''),
+      })
+      setWorkbenchSceneDraft({
+        scene_brief: String(response?.scene?.scene_brief || ''),
+        player_goal: String(response?.scene?.player_goal || ''),
+        opponent_pressure: String(response?.scene?.opponent_pressure || ''),
+        failure_cost: String(response?.scene?.failure_cost || ''),
+        setting_detail: String(response?.scene?.setting_detail || ''),
+      })
+      setMsg('AI suggestions loaded into the scene brief fields. Review them, then save if you want to keep them.')
+    } catch (error) {
+      handleAdminDiagnostic({
+        source: 'admin_ironquest_story_workbench_suggest_scene',
+        message: 'Could not generate scene brief suggestions.',
+        error,
+        setMsg,
+        context: {
+          tab: 'ironquest',
+          view: 'workbench',
+          missionSlug: workbenchMissionSlug,
+          encounterSeedSlug: workbenchEncounterSeedSlug,
+        },
+      })
+    } finally {
+      setWorkbenchBusy('')
+    }
+  }
+
   return (
     <div className="admin-tab">
       <div className="admin-support-toolbar">
@@ -1427,6 +2346,14 @@ function IronQuestTab() {
       </div>
 
       {msg ? <p className="success-msg">{msg}</p> : null}
+
+      <div className="row admin-tab-bar" style={{ marginBottom: 'var(--space-4)' }}>
+        {IRONQUEST_WORKBENCH_TABS.map(id => (
+          <button key={id} type="button" className={ironQuestTab === id ? 'segment active' : 'segment'} onClick={() => setIronQuestTab(id)}>
+            {id === 'debug' ? 'Debug tools' : 'Story Workbench'}
+          </button>
+        ))}
+      </div>
 
       <div className="admin-stack-form" style={{ marginBottom: 'var(--space-4)' }}>
         <label>
@@ -1442,7 +2369,7 @@ function IronQuestTab() {
         </label>
       </div>
 
-      {loadingState ? (
+      {ironQuestTab === 'debug' && loadingState ? (
         <AppLoadingScreen
           eyebrow="IronQuest"
           title="Loading debug state"
@@ -1453,7 +2380,53 @@ function IronQuestTab() {
         />
       ) : null}
 
-      {!loadingState && payload ? (
+      {ironQuestTab === 'workbench' ? (
+        <IronQuestStoryWorkbenchPanel
+          missionCatalog={workbenchMissionCatalog}
+          selectedMission={selectedWorkbenchMission}
+          selectedScene={selectedWorkbenchScene}
+          missionSlug={workbenchMissionSlug}
+          setMissionSlug={setWorkbenchMissionSlug}
+          encounterSeeds={workbenchEncounterSeeds}
+          encounterSeedSlug={workbenchEncounterSeedSlug}
+          setEncounterSeedSlug={setWorkbenchEncounterSeedSlug}
+          sceneDraft={workbenchSceneDraft}
+          setSceneDraft={setWorkbenchSceneDraft}
+          storySlots={workbenchStorySlots}
+          slot={workbenchSlot}
+          setSlot={setWorkbenchSlot}
+          setResult={workbenchSetResult}
+          setSetResult={setWorkbenchSetResult}
+          stance={workbenchStance}
+          setStance={setWorkbenchStance}
+          stage={workbenchStage}
+          setStage={setWorkbenchStage}
+          tension={workbenchTension}
+          setTension={setWorkbenchTension}
+          progressPhase={workbenchProgressPhase}
+          setProgressPhase={setWorkbenchProgressPhase}
+          resultBand={workbenchResultBand}
+          setResultBand={setWorkbenchResultBand}
+          count={workbenchCount}
+          setCount={setWorkbenchCount}
+          preview={workbenchPreview}
+          exportPayload={workbenchExport}
+          busy={workbenchBusy}
+          showAdvanced={showWorkbenchAdvanced}
+          setShowAdvanced={setShowWorkbenchAdvanced}
+          currentSlotTemplates={workbenchCurrentSlotTemplates}
+          approvedCandidates={workbenchApprovedCandidates}
+          missingBranches={workbenchMissingBranches}
+          onAnalyze={runWorkbenchPreview}
+          onReviewCandidate={reviewWorkbenchCandidate}
+          onExport={exportWorkbench}
+          onApply={applyWorkbench}
+          onSaveScene={saveWorkbenchScene}
+          onSuggestScene={suggestWorkbenchScene}
+        />
+      ) : null}
+
+      {ironQuestTab === 'debug' && !loadingState && payload ? (
         <div style={{ display: 'grid', gap: 'var(--space-4)' }}>
           <div className="admin-list">
             <div className="admin-card-row">
@@ -1565,7 +2538,7 @@ function IronQuestTab() {
                   <span>Mission slug</span>
                   <select value={missionSlug} onChange={event => setMissionSlug(event.target.value)}>
                     <option value="">Auto-select default</option>
-                    {selectedLocationMissions.map(mission => <option key={mission.slug} value={mission.slug}>{mission.title || mission.slug}</option>)}
+                    {selectedLocationMissions.map(mission => <option key={mission.slug} value={mission.slug}>{mission.name || mission.title || mission.slug}</option>)}
                   </select>
                 </label>
                 <button
@@ -1623,6 +2596,7 @@ function IronQuestTab() {
                 </button>
               </div>
             </div>
+
           </div>
 
           <div className="admin-list">

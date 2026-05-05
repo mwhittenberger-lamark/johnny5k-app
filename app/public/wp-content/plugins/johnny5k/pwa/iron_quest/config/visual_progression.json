@@ -1,0 +1,77 @@
+{
+  "version": 1,
+  "seed_set": "v1_visual_progression",
+  "level_bands": [
+    {
+      "key": "novice",
+      "label": "Novice Adventurer",
+      "min_level": 1,
+      "max_level": 4,
+      "silhouette": "simple field kit, modest armor, practical travel posture",
+      "armor_finish": "well-kept starter leathers and cloth",
+      "presence": "grounded and capable, just past the beginner stage"
+    },
+    {
+      "key": "seasoned",
+      "label": "Seasoned Adventurer",
+      "min_level": 5,
+      "max_level": 9,
+      "silhouette": "confident heroic silhouette with reinforced travel layers",
+      "armor_finish": "reinforced bracers, layered armor pieces, and cleaner insignia",
+      "presence": "steady confidence, tested on the road, visibly stronger"
+    },
+    {
+      "key": "veteran",
+      "label": "Veteran Pathfinder",
+      "min_level": 10,
+      "max_level": 20,
+      "silhouette": "commanding fantasy hero silhouette with upgraded gear and trophies",
+      "armor_finish": "battle-worn premium materials, etched metal, and earned field marks",
+      "presence": "established heroic presence with obvious campaign experience"
+    }
+  ],
+  "class_visuals": {
+    "warrior": {
+      "label": "Warrior",
+      "wardrobe": "layered plate and leather with durable field straps",
+      "weapon": "broad practical blade worn at the hip",
+      "accent": "discipline, weight, and direct protective presence"
+    },
+    "ranger": {
+      "label": "Ranger",
+      "wardrobe": "layered travel leathers, cloak elements, and trail-ready gear",
+      "weapon": "bow and short blade with scouting tools",
+      "accent": "mobility, vigilance, and fieldcraft"
+    },
+    "mage": {
+      "label": "Mage",
+      "wardrobe": "structured robes, layered sashes, and rune-worked protective cloth",
+      "weapon": "focus staff or arcane implement with subtle sigils",
+      "accent": "precision, discipline, and controlled power"
+    },
+    "rogue": {
+      "label": "Rogue",
+      "wardrobe": "trim stealth leathers, fitted armor panels, and utility belts",
+      "weapon": "paired blades and concealed utility tools",
+      "accent": "agility, confidence, and dangerous calm"
+    }
+  },
+  "location_overlays": {
+    "the_training_grounds": {
+      "label": "Training Grounds Kit",
+      "style": "banner colors, drill-yard trim, and clean starter expedition gear"
+    },
+    "grim_hollow_village": {
+      "label": "Grim Hollow Wards",
+      "style": "lantern metal, ward-thread details, and survivor layers against fog and decay"
+    },
+    "the_emberforge": {
+      "label": "Emberforge Tempering",
+      "style": "heat-marked metal, forge soot, and ember-lit accents"
+    },
+    "whispering_wilds": {
+      "label": "Wilds Fieldcraft",
+      "style": "moss-dark fabrics, trail charms, and weathered woodland details"
+    }
+  }
+}

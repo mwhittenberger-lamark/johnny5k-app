@@ -5,16 +5,33 @@ defined( 'ABSPATH' ) || exit;
 
 use Johnny5k\Services\IronQuestDailyStateService;
 use Johnny5k\Services\IronQuestEntitlementService;
+use Johnny5k\Services\IronQuestAnalyticsService;
+use Johnny5k\Services\IronQuestCharacterVisualService;
 use Johnny5k\Services\IronQuestMissionService;
 use Johnny5k\Services\IronQuestNarrativeService;
+use Johnny5k\Services\IronQuestPortraitService;
 use Johnny5k\Services\IronQuestProfileService;
 use Johnny5k\Services\IronQuestProgressionService;
 use Johnny5k\Services\IronQuestRegistryService;
 use Johnny5k\Services\IronQuestRewardService;
+use Johnny5k\Services\IronQuestWorldArtService;
+use Johnny5k\Support\PrivateMediaService;
 use WP_Error;
 
 class IronQuestController extends RestController {
 	private const FAST_TRAVEL_GOLD_COST = 10;
+
+	private static function track_ironquest_event( int $user_id, string $event_name, array $metadata = [], string $context = 'general', ?float $value_num = null ): void {
+		if ( class_exists( IronQuestAnalyticsService::class ) ) {
+			IronQuestAnalyticsService::track( $user_id, $event_name, $metadata, 'success', $context, $value_num );
+		}
+	}
+
+	private static function track_ironquest_failure( int $user_id, string $event_name, string $message, array $metadata = [], string $context = 'general', int $status_code = 0 ): void {
+		if ( class_exists( IronQuestAnalyticsService::class ) ) {
+			IronQuestAnalyticsService::track_failure( $user_id, $event_name, $message, $metadata, $context, $status_code );
+		}
+	}
 
 	public static function register_routes(): void {
 		$ns = JF_REST_NAMESPACE;
@@ -45,15 +62,45 @@ class IronQuestController extends RestController {
 				]
 			);
 
-		register_rest_route(
-			$ns,
-			'/ironquest/profile',
-			[
-				'methods'             => 'GET',
-				'callback'            => [ __CLASS__, 'get_profile' ],
-				'permission_callback' => self::auth_callback(),
-			]
-		);
+			register_rest_route(
+				$ns,
+				'/ironquest/profile',
+				[
+					'methods'             => 'GET',
+					'callback'            => [ __CLASS__, 'get_profile' ],
+					'permission_callback' => self::auth_callback(),
+				]
+			);
+
+			register_rest_route(
+				$ns,
+				'/ironquest/character-sheet/portrait',
+				[
+					'methods'             => 'POST',
+					'callback'            => [ __CLASS__, 'generate_character_sheet_portrait' ],
+					'permission_callback' => self::auth_callback(),
+				]
+			);
+
+			register_rest_route(
+				$ns,
+				'/ironquest/world-art/generate',
+				[
+					'methods'             => 'POST',
+					'callback'            => [ __CLASS__, 'generate_world_art' ],
+					'permission_callback' => self::auth_callback(),
+				]
+			);
+
+			register_rest_route(
+				$ns,
+				'/ironquest/world-art/(?P<art_key>[a-z0-9_\-]+)',
+				[
+					'methods'             => 'GET',
+					'callback'            => [ __CLASS__, 'serve_world_art' ],
+					'permission_callback' => self::auth_callback(),
+				]
+			);
 
 		register_rest_route(
 			$ns,
@@ -265,6 +312,7 @@ class IronQuestController extends RestController {
 	}
 
 	public static function get_location( \WP_REST_Request $req ): \WP_REST_Response {
+		$user_id  = get_current_user_id();
 		$slug     = sanitize_key( (string) $req->get_param( 'slug' ) );
 		$location = IronQuestRegistryService::get_location( $slug );
 
@@ -272,10 +320,22 @@ class IronQuestController extends RestController {
 			return self::message( 'IronQuest location not found.', 404 );
 		}
 
+		$profile        = IronQuestProfileService::ensure_profile( $user_id );
+		$active_run     = IronQuestMissionService::get_active_run( $user_id );
+		$unlock_history = IronQuestRewardService::list_unlocks( $user_id );
+		$missions       = self::enrich_missions_with_progress_state(
+			$user_id,
+			self::enrich_missions_with_world_art( IronQuestRegistryService::get_location_missions( $slug ), $slug ),
+			$unlock_history,
+			$active_run,
+			$profile
+		);
+
 		return self::response(
 			[
-				'location' => $location,
-				'missions' => IronQuestRegistryService::get_location_missions( $slug ),
+				'location' => self::enrich_location_with_world_art( $location, $slug ),
+				'missions' => $missions,
+				'rival_state' => self::build_rival_state( $profile, $unlock_history, $missions, $active_run, $location ),
 				]
 			);
 	}
@@ -284,6 +344,147 @@ class IronQuestController extends RestController {
 		$user_id = get_current_user_id();
 
 		return self::response( self::build_profile_payload( $user_id ) );
+	}
+
+	public static function generate_character_sheet_portrait( \WP_REST_Request $req ): \WP_REST_Response {
+		$user_id = get_current_user_id();
+
+		if ( ! IronQuestEntitlementService::user_has_access( $user_id ) ) {
+			return self::message( 'IronQuest is not enabled for this account.', 403 );
+		}
+
+		$profile = IronQuestProfileService::ensure_profile( $user_id );
+		if ( empty( $profile['enabled'] ) ) {
+			return self::message( 'IronQuest mode is turned off for this profile.', 409 );
+		}
+
+		if ( ! class_exists( IronQuestCharacterVisualService::class ) ) {
+			self::track_ironquest_failure(
+				$user_id,
+				'current_form_portrait_unavailable',
+				'The current-form portrait service is not available right now.',
+				[],
+				'character_sheet',
+				503
+			);
+
+			return self::response(
+				[
+					'generated' => false,
+					'reason'    => 'character_visual_service_unavailable',
+					'message'   => 'The current-form portrait service is not available right now.',
+				],
+				503
+			);
+		}
+
+		$result = IronQuestCharacterVisualService::generate_current_form_portrait( $user_id, ! empty( $req->get_param( 'force' ) ) );
+		if ( is_wp_error( $result ) ) {
+			$status = match ( $result->get_error_code() ) {
+				'ironquest_current_form_missing_headshot' => 409,
+				'no_gemini_api_key' => 503,
+				default => 500,
+			};
+
+			return self::response(
+				[
+					'generated' => false,
+					'reason'    => $result->get_error_code(),
+					'message'   => $result->get_error_message(),
+				],
+				$status
+			);
+		}
+
+		$payload = self::build_profile_payload( $user_id );
+
+		return self::response(
+			[
+				'generated'       => ! empty( $result['generated'] ),
+				'reused'          => ! empty( $result['reused'] ),
+				'portrait'        => $result,
+				'profile'         => $payload['profile'] ?? [],
+				'character_sheet' => $payload['character_sheet'] ?? [],
+			],
+			! empty( $result['generated'] ) ? 201 : 200
+		);
+	}
+
+	public static function generate_world_art( \WP_REST_Request $req ): \WP_REST_Response {
+		$user_id = get_current_user_id();
+
+		if ( ! IronQuestEntitlementService::user_has_access( $user_id ) ) {
+			return self::message( 'IronQuest is not enabled for this account.', 403 );
+		}
+
+		$profile = IronQuestProfileService::ensure_profile( $user_id );
+		if ( empty( $profile['enabled'] ) ) {
+			return self::message( 'IronQuest mode is turned off for this profile.', 409 );
+		}
+
+		$art_type      = sanitize_key( (string) ( $req->get_param( 'art_type' ) ?: '' ) );
+		$location_slug = sanitize_key( (string) ( $req->get_param( 'location_slug' ) ?: ( $profile['current_location_slug'] ?? '' ) ) );
+		$force         = ! empty( $req->get_param( 'force' ) );
+		$result        = IronQuestWorldArtService::generate_art(
+			$user_id,
+			$art_type,
+			$location_slug,
+			$force,
+			[
+				'mission_slug' => sanitize_key( (string) ( $req->get_param( 'mission_slug' ) ?: '' ) ),
+			]
+		);
+
+		if ( is_wp_error( $result ) ) {
+			$status = match ( $result->get_error_code() ) {
+				'invalid_location', 'invalid_art_type', 'invalid_mission' => 400,
+				'no_gemini_api_key' => 503,
+				default => 500,
+			};
+
+			return self::response(
+				[
+					'generated' => false,
+					'reason'    => $result->get_error_code(),
+					'message'   => $result->get_error_message(),
+				],
+				$status
+			);
+		}
+
+		$payload = self::build_profile_payload( $user_id );
+
+		return self::response(
+			[
+				'generated' => ! empty( $result['generated'] ),
+				'reused'    => ! empty( $result['reused'] ),
+				'art'       => $result,
+				'store'     => $payload['store'] ?? [],
+				'tavern'    => self::build_tavern_state( $user_id ),
+			],
+			! empty( $result['generated'] ) ? 201 : 200
+		);
+	}
+
+	public static function serve_world_art( \WP_REST_Request $req ): mixed {
+		$user_id = get_current_user_id();
+
+		if ( ! IronQuestEntitlementService::user_has_access( $user_id ) ) {
+			return self::message( 'IronQuest is not enabled for this account.', 403 );
+		}
+
+		$profile = IronQuestProfileService::ensure_profile( $user_id );
+		if ( empty( $profile['enabled'] ) ) {
+			return self::message( 'IronQuest mode is turned off for this profile.', 409 );
+		}
+
+		$art_key       = sanitize_key( (string) ( $req->get_param( 'art_key' ) ?: '' ) );
+		$attachment_id = IronQuestWorldArtService::get_attachment_id( $art_key );
+		if ( $attachment_id <= 0 ) {
+			return self::message( 'IronQuest world art not found.', 404 );
+		}
+
+		return self::stream_private_attachment( $attachment_id );
 	}
 
 	public static function enable( \WP_REST_Request $req ): \WP_REST_Response {
@@ -363,16 +564,37 @@ class IronQuestController extends RestController {
 		$user_id = get_current_user_id();
 		$profile = IronQuestProfileService::ensure_profile( $user_id );
 		$active  = IronQuestMissionService::get_active_run( $user_id );
+		$unlock_history = IronQuestRewardService::list_unlocks( $user_id );
 
 		$location_slug = sanitize_key( (string) ( $profile['current_location_slug'] ?? '' ) );
+		$location      = $location_slug ? IronQuestRegistryService::get_location( $location_slug ) : null;
+		$mission       = ! empty( $active['mission_slug'] ) && $location_slug
+			? self::resolve_rival_presence(
+				self::find_location_mission( $location_slug, (string) ( $active['mission_slug'] ?? '' ) ) ?? [],
+				self::build_unlock_index( $unlock_history )
+			)
+			: null;
+		$daily_state   = IronQuestDailyStateService::get_state( $user_id );
+		$missions      = $location_slug
+			? self::enrich_missions_with_progress_state(
+				$user_id,
+				self::enrich_missions_with_world_art( IronQuestRegistryService::get_location_missions( $location_slug ), $location_slug ),
+				$unlock_history,
+				$active,
+				$profile
+			)
+			: [];
 
 		return self::response(
 			[
 				'active_run' => $active,
 				'story_state' => self::get_story_state_for_run( $user_id, $active ),
 				'profile'    => $profile,
-				'location'   => $location_slug ? IronQuestRegistryService::get_location( $location_slug ) : null,
-				'missions'   => $location_slug ? IronQuestRegistryService::get_location_missions( $location_slug ) : [],
+				'location'   => $location,
+				'missions'   => $missions,
+				'mission'    => $mission,
+				'mission_modifiers' => self::build_mission_modifier_payload( $daily_state, is_array( $location ) ? $location : [], is_array( $mission ) ? $mission : null ),
+				'rival_state' => self::build_rival_state( $profile, $unlock_history, $missions, $active, is_array( $location ) ? $location : [] ),
 			]
 		);
 	}
@@ -395,6 +617,7 @@ class IronQuestController extends RestController {
 		$source_session_id = sanitize_text_field( (string) ( $req->get_param( 'source_session_id' ) ?: '' ) );
 
 		if ( '' === $location_slug ) {
+			self::track_ironquest_failure( $user_id, 'mission_start_failed', 'An IronQuest location is required.', [ 'run_type' => $run_type ], 'mission_start', 400 );
 			return self::message( 'An IronQuest location is required.', 400 );
 		}
 
@@ -403,21 +626,46 @@ class IronQuestController extends RestController {
 		}
 
 		if ( '' === $mission_slug ) {
+			self::track_ironquest_failure( $user_id, 'mission_start_failed', 'No IronQuest mission is available for the requested location.', [ 'location_slug' => $location_slug, 'run_type' => $run_type ], 'mission_start', 400 );
 			return self::message( 'No IronQuest mission is available for the requested location.', 400 );
 		}
 
 		$run = IronQuestMissionService::start_run( $user_id, $mission_slug, $location_slug, $run_type, $source_session_id );
 		if ( is_wp_error( $run ) ) {
+			self::track_ironquest_failure( $user_id, 'mission_start_failed', $run->get_error_message(), [ 'location_slug' => $location_slug, 'mission_slug' => $mission_slug, 'run_type' => $run_type ], 'mission_start', 400 );
 			return self::message( $run->get_error_message(), 400 );
 		}
+
+		$location   = IronQuestRegistryService::get_location( $location_slug );
+		$unlock_history = IronQuestRewardService::list_unlocks( $user_id );
+		$mission    = self::resolve_rival_presence(
+			self::find_location_mission( $location_slug, $mission_slug ) ?? [],
+			self::build_unlock_index( $unlock_history )
+		);
+		$daily_state = IronQuestDailyStateService::get_state( $user_id );
+		self::track_ironquest_event(
+			$user_id,
+			'mission_started',
+			[
+				'run_id'            => (int) ( $run['id'] ?? 0 ),
+				'location_slug'     => $location_slug,
+				'mission_slug'      => $mission_slug,
+				'run_type'          => $run_type,
+				'source_session_id' => $source_session_id,
+				'rival_key'         => sanitize_key( (string) ( $mission['rival_presence']['rival_key'] ?? '' ) ),
+			],
+			'mission_start'
+		);
 
 		return self::response(
 			[
 				'run'      => $run,
 				'story_state' => self::get_story_state_for_run( $user_id, $run ),
 				'profile'  => IronQuestProfileService::get_profile( $user_id ),
-				'location' => IronQuestRegistryService::get_location( $location_slug ),
-				'mission'  => self::find_location_mission( $location_slug, $mission_slug ),
+				'location' => $location,
+				'mission'  => $mission,
+				'mission_modifiers' => self::build_mission_modifier_payload( $daily_state, is_array( $location ) ? $location : [], is_array( $mission ) ? $mission : null ),
+				'rival_state' => self::build_rival_state( $profile, $unlock_history, is_array( $mission ) ? [ $mission ] : [], $run, is_array( $location ) ? $location : [] ),
 			],
 			201
 		);
@@ -439,19 +687,23 @@ class IronQuestController extends RestController {
 		$mission_slug  = sanitize_key( (string) ( $req->get_param( 'mission_slug' ) ?: '' ) );
 
 		if ( '' === $location_slug ) {
+			self::track_ironquest_failure( $user_id, 'mission_select_failed', 'An IronQuest location is required.', [], 'mission_select', 400 );
 			return self::message( 'An IronQuest location is required.', 400 );
 		}
 
 		if ( '' === $mission_slug ) {
+			self::track_ironquest_failure( $user_id, 'mission_select_failed', 'A mission slug is required.', [ 'location_slug' => $location_slug ], 'mission_select', 400 );
 			return self::message( 'A mission slug is required.', 400 );
 		}
 
 		$mission = self::find_location_mission( $location_slug, $mission_slug );
 		if ( empty( $mission ) ) {
+			self::track_ironquest_failure( $user_id, 'mission_select_failed', 'That mission is not available for the current region.', [ 'location_slug' => $location_slug, 'mission_slug' => $mission_slug ], 'mission_select', 404 );
 			return self::message( 'That mission is not available for the current region.', 404 );
 		}
 
 		$profile = IronQuestProfileService::set_location_and_mission( $user_id, $location_slug, $mission_slug );
+		self::track_ironquest_event( $user_id, 'mission_selected', [ 'location_slug' => $location_slug, 'mission_slug' => $mission_slug ], 'mission_select' );
 
 		return self::response(
 			[
@@ -468,11 +720,13 @@ class IronQuestController extends RestController {
 		$run_id  = (int) ( $req->get_param( 'run_id' ) ?: 0 );
 
 		if ( $run_id <= 0 ) {
+			self::track_ironquest_failure( $user_id, 'mission_resolve_failed', 'A mission run id is required.', [], 'mission_resolve', 400 );
 			return self::message( 'A mission run id is required.', 400 );
 		}
 
 		$run = IronQuestMissionService::get_run( $run_id, $user_id );
 		if ( empty( $run ) ) {
+			self::track_ironquest_failure( $user_id, 'mission_resolve_failed', 'IronQuest mission run not found.', [ 'run_id' => $run_id ], 'mission_resolve', 404 );
 			return self::message( 'IronQuest mission run not found.', 404 );
 		}
 
@@ -484,6 +738,7 @@ class IronQuestController extends RestController {
 			(int) ( $req->get_param( 'gold_awarded' ) ?: 0 )
 		);
 		if ( is_wp_error( $result ) ) {
+			self::track_ironquest_failure( $user_id, 'mission_resolve_failed', $result->get_error_message(), [ 'run_id' => $run_id, 'location_slug' => sanitize_key( (string) ( $run['location_slug'] ?? '' ) ), 'mission_slug' => sanitize_key( (string) ( $run['mission_slug'] ?? '' ) ) ], 'mission_resolve', 400 );
 			return self::message( $result->get_error_message(), 400 );
 		}
 
@@ -619,6 +874,8 @@ class IronQuestController extends RestController {
 				default => 400,
 			};
 
+			self::track_ironquest_failure( $user_id, 'store_purchase_failed', $result->get_error_message(), [ 'item_id' => $item_id, 'state_date' => $state_date ], 'store', $status );
+
 			return self::response(
 				[
 					'purchased' => false,
@@ -630,6 +887,18 @@ class IronQuestController extends RestController {
 				$status
 			);
 		}
+
+		self::track_ironquest_event(
+			$user_id,
+			'store_purchase_completed',
+			[
+				'item_id'       => $item_id,
+				'item_name'     => sanitize_text_field( (string) ( $result['item']['name'] ?? '' ) ),
+				'category'      => sanitize_key( (string) ( $result['item']['category'] ?? '' ) ),
+				'gold_remaining'=> (int) ( $result['profile']['gold'] ?? 0 ),
+			],
+			'store'
+		);
 
 		return self::response( $result, 201 );
 	}
@@ -660,6 +929,8 @@ class IronQuestController extends RestController {
 				default => 400,
 			};
 
+			self::track_ironquest_failure( $user_id, 'store_use_failed', $result->get_error_message(), [ 'item_id' => $item_id, 'state_date' => $state_date ], 'store', $status );
+
 			return self::response(
 				[
 					'used'    => false,
@@ -671,6 +942,18 @@ class IronQuestController extends RestController {
 				$status
 			);
 		}
+
+		self::track_ironquest_event(
+			$user_id,
+			'store_item_used',
+			[
+				'item_id'      => $item_id,
+				'item_name'    => sanitize_text_field( (string) ( $result['item']['name'] ?? '' ) ),
+				'hp_restored'  => (int) ( $result['hp_restored'] ?? 0 ),
+				'active_prep'  => sanitize_text_field( (string) ( $result['active_prep']['name'] ?? '' ) ),
+			],
+			'store'
+		);
 
 		return self::response( $result );
 	}
@@ -700,6 +983,8 @@ class IronQuestController extends RestController {
 				default => 400,
 			};
 
+			self::track_ironquest_failure( $user_id, 'store_sell_failed', $result->get_error_message(), [ 'item_id' => $item_id, 'state_date' => $state_date ], 'store', $status );
+
 			return self::response(
 				[
 					'sold'    => false,
@@ -712,6 +997,18 @@ class IronQuestController extends RestController {
 			);
 		}
 
+		self::track_ironquest_event(
+			$user_id,
+			'store_item_sold',
+			[
+				'item_id'      => $item_id,
+				'item_name'    => sanitize_text_field( (string) ( $result['item']['name'] ?? '' ) ),
+				'gold_gained'  => (int) ( $result['gold_gained'] ?? 0 ),
+			],
+			'store',
+			(float) ( $result['gold_gained'] ?? 0 )
+		);
+
 		return self::response( $result );
 	}
 
@@ -723,6 +1020,7 @@ class IronQuestController extends RestController {
 		$result = self::apply_tavern_action( $user_id, $action_id, $state_date ?: null );
 		if ( is_wp_error( $result ) ) {
 			$status = 'action_already_resolved' === $result->get_error_code() ? 409 : 400;
+			self::track_ironquest_failure( $user_id, 'tavern_action_failed', $result->get_error_message(), [ 'action_id' => $action_id, 'state_date' => $state_date ], 'tavern', $status );
 
 			return self::message(
 				$result->get_error_message(),
@@ -733,6 +1031,18 @@ class IronQuestController extends RestController {
 				]
 			);
 		}
+
+		self::track_ironquest_event(
+			$user_id,
+			'tavern_action_resolved',
+			[
+				'action_id'      => $action_id,
+				'state_date'     => $state_date,
+				'location_slug'  => sanitize_key( (string) ( $result['state']['location_slug'] ?? '' ) ),
+				'mission_preview'=> sanitize_key( (string) ( $result['mission_preview']['slug'] ?? '' ) ),
+			],
+			'tavern'
+		);
 
 		return self::response( $result );
 	}
@@ -850,16 +1160,19 @@ class IronQuestController extends RestController {
 		$unlock_state  = self::find_route_unlock_state( $route_state, $location_slug );
 
 		if ( empty( $unlock_state ) ) {
+			self::track_ironquest_failure( $user_id, 'fast_travel_failed', 'No matching locked route destination was found.', [ 'location_slug' => $location_slug ], 'travel', 404 );
 			return self::message( 'No matching locked route destination was found.', 404 );
 		}
 
 		if ( empty( $unlock_state['requirements_met'] ) ) {
+			self::track_ironquest_failure( $user_id, 'fast_travel_failed', 'Clear the route gate before using fast travel on this destination.', [ 'location_slug' => $location_slug ], 'travel', 409 );
 			return self::message( 'Clear the route gate before using fast travel on this destination.', 409 );
 		}
 
 		$requested_points = max( 1, (int) ( $req->get_param( 'travel_points' ) ?: 1 ) );
 		$available_points = max( 0, (int) ( $unlock_state['fast_travel_points_available'] ?? 0 ) );
 		if ( $available_points <= 0 ) {
+			self::track_ironquest_failure( $user_id, 'fast_travel_failed', 'No fast travel points are available for this destination right now.', [ 'location_slug' => $location_slug ], 'travel', 409 );
 			return self::message( 'No fast travel points are available for this destination right now.', 409 );
 		}
 
@@ -875,6 +1188,7 @@ class IronQuestController extends RestController {
 				$points_to_apply,
 				1 === $points_to_apply ? '' : 's'
 			);
+			self::track_ironquest_failure( $user_id, 'fast_travel_failed', $message, [ 'location_slug' => $location_slug, 'travel_points' => $points_to_apply, 'gold_required' => $gold_cost, 'gold_available' => $current_gold ], 'travel', 409 );
 
 			return self::response(
 				[
@@ -909,11 +1223,23 @@ class IronQuestController extends RestController {
 		);
 
 		if ( is_wp_error( $record ) ) {
+			self::track_ironquest_failure( $user_id, 'fast_travel_failed', $record->get_error_message(), [ 'location_slug' => $location_slug, 'travel_points' => $points_to_apply ], 'travel', 500 );
 			return self::message( $record->get_error_message(), 500 );
 		}
 
 		$profile    = IronQuestProfileService::update_progression( $user_id, 0, -$gold_cost );
 		$route_sync = self::sync_route_progression( $user_id );
+		self::track_ironquest_event(
+			$user_id,
+			'fast_travel_completed',
+			[
+				'location_slug' => $location_slug,
+				'travel_points' => $points_to_apply,
+				'gold_spent'    => $gold_cost,
+			],
+			'travel',
+			(float) $points_to_apply
+		);
 
 		return self::response(
 			[
@@ -943,17 +1269,20 @@ class IronQuestController extends RestController {
 
 		$location_slug = sanitize_key( (string) ( $req->get_param( 'location_slug' ) ?: '' ) );
 		if ( '' === $location_slug ) {
+			self::track_ironquest_failure( $user_id, 'travel_failed', 'A destination location is required.', [], 'travel', 400 );
 			return self::message( 'A destination location is required.', 400 );
 		}
 
 		$location = IronQuestRegistryService::get_location( $location_slug );
 		if ( empty( $location ) ) {
+			self::track_ironquest_failure( $user_id, 'travel_failed', 'That IronQuest region does not exist.', [ 'location_slug' => $location_slug ], 'travel', 404 );
 			return self::message( 'That IronQuest region does not exist.', 404 );
 		}
 
 		$route_state        = self::build_route_state( $user_id, $profile );
 		$unlocked_locations = array_values( array_filter( array_map( 'sanitize_key', (array) ( $route_state['unlocked_locations'] ?? [] ) ) ) );
 		if ( ! in_array( $location_slug, $unlocked_locations, true ) ) {
+			self::track_ironquest_failure( $user_id, 'travel_failed', 'That region is not unlocked yet.', [ 'location_slug' => $location_slug ], 'travel', 409 );
 			return self::message( 'That region is not unlocked yet.', 409 );
 		}
 
@@ -967,6 +1296,15 @@ class IronQuestController extends RestController {
 		}
 
 		IronQuestProfileService::set_location_and_mission( $user_id, $location_slug, $mission_slug );
+		self::track_ironquest_event(
+			$user_id,
+			'travel_completed',
+			[
+				'location_slug' => $location_slug,
+				'mission_slug'  => $mission_slug,
+			],
+			'travel'
+		);
 
 		return self::response(
 			[
@@ -1022,6 +1360,24 @@ class IronQuestController extends RestController {
 		return self::resolve_mission_run( $user_id, (int) $run['id'], $result_band, $xp_awarded, $gold_awarded );
 	}
 
+	public static function admin_clear_active_mission( int $user_id ): array|\WP_Error {
+		$run = IronQuestMissionService::cancel_active_run( $user_id );
+		if ( is_wp_error( $run ) ) {
+			return $run;
+		}
+
+		$profile          = IronQuestProfileService::ensure_profile( $user_id );
+		$current_location = sanitize_key( (string) ( $profile['current_location_slug'] ?? '' ) );
+		$default_mission  = '' !== $current_location ? self::resolve_default_mission_slug( $current_location, '' ) : '';
+		$profile          = IronQuestProfileService::set_location_and_mission( $user_id, $current_location, $default_mission );
+
+		return [
+			'run'        => $run,
+			'profile'    => $profile,
+			'route_state'=> self::build_route_state( $user_id, $profile ),
+		];
+	}
+
 	public static function admin_start_mission( int $user_id, string $location_slug = '', string $mission_slug = '', string $run_type = 'workout', string $source_session_id = '' ): array|\WP_Error {
 		$profile       = IronQuestProfileService::ensure_profile( $user_id );
 		$location_slug = sanitize_key( $location_slug ?: (string) ( $profile['current_location_slug'] ?? '' ) );
@@ -1054,13 +1410,14 @@ class IronQuestController extends RestController {
 	}
 
 	public static function admin_clear_location_arc( int $user_id, string $location_slug, int $source_run_id = 0 ): array {
-		self::clear_location_arc( $user_id, $location_slug, $source_run_id );
+		$portrait_unlocks = self::clear_location_arc( $user_id, $location_slug, $source_run_id );
 		$route_sync = self::sync_route_progression( $user_id );
 
 		return [
 			'route_state'   => $route_sync['route_state'],
 			'route_changes' => $route_sync['route_changes'],
 			'profile'       => IronQuestProfileService::get_profile( $user_id ),
+			'portrait_unlocks' => $portrait_unlocks,
 		];
 	}
 
@@ -1097,11 +1454,23 @@ class IronQuestController extends RestController {
 		$profile       = IronQuestProfileService::ensure_profile( $user_id );
 		$location_slug = sanitize_key( (string) ( $profile['current_location_slug'] ?? '' ) );
 		$route_state   = self::build_route_state( $user_id, $profile );
-		$unlock_history = array_slice( IronQuestRewardService::list_unlocks( $user_id ), 0, 24 );
-		$location      = $location_slug ? IronQuestRegistryService::get_location( $location_slug ) : null;
-		$missions      = $location_slug ? IronQuestRegistryService::get_location_missions( $location_slug ) : [];
+		$all_unlock_history = IronQuestRewardService::list_unlocks( $user_id );
+		$unlock_history = array_slice( $all_unlock_history, 0, 24 );
 		$active_run    = IronQuestMissionService::get_active_run( $user_id );
 		$daily_state   = IronQuestDailyStateService::get_state( $user_id );
+		$location      = $location_slug ? IronQuestRegistryService::get_location( $location_slug ) : null;
+		$missions      = $location_slug
+			? self::enrich_missions_with_progress_state(
+				$user_id,
+				self::enrich_missions_with_world_art( IronQuestRegistryService::get_location_missions( $location_slug ), $location_slug ),
+				$unlock_history,
+				$active_run,
+				$profile
+			)
+			: [];
+		$selected_mission = '' !== sanitize_key( (string) ( $profile['active_mission_slug'] ?? '' ) ) && $location_slug
+			? self::find_location_mission( $location_slug, (string) ( $profile['active_mission_slug'] ?? '' ) )
+			: null;
 
 		return [
 			'entitlement' => IronQuestEntitlementService::get_access_state( $user_id ),
@@ -1109,23 +1478,38 @@ class IronQuestController extends RestController {
 			'location'    => $location,
 			'missions'    => $missions,
 			'mission_board' => self::build_mission_board( $profile, $missions, $daily_state, $active_run ),
+			'mission_modifiers' => self::build_mission_modifier_payload( $daily_state, is_array( $location ) ? $location : [], is_array( $selected_mission ) ? $selected_mission : null ),
+			'rival_state' => self::build_rival_state( $profile, $all_unlock_history, $missions, $active_run, is_array( $location ) ? $location : [] ),
 			'active_run'  => $active_run,
 			'story_state' => self::get_story_state_for_run( $user_id, $active_run ),
 			'daily_state' => $daily_state,
 			'recent_unlocks' => array_slice( $unlock_history, 0, 6 ),
 			'unlock_history' => $unlock_history,
 			'route_state' => $route_state,
-			'character_sheet' => self::build_character_sheet_payload( $profile, is_array( $location ) ? $location : [], $route_state, $daily_state, $unlock_history, $active_run ),
+				'character_sheet' => self::build_character_sheet_payload( $user_id, $profile, is_array( $location ) ? $location : [], $route_state, $daily_state, $unlock_history, $active_run ),
 			'store' => self::build_store_payload( $profile, is_array( $location ) ? $location : [], $daily_state, $unlock_history, $active_run ),
 		];
 	}
 
-	private static function build_character_sheet_payload( array $profile, array $location, array $route_state, array $daily_state, array $unlock_history, ?array $active_run ): array {
+	private static function build_character_sheet_payload( int $user_id, array $profile, array $location, array $route_state, array $daily_state, array $unlock_history, ?array $active_run ): array {
 		$title_unlocks = array_values( array_filter( $unlock_history, static fn( array $unlock ): bool => ( $unlock['unlock_type'] ?? '' ) === 'title' ) );
 		$relic_unlocks = array_values( array_filter( $unlock_history, static fn( array $unlock ): bool => ( $unlock['unlock_type'] ?? '' ) === 'relic' ) );
 		$journal_unlocks = array_values( array_filter( $unlock_history, static fn( array $unlock ): bool => ( $unlock['unlock_type'] ?? '' ) === 'journal_entry' ) );
+		$portrait_unlocks = array_values( array_filter( $unlock_history, static fn( array $unlock ): bool => ( $unlock['unlock_type'] ?? '' ) === 'portrait' ) );
 		$inventory_state = self::build_character_sheet_inventory_summary( $title_unlocks, $relic_unlocks, $daily_state );
 		$display_title = self::resolve_character_sheet_display_title( $title_unlocks[0] ?? null );
+		$current_form = class_exists( IronQuestCharacterVisualService::class )
+			? IronQuestCharacterVisualService::get_current_form_state( $user_id, $profile, $unlock_history, $daily_state )
+			: [
+				'label' => 'Current Form Portrait',
+				'description' => '',
+				'generated_image_id' => '',
+				'portrait_attachment_id' => 0,
+				'generated_at' => '',
+				'visual_signature' => '',
+				'stale' => true,
+				'visual_loadout' => [],
+			];
 		$selected_mission_slug = sanitize_key( (string) ( $profile['active_mission_slug'] ?? '' ) );
 		$selected_mission_name = '';
 
@@ -1134,12 +1518,13 @@ class IronQuestController extends RestController {
 		}
 
 		return [
-			'identity' => [
-				'portrait_attachment_id' => (int) ( $profile['starter_portrait_attachment_id'] ?? 0 ),
-				'display_title'         => $display_title,
-				'class_slug'            => sanitize_key( (string) ( $profile['class_slug'] ?? '' ) ),
-				'motivation_slug'       => sanitize_key( (string) ( $profile['motivation_slug'] ?? '' ) ),
-			],
+				'identity' => [
+					'portrait_attachment_id'   => (int) ( $profile['starter_portrait_attachment_id'] ?? 0 ),
+					'display_title'           => $display_title,
+					'class_slug'              => sanitize_key( (string) ( $profile['class_slug'] ?? '' ) ),
+					'motivation_slug'         => sanitize_key( (string) ( $profile['motivation_slug'] ?? '' ) ),
+					'current_form'            => $current_form,
+				],
 			'progression' => [
 				'level'      => max( 1, (int) ( $profile['level'] ?? 1 ) ),
 				'xp'         => max( 0, (int) ( $profile['xp'] ?? 0 ) ),
@@ -1161,6 +1546,7 @@ class IronQuestController extends RestController {
 			'collections' => [
 				'titles'  => array_values( array_map( [ __CLASS__, 'build_character_sheet_unlock_entry' ], array_slice( $title_unlocks, 0, 6 ) ) ),
 				'relics'  => array_values( array_map( [ __CLASS__, 'build_character_sheet_unlock_entry' ], array_slice( $relic_unlocks, 0, 6 ) ) ),
+				'portraits' => array_values( array_map( [ __CLASS__, 'build_character_sheet_unlock_entry' ], array_slice( $portrait_unlocks, 0, 6 ) ) ),
 				'journal' => array_values( array_map( [ __CLASS__, 'build_character_sheet_unlock_entry' ], array_slice( $journal_unlocks, 0, 6 ) ) ),
 			],
 			'recent_history' => array_values( array_map( [ __CLASS__, 'build_character_sheet_unlock_entry' ], array_slice( $unlock_history, 0, 4 ) ) ),
@@ -1213,6 +1599,8 @@ class IronQuestController extends RestController {
 			$action_id = sanitize_key( (string) ( $tavern_resolution['action_id'] ?? '' ) );
 			$effect_data = is_array( $tavern_resolution['effects'] ?? null ) ? $tavern_resolution['effects'] : [];
 			$effect_parts = [];
+			$applies_to_label = ! empty( $effect_data['mission_preview'] ) ? 'Mission board guidance' : 'Resolved today';
+			$consumes_on_label = ! empty( $effect_data['mission_preview'] ) ? 'Visible until daily reset' : 'Already applied today';
 
 			if ( ! empty( $effect_data['hp_delta'] ) ) {
 				$effect_parts[] = sprintf( '+%d HP', (int) $effect_data['hp_delta'] );
@@ -1228,39 +1616,286 @@ class IronQuestController extends RestController {
 			}
 
 			$effects[] = [
-				'id'             => 'tavern_' . ( $action_id ?: 'action' ),
-				'label'          => 'Tavern: ' . self::humanize_key( $action_id ?: 'action' ),
-				'effect_summary' => ! empty( $effect_parts ) ? implode( ' • ', $effect_parts ) : 'Tavern action resolved today.',
+				'id'                => 'tavern_' . ( $action_id ?: 'action' ),
+				'label'             => 'Tavern: ' . self::humanize_key( $action_id ?: 'action' ),
+				'effect_summary'    => ! empty( $effect_parts ) ? implode( ' • ', $effect_parts ) : 'Tavern action resolved today.',
+				'applies_to_label'  => $applies_to_label,
+				'consumes_on_label' => $consumes_on_label,
 			];
 		}
 
 		if ( is_array( $active_run ) && ! empty( $active_run['mission_slug'] ) ) {
 			$effects[] = [
-				'id'             => 'active_mission',
-				'label'          => 'Mission in progress',
-				'effect_summary' => self::humanize_key( (string) $active_run['mission_slug'] ) . ' is still active.',
+				'id'                => 'active_mission',
+				'label'             => 'Mission in progress',
+				'effect_summary'    => self::humanize_key( (string) $active_run['mission_slug'] ) . ' is still active.',
+				'applies_to_label'  => 'Current run',
+				'consumes_on_label' => 'Clears when the mission resolves',
 			];
 		}
 
 		$active_charm = is_array( $store_inventory['active_charm'] ?? null ) ? $store_inventory['active_charm'] : null;
 		if ( is_array( $active_charm ) ) {
 			$effects[] = [
-				'id'             => 'store_charm_' . sanitize_key( (string) ( $active_charm['id'] ?? 'active' ) ),
-				'label'          => (string) ( $active_charm['name'] ?? 'Store charm' ),
-				'effect_summary' => (string) ( $active_charm['effect_summary'] ?? 'Store effect active.' ),
+				'id'                => 'store_charm_' . sanitize_key( (string) ( $active_charm['id'] ?? 'active' ) ),
+				'label'             => (string) ( $active_charm['name'] ?? 'Store charm' ),
+				'effect_summary'    => (string) ( $active_charm['effect_summary'] ?? 'Store effect active.' ),
+				'applies_to_label'  => 'Next mission payout',
+				'consumes_on_label' => 'Stays active until replaced',
 			];
 		}
 
 		$active_prep = is_array( $store_inventory['active_prep'] ?? null ) ? $store_inventory['active_prep'] : null;
 		if ( is_array( $active_prep ) ) {
 			$effects[] = [
-				'id'             => 'store_prep_' . sanitize_key( (string) ( $active_prep['id'] ?? 'active' ) ),
-				'label'          => (string) ( $active_prep['name'] ?? 'Mission prep' ),
-				'effect_summary' => (string) ( $active_prep['effect_summary'] ?? 'Prep item active for the next mission.' ),
+				'id'                => 'store_prep_' . sanitize_key( (string) ( $active_prep['id'] ?? 'active' ) ),
+				'label'             => (string) ( $active_prep['name'] ?? 'Mission prep' ),
+				'effect_summary'    => (string) ( $active_prep['effect_summary'] ?? 'Prep item active for the next mission.' ),
+				'applies_to_label'  => 'Next mission opener',
+				'consumes_on_label' => 'Consumed when the mission resolves',
 			];
 		}
 
 		return $effects;
+	}
+
+	private static function build_mission_modifier_payload( array $daily_state, array $location = [], ?array $mission = null ): array {
+		$entries           = [];
+		$tavern_resolution = self::extract_tavern_resolution( $daily_state );
+		$store_inventory   = self::extract_store_inventory_state( $daily_state );
+		$mission_slug      = sanitize_key( (string) ( $mission['slug'] ?? '' ) );
+		$mission_name      = trim( (string) ( $mission['name'] ?? '' ) );
+
+		if ( is_array( $tavern_resolution ) ) {
+			$preview = is_array( $tavern_resolution['effects']['mission_preview'] ?? null ) ? $tavern_resolution['effects']['mission_preview'] : [];
+			$preview_slug = sanitize_key( (string) ( $preview['slug'] ?? '' ) );
+
+			if ( '' !== $preview_slug ) {
+				$preview_name = trim( (string) ( $preview['name'] ?? '' ) );
+				if ( '' === $preview_name ) {
+					$location_slug = sanitize_key( (string) ( $location['slug'] ?? '' ) );
+					$preview_name  = (string) ( self::find_location_mission( $location_slug, $preview_slug )['name'] ?? self::humanize_key( $preview_slug ) );
+				}
+
+				$entries[] = [
+					'id'               => 'tavern_preview_' . $preview_slug,
+					'source'           => 'tavern',
+					'label'            => 'Tavern lead',
+					'effect_summary'   => $mission_slug === $preview_slug
+						? sprintf( 'Rumors in %s pointed you straight at this mission.', (string) ( $location['tavern']['name'] ?? 'the tavern' ) )
+						: sprintf( 'Rumors marked %s as the cleanest next lead on the board.', $preview_name ),
+					'applies_to'       => 'mission_board',
+					'applies_to_label' => 'Board guidance',
+					'consumes_on'      => 'daily_reset',
+					'consumes_on_label'=> 'Stays visible for today',
+				];
+			}
+		}
+
+		$active_charm = is_array( $store_inventory['active_charm'] ?? null ) ? $store_inventory['active_charm'] : null;
+		if ( is_array( $active_charm ) ) {
+			$entries[] = [
+				'id'               => 'store_charm_' . sanitize_key( (string) ( $active_charm['id'] ?? 'active' ) ),
+				'source'           => 'store_charm',
+				'label'            => (string) ( $active_charm['name'] ?? 'Store charm' ),
+				'effect_summary'   => (string) ( $active_charm['effect_summary'] ?? 'Store effect active.' ),
+				'applies_to'       => 'next_mission',
+				'applies_to_label' => 'Next mission payout',
+				'consumes_on'      => 'replace_only',
+				'consumes_on_label'=> 'Stays active until replaced',
+			];
+		}
+
+		$active_prep = is_array( $store_inventory['active_prep'] ?? null ) ? $store_inventory['active_prep'] : null;
+		if ( is_array( $active_prep ) ) {
+			$entries[] = [
+				'id'               => 'store_prep_' . sanitize_key( (string) ( $active_prep['id'] ?? 'active' ) ),
+				'source'           => 'store_prep',
+				'label'            => (string) ( $active_prep['name'] ?? 'Mission prep' ),
+				'effect_summary'   => (string) ( $active_prep['effect_summary'] ?? 'Prep item active for the next mission.' ),
+				'applies_to'       => 'next_mission',
+				'applies_to_label' => 'Next mission opener',
+				'consumes_on'      => 'mission_resolve',
+				'consumes_on_label'=> 'Consumed when the mission resolves',
+			];
+		}
+
+		$next_mission_entries = array_values( array_filter( $entries, static fn( array $entry ): bool => ( $entry['applies_to'] ?? '' ) === 'next_mission' ) );
+		$board_entries        = array_values( array_filter( $entries, static fn( array $entry ): bool => ( $entry['applies_to'] ?? '' ) === 'mission_board' ) );
+		$summary_parts        = [];
+
+		if ( count( $next_mission_entries ) > 0 ) {
+			$summary_parts[] = match ( count( $next_mission_entries ) ) {
+				1       => sprintf( '%s is queued for the next mission.', (string) ( $next_mission_entries[0]['label'] ?? 'A modifier' ) ),
+				default => sprintf( '%d modifiers are queued for the next mission.', count( $next_mission_entries ) ),
+			};
+		}
+
+		if ( count( $board_entries ) > 0 ) {
+			$summary_parts[] = match ( count( $board_entries ) ) {
+				1       => sprintf( '%s is shaping the mission board today.', (string) ( $board_entries[0]['label'] ?? 'A tavern lead' ) ),
+				default => sprintf( '%d tavern leads are shaping the mission board today.', count( $board_entries ) ),
+			};
+		}
+
+		if ( empty( $summary_parts ) ) {
+			$summary_parts[] = 'No store or tavern consequences are active right now.';
+		}
+
+		return [
+			'summary'            => implode( ' ', $summary_parts ),
+			'entries'            => array_values( $entries ),
+			'next_mission_count' => count( $next_mission_entries ),
+		];
+	}
+
+	private static function build_unlock_index( array $unlock_history ): array {
+		$unlock_index = [];
+
+		foreach ( array_filter( $unlock_history, 'is_array' ) as $unlock ) {
+			$unlock_type = sanitize_key( (string) ( $unlock['unlock_type'] ?? '' ) );
+			$unlock_key  = sanitize_key( (string) ( $unlock['unlock_key'] ?? '' ) );
+			if ( '' === $unlock_type || '' === $unlock_key ) {
+				continue;
+			}
+
+			$unlock_index[ $unlock_type . ':' . $unlock_key ] = $unlock;
+		}
+
+		return $unlock_index;
+	}
+
+	private static function rival_title_unlock_key( string $rival_key ): string {
+		return sanitize_key( $rival_key ) . '_rivalbreaker';
+	}
+
+	private static function rival_journal_unlock_key( string $rival_key ): string {
+		return sanitize_key( $rival_key ) . '_defeated';
+	}
+
+	private static function resolve_rival_presence( array $mission, array $unlock_index = [] ): array {
+		$mission_slug  = sanitize_key( (string) ( $mission['slug'] ?? '' ) );
+		$location_slug = sanitize_key( (string) ( $mission['location_slug'] ?? '' ) );
+
+		if ( '' === $mission_slug || '' === $location_slug ) {
+			return $mission;
+		}
+
+		foreach ( IronQuestRegistryService::get_rivals_config()['rivals'] as $rival ) {
+			$rival_key = sanitize_key( (string) ( $rival['key'] ?? '' ) );
+			if ( '' === $rival_key ) {
+				continue;
+			}
+
+			foreach ( (array) ( $rival['appearances'] ?? [] ) as $appearance ) {
+				if ( sanitize_key( (string) ( $appearance['location_slug'] ?? '' ) ) !== $location_slug ) {
+					continue;
+				}
+
+				if ( ! in_array( $mission_slug, (array) ( $appearance['mission_slugs'] ?? [] ), true ) ) {
+					continue;
+				}
+
+				$mission['rival_presence'] = [
+					'rival_key'    => $rival_key,
+					'name'         => (string) ( $rival['name'] ?? '' ),
+					'title'        => (string) ( $rival['title'] ?? '' ),
+					'description'  => (string) ( $rival['description'] ?? '' ),
+					'hook'         => (string) ( $appearance['hook'] ?? '' ),
+					'taunt'        => (string) ( $appearance['taunt'] ?? '' ),
+					'stakes'       => (string) ( $appearance['stakes'] ?? '' ),
+					'showdown'     => ! empty( $appearance['showdown'] ),
+					'defeated'     => isset( $unlock_index[ 'title:' . self::rival_title_unlock_key( $rival_key ) ] ),
+					'reward_title' => (string) ( $rival['reward_title'] ?? '' ),
+					'reward_journal_label' => (string) ( $rival['reward_journal_label'] ?? '' ),
+				];
+
+				return $mission;
+			}
+		}
+
+		return $mission;
+	}
+
+	private static function build_rival_state( array $profile, array $unlock_history, array $missions = [], ?array $active_run = null, array $location = [] ): array {
+		$unlock_index = self::build_unlock_index( $unlock_history );
+		$current_slug = sanitize_key( (string) ( $active_run['mission_slug'] ?? $profile['active_mission_slug'] ?? '' ) );
+		$current_rival = [];
+
+		foreach ( array_filter( $missions, 'is_array' ) as $mission ) {
+			$with_presence = self::resolve_rival_presence( $mission, $unlock_index );
+			$presence      = is_array( $with_presence['rival_presence'] ?? null ) ? $with_presence['rival_presence'] : null;
+			if ( ! is_array( $presence ) ) {
+				continue;
+			}
+
+			if ( $current_slug !== '' && sanitize_key( (string) ( $mission['slug'] ?? '' ) ) === $current_slug ) {
+				$current_rival = $presence + [ 'mission_slug' => sanitize_key( (string) ( $mission['slug'] ?? '' ) ), 'mission_name' => (string) ( $mission['name'] ?? '' ) ];
+				break;
+			}
+
+			if ( empty( $current_rival ) ) {
+				$current_rival = $presence + [ 'mission_slug' => sanitize_key( (string) ( $mission['slug'] ?? '' ) ), 'mission_name' => (string) ( $mission['name'] ?? '' ) ];
+			}
+		}
+
+		if ( empty( $current_rival ) ) {
+			return [];
+		}
+
+		$defeated = ! empty( $current_rival['defeated'] );
+		$showdown = ! empty( $current_rival['showdown'] );
+
+		return [
+			'key'             => sanitize_key( (string) ( $current_rival['rival_key'] ?? '' ) ),
+			'name'            => (string) ( $current_rival['name'] ?? '' ),
+			'title'           => (string) ( $current_rival['title'] ?? '' ),
+			'description'     => (string) ( $current_rival['description'] ?? '' ),
+			'hook'            => (string) ( $current_rival['hook'] ?? '' ),
+			'taunt'           => (string) ( $current_rival['taunt'] ?? '' ),
+			'stakes'          => (string) ( $current_rival['stakes'] ?? '' ),
+			'mission_slug'    => sanitize_key( (string) ( $current_rival['mission_slug'] ?? '' ) ),
+			'mission_name'    => (string) ( $current_rival['mission_name'] ?? '' ),
+			'current_location_slug' => sanitize_key( (string) ( $location['slug'] ?? $profile['current_location_slug'] ?? '' ) ),
+			'status_label'    => $defeated
+				? 'Rival defeated'
+				: ( $showdown ? 'Showdown active' : 'Rival interference' ),
+			'status_tone'     => $defeated ? 'success' : ( $showdown ? 'awards' : 'coach' ),
+			'defeated'        => $defeated,
+			'showdown'        => $showdown,
+			'reward_title'    => (string) ( $current_rival['reward_title'] ?? '' ),
+		];
+	}
+
+	private static function consume_mission_prep_modifier( int $user_id, array $daily_state ): array {
+		$bonus_state  = is_array( $daily_state['bonus_state'] ?? null ) ? $daily_state['bonus_state'] : [];
+		$store_state  = self::extract_store_inventory_state( $daily_state );
+		$active_prep  = is_array( $store_state['active_prep'] ?? null ) ? $store_state['active_prep'] : null;
+		$consumed     = [];
+
+		if ( is_array( $active_prep ) ) {
+			$consumed[] = [
+				'id'             => 'store_prep_' . sanitize_key( (string) ( $active_prep['id'] ?? 'active' ) ),
+				'source'         => 'store_prep',
+				'label'          => (string) ( $active_prep['name'] ?? 'Mission prep' ),
+				'effect_summary' => (string) ( $active_prep['effect_summary'] ?? 'Prep item active for the next mission.' ),
+			];
+			unset( $store_state['active_prep'] );
+		}
+
+		$bonus_state['store'] = $store_state;
+		$updated_daily_state  = IronQuestDailyStateService::upsert_state(
+			$user_id,
+			(string) ( $daily_state['state_date'] ?? '' ),
+			[
+				'bonus_state_json' => $bonus_state,
+			]
+		);
+
+		return [
+			'daily_state'        => $updated_daily_state,
+			'consumed_modifiers' => $consumed,
+		];
 	}
 
 	private static function build_store_payload( array $profile, array $location, array $daily_state, array $unlock_history, ?array $active_run ): array {
@@ -1277,6 +1912,7 @@ class IronQuestController extends RestController {
 			'gold'                 => max( 0, (int) ( $profile['gold'] ?? 0 ) ),
 			'hp_current'           => max( 0, (int) ( $profile['hp_current'] ?? 0 ) ),
 			'hp_max'               => max( 1, (int) ( $profile['hp_max'] ?? 100 ) ),
+			'merchant'             => self::build_store_merchant_payload( $location_slug, $location ),
 			'recommended_purchase' => $recommended_item,
 			'sections'             => $sections,
 			'inventory'            => [
@@ -1286,6 +1922,289 @@ class IronQuestController extends RestController {
 				'sellback'    => self::build_store_sellback_entries( $daily_state, $sections ),
 				'relic_count' => $relic_count,
 			],
+		];
+	}
+
+	private static function build_store_merchant_payload( string $location_slug, array $location ): array {
+		$store      = is_array( $location['store'] ?? null ) ? $location['store'] : [];
+		$owner_name = trim( (string) ( $store['owner_name'] ?? '' ) );
+		if ( '' === $owner_name ) {
+			$owner_name = trim( (string) ( $store['name'] ?? '' ) );
+		}
+
+		return [
+			'name'        => '' !== $owner_name ? $owner_name : 'Storekeeper',
+			'store_name'  => self::resolve_store_name( $location ),
+			'tone_tags'   => array_values( array_filter( array_map( 'strval', (array) ( $store['tone_tags'] ?? [] ) ) ) ),
+			'description' => '' !== trim( (string) ( $store['owner_visual_prompt'] ?? '' ) )
+				? (string) $store['owner_visual_prompt']
+				: 'A local merchant who knows which preparation matters here.',
+			'art'         => IronQuestWorldArtService::get_store_owner( $location_slug ),
+		];
+	}
+
+	private static function enrich_location_with_world_art( array $location, string $location_slug ): array {
+		$location_slug = sanitize_key( $location_slug );
+		if ( '' === $location_slug ) {
+			return $location;
+		}
+
+		$tavern = is_array( $location['tavern'] ?? null ) ? $location['tavern'] : [];
+		$store  = is_array( $location['store'] ?? null ) ? $location['store'] : [];
+
+		if ( ! empty( $tavern ) ) {
+			$tavern['art']      = IronQuestWorldArtService::get_tavern_scene( $location_slug );
+			$location['tavern'] = $tavern;
+		}
+
+		if ( ! empty( $store ) ) {
+			$store['merchant'] = self::build_store_merchant_payload( $location_slug, $location );
+			$location['store'] = $store;
+		}
+
+		return $location;
+	}
+
+	private static function enrich_missions_with_world_art( array $missions, string $location_slug ): array {
+		$location_slug = sanitize_key( $location_slug );
+
+		return array_values(
+			array_map(
+				static function ( array $mission ) use ( $location_slug ): array {
+					$mission_slug = sanitize_key( (string) ( $mission['slug'] ?? '' ) );
+					if ( '' === $mission_slug ) {
+						return $mission;
+					}
+
+					$mission['art'] = IronQuestWorldArtService::get_mission_card( $location_slug, $mission_slug );
+
+					return $mission;
+				},
+				array_filter( $missions, 'is_array' )
+			)
+		);
+	}
+
+	private static function enrich_missions_with_progress_state( int $user_id, array $missions, array $unlock_history = [], ?array $active_run = null, array $profile = [] ): array {
+		$selected_mission_slug = sanitize_key( (string) ( $profile['active_mission_slug'] ?? '' ) );
+		$active_mission_slug   = sanitize_key( (string) ( $active_run['mission_slug'] ?? '' ) );
+		$completion_counts     = IronQuestMissionService::get_victory_completion_counts(
+			$user_id,
+			sanitize_key( (string) ( $profile['current_location_slug'] ?? $missions[0]['location_slug'] ?? '' ) )
+		);
+		$unlock_index          = self::build_unlock_index( $unlock_history );
+		$mission_state_index   = [];
+		$cleared_mission_slugs = [];
+		$non_boss_mission_slugs = [];
+
+		foreach ( array_filter( $missions, 'is_array' ) as $mission ) {
+			$mission_slug  = sanitize_key( (string) ( $mission['slug'] ?? '' ) );
+			$location_slug = sanitize_key( (string) ( $mission['location_slug'] ?? '' ) );
+			if ( '' === $mission_slug || '' === $location_slug ) {
+				continue;
+			}
+
+			$completion_count = max( 0, (int) ( $completion_counts[ $mission_slug ] ?? 0 ) );
+			$first_clear_key  = 'first_clear_' . $location_slug . '_' . $mission_slug;
+			$first_clear_done = $completion_count > 0 || isset( $unlock_index[ 'journal_entry:' . $first_clear_key ] );
+
+			$mission_state_index[ $mission_slug ] = [
+				'completion_count'     => $completion_count,
+				'first_clear_completed'=> $first_clear_done,
+			];
+
+			if ( ! empty( $mission['is_boss'] ) ) {
+				continue;
+			}
+
+			$non_boss_mission_slugs[] = $mission_slug;
+			if ( $first_clear_done ) {
+				$cleared_mission_slugs[ $mission_slug ] = true;
+			}
+		}
+
+		$all_non_boss_cleared = ! empty( $non_boss_mission_slugs ) && count( $cleared_mission_slugs ) >= count( $non_boss_mission_slugs );
+
+		return array_values(
+			array_map(
+				function ( array $mission ) use ( $selected_mission_slug, $active_mission_slug, $unlock_index, $mission_state_index, $all_non_boss_cleared, $cleared_mission_slugs ): array {
+					$mission_slug  = sanitize_key( (string) ( $mission['slug'] ?? '' ) );
+					$location_slug = sanitize_key( (string) ( $mission['location_slug'] ?? '' ) );
+					if ( '' === $mission_slug || '' === $location_slug ) {
+						return $mission;
+					}
+
+					$is_boss            = ! empty( $mission['is_boss'] );
+					$is_selected        = '' !== $selected_mission_slug && $mission_slug === $selected_mission_slug;
+					$is_active          = '' !== $active_mission_slug && $mission_slug === $active_mission_slug;
+					$completion_count   = max( 0, (int) ( $mission_state_index[ $mission_slug ]['completion_count'] ?? 0 ) );
+					$first_clear_done   = ! empty( $mission_state_index[ $mission_slug ]['first_clear_completed'] );
+					$requirements       = array_values( array_filter( array_map( 'sanitize_key', (array) ( $mission['boss_unlock_requirements'] ?? [] ) ) ) );
+					$boss_ready         = false;
+					$available_rewards  = [];
+					$claimed_rewards    = [];
+					$first_clear_label  = 'First-clear journal reward';
+
+					if ( $is_boss ) {
+						$requirements_met = empty( $requirements )
+							? $all_non_boss_cleared
+							: count( array_diff( $requirements, array_keys( $cleared_mission_slugs ) ) ) === 0;
+						$boss_ready = ! $first_clear_done && $requirements_met;
+					}
+
+					if ( $first_clear_done ) {
+						$claimed_rewards[] = $first_clear_label;
+					} else {
+						$available_rewards[] = $first_clear_label;
+					}
+
+					if ( $is_boss ) {
+						$boss_reward_checks = [
+							[
+								'claimed' => isset( $unlock_index[ 'relic:' . $location_slug . '_trophy' ] ),
+								'label'   => 'Region trophy',
+							],
+							[
+								'claimed' => isset( $unlock_index[ 'title:' . $location_slug . '_conqueror' ] ),
+								'label'   => 'Conqueror title',
+							],
+							[
+								'claimed' => isset( $unlock_index[ 'portrait:' . $location_slug . '_' . $mission_slug . '_boss_victory_portrait' ] ),
+								'label'   => 'Boss portrait',
+							],
+						];
+
+						foreach ( $boss_reward_checks as $reward_check ) {
+							if ( $reward_check['claimed'] ) {
+								$claimed_rewards[] = $reward_check['label'];
+							} else {
+								$available_rewards[] = $reward_check['label'];
+							}
+						}
+					}
+
+					$mission_with_rival = self::resolve_rival_presence( $mission, $unlock_index );
+					$progress_state = self::build_mission_progress_state(
+						$mission,
+						$is_active,
+						$is_selected,
+						$first_clear_done,
+						$boss_ready,
+						$completion_count
+					);
+					$reward_state = self::build_mission_reward_state( $available_rewards, $claimed_rewards, $completion_count );
+
+					return array_merge(
+						$mission_with_rival,
+						[
+							'is_selected'    => $is_selected,
+							'is_active'      => $is_active,
+							'completion_count' => $completion_count,
+							'progress_state' => $progress_state,
+							'reward_state'   => $reward_state,
+						]
+					);
+				},
+				array_filter( $missions, 'is_array' )
+			)
+		);
+	}
+
+	private static function build_mission_progress_state( array $mission, bool $is_active, bool $is_selected, bool $first_clear_done, bool $boss_ready, int $completion_count ): array {
+		$is_boss = ! empty( $mission['is_boss'] );
+
+		if ( $is_active ) {
+			return [
+				'state'              => 'active',
+				'label'              => 'Active run',
+				'description'        => 'This mission is already in progress.',
+				'completion_count'   => $completion_count,
+				'first_clear_completed' => $first_clear_done,
+				'boss_ready'         => $boss_ready,
+			];
+		}
+
+		if ( $is_selected ) {
+			return [
+				'state'              => 'selected',
+				'label'              => 'Selected next',
+				'description'        => 'Queued as your next mission.',
+				'completion_count'   => $completion_count,
+				'first_clear_completed' => $first_clear_done,
+				'boss_ready'         => $boss_ready,
+			];
+		}
+
+		if ( $is_boss && $first_clear_done ) {
+			return [
+				'state'              => 'boss_cleared',
+				'label'              => 'Boss cleared',
+				'description'        => 'The boss rewards here have already been claimed.',
+				'completion_count'   => $completion_count,
+				'first_clear_completed' => true,
+				'boss_ready'         => true,
+			];
+		}
+
+		if ( $is_boss && $boss_ready ) {
+			return [
+				'state'              => 'boss_ready',
+				'label'              => 'Boss ready',
+				'description'        => 'The lane is clear. This is the decisive boss attempt.',
+				'completion_count'   => $completion_count,
+				'first_clear_completed' => false,
+				'boss_ready'         => true,
+			];
+		}
+
+		if ( $first_clear_done ) {
+			return [
+				'state'              => 'replay',
+				'label'              => 'Replay',
+				'description'        => 'First-clear rewards are gone. This run is for repeat loot and momentum.',
+				'completion_count'   => $completion_count,
+				'first_clear_completed' => true,
+				'boss_ready'         => $boss_ready,
+			];
+		}
+
+		if ( $is_boss ) {
+			return [
+				'state'              => 'boss_locked',
+				'label'              => 'Boss path',
+				'description'        => 'Clear the earlier lane missions before spending a real push here.',
+				'completion_count'   => $completion_count,
+				'first_clear_completed' => false,
+				'boss_ready'         => false,
+			];
+		}
+
+		return [
+			'state'              => 'first_clear_available',
+			'label'              => 'First clear',
+			'description'        => 'This mission still has its first-clear reward available.',
+			'completion_count'   => $completion_count,
+			'first_clear_completed' => false,
+			'boss_ready'         => false,
+		];
+	}
+
+	private static function build_mission_reward_state( array $available_rewards, array $claimed_rewards, int $completion_count ): array {
+		$available_rewards = array_values( array_unique( array_filter( array_map( 'sanitize_text_field', $available_rewards ) ) ) );
+		$claimed_rewards   = array_values( array_unique( array_filter( array_map( 'sanitize_text_field', $claimed_rewards ) ) ) );
+		$primary_label     = ! empty( $available_rewards )
+			? implode( ' + ', array_slice( $available_rewards, 0, 2 ) )
+			: ( ! empty( $claimed_rewards ) ? 'Rewards already claimed' : 'Standard mission rewards' );
+
+		$secondary_label = $completion_count > 0
+			? sprintf( 'Cleared %dx', $completion_count )
+			: 'No clears yet';
+
+		return [
+			'primary_label'   => $primary_label,
+			'secondary_label' => $secondary_label,
+			'available_labels'=> $available_rewards,
+			'claimed_labels'  => $claimed_rewards,
 		];
 	}
 
@@ -1774,10 +2693,14 @@ class IronQuestController extends RestController {
 		}
 
 		return [
-			'id'         => (string) ( $unlock['id'] ?? '' ),
-			'label'      => $label,
-			'subtitle'   => $subtitle,
-			'created_at' => (string) ( $unlock['created_at'] ?? '' ),
+			'id'                    => (string) ( $unlock['id'] ?? '' ),
+			'unlock_type'           => sanitize_key( (string) ( $unlock['unlock_type'] ?? '' ) ),
+			'label'                 => $label,
+			'subtitle'              => $subtitle,
+			'generated_image_id'    => sanitize_text_field( (string) ( $unlock['meta']['generated_image_id'] ?? '' ) ),
+			'portrait_attachment_id'=> (int) ( $unlock['meta']['portrait_attachment_id'] ?? 0 ),
+			'trigger'               => sanitize_key( (string) ( $unlock['meta']['trigger'] ?? '' ) ),
+			'created_at'            => (string) ( $unlock['created_at'] ?? '' ),
 		];
 	}
 
@@ -1798,6 +2721,7 @@ class IronQuestController extends RestController {
 				'name'        => (string) ( $tavern['name'] ?? 'The Tavern' ),
 				'tone_tags'   => array_values( array_filter( array_map( 'strval', (array) ( $tavern['tone_tags'] ?? [] ) ) ) ),
 				'flavor_text' => self::build_tavern_flavor_text( $location, $tavern ),
+				'art'         => IronQuestWorldArtService::get_tavern_scene( $location_slug ),
 			],
 			'profile'         => $profile,
 			'today_context'   => [
@@ -1939,7 +2863,7 @@ class IronQuestController extends RestController {
 	}
 
 	private static function build_tavern_mission_preview( string $location_slug, string $active_mission_slug ): ?array {
-		$missions = IronQuestRegistryService::get_location_missions( $location_slug );
+		$missions = self::enrich_missions_with_world_art( IronQuestRegistryService::get_location_missions( $location_slug ), $location_slug );
 		foreach ( $missions as $mission ) {
 			$mission_slug = sanitize_key( (string) ( $mission['slug'] ?? '' ) );
 			if ( '' !== $mission_slug && $mission_slug !== sanitize_key( $active_mission_slug ) ) {
@@ -1947,6 +2871,7 @@ class IronQuestController extends RestController {
 					'slug'    => $mission_slug,
 					'name'    => (string) ( $mission['name'] ?? self::humanize_key( $mission_slug ) ),
 					'summary' => (string) ( $mission['goal'] ?? $mission['narrative'] ?? '' ),
+					'art'     => is_array( $mission['art'] ?? null ) ? $mission['art'] : null,
 				];
 			}
 		}
@@ -1960,6 +2885,7 @@ class IronQuestController extends RestController {
 			'slug'    => sanitize_key( (string) ( $mission['slug'] ?? '' ) ),
 			'name'    => (string) ( $mission['name'] ?? '' ),
 			'summary' => (string) ( $mission['goal'] ?? $mission['narrative'] ?? '' ),
+			'art'     => is_array( $mission['art'] ?? null ) ? $mission['art'] : null,
 		];
 	}
 
@@ -2209,9 +3135,10 @@ class IronQuestController extends RestController {
 		$run          = is_array( $context['run'] ?? null ) ? $context['run'] : [];
 		$mission      = is_array( $context['mission'] ?? null ) ? $context['mission'] : [];
 		$result_band  = sanitize_key( (string) ( $context['result_band'] ?? '' ) );
+		$portrait_unlocks = [];
 
 		if ( ! empty( $mission['is_boss'] ) && 'victory' === $result_band ) {
-			self::clear_location_arc( $user_id, (string) ( $run['location_slug'] ?? '' ), (int) ( $run['id'] ?? 0 ) );
+			$portrait_unlocks = self::clear_location_arc( $user_id, (string) ( $run['location_slug'] ?? '' ), (int) ( $run['id'] ?? 0 ) );
 		}
 
 		$route_state = self::build_route_state( $user_id, IronQuestProfileService::ensure_profile( $user_id ) );
@@ -2245,9 +3172,32 @@ class IronQuestController extends RestController {
 			$route_state       = self::build_route_state( $user_id, $profile );
 		}
 
+		$route_changes = self::build_route_changes( $before_state, $route_state );
+		$cleared_location_slug = sanitize_key( (string) ( $run['location_slug'] ?? '' ) );
+		$full_clear_bonus = [ 'xp' => 0, 'gold' => 0 ];
+		if (
+			! empty( $mission['is_boss'] )
+			&& 'victory' === $result_band
+			&& '' !== $cleared_location_slug
+			&& in_array( $cleared_location_slug, (array) ( $route_changes['newly_cleared_locations'] ?? [] ), true )
+		) {
+			$cleared_location = IronQuestRegistryService::get_location( $cleared_location_slug ) ?? [];
+			$bonus            = is_array( $cleared_location['reward_profile']['full_clear_bonus'] ?? null ) ? $cleared_location['reward_profile']['full_clear_bonus'] : [];
+			$full_clear_bonus = [
+				'xp'   => max( 0, (int) ( $bonus['xp'] ?? 0 ) ),
+				'gold' => max( 0, (int) ( $bonus['gold'] ?? 0 ) ),
+			];
+		}
+
 		return [
 			'route_state'   => $route_state,
-			'route_changes' => self::build_route_changes( $before_state, $route_state ),
+			'route_changes' => array_merge(
+				$route_changes,
+				[
+					'portrait_unlocks'  => $portrait_unlocks,
+					'full_clear_bonus' => $full_clear_bonus,
+				]
+			),
 		];
 	}
 
@@ -2440,10 +3390,10 @@ class IronQuestController extends RestController {
 		return 'fast_travel_' . sanitize_key( $location_slug );
 	}
 
-	private static function clear_location_arc( int $user_id, string $location_slug, int $source_run_id = 0 ): void {
+	private static function clear_location_arc( int $user_id, string $location_slug, int $source_run_id = 0 ): array {
 		$location_slug = sanitize_key( $location_slug );
 		if ( '' === $location_slug ) {
-			return;
+			return [];
 		}
 
 		$location = IronQuestRegistryService::get_location( $location_slug ) ?? [];
@@ -2472,6 +3422,16 @@ class IronQuestController extends RestController {
 				'full_clear_bonus'
 			);
 		}
+
+		$portrait_unlock = IronQuestPortraitService::maybe_generate_location_clear_portrait(
+			$user_id,
+			$location_slug,
+			[
+				'source_run_id' => $source_run_id,
+			]
+		);
+
+		return $portrait_unlock ? [ $portrait_unlock ] : [];
 	}
 
 	private static function unlock_location_for_user( int $user_id, string $location_slug, int $source_run_id = 0, int $travel_requirement = 0 ): void {
@@ -2629,6 +3589,9 @@ class IronQuestController extends RestController {
 							'gold_multiplier'     => (float) ( $effect['gold_multiplier'] ?? 1 ),
 							'travel_points_bonus' => (int) ( $effect['travel_points_bonus'] ?? 0 ),
 						],
+						'progress_state' => is_array( $mission['progress_state'] ?? null ) ? $mission['progress_state'] : [],
+						'reward_state'   => is_array( $mission['reward_state'] ?? null ) ? $mission['reward_state'] : [],
+						'completion_count' => max( 0, (int) ( $mission['completion_count'] ?? 0 ) ),
 					]
 				);
 			},
@@ -2699,6 +3662,21 @@ class IronQuestController extends RestController {
 		$mission_type = sanitize_key( (string) ( $mission['mission_type'] ?? '' ) );
 		$location_slug = sanitize_key( (string) ( $run['location_slug'] ?? '' ) );
 		$mission_slug  = sanitize_key( (string) ( $run['mission_slug'] ?? '' ) );
+		$mission_name  = (string) ( $mission['name'] ?? self::humanize_key( $mission_slug ) );
+
+		$granted_rewards[] = self::grant_inventory_unlock(
+			$user_id,
+			'journal_entry',
+			'first_clear_' . $location_slug . '_' . $mission_slug,
+			$run_id,
+			sprintf( 'First clear recorded: %s.', $mission_name ),
+			[
+				'label'    => $mission_name . ' First Clear',
+				'entry'    => self::resolve_journal_entry_text( $mission, $story_state ),
+				'source'   => 'mission_first_clear',
+				'location' => $location_slug,
+			]
+		);
 
 		if ( 'easy_workout' === $mission_type ) {
 			$granted_rewards[] = self::grant_inventory_unlock(
@@ -2777,6 +3755,83 @@ class IronQuestController extends RestController {
 		];
 	}
 
+	private static function apply_rival_outcome( int $user_id, int $run_id, array $mission, string $result_band ): array {
+		$presence = is_array( $mission['rival_presence'] ?? null ) ? $mission['rival_presence'] : self::resolve_rival_presence( $mission );
+		if ( empty( $presence ) ) {
+			return [];
+		}
+
+		$rival_key   = sanitize_key( (string) ( $presence['rival_key'] ?? '' ) );
+		$rival_name  = (string) ( $presence['name'] ?? 'Rival' );
+		$showdown    = ! empty( $presence['showdown'] );
+		$rewards     = [];
+		$label       = '';
+		$summary     = '';
+
+		if ( 'victory' === $result_band && $showdown ) {
+			$reward_title = (string) ( $presence['reward_title'] ?? 'Rivalbreaker' );
+			$rewards[] = self::grant_inventory_unlock(
+				$user_id,
+				'title',
+				self::rival_title_unlock_key( $rival_key ),
+				$run_id,
+				sprintf( 'Title unlocked: %s.', $reward_title ),
+				[
+					'label'  => $reward_title,
+					'source' => 'rival_victory',
+				]
+			);
+			$rewards[] = self::grant_inventory_unlock(
+				$user_id,
+				'journal_entry',
+				self::rival_journal_unlock_key( $rival_key ),
+				$run_id,
+				sprintf( 'Journal updated: %s defeated.', $rival_name ),
+				[
+					'label'  => (string) ( $presence['reward_journal_label'] ?? $rival_name . ' Defeated' ),
+					'entry'  => sprintf( 'You broke %s in the region they thought would crown them instead.', $rival_name ),
+					'source' => 'rival_victory',
+				]
+			);
+			$label = 'Rival broken';
+			$summary = sprintf( 'You beat %s at the region they meant to claim for themselves.', $rival_name );
+		} elseif ( 'victory' === $result_band ) {
+			$label = 'Rival checked';
+			$summary = sprintf( 'You moved faster than %s expected and stole the momentum back.', $rival_name );
+		} elseif ( 'partial' === $result_band ) {
+			$label = 'Rival still circling';
+			$summary = sprintf( '%s is still in the region and still talking like the board belongs to them.', $rival_name );
+		} else {
+			$label = 'Rival advantage';
+			$summary = sprintf( '%s walks away thinking they still own this route.', $rival_name );
+		}
+
+		self::track_ironquest_event(
+			$user_id,
+			'rival_outcome_recorded',
+			[
+				'run_id'       => $run_id,
+				'rival_key'    => $rival_key,
+				'rival_name'   => $rival_name,
+				'result_band'  => $result_band,
+				'showdown'     => $showdown,
+				'reward_count' => count( array_filter( $rewards ) ),
+				'outcome_label'=> $label,
+			],
+			'rival'
+		);
+
+		return [
+			'rival_key'   => $rival_key,
+			'rival_name'  => $rival_name,
+			'rival_title' => (string) ( $presence['title'] ?? '' ),
+			'label'       => $label,
+			'summary'     => $summary,
+			'showdown'    => $showdown,
+			'granted_rewards' => array_values( array_filter( $rewards ) ),
+		];
+	}
+
 	private static function resolve_journal_entry_text( array $mission, array $story_state ): string {
 		$summary = sanitize_textarea_field( (string) ( $story_state['conclusion']['summary'] ?? '' ) );
 		if ( '' !== $summary ) {
@@ -2825,10 +3880,12 @@ class IronQuestController extends RestController {
 	private static function resolve_mission_run( int $user_id, int $run_id, string $result_band, int $xp_awarded = 0, int $gold_awarded = 0 ): array|\WP_Error {
 		$run = IronQuestMissionService::get_run( $run_id, $user_id );
 		if ( empty( $run ) ) {
+			self::track_ironquest_failure( $user_id, 'mission_complete_failed', 'IronQuest mission run not found.', [ 'run_id' => $run_id ], 'mission_resolve', 404 );
 			return new \WP_Error( 'ironquest_mission_run_not_found', 'IronQuest mission run not found.' );
 		}
 
 		$result_band = sanitize_key( $result_band ?: 'victory' );
+		$previous_profile = IronQuestProfileService::ensure_profile( $user_id );
 		$mission     = self::find_location_mission( (string) ( $run['location_slug'] ?? '' ), (string) ( $run['mission_slug'] ?? '' ) );
 		$awards      = self::resolve_awards_for_run( $run, $result_band, $xp_awarded, $gold_awarded );
 
@@ -2840,6 +3897,7 @@ class IronQuestController extends RestController {
 			$awards['gold']
 		);
 		if ( is_wp_error( $completed ) ) {
+			self::track_ironquest_failure( $user_id, 'mission_complete_failed', $completed->get_error_message(), [ 'run_id' => $run_id, 'location_slug' => sanitize_key( (string) ( $run['location_slug'] ?? '' ) ), 'mission_slug' => sanitize_key( (string) ( $run['mission_slug'] ?? '' ) ) ], 'mission_resolve', 400 );
 			return $completed;
 		}
 
@@ -2852,13 +3910,23 @@ class IronQuestController extends RestController {
 			'mission_completion'
 		);
 		if ( is_wp_error( $progression ) ) {
+			self::track_ironquest_failure( $user_id, 'mission_complete_failed', $progression->get_error_message(), [ 'run_id' => $run_id, 'location_slug' => sanitize_key( (string) ( $run['location_slug'] ?? '' ) ), 'mission_slug' => sanitize_key( (string) ( $run['mission_slug'] ?? '' ) ) ], 'mission_resolve', 500 );
 			return $progression;
 		}
 
 		$story_state          = IronQuestNarrativeService::complete_story( $user_id, $completed, $result_band, $awards );
 		$previous_daily_state = IronQuestDailyStateService::get_state( $user_id );
+		$applied_modifiers    = self::build_mission_modifier_payload(
+			$previous_daily_state,
+			IronQuestRegistryService::get_location( (string) ( $run['location_slug'] ?? '' ) ) ?? [],
+			is_array( $mission ) ? $mission : null
+		);
 		$daily_state          = IronQuestDailyStateService::mark_quest_complete( $user_id, 'workout' );
-		$mission_effects      = self::apply_mission_side_effects( $user_id, $run_id, $run, is_array( $mission ) ? $mission : [], $result_band, $awards, $story_state );
+		$modifier_consumption = self::consume_mission_prep_modifier( $user_id, $daily_state );
+		$daily_state          = is_array( $modifier_consumption['daily_state'] ?? null ) ? $modifier_consumption['daily_state'] : $daily_state;
+		$mission_with_rival   = is_array( $mission ) ? self::resolve_rival_presence( $mission ) : [];
+		$mission_effects      = self::apply_mission_side_effects( $user_id, $run_id, $run, is_array( $mission_with_rival ) ? $mission_with_rival : [], $result_band, $awards, $story_state );
+		$rival_outcome        = self::apply_rival_outcome( $user_id, $run_id, is_array( $mission_with_rival ) ? $mission_with_rival : [], $result_band );
 		$route_sync           = self::sync_route_progression(
 			$user_id,
 			[
@@ -2866,6 +3934,54 @@ class IronQuestController extends RestController {
 				'result_band' => $result_band,
 				'mission'     => $mission,
 			]
+		);
+		$level_portrait_unlock = IronQuestPortraitService::maybe_generate_level_milestone_portrait(
+			$user_id,
+			max( 1, (int) ( $previous_profile['level'] ?? 1 ) ),
+			max( 1, (int) ( $progression['profile']['level'] ?? $previous_profile['level'] ?? 1 ) ),
+			[
+				'source_run_id' => $run_id,
+				'location_slug' => (string) ( $run['location_slug'] ?? '' ),
+				'mission_slug'  => (string) ( $run['mission_slug'] ?? '' ),
+			]
+		);
+		$boss_portrait_unlock = ! empty( $mission['is_boss'] ) && 'victory' === $result_band
+			? IronQuestPortraitService::maybe_generate_boss_victory_portrait(
+				$user_id,
+				(string) ( $run['location_slug'] ?? '' ),
+				(string) ( $run['mission_slug'] ?? '' ),
+				[
+					'source_run_id' => $run_id,
+				]
+			)
+			: null;
+		$portrait_unlocks = is_array( $route_sync['route_changes']['portrait_unlocks'] ?? null )
+			? array_values( $route_sync['route_changes']['portrait_unlocks'] )
+			: [];
+		if ( $boss_portrait_unlock ) {
+			array_unshift( $portrait_unlocks, $boss_portrait_unlock );
+		}
+		if ( $level_portrait_unlock ) {
+			$portrait_unlocks[] = $level_portrait_unlock;
+		}
+
+		self::track_ironquest_event(
+			$user_id,
+			'mission_completed',
+			[
+				'run_id'             => $run_id,
+				'location_slug'      => sanitize_key( (string) ( $run['location_slug'] ?? '' ) ),
+				'mission_slug'       => sanitize_key( (string) ( $run['mission_slug'] ?? '' ) ),
+				'result_band'        => $result_band,
+				'xp_awarded'         => (int) ( $awards['xp'] ?? 0 ),
+				'gold_awarded'       => (int) ( $awards['gold'] ?? 0 ),
+				'travel_points_bonus'=> (int) ( $mission_effects['travel_points_bonus'] ?? 0 ),
+				'portrait_unlocks'   => count( array_filter( $portrait_unlocks ) ),
+				'granted_rewards'    => count( array_filter( (array) ( $mission_effects['granted_rewards'] ?? [] ) ) ),
+				'rival_showdown'     => ! empty( $rival_outcome['showdown'] ),
+			],
+			'mission_resolve',
+			(float) ( $awards['xp'] ?? 0 )
 		);
 
 		return [
@@ -2875,10 +3991,22 @@ class IronQuestController extends RestController {
 			'progression'   => $progression,
 			'daily_state'   => $daily_state,
 			'changes'       => self::build_daily_progress_changes( $previous_daily_state, $daily_state ),
-			'mission'       => $mission,
-			'mission_effects' => $mission_effects,
+			'mission'       => $mission_with_rival,
+			'mission_effects' => array_merge(
+				$mission_effects,
+				[
+					'applied_modifiers'  => array_values( array_filter( (array) ( $applied_modifiers['entries'] ?? [] ), static fn( array $entry ): bool => ( $entry['applies_to'] ?? '' ) === 'next_mission' || ( $entry['source'] ?? '' ) === 'tavern' ) ),
+					'consumed_modifiers' => array_values( $modifier_consumption['consumed_modifiers'] ?? [] ),
+					'granted_rewards'    => array_values( array_filter( array_merge(
+						(array) ( $mission_effects['granted_rewards'] ?? [] ),
+						(array) ( $rival_outcome['granted_rewards'] ?? [] )
+					) ) ),
+				]
+			),
+			'rival_outcome' => $rival_outcome,
 			'route_state'   => $route_sync['route_state'],
 			'route_changes' => $route_sync['route_changes'],
+			'portrait_unlocks' => $portrait_unlocks,
 			'profile'       => IronQuestProfileService::get_profile( $user_id ),
 		];
 	}
@@ -2903,5 +4031,19 @@ class IronQuestController extends RestController {
 		}
 
 		return $updated;
+	}
+
+	private static function stream_private_attachment( int $attachment_id ): mixed {
+		$file_path = PrivateMediaService::file_path_for_attachment( $attachment_id );
+		if ( is_wp_error( $file_path ) ) {
+			return new \WP_REST_Response( [ 'message' => 'Image file not found.' ], 404 );
+		}
+
+		$mime = mime_content_type( $file_path ) ?: 'image/jpeg';
+		header( 'Content-Type: ' . $mime );
+		header( 'Content-Length: ' . filesize( $file_path ) );
+		header( 'Cache-Control: private, max-age=300' );
+		readfile( $file_path ); // phpcs:ignore WordPress.WP.AlternativeFunctions
+		exit;
 	}
 }

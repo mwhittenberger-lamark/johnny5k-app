@@ -1,4 +1,7 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
+import { ironquestApi } from '../../../api/modules/ironquest'
+import IronQuestConsequenceLedger from '../../../components/ironquest/IronQuestConsequenceLedger'
+import IronQuestRecentMissionUpdate from '../../../components/ironquest/IronQuestRecentMissionUpdate'
 import ErrorState from '../../../components/ui/ErrorState'
 import AppLoadingScreen from '../../../components/ui/AppLoadingScreen'
 import PlanOverviewAddDrawer from '../../../components/workout/PlanOverviewAddDrawer'
@@ -7,8 +10,9 @@ import PlanOverviewSwapDrawer from '../../../components/workout/PlanOverviewSwap
 import WorkoutSessionConfirmModal from './WorkoutSessionConfirmModal'
 import WorkoutCustomizeDrawer from './WorkoutCustomizeDrawer'
 import WorkoutPrebuiltLibraryDrawer from './WorkoutPrebuiltLibraryDrawer'
+import { useIronQuestWorldArt } from '../../../hooks/useIronQuestWorldArt'
 import { formatDayType, formatPreviewSetRepLabel, getReadinessRepDelta } from '../workoutScreenUtils'
-import { getTavernJohnnyLine, getTavernMissionPreview, getTavernResolution } from '../../../lib/ironquestTavern'
+import { getTavernConsequenceEntries, getTavernJohnnyLine, getTavernMissionPreview, getTavernResolution } from '../../../lib/ironquestTavern'
 
 const READINESS_OPTIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 const TIME_TIER_OPTIONS = [
@@ -116,6 +120,8 @@ export default function WorkoutLaunchpad({
   onPrebuiltQueued,
   planning,
   tavernDay,
+  recentMissionUpdate,
+  missionModifiers,
   sessionController,
   resumedSession,
   onResumeSession,
@@ -125,6 +131,9 @@ export default function WorkoutLaunchpad({
   const [addOnsExpanded, setAddOnsExpanded] = useState(false)
   const [customizeOpen, setCustomizeOpen] = useState(false)
   const [prebuiltOpen, setPrebuiltOpen] = useState(false)
+  const [generatingTavernArt, setGeneratingTavernArt] = useState(false)
+  const [tavernArtNotice, setTavernArtNotice] = useState('')
+  const [tavernArtError, setTavernArtError] = useState('')
   const isMaintenanceMode = readinessScore <= 3
   const readinessRepDelta = getReadinessRepDelta(readinessScore)
   const absQuickPick = planning.absAddOnSuggestions[0] ?? null
@@ -148,9 +157,30 @@ export default function WorkoutLaunchpad({
   const focusCopy = useMemo(() => getFocusCopy({ coachingSummary, planning, readinessScore }), [coachingSummary, planning, readinessScore])
   const tavernState = tavernDay?.state ?? null
   const tavernResolution = useMemo(() => getTavernResolution(tavernState), [tavernState])
+  const tavernConsequenceEntries = useMemo(() => getTavernConsequenceEntries(tavernState), [tavernState])
   const tavernMissionPreview = useMemo(() => getTavernMissionPreview(tavernDay?.missionPreview ? tavernDay : tavernState), [tavernDay, tavernState])
   const tavernJohnnyLine = useMemo(() => getTavernJohnnyLine(tavernState), [tavernState])
   const tavernActions = Array.isArray(tavernState?.available_actions) ? tavernState.available_actions : []
+  const tavernArtMeta = tavernState?.tavern?.art ?? null
+  const tavernArt = useIronQuestWorldArt(
+    tavernArtMeta?.art_key,
+    tavernArtMeta?.label || tavernState?.tavern?.name || 'Tavern scene',
+    tavernArtMeta?.status || '',
+  )
+  const activeMissionModifiers = Array.isArray(missionModifiers?.entries)
+    ? missionModifiers.entries.filter((entry) => String(entry?.applies_to || '').trim() === 'next_mission')
+    : []
+  const activeMissionModifierSummary = useMemo(() => {
+    if (!activeMissionModifiers.length) {
+      return 'No store or tavern effects are queued for the next mission.'
+    }
+
+    if (activeMissionModifiers.length === 1) {
+      return `${activeMissionModifiers[0]?.label || 'One modifier'} is queued before the next mission starts.`
+    }
+
+    return `${activeMissionModifiers.length} effects are queued before the next mission starts.`
+  }, [activeMissionModifiers])
 
   const primaryAction = useMemo(() => {
     if (hasResumedSession) {
@@ -249,6 +279,25 @@ export default function WorkoutLaunchpad({
     planning.setSwapDrawerExercise(exercise)
   }
 
+  const handleGenerateTavernArt = useCallback(async () => {
+    setGeneratingTavernArt(true)
+    setTavernArtError('')
+    setTavernArtNotice('')
+
+    try {
+      const result = await ironquestApi.generateWorldArt({
+        art_type: 'tavern_scene',
+        location_slug: tavernState?.location_slug || '',
+      })
+      setTavernArtNotice(result?.generated ? 'Tavern scene forged for this region.' : 'Tavern scene refreshed.')
+      await tavernDay?.onRefresh?.()
+    } catch (generateError) {
+      setTavernArtError(generateError?.message || 'Could not forge tavern art right now.')
+    } finally {
+      setGeneratingTavernArt(false)
+    }
+  }, [tavernDay, tavernState?.location_slug])
+
   return (
     <div className="screen workout-start workout-launchpad">
       <div className="dash-card workout-start-card workout-launchpad-primary-card support-icon-anchor">
@@ -265,15 +314,60 @@ export default function WorkoutLaunchpad({
           <span className="workout-launchpad-focus-label">Johnny&apos;s Focus</span>
           <p>{focusCopy}</p>
         </div>
+        {activeMissionModifiers.length ? (
+          <IronQuestConsequenceLedger
+            className="workout-launchpad-modifier-card"
+            title="Queued for the next mission"
+            summary={activeMissionModifierSummary}
+            entries={activeMissionModifiers}
+            compact
+          />
+        ) : null}
         {planning.isRestSelection && tavernDay?.enabled ? (
           <div className="workout-launchpad-section workout-launchpad-tavern-card">
             <div className="dashboard-card-head">
               <span className="dashboard-chip coach">{tavernState?.tavern?.name || 'Tavern Day'}</span>
               <span className="dashboard-chip subtle">{tavernResolution ? 'Action locked' : 'Pick one move'}</span>
             </div>
+            <div className="ironquest-world-art-shell ironquest-world-art-shell-scene">
+              <div className="ironquest-world-art-frame ironquest-world-art-frame-scene">
+                {tavernArt?.src ? (
+                  <img
+                    className="ironquest-world-art-image"
+                    src={tavernArt.src}
+                    alt={tavernArtMeta?.alt || tavernState?.tavern?.name || 'Tavern scene'}
+                  />
+                ) : (
+                  <div className="ironquest-world-art-placeholder">
+                    <span>{tavernState?.tavern?.name || 'Tavern scene pending'}</span>
+                  </div>
+                )}
+              </div>
+              <div className="ironquest-world-art-copy">
+                <span className="ironquest-world-art-kicker">Rest Screen Art</span>
+                <strong>{tavernArtMeta?.label || `${tavernState?.tavern?.name || 'Tavern'} Scene`}</strong>
+                <p>Forge a shared tavern scene for this region so recovery days feel like a place instead of a text block.</p>
+                <div className="settings-actions">
+                  <button
+                    type="button"
+                    className="btn-secondary small"
+                    onClick={() => void handleGenerateTavernArt()}
+                    disabled={generatingTavernArt}
+                  >
+                    {generatingTavernArt
+                      ? 'Forging scene…'
+                      : tavernArtMeta?.status === 'ready'
+                        ? 'Refresh scene'
+                        : 'Forge scene'}
+                  </button>
+                </div>
+              </div>
+            </div>
             <p className="settings-subtitle workout-launchpad-helper">
               {tavernState?.tavern?.flavor_text || 'Recovery days still move the story. Pick one small Tavern action and keep the day light.'}
             </p>
+            {tavernArtNotice ? <p className="settings-subtitle workout-launchpad-helper">{tavernArtNotice}</p> : null}
+            {tavernArtError ? <ErrorState className="workout-inline-error" eyebrow="Tavern art" message={tavernArtError} title="Could not forge the tavern scene" /> : null}
             {tavernJohnnyLine ? (
               <div className="workout-launchpad-tavern-line">
                 <span className="workout-launchpad-focus-label">Johnny says</span>
@@ -299,10 +393,13 @@ export default function WorkoutLaunchpad({
               </div>
             ) : null}
             {tavernResolution ? (
-              <div className="workout-launchpad-tavern-resolution">
-                <strong>{tavernResolution.action_id === 'rumors' ? 'Rumors gathered' : 'Action resolved'}</strong>
-                <span>{tavernResolution.effects?.hp_delta ? `+${tavernResolution.effects.hp_delta} HP` : null}{tavernResolution.effects?.gold_delta ? `${tavernResolution.effects?.hp_delta ? ' • ' : ''}+${tavernResolution.effects.gold_delta} gold` : null}{tavernResolution.effects?.xp_delta ? `${(tavernResolution.effects?.hp_delta || tavernResolution.effects?.gold_delta) ? ' • ' : ''}+${tavernResolution.effects.xp_delta} XP` : null}</span>
-              </div>
+              <IronQuestConsequenceLedger
+                className="workout-launchpad-tavern-resolution"
+                title={tavernResolution.action_id === 'rumors' ? 'Rumors gathered' : 'Tavern outcome locked'}
+                summary="This is what changed today, where it applies, and when it clears."
+                entries={tavernConsequenceEntries}
+                compact
+              />
             ) : null}
             {tavernMissionPreview ? (
               <div className="workout-launchpad-tavern-preview">
@@ -318,6 +415,7 @@ export default function WorkoutLaunchpad({
                 </div>
               </div>
             ) : null}
+            {recentMissionUpdate ? <IronQuestRecentMissionUpdate update={recentMissionUpdate} compact /> : null}
           </div>
         ) : null}
         {offlineStatus}
@@ -339,6 +437,11 @@ export default function WorkoutLaunchpad({
           <button className="btn-primary" onClick={primaryAction.onClick} disabled={primaryAction.disabled}>
             {primaryAction.label}
           </button>
+          {hasResumedSession ? (
+            <button className="btn-outline" onClick={sessionController.handleComplete} disabled={sessionController.completing}>
+              {sessionController.completing ? 'Completing workout...' : 'Complete workout'}
+            </button>
+          ) : null}
         </div>
       </div>
 
@@ -456,7 +559,7 @@ export default function WorkoutLaunchpad({
                           <strong>{option.dayType === 'rest' ? 'Rest day' : formatDayType(option.dayType)}</strong>
                           <small>
                             {option.dayType === 'rest'
-                              ? 'Skip the build and recover on purpose.'
+                              ? 'Skip the build and use today to recover.'
                               : option.dayType === 'cardio'
                                 ? 'Conditioning instead of a lift.'
                                 : isOverride

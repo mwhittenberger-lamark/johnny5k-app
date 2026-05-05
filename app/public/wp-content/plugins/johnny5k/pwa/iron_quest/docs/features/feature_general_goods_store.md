@@ -20,6 +20,12 @@ What should I buy before the next push?
 
 The answer should be understandable in seconds.
 
+In the shipped Phase 2 product, the store also needs to answer:
+
+- what is already active right now
+- where that effect applies
+- when it expires
+
 ## V1 Structure
 
 Keep the store limited to four sections:
@@ -115,6 +121,12 @@ Each region store should feel slightly different without requiring a giant catal
 
 This keeps store identity local without excessive complexity.
 
+Current Phase 2 presentation should reinforce that identity with:
+
+- region-specific merchant name
+- shared store-owner portrait art
+- region-aware recommendation copy
+
 ## Pricing Philosophy
 
 Gold should feel:
@@ -152,6 +164,8 @@ Show:
 - HP
 - current region store name
 - one recommended purchase line
+- merchant portrait or placeholder
+- active consequence summary
 
 ### Store Sections
 
@@ -171,13 +185,20 @@ Tap item, then show:
 - expiry rule
 - confirm purchase
 
+In the current UI, the critical requirement is still visible expiry and consequence clarity even if the confirm interaction stays lightweight.
+
 ### After Purchase
 
 After buying an item, link naturally to:
 
 - Character Sheet
-- Inventory
 - Mission Board
+
+Current shipped behavior should bias toward the Character Sheet so the player can immediately see:
+
+- the item became active or entered inventory
+- whether it changes the next mission
+- whether it persists or is one-use
 
 ## Data Model
 
@@ -197,6 +218,34 @@ Store rendering should come from a location-aware payload.
     "recommended_purchase": {
       "item_id": "field_bandage",
       "label": "You are running light on HP. Patch up before the next push."
+    },
+    "merchant": {
+      "name": "Quartermaster Halden",
+      "description": "A practical merchant who sells preparation, not fantasy.",
+      "art": {
+        "art_key": "store_owner_the_training_grounds",
+        "status": "ready"
+      }
+    },
+    "inventory": {
+      "active_charm": {
+        "id": "coin_charm",
+        "name": "Coin Charm",
+        "effect_summary": "Small bonus gold on the next mission"
+      },
+      "active_prep": null
+    },
+    "mission_modifiers": {
+      "summary": "Coin Charm is queued for the next mission.",
+      "entries": [
+        {
+          "id": "store_charm_coin_charm",
+          "label": "Coin Charm",
+          "effect_summary": "Small bonus gold on the next mission",
+          "applies_to_label": "Next mission payout",
+          "consumes_on_label": "Stays active until replaced"
+        }
+      ]
     },
     "sections": {
       "recovery_goods": [
@@ -237,6 +286,17 @@ Store rendering should come from a location-aware payload.
 ## Relationship To Inventory
 
 Purchased items should enter inventory immediately.
+
+## Guardrails
+
+Do not drift this feature toward:
+
+- a weapon or armor storefront
+- rarity ladders and filler loot
+- complex compare screens
+- a second economy loop that competes with training
+
+The store is successful when it makes gold feel useful and readable, not when it becomes a gear meta.
 
 Temporary purchases should also appear under active effects when relevant.
 

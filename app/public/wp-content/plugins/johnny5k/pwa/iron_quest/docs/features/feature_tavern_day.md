@@ -20,30 +20,22 @@ It must not punish the user for taking a real rest day.
 
 On a rest day, the player should be able to:
 
-1. Enter the tavern for their current location
-2. Make one meaningful recovery or progression choice
-3. Optionally complete one healthy behavior
-4. Leave with a small reward, buff, or mission hint
+1. enter the tavern for their current location
+2. make one meaningful recovery or progression choice
+3. see exactly what changed
+4. leave in under one minute
 
-The entire loop should take under one minute.
+## Current Phase 2 Action Set
 
-## Source Content
+The shipped Phase 2 tavern actions are:
 
-Tavern flavor should come from the current location documents.
+- `rest`
+- `side_job`
+- `rumors`
 
-Source fields already exist in the location docs:
+Treat these as the canonical Tavern Day actions unless the rules doc is explicitly revised.
 
-- tavern name
-- tavern tone
-- tavern flavor text
-- tavern-themed actions
-
-The baseline Tavern Day action set already exists in the rules:
-
-- Rest
-- Side job
-- Rumors
-- Supplies purchase
+`Supplies purchase` can remain a future extension idea, but it is not the current live Tavern Day choice set.
 
 ## When Tavern Day Appears
 
@@ -56,38 +48,39 @@ Show Tavern Day when today is a scheduled rest day.
 It may also appear when:
 
 - the user explicitly opens the Tavern from the IronQuest hub
-- the user completed a mission yesterday and has no mission-ready training today
-- recovery/readiness logic suggests a lighter day and the plan is already rest-focused
+- the user reaches Tavern from the Character Sheet
+- the workout flow is already in rest-day mode and IronQuest is enabled
 
-## Entry Points
+## Current Entry Points
 
-### Dashboard
+### Workout Launchpad
 
-Recommended card:
+This is the primary live entry point in the current product.
 
-- title: current tavern name
-- short flavor line
-- one primary CTA: `Enter tavern`
-
-### Workout Screen
-
-If the day type is `rest`, swap the mission-start framing for tavern-start framing.
+If the day type is `rest`, the workout-start framing becomes tavern-start framing.
 
 ### IronQuest Hub
 
-Keep Tavern as a stable destination in the hub so users can revisit it even if they bypass the dashboard card.
+The hub can deep-link into Tavern Day through `Enter Tavern`.
+
+### Character Sheet
+
+The Character Sheet can deep-link into Tavern Day when the current location has a tavern.
 
 ## User Flow
 
 ### Happy Path
 
-1. User opens Tavern Day
-2. App shows location-specific tavern art/copy
-3. User sees 3 to 4 available actions
-4. User chooses one action
-5. App applies immediate result or grants a pending bonus
-6. Johnny gives one short tavern-style follow-up line
-7. User optionally deep-links to nutrition, body, or tomorrow\'s workout setup
+1. user opens Tavern Day
+2. app shows location-specific tavern copy and tavern scene art
+3. user sees the available actions
+4. user chooses one action
+5. app resolves the action immediately
+6. app shows a consequence summary:
+   - what paid out now
+   - what affects the mission board
+   - what expires at daily reset
+7. Johnny gives one short tavern-style follow-up line
 
 ## Core Tavern Actions
 
@@ -97,13 +90,14 @@ Purpose:
 
 - direct recovery
 
-Base effect:
+Phase 2 effect:
 
-- recover HP
+- restore HP immediately
 
-Recommended Phase 2 effect:
+Current mental model:
 
-- `+8 HP`, capped by `hp_max`
+- effect resolves now
+- no hidden mission modifier remains afterward
 
 ### 2. Side Job
 
@@ -111,87 +105,58 @@ Purpose:
 
 - keep progression moving on a non-training day
 
-Base effect:
+Phase 2 effect:
 
-- grant gold
+- grant gold immediately
 
-Recommended Phase 2 effect:
+Current mental model:
 
-- `+10 gold`
+- effect resolves now
+- no lingering buff to remember
 
 ### 3. Rumors
 
 Purpose:
 
-- give flavor and future pull
+- give future pull without adding friction
 
-Base effect:
+Phase 2 effect:
 
-- grant XP and preview or reveal a mission
+- grant XP immediately
+- surface a mission preview or board lead
 
-Recommended Phase 2 effect:
+Current mental model:
 
-- `+10 XP`
-- mission preview or world hint
+- XP resolves now
+- the mission lead remains visible until daily reset
 
-### 4. Supplies
+## Consequence Clarity
 
-Purpose:
+Tavern Day must make its rules explicit.
 
-- light setup for the next mission
+After a tavern action resolves, the user should be able to answer:
 
-Base effect:
+1. what did I already get?
+2. what is still active?
+3. when does it clear?
 
-- spend gold for a small next-mission edge
+Examples:
 
-Recommended Phase 2 behavior:
+- `Rest`: `+8 HP`, applies immediately, no lingering effect
+- `Side job`: `+10 gold`, applies immediately, no lingering effect
+- `Rumors`: `+10 XP`, mission board lead visible until daily reset
 
-- do not force full inventory complexity
-- treat this as a simple preparation action or deferred buff
+## World Art Relationship
 
-## Johnny5k-Aligned Rest-Day Actions
+Each region tavern can have shared world art.
 
-These actions tie Tavern Day back to the Johnny5k behavior loop.
+The tavern screen should use:
 
-### Hearty Meal
+- tavern name
+- tavern flavor text
+- tavern scene art
 
-Trigger:
-
-- user logs a protein-forward meal
-
-Effect:
-
-- small tavern bonus, XP, or recovery bump
-
-### Early Room
-
-Trigger:
-
-- user logs sleep or hits bedtime target
-
-Effect:
-
-- readiness-flavored reward or recovery bonus
-
-### Scout The Roads
-
-Trigger:
-
-- user hits a modest walk or cardio target on a rest day
-
-Effect:
-
-- travel preview, small XP, or rumor bonus
-
-### Study The Board
-
-Trigger:
-
-- user asks Johnny what tomorrow should look like
-
-Effect:
-
-- route to dashboard/workout planning with tavern-flavored coaching
+This makes recovery days feel like a place instead of a text block.
 
 ## Data Model
 
@@ -207,7 +172,11 @@ Tavern Day should be renderable from a single response payload.
   "tavern": {
     "name": "The First Rest",
     "tone": "warm, practical, low-stakes optimism",
-    "flavor_text": "Everyone here is still becoming who they are."
+    "flavor_text": "Everyone here is still becoming who they are.",
+    "art": {
+      "art_key": "tavern_scene_the_training_grounds",
+      "status": "ready"
+    }
   },
   "profile": {
     "class_slug": "mage",
@@ -232,6 +201,13 @@ Tavern Day should be renderable from a single response payload.
       "disabled": false
     },
     {
+      "id": "side_job",
+      "label": "Pick up a side job",
+      "description": "Take the simple work that still pays.",
+      "effect_summary": "+10 gold",
+      "disabled": false
+    },
+    {
       "id": "rumors",
       "label": "Listen for rumors",
       "description": "Veterans talk quietly about darkness beyond the road.",
@@ -239,17 +215,26 @@ Tavern Day should be renderable from a single response payload.
       "disabled": false
     }
   ],
-  "selected_action": null,
-  "resolved_today": false,
+  "selected_action": {
+    "action_id": "rumors",
+    "effects": {
+      "xp_delta": 10,
+      "mission_preview": {
+        "slug": "captain_of_the_yard",
+        "name": "Captain of the Yard"
+      }
+    }
+  },
+  "resolved_today": true,
   "johnny_line": "Use today to reset, not to drift."
 }
 ```
 
 ## Persistence Model
 
-Phase 2 should support one meaningful tavern action per day.
+Phase 2 supports one meaningful tavern action per day.
 
-### Suggested Persisted Fields
+Recommended persisted fields:
 
 - `user_id`
 - `date`
@@ -258,176 +243,13 @@ Phase 2 should support one meaningful tavern action per day.
 - `resolved_effects_json`
 - `follow_up_state_json`
 
-### Why
+## Guardrails
 
-This keeps Tavern Day idempotent and prevents duplicate rewards from repeated refreshes.
+Do not let Tavern Day drift into:
 
-## Endpoint Recommendation
+- a second store
+- a narrative-heavy visual novel
+- a replacement for workout missions
+- a place where the player has to remember hidden buff timing
 
-### 1. Get Tavern State
-
-`GET /fit/v1/ironquest/tavern`
-
-Purpose:
-
-- return current tavern payload for today
-
-Response should include:
-
-- location tavern flavor
-- profile values needed for tavern display
-- available actions
-- whether an action has already been taken today
-- current follow-up cues
-
-### 2. Resolve Tavern Action
-
-`POST /fit/v1/ironquest/tavern/action`
-
-Request:
-
-```json
-{
-  "date": "2026-04-29",
-  "action_id": "rest"
-}
-```
-
-Response:
-
-```json
-{
-  "resolved": true,
-  "action_id": "rest",
-  "effects": {
-    "hp_delta": 8,
-    "gold_delta": 0,
-    "xp_delta": 0,
-    "mission_preview": null
-  },
-  "profile": {
-    "hp_current": 90,
-    "hp_max": 100,
-    "gold": 54,
-    "xp": 920
-  },
-  "johnny_line": "A quiet room and one good night will do more than another forced fight.",
-  "follow_up": {
-    "screen": "body",
-    "focus_tab": "sleep",
-    "label": "Log sleep"
-  }
-}
-```
-
-### Optional Later Endpoint
-
-`POST /fit/v1/ironquest/tavern/follow-up`
-
-Only add this if Tavern Day grows into multi-step social or prep flows.
-
-It is not needed for the first pass.
-
-## Reward Rules
-
-### Hard Rules
-
-- one core tavern action per day
-- no duplicate reward farming on refresh
-- recovery effects respect `hp_max`
-- tavern rewards stay small compared with workout rewards
-
-### Design Intent
-
-- Tavern Day should feel worthwhile
-- Tavern Day should not outpay training
-- Tavern Day should strengthen tomorrow more than it dominates today
-
-## UI Structure
-
-### Top Section
-
-- tavern name
-- location name
-- flavor text
-
-### Middle Section
-
-- current HP
-- gold
-- optional streak or recovery note
-
-### Action Section
-
-- 3 to 4 tavern actions
-- one-line descriptions
-- clear effect summaries
-
-### Result Section
-
-- resolved reward
-- short Johnny line
-- optional next-step deep link
-
-## Johnny Voice Rules For Tavern Day
-
-Johnny should sound like:
-
-- a coach helping you reset
-- a guide pointing to the smart next move
-- a grounded companion in the world
-
-Johnny should not sound like:
-
-- a boss announcer
-- a battle narrator during recovery
-- a hype machine pretending a rest day is a war scene
-
-## Integrations
-
-### Body / Recovery
-
-- sleep logging deep link
-- recovery framing after low-HP mission days
-
-### Nutrition
-
-- meal-log deep link for tavern meal actions
-
-### Workout
-
-- tomorrow prep deep link
-- mission preview for the next training day
-
-### Dashboard
-
-- main entry card for scheduled rest days
-
-## Non-Goals For Phase 2
-
-Do not add these yet:
-
-- tavern minigames
-- social multiplayer taverns
-- full merchant simulation
-- romance systems
-- multi-room NPC networks
-- subclass quest chains inside taverns
-
-## Acceptance Criteria
-
-The feature is complete when:
-
-1. A rest-day user can enter a location-specific tavern in one tap.
-2. The tavern offers one small meaningful choice for that day.
-3. Rewards resolve once and persist safely.
-4. Johnny provides a recovery-appropriate follow-up line.
-5. The user can deep-link into sleep, meal logging, walking, or tomorrow planning from the result state.
-
-## Recommended Implementation Order
-
-1. Build a tavern state resolver from current location plus rest-day context.
-2. Add a single daily tavern action resolver endpoint.
-3. Start with `rest`, `side_job`, and `rumors` only.
-4. Add dashboard and workout-screen entry points for rest days.
-5. Add behavior-linked follow-up actions for sleep, meals, and light movement.
+The tavern is successful when it makes recovery days feel connected and readable.

@@ -36,8 +36,11 @@ class RestRouteRegistrationTest extends ServiceTestCase {
 
 		$this->assertRouteRegistered( '/ironquest/route/fast-travel', [ IronQuestController::class, 'fast_travel' ] );
 		$this->assertRouteRegistered( '/ironquest/route/travel', [ IronQuestController::class, 'travel_to_location' ] );
-		$this->assertRouteRegistered( '/ironquest/restart', [ IronQuestController::class, 'restart_onboarding' ] );
-		$this->assertRouteRegistered( '/ironquest/store', [ IronQuestController::class, 'get_store' ] );
+			$this->assertRouteRegistered( '/ironquest/restart', [ IronQuestController::class, 'restart_onboarding' ] );
+			$this->assertRouteRegistered( '/ironquest/character-sheet/portrait', [ IronQuestController::class, 'generate_character_sheet_portrait' ] );
+			$this->assertRouteRegistered( '/ironquest/world-art/generate', [ IronQuestController::class, 'generate_world_art' ] );
+			$this->assertRouteRegistered( '/ironquest/world-art/(?P<art_key>[a-z0-9_\-]+)', [ IronQuestController::class, 'serve_world_art' ] );
+			$this->assertRouteRegistered( '/ironquest/store', [ IronQuestController::class, 'get_store' ] );
 		$this->assertRouteRegistered( '/ironquest/store/purchase', [ IronQuestController::class, 'purchase_store_item' ] );
 		$this->assertRouteRegistered( '/ironquest/store/use', [ IronQuestController::class, 'use_store_item' ] );
 		$this->assertRouteRegistered( '/ironquest/store/sell', [ IronQuestController::class, 'sell_store_item' ] );

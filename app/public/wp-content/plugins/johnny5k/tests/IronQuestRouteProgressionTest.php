@@ -254,6 +254,7 @@ class IronQuestRouteProgressionTest extends ServiceTestCase {
 			],
 			36
 		);
+		$this->queueMissionCompletionCountLookups( $user_id, 'grim_hollow_village', [], 8 );
 		$this->wpdb()->expectGetVar( "SELECT timezone FROM wp_fit_user_profiles WHERE user_id = {$user_id} LIMIT 1", 'America/New_York' );
 		$daily_state_callback = function () use ( $user_id ) {
 			foreach ( $this->wpdb()->inserted as $insert ) {
@@ -719,6 +720,17 @@ class IronQuestRouteProgressionTest extends ServiceTestCase {
 
 		for ( $index = 0; $index < $times; $index++ ) {
 			$db->expectGetResults( "FROM wp_fit_ironquest_activity_ledger WHERE user_id = {$user_id}", $callback );
+		}
+	}
+
+	private function queueMissionCompletionCountLookups( int $user_id, string $location_slug, array $rows, int $times ): void {
+		$db = $this->wpdb();
+
+		for ( $index = 0; $index < $times; $index++ ) {
+			$db->expectGetResults(
+				"FROM wp_fit_ironquest_mission_runs WHERE user_id = {$user_id} AND status = 'completed' AND result_band = 'victory' AND location_slug = '{$location_slug}'",
+				$rows
+			);
 		}
 	}
 

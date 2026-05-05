@@ -242,6 +242,39 @@ describe('buildCoachingSummary', () => {
     expect(summary.wins).toContain('4 workouts are on the board from last 14 days.')
   })
 
+  it('keeps body trend guidance plain when weight is moving', () => {
+    const summary = buildCoachingSummary({
+      surface: 'dashboard',
+      snapshot: {
+        goal: { target_sleep_hours: 8 },
+        sleep: { hours_sleep: 7.4 },
+      },
+      weights: [
+        { date: '2026-04-14', weight_lb: 197.2 },
+        { date: '2026-04-11', weight_lb: 198.0 },
+        { date: '2026-04-08', weight_lb: 198.6 },
+      ],
+      sleepLogs: [
+        { hours_sleep: 7.4 },
+        { hours_sleep: 7.2 },
+        { hours_sleep: 7.7 },
+      ],
+      stepLogs: [
+        { steps: 9100 },
+        { steps: 8600 },
+        { steps: 9400 },
+      ],
+      workoutHistory: [
+        { session_date: '2026-04-13', performed_at: '2026-04-13T06:45:00' },
+        { session_date: '2026-04-11', performed_at: '2026-04-11T06:45:00' },
+      ],
+    })
+
+    expect(summary.primaryType).toBe('body')
+    expect(summary.summary).toBe('Your weight is moving in the right direction. Stick with the basics: training, food, sleep, and daily movement.')
+    expect(summary.summary).not.toMatch(/real body trend|chasing novelty/i)
+  })
+
   it('captures the best recent workout completion window in adherence summaries', () => {
     const summary = buildCoachingSummary({
       snapshot: {

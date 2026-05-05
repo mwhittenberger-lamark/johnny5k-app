@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "seed_set": "v1_rival_encounters",
+  "rivals": [
+    {
+      "key": "serik_voss",
+      "name": "Serik Voss",
+      "title": "The Ashen Challenger",
+      "description": "A hard-eyed mercenary who treats every route like a test of discipline and every other champion like a benchmark to erase.",
+      "reward_title": "Breaker of Voss",
+      "reward_journal_label": "Serik Voss Defeated",
+      "portrait_hint": "scarred mercenary in ash-gray leathers, disciplined duelist posture, iron sigil worked into the collar, cold watchful eyes",
+      "appearances": [
+        {
+          "location_slug": "the_training_grounds",
+          "mission_slugs": ["cadence_yard", "captain_of_the_yard"],
+          "hook": "Serik has been taking measure of every new champion who survives the yard.",
+          "taunt": "Keep your pace clean. I only bother remembering the ones who do.",
+          "stakes": "He wants the yard talking about him, not you.",
+          "showdown": false
+        },
+        {
+          "location_slug": "grim_hollow_village",
+          "mission_slugs": ["the_first_wave", "the_hollow_well"],
+          "hook": "Serik arrived ahead of the dead and decided the village would be his proof of superiority.",
+          "taunt": "If you want this village to remember your name, beat me to the kill.",
+          "stakes": "Every win here shifts the survivors' faith toward whoever looks inevitable.",
+          "showdown": false
+        },
+        {
+          "location_slug": "grim_hollow_village",
+          "mission_slugs": ["the_necromancer_of_hollow"],
+          "hook": "Serik has followed the trail beneath the well and means to take the final credit for ending the curse.",
+          "taunt": "You survived the village. Now prove you deserve to be the one it remembers.",
+          "stakes": "If Serik takes the source below the well, the whole route will call him the region's true conqueror.",
+          "showdown": true
+        }
+      ]
+    }
+  ]
+}

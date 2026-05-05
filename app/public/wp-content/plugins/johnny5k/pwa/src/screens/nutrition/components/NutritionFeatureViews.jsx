@@ -495,6 +495,7 @@ export function TodayNutritionView({ screen, deps }) {
           </div>
           <button className="btn-secondary" type="button" onClick={() => screen.changeActiveView('plan', screen.planningSectionAnchor)}>Open planning</button>
         </div>
+        <NutritionNextStepCard screen={screen} scrollNodeIntoView={scrollNodeIntoView} />
         {screen.proteinMacroCard ? <div className="nutrition-summary-primary"><MacroStat {...screen.proteinMacroCard} onClick={() => screen.openDrawer(screen.proteinMacroCard.prompt)} /></div> : null}
         <div className="nutrition-summary nutrition-summary-actionable nutrition-summary-secondary-grid">
           {screen.secondaryMacroCards.map(card => <MacroStat key={card.label} {...card} onClick={() => screen.openDrawer(card.prompt)} />)}
@@ -524,54 +525,6 @@ export function TodayNutritionView({ screen, deps }) {
               )}
             </div>
           </details>
-        </div>
-        {screen.coachingSummary ? (
-          <TodayPanelAccordion
-            open={Boolean(screen.todayAccordions?.coachingRead)}
-            onToggle={() => screen.toggleTodayAccordion('coachingRead')}
-            chip={<span className="dashboard-chip ai">Coaching read</span>}
-            title="Coaching Read"
-            description={screen.coachingSummary?.summary || 'Johnny summarizes the strongest pattern and the next move for today.'}
-            meta={screen.coachingSummary?.contextLabel ? <span className="dashboard-chip subtle">{screen.coachingSummary.contextLabel}</span> : null}
-          >
-            <CoachingSummaryPanel
-              summary={screen.coachingSummary}
-              className="coaching-summary-panel-dark nutrition-today-accordion-panel"
-              chipLabel="Coaching read"
-              maxInsights={2}
-              onAction={screen.handleCoachingAction}
-              onAskJohnny={screen.openDrawer}
-              askJohnnyLabel="Ask Johnny"
-              analyticsContext={{ screen: 'nutrition', surface: 'nutrition_coaching_summary' }}
-            />
-          </TodayPanelAccordion>
-        ) : null}
-        <TodayPanelAccordion
-          innerRef={screen.beverageBoardSectionAnchor}
-          open={Boolean(screen.todayAccordions?.beverageBoard)}
-          onToggle={() => screen.toggleTodayAccordion('beverageBoard')}
-          chip={<span className="dashboard-chip nutrition">Beverage Board</span>}
-          title="Beverage Board"
-          description="Track the hidden calories, log drinks fast, and tap water as you go."
-          meta={<span className="dashboard-chip subtle">Water + drinks</span>}
-        >
-          <BeverageBoard screen={screen} showHeader={false} showShell={false} />
-        </TodayPanelAccordion>
-        <div className="nutrition-coach-card">
-          <div className="dashboard-card-head"><span className="dashboard-chip nutrition">Weekly calories</span><span className="dashboard-chip subtle">{screen.weeklyCaloriesReview.periodLabel || 'Last 7 days'}</span></div>
-          <h3>{screen.weeklyCaloriesReview.headline}</h3>
-          <p>{screen.weeklyCaloriesReview.review}</p>
-          <div className="nutrition-gap-list">
-            <span className="onboarding-chip active">Logged: {screen.weeklyCaloriesReview.totalCalories.toLocaleString()}</span>
-            <span className="onboarding-chip">Target: {screen.weeklyCaloriesReview.targetCalories.toLocaleString()}</span>
-            <span className="onboarding-chip">Days logged: {screen.weeklyCaloriesReview.loggedDays}/7</span>
-          </div>
-        </div>
-        <div className="nutrition-coach-card">
-          <div className="dashboard-card-head"><span className="dashboard-chip ai">Ask Johnny</span><span className="dashboard-chip subtle">Context-aware</span></div>
-          <h3>{buildNutritionCoachHeadline(screen.summary)}</h3>
-          <p>{buildNutritionCoachBody(screen.summary)}</p>
-          <div className="nutrition-coach-prompt-grid">{screen.coachPrompts.map(prompt => <button key={prompt.label} type="button" className="nutrition-coach-prompt" onClick={() => screen.handleCoachingPromptOpen(prompt)}><strong>{prompt.label}</strong><span>{prompt.meta}</span></button>)}</div>
         </div>
       </div>
 
@@ -661,10 +614,173 @@ export function TodayNutritionView({ screen, deps }) {
               const mealIds = Array.isArray(meal.meal_ids) && meal.meal_ids.length ? meal.meal_ids : [meal.id]
               await screen.runAction(() => Promise.all(mealIds.map(id => nutritionApi.deleteMeal(id))), 'Logged meal deleted.', { onSuccess: async () => { screen.invalidate(); await screen.loadData() } })
             }} />)}
-            {!screen.mergedMeals.length && !screen.showAddMethodPicker && !screen.showAddForm ? <EmptyState className="nutrition-inline-state" message="Scan one or add one manually." title="No meals logged yet today" /> : null}
+            {!screen.mergedMeals.length && !screen.showAddMethodPicker && !screen.showAddForm ? <EmptyState className="nutrition-inline-state" message="Start with the next-step actions above, then confirm the meal in this log." title="No meals logged yet today" /> : null}
           </div>
         )}
         <SectionClampToggle count={screen.meals.length} expanded={screen.expandedSections.meals} limit={4} label="meals" onToggle={() => screen.toggleSection('meals')} />
+      </div>
+
+      <div className="nutrition-today-support-stack">
+        {screen.coachingSummary ? (
+          <TodayPanelAccordion
+            open={Boolean(screen.todayAccordions?.coachingRead)}
+            onToggle={() => screen.toggleTodayAccordion('coachingRead')}
+            chip={<span className="dashboard-chip ai">Coaching read</span>}
+            title="Coaching Read"
+            description={screen.coachingSummary?.summary || 'Johnny summarizes the strongest pattern and the next move for today.'}
+            meta={screen.coachingSummary?.contextLabel ? <span className="dashboard-chip subtle">{screen.coachingSummary.contextLabel}</span> : null}
+          >
+            <CoachingSummaryPanel
+              summary={screen.coachingSummary}
+              className="coaching-summary-panel-dark nutrition-today-accordion-panel"
+              chipLabel="Coaching read"
+              maxInsights={2}
+              onAction={screen.handleCoachingAction}
+              onAskJohnny={screen.openDrawer}
+              askJohnnyLabel="Ask Johnny"
+              analyticsContext={{ screen: 'nutrition', surface: 'nutrition_coaching_summary' }}
+            />
+          </TodayPanelAccordion>
+        ) : null}
+        <TodayPanelAccordion
+          innerRef={screen.beverageBoardSectionAnchor}
+          open={Boolean(screen.todayAccordions?.beverageBoard)}
+          onToggle={() => screen.toggleTodayAccordion('beverageBoard')}
+          chip={<span className="dashboard-chip nutrition">Beverage Board</span>}
+          title="Beverage Board"
+          description="Track the hidden calories, log drinks fast, and tap water as you go."
+          meta={<span className="dashboard-chip subtle">Water + drinks</span>}
+        >
+          <BeverageBoard screen={screen} showHeader={false} showShell={false} />
+        </TodayPanelAccordion>
+        <div className="nutrition-coach-card">
+          <div className="dashboard-card-head"><span className="dashboard-chip nutrition">Weekly calories</span><span className="dashboard-chip subtle">{screen.weeklyCaloriesReview.periodLabel || 'Last 7 days'}</span></div>
+          <h3>{screen.weeklyCaloriesReview.headline}</h3>
+          <p>{screen.weeklyCaloriesReview.review}</p>
+          <div className="nutrition-gap-list">
+            <span className="onboarding-chip active">Logged: {screen.weeklyCaloriesReview.totalCalories.toLocaleString()}</span>
+            <span className="onboarding-chip">Target: {screen.weeklyCaloriesReview.targetCalories.toLocaleString()}</span>
+            <span className="onboarding-chip">Days logged: {screen.weeklyCaloriesReview.loggedDays}/7</span>
+          </div>
+        </div>
+        <div className="nutrition-coach-card">
+          <div className="dashboard-card-head"><span className="dashboard-chip ai">Ask Johnny</span><span className="dashboard-chip subtle">Context-aware</span></div>
+          <h3>{buildNutritionCoachHeadline(screen.summary)}</h3>
+          <p>{buildNutritionCoachBody(screen.summary)}</p>
+          <div className="nutrition-coach-prompt-grid">{screen.coachPrompts.map(prompt => <button key={prompt.label} type="button" className="nutrition-coach-prompt" onClick={() => screen.handleCoachingPromptOpen(prompt)}><strong>{prompt.label}</strong><span>{prompt.meta}</span></button>)}</div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function NutritionNextStepCard({ screen, scrollNodeIntoView }) {
+  const hasDraftOpen = Boolean(screen.showAddMethodPicker || screen.showAddForm)
+  const hasMealsLogged = screen.meals.length > 0
+  const statusLabel = hasDraftOpen
+    ? 'Draft open'
+    : hasMealsLogged
+      ? `${screen.meals.length} logged today`
+      : 'Nothing logged yet'
+  const title = hasDraftOpen
+    ? 'Finish the draft already in progress'
+    : hasMealsLogged
+      ? 'Log the next thing you eat while it is still easy to remember'
+      : 'Log your first meal for today'
+  const description = hasDraftOpen
+    ? 'Your draft is already open below. Confirm the meal type, check servings, then save so it lands in today’s log.'
+    : hasMealsLogged
+      ? 'Use saved food for repeats, switch to a photo when typing is slower, and keep the newest entry at the top for quick confirmation.'
+      : 'Choose the fastest input so the first entry is logged in under a minute. Saved food is fastest for repeats, and a photo works when typing is annoying.'
+  const steps = hasDraftOpen
+    ? [
+      { number: '1', title: 'Finish the draft', body: 'Set the meal type and time so the entry lands in the right slot.' },
+      { number: '2', title: 'Check servings', body: 'Make sure the foods and portions look right before saving.' },
+      { number: '3', title: 'Save and confirm', body: 'The saved meal will appear at the top of today’s log.' },
+    ]
+    : [
+      { number: '1', title: 'Choose an input method', body: 'Start with manual, saved food, or photo based on what is fastest right now.' },
+      { number: '2', title: 'Confirm the meal', body: 'Pick the meal slot and make quick serving edits if you need them.' },
+      { number: '3', title: 'Save and review', body: 'Check the newest logged meal at the top so you know it stuck.' },
+    ]
+
+  function handleOpenPhoto() {
+    screen.closeAddMealFlow()
+    screen.setShowLabelScanPrompt(false)
+    screen.setShowMealPhotoPrompt(true)
+  }
+
+  function handleOpenLabelScan() {
+    screen.openLabelScanPrompt()
+  }
+
+  function handleOpenBeverageBoard() {
+    screen.openBeverageBoard()
+  }
+
+  return (
+    <section className="nutrition-next-step-card" aria-label="Meal logging next steps">
+      <div className="nutrition-next-step-head">
+        <div className="nutrition-next-step-copy">
+          <span className="nutrition-next-step-eyebrow">Next step</span>
+          <h3>{title}</h3>
+          <p>{description}</p>
+        </div>
+        <span className="dashboard-chip subtle nutrition-next-step-status">{statusLabel}</span>
+      </div>
+      <div className="nutrition-next-step-actions">
+        <button type="button" className="btn-primary" onClick={() => {
+          if (hasDraftOpen) {
+            scrollNodeIntoView(screen.addMealFormAnchor.current)
+            return
+          }
+
+          screen.toggleAddMealFlow()
+        }}>
+          {hasDraftOpen ? 'Finish current draft' : 'Add meal'}
+        </button>
+        <button type="button" className="btn-secondary" onClick={() => {
+          if (hasDraftOpen) {
+            screen.closeAddMealFlow()
+            return
+          }
+
+          screen.handleAddMealMethodSelect('saved')
+        }}>
+          {hasDraftOpen ? 'Close draft' : 'Use saved food'}
+        </button>
+      </div>
+      {!hasDraftOpen ? (
+        <div className="nutrition-next-step-shortcuts" aria-label="Secondary logging shortcuts">
+          <button type="button" className="btn-secondary" onClick={handleOpenLabelScan}>
+            Scan label
+          </button>
+          <button type="button" className="btn-secondary" onClick={handleOpenBeverageBoard}>
+            Beverage Board
+          </button>
+        </div>
+      ) : null}
+      {!hasDraftOpen ? (
+        <details className="nutrition-next-step-more">
+          <summary>
+            <span>More ways to log</span>
+            <span className="nutrition-next-step-more-meta">Photo input</span>
+          </summary>
+          <div className="nutrition-next-step-more-actions">
+            <button type="button" className="btn-secondary" onClick={handleOpenPhoto}>
+              Snap meal pic
+            </button>
+          </div>
+        </details>
+      ) : null}
+      <div className="nutrition-next-step-grid">
+        {steps.map(step => (
+          <div key={step.number} className="nutrition-next-step-item">
+            <span className="nutrition-next-step-number">{step.number}</span>
+            <strong>{step.title}</strong>
+            <p>{step.body}</p>
+          </div>
+        ))}
       </div>
     </section>
   )

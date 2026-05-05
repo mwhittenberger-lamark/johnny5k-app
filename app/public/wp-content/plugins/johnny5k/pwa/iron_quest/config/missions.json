@@ -1,1153 +1,1715 @@
 {
-  "version": 1,
-  "seed_set": "v1_starter_locations",
-  "missions": [
-    {
-      "slug": "form_check",
-      "location_slug": "the_training_grounds",
-      "name": "Form Check",
-      "mission_number": 1,
-      "is_boss": false,
-      "replayable": true,
-      "mission_type": "easy_workout",
-      "goal": "Learn the basic Johnny5k rhythm",
-      "threat": "Training dummies and instructor prompts",
-      "narrative": "Johnny brings you to the quiet end of the yard, where trust is earned in small controlled moments and every mistake echoes louder than any show of force.",
-      "workout_feel": "3 exercises only",
-      "encounter_seeds": [
+    "version": 1,
+    "seed_set": "v1_starter_locations",
+    "missions": [
         {
-          "slug": "chalk_ring",
-          "title": "The Chalk Ring",
-          "objective": "steady the practice circle",
-          "threat": "the barked corrections of the yard master",
-          "prop": "the chalk ring",
-          "landmark": "the chalk-scraped practice square",
-          "hazard": "dust keeps sliding under careless feet and every correction carries across the yard",
-          "stakes": "if the ring breaks under you the whole yard will remember exactly how",
-          "enemy_posture": "the yard master keeps circling just outside the ring, waiting to pounce on the first lazy line",
-          "sensory_detail": "chalk dust hangs in the warm air and every boot scrape sounds louder than it should",
-          "pressure": "every mistake is being called out loud enough for the whole yard to hear",
-          "success_turn": "the circle steadies and the yard master loses a little of the advantage",
-          "advance_turn": "the chalk ring starts feeling like your ground instead of his lesson",
-          "struggle_turn": "the corrections start landing faster than you can answer them",
-          "crisis_turn": "the whole ring is one shouted correction away from collapsing under you",
-          "transition": "the circle settles, but the center lane is already waiting for a cleaner answer"
+            "slug": "form_check",
+            "location_slug": "the_training_grounds",
+            "name": "Form Check",
+            "mission_number": 1,
+            "is_boss": false,
+            "replayable": true,
+            "mission_type": "easy_workout",
+            "goal": "Learn the basic Johnny5k rhythm",
+            "threat": "Training dummies and instructor prompts",
+            "narrative": "Johnny brings you to the quiet end of the yard, where trust is earned in small controlled moments and every mistake echoes louder than any show of force.",
+            "workout_feel": "3 exercises only",
+            "encounter_seeds": [
+                {
+                    "slug": "chalk_ring",
+                    "title": "The Chalk Ring",
+                    "objective": "steady the practice circle",
+                    "threat": "the barked corrections of the yard master",
+                    "prop": "the chalk ring",
+                    "landmark": "the chalk-scraped practice square",
+                    "hazard": "dust keeps sliding under careless feet and every correction carries across the yard",
+                    "stakes": "if the ring breaks under you the whole yard will remember exactly how",
+                    "enemy_posture": "the yard master keeps circling just outside the ring, waiting to pounce on the first lazy line",
+                    "sensory_detail": "chalk dust hangs in the warm air and every boot scrape sounds louder than it should",
+                    "pressure": "every mistake is being called out loud enough for the whole yard to hear",
+                    "success_turn": "the circle steadies and the yard master loses a little of the advantage",
+                    "advance_turn": "the chalk ring starts feeling like your ground instead of his lesson",
+                    "struggle_turn": "the corrections start landing faster than you can answer them",
+                    "crisis_turn": "the whole ring is one shouted correction away from collapsing under you",
+                    "transition": "the circle settles, but the center lane is already waiting for a cleaner answer"
+                },
+                {
+                    "slug": "center_lane",
+                    "title": "The Center Lane",
+                    "objective": "prove you can keep the line clean under scrutiny",
+                    "threat": "the instructor's unbroken attention",
+                    "prop": "the center lane",
+                    "landmark": "the sun-beaten center lane",
+                    "hazard": "there is nowhere to hide a mistake once you step into the open strip",
+                    "stakes": "if you lose the lane here the yard decides you are all show and no command",
+                    "enemy_posture": "the instructor stands at the far post with his arms folded, never blinking",
+                    "sensory_detail": "sparring wood cracks nearby and the whole yard goes quiet whenever you move",
+                    "pressure": "the next mistake will draw the whole yard onto you",
+                    "success_turn": "you make the lane look simple and force the scrutiny to ease",
+                    "advance_turn": "the lane starts opening end to end as the whole yard runs out of faults to call",
+                    "struggle_turn": "the lane keeps tightening under the instructor's eye",
+                    "crisis_turn": "the center lane is one stumble away from becoming a public failure",
+                    "transition": "the lane opens, but the yard is already shaping the next demand"
+                }
+            ],
+            "outcomes": {
+                "victory": "The yard accepts your answer, and {encounter_proof}",
+                "partial": "You keep control long enough to finish the lesson, but the {encounter_label} still waits for cleaner command.",
+                "failure": "The lesson slips out of your hands before you can {encounter_objective}."
+            }
         },
         {
-          "slug": "center_lane",
-          "title": "The Center Lane",
-          "objective": "prove you can keep the line clean under scrutiny",
-          "threat": "the instructor's unbroken attention",
-          "prop": "the center lane",
-          "landmark": "the sun-beaten center lane",
-          "hazard": "there is nowhere to hide a mistake once you step into the open strip",
-          "stakes": "if you lose the lane here the yard decides you are all show and no command",
-          "enemy_posture": "the instructor stands at the far post with his arms folded, never blinking",
-          "sensory_detail": "sparring wood cracks nearby and the whole yard goes quiet whenever you move",
-          "pressure": "the next mistake will draw the whole yard onto you",
-          "success_turn": "you make the lane look simple and force the scrutiny to ease",
-          "advance_turn": "the lane starts opening end to end as the whole yard runs out of faults to call",
-          "struggle_turn": "the lane keeps tightening under the instructor's eye",
-          "crisis_turn": "the center lane is one stumble away from becoming a public failure",
-          "transition": "the lane opens, but the yard is already shaping the next demand"
-        }
-      ],
-      "outcomes": {
-        "victory": "The yard accepts your answer, and {encounter_proof}",
-        "partial": "You keep control long enough to finish the lesson, but the {encounter_label} still waits for cleaner command.",
-        "failure": "The lesson slips out of your hands before you can {encounter_objective}."
-      }
-    },
-    {
-      "slug": "marker_run",
-      "location_slug": "the_training_grounds",
-      "name": "Marker Run",
-      "mission_number": 2,
-      "is_boss": false,
-      "replayable": true,
-      "mission_type": "runner_task",
-      "run_type": "cardio",
-      "goal": "Visit the outer flags and return before the bell",
-      "threat": "Short practice loop",
-      "narrative": "The yard master sends you toward the outer flags before the dust from the last drill has settled. The route is short, but it only belongs to you if you come back with your breathing and nerve intact.",
-      "workout_feel": "Cardio challenge",
-      "encounter_seeds": [
-        {
-          "slug": "outer_flags",
-          "title": "The Outer Flags",
-          "objective": "touch the far markers and turn the route back in your favor",
-          "threat": "the bell counting down from the yard wall",
-          "prop": "the outer flags",
-          "landmark": "the wind-beaten flags at the yard wall",
-          "hazard": "loose gravel and the turn itself keep trying to spill your pace wide",
-          "stakes": "if the flags own the turn the return lane belongs to the bell",
-          "enemy_posture": "the wall bell keeps hammering time against your ribs from overhead",
-          "sensory_detail": "dust stings the shins and the bell note keeps bouncing off the stone",
-          "pressure": "every second the bell keeps ringing makes the return path feel longer",
-          "success_turn": "you hit the flags cleanly and steal a breath back from the clock",
-          "advance_turn": "the far markers start feeling claimed and the route back finally belongs to you",
-          "struggle_turn": "the bell keeps chewing up the route while the turn stays awkward",
-          "crisis_turn": "the turn at the outer flags is starting to vanish under the bell's pressure",
-          "transition": "the far turn is yours, but the return sprint is already waiting"
+            "slug": "marker_run",
+            "location_slug": "the_training_grounds",
+            "name": "Marker Run",
+            "mission_number": 2,
+            "is_boss": false,
+            "replayable": true,
+            "mission_type": "runner_task",
+            "run_type": "cardio",
+            "goal": "Visit the outer flags and return before the bell",
+            "threat": "Short practice loop",
+            "narrative": "The yard master sends you toward the outer flags before the dust from the last drill has settled. The route is short, but it only belongs to you if you come back with your breathing and nerve intact.",
+            "workout_feel": "Cardio challenge",
+            "encounter_seeds": [
+                {
+                    "slug": "outer_flags",
+                    "title": "The Outer Flags",
+                    "objective": "touch the far markers and turn the route back in your favor",
+                    "threat": "the bell counting down from the yard wall",
+                    "prop": "the outer flags",
+                    "landmark": "the wind-beaten flags at the yard wall",
+                    "hazard": "loose gravel and the turn itself keep trying to spill your pace wide",
+                    "stakes": "if the flags own the turn the return lane belongs to the bell",
+                    "enemy_posture": "the wall bell keeps hammering time against your ribs from overhead",
+                    "sensory_detail": "dust stings the shins and the bell note keeps bouncing off the stone",
+                    "pressure": "every second the bell keeps ringing makes the return path feel longer",
+                    "success_turn": "you hit the flags cleanly and steal a breath back from the clock",
+                    "advance_turn": "the far markers start feeling claimed and the route back finally belongs to you",
+                    "struggle_turn": "the bell keeps chewing up the route while the turn stays awkward",
+                    "crisis_turn": "the turn at the outer flags is starting to vanish under the bell's pressure",
+                    "transition": "the far turn is yours, but the return sprint is already waiting"
+                },
+                {
+                    "slug": "return_lane",
+                    "title": "The Return Lane",
+                    "objective": "bring the route home before the bell closes it",
+                    "threat": "the yard's shortening clock",
+                    "prop": "the return lane",
+                    "landmark": "the finish lane back toward the drill square",
+                    "hazard": "the ground feels longer on the way back and the air never quite fills the lungs",
+                    "stakes": "if the lane breaks your return the whole run becomes a lesson in fading late",
+                    "enemy_posture": "the clock keeps hunting your shoulder instead of fading behind you",
+                    "sensory_detail": "the finish markers shimmer in heat and every breath comes back rough",
+                    "pressure": "the finish is narrowing with every breath you waste",
+                    "success_turn": "you make the lane feel shorter and force the bell to chase you instead",
+                    "advance_turn": "the whole return lane starts collapsing toward the finish line under your pace",
+                    "struggle_turn": "the lane keeps stretching while the bell stays right on top of you",
+                    "crisis_turn": "the finish is one ragged breath from sealing itself off",
+                    "transition": "the lane breaks open, but the yard has already marked the next test"
+                }
+            ],
+            "outcomes": {
+                "victory": "You return before the bell can claim the yard, and {encounter_proof}",
+                "partial": "You make it back on time, but the {encounter_label} nearly steals the finish from you.",
+                "failure": "The bell claims the yard before you can {encounter_objective}."
+            },
+            "story_profile": {
+                "genre": "mission_fantasy",
+                "voice": "grounded_heroic",
+                "pacing": "steady_pressure",
+                "repetition_window": 6,
+                "stance_bias": {
+                    "steady": [
+                        "control",
+                        "advance"
+                    ],
+                    "aggressive": [
+                        "pressure",
+                        "defiance"
+                    ],
+                    "cautious": [
+                        "recovery",
+                        "control"
+                    ]
+                },
+                "banned_terms": [
+                    "bench press",
+                    "rep",
+                    "set"
+                ],
+                "allowed_mechanics_mentions": [
+                    "hp_loss_this_set",
+                    "roll_band",
+                    "set_result"
+                ]
+            },
+            "story_slots": {
+                "set_progression": {
+                    "count_target": 12,
+                    "notes": "Bootstrapped slot for between-set progression beats."
+                },
+                "transition_setup": {
+                    "count_target": 6,
+                    "notes": "Bootstrapped slot for carrying story continuity into the next encounter."
+                }
+            },
+            "beat_templates": [
+                {
+                    "id": "marker_run_progression_control_01",
+                    "slot": "set_progression",
+                    "tags": [
+                        "advance",
+                        "control",
+                        "steady"
+                    ],
+                    "weight": 4,
+                    "conditions": {
+                        "set_result": [
+                            "target_met",
+                            "recovered"
+                        ]
+                    },
+                    "tokens_required": [
+                        "success_turn",
+                        "enemy_posture"
+                    ],
+                    "skeleton": {
+                        "summary": "{success_turn}",
+                        "follow_up": "{enemy_posture}",
+                        "decision_prompt": "Press the opening before the scene can settle against you."
+                    }
+                },
+                {
+                    "id": "marker_run_progression_pressure_01",
+                    "slot": "set_progression",
+                    "tags": [
+                        "pressure",
+                        "recovery",
+                        "cautious"
+                    ],
+                    "weight": 3,
+                    "conditions": {
+                        "set_result": [
+                            "close_call",
+                            "slipped"
+                        ]
+                    },
+                    "tokens_required": [
+                        "pressure",
+                        "hazard"
+                    ],
+                    "skeleton": {
+                        "summary": "{pressure}",
+                        "follow_up": "{hazard}",
+                        "decision_prompt": "Settle the next answer before the pressure hardens into a loss."
+                    }
+                },
+                {
+                    "id": "marker_run_progression_crisis_01",
+                    "slot": "set_progression",
+                    "tags": [
+                        "crisis",
+                        "defiance",
+                        "aggressive"
+                    ],
+                    "weight": 2,
+                    "conditions": {
+                        "set_result": [
+                            "strain",
+                            "struggle"
+                        ]
+                    },
+                    "tokens_required": [
+                        "crisis_turn",
+                        "stakes"
+                    ],
+                    "skeleton": {
+                        "summary": "{crisis_turn}",
+                        "follow_up": "{stakes}",
+                        "decision_prompt": "Hold the next exchange together before the whole scene turns on you."
+                    }
+                },
+                {
+                    "id": "marker_run_transition_control_01",
+                    "slot": "transition_setup",
+                    "tags": [
+                        "transition",
+                        "control",
+                        "steady"
+                    ],
+                    "weight": 3,
+                    "conditions": {
+                        "set_result": [
+                            "target_met",
+                            "recovered"
+                        ]
+                    },
+                    "tokens_required": [
+                        "transition",
+                        "landmark"
+                    ],
+                    "skeleton": {
+                        "summary": "{transition}",
+                        "follow_up": "The next ground is {landmark}.",
+                        "decision_prompt": "Move before the next scene decides itself without you."
+                    }
+                },
+                {
+                    "id": "marker_run_transition_pressure_01",
+                    "slot": "transition_setup",
+                    "tags": [
+                        "transition",
+                        "pressure",
+                        "cautious"
+                    ],
+                    "weight": 2,
+                    "conditions": {
+                        "set_result": [
+                            "close_call",
+                            "slipped",
+                            "strain",
+                            "struggle"
+                        ]
+                    },
+                    "tokens_required": [
+                        "transition",
+                        "stakes"
+                    ],
+                    "skeleton": {
+                        "summary": "{transition}",
+                        "follow_up": "{stakes}",
+                        "decision_prompt": "Choose the next step before the danger closes fully around it."
+                    }
+                }
+            ]
         },
         {
-          "slug": "return_lane",
-          "title": "The Return Lane",
-          "objective": "bring the route home before the bell closes it",
-          "threat": "the yard's shortening clock",
-          "prop": "the return lane",
-          "landmark": "the finish lane back toward the drill square",
-          "hazard": "the ground feels longer on the way back and the air never quite fills the lungs",
-          "stakes": "if the lane breaks your return the whole run becomes a lesson in fading late",
-          "enemy_posture": "the clock keeps hunting your shoulder instead of fading behind you",
-          "sensory_detail": "the finish markers shimmer in heat and every breath comes back rough",
-          "pressure": "the finish is narrowing with every breath you waste",
-          "success_turn": "you make the lane feel shorter and force the bell to chase you instead",
-          "advance_turn": "the whole return lane starts collapsing toward the finish line under your pace",
-          "struggle_turn": "the lane keeps stretching while the bell stays right on top of you",
-          "crisis_turn": "the finish is one ragged breath from sealing itself off",
-          "transition": "the lane breaks open, but the yard has already marked the next test"
-        }
-      ],
-      "outcomes": {
-        "victory": "You return before the bell can claim the yard, and {encounter_proof}",
-        "partial": "You make it back on time, but the {encounter_label} nearly steals the finish from you.",
-        "failure": "The bell claims the yard before you can {encounter_objective}."
-      }
-    },
-    {
-      "slug": "first_steel",
-      "location_slug": "the_training_grounds",
-      "name": "First Steel",
-      "mission_number": 3,
-      "is_boss": false,
-      "replayable": true,
-      "mission_type": "intro_combat",
-      "goal": "Turn exercise into adventure fantasy",
-      "threat": "Straw soldiers and light sparring partners",
-      "narrative": "Wooden weapons crack, straw armor shudders, and shouted cues turn the yard into a first battlefield. Nothing here is meant to kill you, but all of it is meant to find out whether you flinch.",
-      "workout_feel": "Controlled starter effort",
-      "encounter_seeds": [
-        {
-          "slug": "straw_line",
-          "title": "The Straw Line",
-          "objective": "break the straw line before it can harden",
-          "threat": "the first rush of sparring partners",
-          "prop": "the straw line",
-          "landmark": "the straw men packed shoulder to shoulder near the yard rail",
-          "hazard": "split reed shafts and flying splinters keep cluttering the footing",
-          "stakes": "if the line hardens the yard will read hesitation in every next move",
-          "enemy_posture": "the sparring partners keep darting in and out behind the straw front",
-          "sensory_detail": "straw dust floats in the sunlight and practice blades clap like dry bones",
-          "pressure": "hesitation gives the whole line time to crowd you back",
-          "success_turn": "the line shudders and the first gap starts to show",
-          "advance_turn": "the straw line starts folding in on itself and exposing a real opening",
-          "struggle_turn": "the line keeps reforming every time you fail to press it",
-          "crisis_turn": "the whole line is one missed push away from swallowing the opening again",
-          "transition": "the line gives a little, but the raised platform is already turning into the real test"
+            "slug": "first_steel",
+            "location_slug": "the_training_grounds",
+            "name": "First Steel",
+            "mission_number": 3,
+            "is_boss": false,
+            "replayable": true,
+            "mission_type": "intro_combat",
+            "goal": "Turn exercise into adventure fantasy",
+            "threat": "Straw soldiers and light sparring partners",
+            "narrative": "Wooden weapons crack, straw armor shudders, and shouted cues turn the yard into a first battlefield. Nothing here is meant to kill you, but all of it is meant to find out whether you flinch.",
+            "workout_feel": "Controlled starter effort",
+            "encounter_seeds": [
+                {
+                    "slug": "straw_line",
+                    "title": "The Straw Line",
+                    "objective": "break the straw line before it can harden",
+                    "threat": "the first rush of sparring partners",
+                    "prop": "the straw line",
+                    "landmark": "the straw men packed shoulder to shoulder near the yard rail",
+                    "hazard": "split reed shafts and flying splinters keep cluttering the footing",
+                    "stakes": "if the line hardens the yard will read hesitation in every next move",
+                    "enemy_posture": "the sparring partners keep darting in and out behind the straw front",
+                    "sensory_detail": "straw dust floats in the sunlight and practice blades clap like dry bones",
+                    "pressure": "hesitation gives the whole line time to crowd you back",
+                    "success_turn": "the line shudders and the first gap starts to show",
+                    "advance_turn": "the straw line starts folding in on itself and exposing a real opening",
+                    "struggle_turn": "the line keeps reforming every time you fail to press it",
+                    "crisis_turn": "the whole line is one missed push away from swallowing the opening again",
+                    "transition": "the line gives a little, but the raised platform is already turning into the real test"
+                },
+                {
+                    "slug": "raised_platform",
+                    "title": "The Raised Platform",
+                    "objective": "hold the platform and force the duel to stay yours",
+                    "threat": "the captain's favored trainee",
+                    "prop": "the raised platform",
+                    "landmark": "the scarred sparring platform above the yard",
+                    "hazard": "the boards flex under hard pivots and the edge never stops looming",
+                    "stakes": "if you lose the platform the crowd and the duel both tilt away from you",
+                    "enemy_posture": "the favored trainee keeps stalking the center board and daring you to overreach",
+                    "sensory_detail": "boots drum on the planks and the rail crowd sucks in breath with every shift",
+                    "pressure": "one bad step will hand the platform and the crowd to the other side",
+                    "success_turn": "you take the stronger footing and make the platform answer to you",
+                    "advance_turn": "the platform starts tilting fully toward your side and the crowd feels it",
+                    "struggle_turn": "the platform keeps shifting toward the other fighter's rhythm",
+                    "crisis_turn": "the platform is one bad step from throwing the whole duel away",
+                    "transition": "the platform steadies, but the captains are already choosing the next pressure point"
+                }
+            ],
+            "outcomes": {
+                "victory": "The straw line gives way and the yard finally feels like a true campaign. The {encounter_label} breaks your way because you {encounter_objective}.",
+                "partial": "You force the line to hesitate, but the {encounter_label} still answers every opening with pressure.",
+                "failure": "The first clash gets inside your timing before you can {encounter_objective}."
+            },
+            "story_profile": {
+                "genre": "mission_fantasy",
+                "voice": "grounded_heroic",
+                "pacing": "steady_pressure",
+                "repetition_window": 6,
+                "stance_bias": {
+                    "steady": [
+                        "control",
+                        "advance"
+                    ],
+                    "aggressive": [
+                        "pressure",
+                        "defiance"
+                    ],
+                    "cautious": [
+                        "recovery",
+                        "control"
+                    ]
+                },
+                "banned_terms": [
+                    "bench press",
+                    "rep",
+                    "set"
+                ],
+                "allowed_mechanics_mentions": [
+                    "hp_loss_this_set",
+                    "roll_band",
+                    "set_result"
+                ]
+            },
+            "story_slots": {
+                "set_progression": {
+                    "count_target": 12,
+                    "notes": "Bootstrapped slot for between-set progression beats."
+                },
+                "transition_setup": {
+                    "count_target": 6,
+                    "notes": "Bootstrapped slot for carrying story continuity into the next encounter."
+                }
+            },
+            "beat_templates": [
+                {
+                    "id": "first_steel_progression_control_01",
+                    "slot": "set_progression",
+                    "tags": [
+                        "advance",
+                        "control",
+                        "steady"
+                    ],
+                    "weight": 4,
+                    "conditions": {
+                        "set_result": [
+                            "target_met",
+                            "recovered"
+                        ]
+                    },
+                    "tokens_required": [
+                        "success_turn",
+                        "enemy_posture"
+                    ],
+                    "skeleton": {
+                        "summary": "{success_turn}",
+                        "follow_up": "{enemy_posture}",
+                        "decision_prompt": "Press the opening before the scene can settle against you."
+                    }
+                },
+                {
+                    "id": "first_steel_progression_pressure_01",
+                    "slot": "set_progression",
+                    "tags": [
+                        "pressure",
+                        "recovery",
+                        "cautious"
+                    ],
+                    "weight": 3,
+                    "conditions": {
+                        "set_result": [
+                            "close_call",
+                            "slipped"
+                        ]
+                    },
+                    "tokens_required": [
+                        "pressure",
+                        "hazard"
+                    ],
+                    "skeleton": {
+                        "summary": "{pressure}",
+                        "follow_up": "{hazard}",
+                        "decision_prompt": "Settle the next answer before the pressure hardens into a loss."
+                    }
+                },
+                {
+                    "id": "first_steel_progression_crisis_01",
+                    "slot": "set_progression",
+                    "tags": [
+                        "crisis",
+                        "defiance",
+                        "aggressive"
+                    ],
+                    "weight": 2,
+                    "conditions": {
+                        "set_result": [
+                            "strain",
+                            "struggle"
+                        ]
+                    },
+                    "tokens_required": [
+                        "crisis_turn",
+                        "stakes"
+                    ],
+                    "skeleton": {
+                        "summary": "{crisis_turn}",
+                        "follow_up": "{stakes}",
+                        "decision_prompt": "Hold the next exchange together before the whole scene turns on you."
+                    }
+                },
+                {
+                    "id": "first_steel_transition_control_01",
+                    "slot": "transition_setup",
+                    "tags": [
+                        "transition",
+                        "control",
+                        "steady"
+                    ],
+                    "weight": 3,
+                    "conditions": {
+                        "set_result": [
+                            "target_met",
+                            "recovered"
+                        ]
+                    },
+                    "tokens_required": [
+                        "transition",
+                        "landmark"
+                    ],
+                    "skeleton": {
+                        "summary": "{transition}",
+                        "follow_up": "The next ground is {landmark}.",
+                        "decision_prompt": "Move before the next scene decides itself without you."
+                    }
+                },
+                {
+                    "id": "first_steel_transition_pressure_01",
+                    "slot": "transition_setup",
+                    "tags": [
+                        "transition",
+                        "pressure",
+                        "cautious"
+                    ],
+                    "weight": 2,
+                    "conditions": {
+                        "set_result": [
+                            "close_call",
+                            "slipped",
+                            "strain",
+                            "struggle"
+                        ]
+                    },
+                    "tokens_required": [
+                        "transition",
+                        "stakes"
+                    ],
+                    "skeleton": {
+                        "summary": "{transition}",
+                        "follow_up": "{stakes}",
+                        "decision_prompt": "Choose the next step before the danger closes fully around it."
+                    }
+                }
+            ]
         },
         {
-          "slug": "raised_platform",
-          "title": "The Raised Platform",
-          "objective": "hold the platform and force the duel to stay yours",
-          "threat": "the captain's favored trainee",
-          "prop": "the raised platform",
-          "landmark": "the scarred sparring platform above the yard",
-          "hazard": "the boards flex under hard pivots and the edge never stops looming",
-          "stakes": "if you lose the platform the crowd and the duel both tilt away from you",
-          "enemy_posture": "the favored trainee keeps stalking the center board and daring you to overreach",
-          "sensory_detail": "boots drum on the planks and the rail crowd sucks in breath with every shift",
-          "pressure": "one bad step will hand the platform and the crowd to the other side",
-          "success_turn": "you take the stronger footing and make the platform answer to you",
-          "advance_turn": "the platform starts tilting fully toward your side and the crowd feels it",
-          "struggle_turn": "the platform keeps shifting toward the other fighter's rhythm",
-          "crisis_turn": "the platform is one bad step from throwing the whole duel away",
-          "transition": "the platform steadies, but the captains are already choosing the next pressure point"
-        }
-      ],
-      "outcomes": {
-        "victory": "The straw line gives way and the yard finally feels like a true campaign. The {encounter_label} breaks your way because you {encounter_objective}.",
-        "partial": "You force the line to hesitate, but the {encounter_label} still answers every opening with pressure.",
-        "failure": "The first clash gets inside your timing before you can {encounter_objective}."
-      }
-    },
-    {
-      "slug": "cadence_yard",
-      "location_slug": "the_training_grounds",
-      "name": "Cadence Yard",
-      "mission_number": 4,
-      "is_boss": false,
-      "replayable": true,
-      "mission_type": "structured_progression",
-      "goal": "Learn pacing, rests, and mission completion",
-      "threat": "Drill captains and timed circuits",
-      "narrative": "The yard stops forgiving wasted breath. Drill captains watch the clock, the rests, and the look in your face between efforts, waiting to see whether your discipline holds when the rhythm turns against you.",
-      "workout_feel": "Moderate mixed output",
-      "encounter_seeds": [
-        {
-          "slug": "captains_whistle",
-          "title": "The Captains' Whistle",
-          "objective": "hold command of the opening circuit",
-          "threat": "the captains' whistle cutting every rest short",
-          "prop": "the first circuit lane",
-          "landmark": "the painted opening circuit beneath the watchtower",
-          "hazard": "the whistle keeps cutting recovery short and forcing the lungs to catch up mid-stride",
-          "stakes": "if the whistle owns the count the whole circuit becomes their lesson instead of your ground",
-          "enemy_posture": "the captains pace the rail with whistles already at their lips",
-          "sensory_detail": "metal notes slash the air and the packed dirt smells hot under the sun",
-          "pressure": "the whistle is trying to take your breathing away before the circuit belongs to you",
-          "success_turn": "you keep the circuit under your own count and deny the whistle its hold",
-          "advance_turn": "the whole opening circuit starts running on your count instead of theirs",
-          "struggle_turn": "the whistle keeps breaking your rhythm before you can settle it",
-          "crisis_turn": "the first lane is one broken breath from turning entirely against you",
-          "transition": "the first lane holds, but the timed turn is already about to bite down"
+            "slug": "cadence_yard",
+            "location_slug": "the_training_grounds",
+            "name": "Cadence Yard",
+            "mission_number": 4,
+            "is_boss": false,
+            "replayable": true,
+            "mission_type": "structured_progression",
+            "goal": "Learn pacing, rests, and mission completion",
+            "threat": "Drill captains and timed circuits",
+            "narrative": "The yard stops forgiving wasted breath. Drill captains watch the clock, the rests, and the look in your face between efforts, waiting to see whether your discipline holds when the rhythm turns against you.",
+            "workout_feel": "Moderate mixed output",
+            "encounter_seeds": [
+                {
+                    "slug": "captains_whistle",
+                    "title": "The Captains' Whistle",
+                    "objective": "hold command of the opening circuit",
+                    "threat": "the captains' whistle cutting every rest short",
+                    "prop": "the first circuit lane",
+                    "landmark": "the painted opening circuit beneath the watchtower",
+                    "hazard": "the whistle keeps cutting recovery short and forcing the lungs to catch up mid-stride",
+                    "stakes": "if the whistle owns the count the whole circuit becomes their lesson instead of your ground",
+                    "enemy_posture": "the captains pace the rail with whistles already at their lips",
+                    "sensory_detail": "metal notes slash the air and the packed dirt smells hot under the sun",
+                    "pressure": "the whistle is trying to take your breathing away before the circuit belongs to you",
+                    "success_turn": "you keep the circuit under your own count and deny the whistle its hold",
+                    "advance_turn": "the whole opening circuit starts running on your count instead of theirs",
+                    "struggle_turn": "the whistle keeps breaking your rhythm before you can settle it",
+                    "crisis_turn": "the first lane is one broken breath from turning entirely against you",
+                    "transition": "the first lane holds, but the timed turn is already about to bite down"
+                },
+                {
+                    "slug": "timed_turn",
+                    "title": "The Timed Turn",
+                    "objective": "carry clean control through the hard turn",
+                    "threat": "the circuit tightening every time you hesitate",
+                    "prop": "the timed turn",
+                    "landmark": "the sharp turn marker at the back end of the yard",
+                    "hazard": "the pivot comes too fast and punishes any breath taken half-late",
+                    "stakes": "if the turn breaks your rhythm the rest of the circuit will punish you for it",
+                    "enemy_posture": "the circuit itself seems to lean into the bend and wait for you to lose balance",
+                    "sensory_detail": "dust spirals at the marker and every exhale feels visible",
+                    "pressure": "if the turn gets ahead of you the whole circuit will start running you instead",
+                    "success_turn": "you come through the turn clean and make the circuit follow your pace",
+                    "advance_turn": "the hard turn starts straightening under your tempo and the full circuit finally obeys",
+                    "struggle_turn": "the turn keeps kicking the tempo out from under you",
+                    "crisis_turn": "the timed turn is one ugly lapse from flipping the entire circuit onto you",
+                    "transition": "the turn clears, but the final lane is already demanding a harder answer"
+                }
+            ],
+            "outcomes": {
+                "victory": "You finish the circuit with the tempo still under your command. The {encounter_label} never fully settles because you {encounter_objective}.",
+                "partial": "You complete the work, but the {encounter_label} exposes every place where your rhythm still leaks control.",
+                "failure": "The captains keep the pressure on until the {encounter_label} turns before you can {encounter_objective}."
+            }
         },
         {
-          "slug": "timed_turn",
-          "title": "The Timed Turn",
-          "objective": "carry clean control through the hard turn",
-          "threat": "the circuit tightening every time you hesitate",
-          "prop": "the timed turn",
-          "landmark": "the sharp turn marker at the back end of the yard",
-          "hazard": "the pivot comes too fast and punishes any breath taken half-late",
-          "stakes": "if the turn breaks your rhythm the rest of the circuit will punish you for it",
-          "enemy_posture": "the circuit itself seems to lean into the bend and wait for you to lose balance",
-          "sensory_detail": "dust spirals at the marker and every exhale feels visible",
-          "pressure": "if the turn gets ahead of you the whole circuit will start running you instead",
-          "success_turn": "you come through the turn clean and make the circuit follow your pace",
-          "advance_turn": "the hard turn starts straightening under your tempo and the full circuit finally obeys",
-          "struggle_turn": "the turn keeps kicking the tempo out from under you",
-          "crisis_turn": "the timed turn is one ugly lapse from flipping the entire circuit onto you",
-          "transition": "the turn clears, but the final lane is already demanding a harder answer"
-        }
-      ],
-      "outcomes": {
-        "victory": "You finish the circuit with the tempo still under your command. The {encounter_label} never fully settles because you {encounter_objective}.",
-        "partial": "You complete the work, but the {encounter_label} exposes every place where your rhythm still leaks control.",
-        "failure": "The captains keep the pressure on until the {encounter_label} turns before you can {encounter_objective}."
-      }
-    },
-    {
-      "slug": "captain_of_the_yard",
-      "location_slug": "the_training_grounds",
-      "name": "Captain of the Yard",
-      "mission_number": 5,
-      "is_boss": true,
-      "replayable": true,
-      "mission_type": "boss",
-      "goal": "Pass the first real confidence test and earn the road forward",
-      "boss_unlock_requirements": {
-        "complete_prior_missions": 4,
-        "min_hp": 18,
-        "source_doc_flags": [
-          "starter_supplies"
-        ]
-      },
-      "narrative": "The captain watches you with the patience of someone who has seen brave people come apart at the exact moment their early confidence burns off. This is where the yard decides whether you can keep answering once the easy certainty is gone.",
-      "workout_feel": "Short-form full workout with clear instruction and low punishment",
-      "encounter_seeds": [
-        {
-          "slug": "trial_lane",
-          "title": "The Trial Lane",
-          "objective": "survive the captain's opening read without yielding control",
-          "threat": "the captain's probing tempo",
-          "prop": "the trial lane",
-          "landmark": "the long trial lane laid out beneath the captain's banner",
-          "hazard": "the open ground gives every weakness nowhere to hide",
-          "stakes": "if the captain reads you cleanly here the road forward closes in public",
-          "enemy_posture": "the captain prowls just off-center, testing range without ever committing first",
-          "sensory_detail": "banner cloth cracks overhead and the watching yard falls to a hard silence",
-          "pressure": "the captain only needs one clean read on your weakness to own the whole lane",
-          "success_turn": "you deny the first read and make the captain work harder for every inch",
-          "advance_turn": "the captain's early read starts breaking apart and the lane begins answering to you",
-          "struggle_turn": "the captain keeps forcing you toward the weakest part of the lane",
-          "crisis_turn": "the trial lane is one exposed weakness from belonging to the captain outright",
-          "transition": "the lane stays alive, but the finishing exchange is already being drawn tighter"
+            "slug": "captain_of_the_yard",
+            "location_slug": "the_training_grounds",
+            "name": "Captain of the Yard",
+            "mission_number": 5,
+            "is_boss": true,
+            "replayable": true,
+            "mission_type": "boss",
+            "goal": "Pass the first real confidence test and earn the road forward",
+            "boss_unlock_requirements": {
+                "complete_prior_missions": 4,
+                "min_hp": 18,
+                "source_doc_flags": [
+                    "starter_supplies"
+                ]
+            },
+            "narrative": "The captain watches you with the patience of someone who has seen brave people come apart at the exact moment their early confidence burns off. This is where the yard decides whether you can keep answering once the easy certainty is gone.",
+            "workout_feel": "Short-form full workout with clear instruction and low punishment",
+            "story_profile": {
+                "genre": "pressure_fantasy",
+                "voice": "grounded_heroic",
+                "pacing": "steady_pressure",
+                "repetition_window": 6,
+                "stance_bias": {
+                    "steady": [
+                        "control",
+                        "advance"
+                    ],
+                    "aggressive": [
+                        "pressure",
+                        "advance"
+                    ],
+                    "cautious": [
+                        "recovery",
+                        "control"
+                    ]
+                },
+                "banned_terms": [
+                    "bench press",
+                    "rep",
+                    "set"
+                ],
+                "allowed_mechanics_mentions": [
+                    "hp_loss_this_set",
+                    "roll_band",
+                    "set_result"
+                ]
+            },
+            "story_slots": {
+                "set_progression": {
+                    "count_target": 12,
+                    "notes": "Pilot authored beat slot for live set progression in the captain trial."
+                },
+                "transition_setup": {
+                    "count_target": 6,
+                    "notes": "Pilot authored transition slot for carrying continuity into the next captain encounter."
+                }
+            },
+            "beat_pools": {
+                "verbs": {
+                    "control": [
+                        "steady",
+                        "anchor",
+                        "deny"
+                    ],
+                    "pressure": [
+                        "press",
+                        "lean",
+                        "drive"
+                    ],
+                    "recovery": [
+                        "settle",
+                        "regather",
+                        "reset"
+                    ]
+                },
+                "reversals": [
+                    "The lane threatens to become proof against you again."
+                ],
+                "payoffs": [
+                    "The captain has to work for the next read instead of claiming it."
+                ],
+                "sensory": [
+                    "Banner cloth cracks above the trial lane."
+                ],
+                "crisis_images": [
+                    "The whole lane narrows around the weakest answer you could give."
+                ],
+                "transitions": [
+                    "The lane stays live, but the next exchange will decide who owns the middle."
+                ]
+            },
+            "beat_templates": [
+                {
+                    "id": "captain_progression_control_01",
+                    "slot": "set_progression",
+                    "tags": [
+                        "advance",
+                        "control",
+                        "steady"
+                    ],
+                    "weight": 4,
+                    "conditions": {
+                        "set_result": [
+                            "target_met",
+                            "recovered"
+                        ]
+                    },
+                    "tokens_required": [
+                        "advance_turn",
+                        "enemy_posture"
+                    ],
+                    "skeleton": {
+                        "summary": "{advance_turn}",
+                        "follow_up": "{enemy_posture} starts losing the clean read he wanted.",
+                        "decision_prompt": "Keep the lane honest before he can reset the terms."
+                    }
+                },
+                {
+                    "id": "captain_progression_pressure_01",
+                    "slot": "set_progression",
+                    "tags": [
+                        "pressure",
+                        "recovery",
+                        "cautious"
+                    ],
+                    "weight": 3,
+                    "conditions": {
+                        "set_result": [
+                            "close_call",
+                            "slipped"
+                        ]
+                    },
+                    "tokens_required": [
+                        "pressure",
+                        "enemy_posture"
+                    ],
+                    "skeleton": {
+                        "summary": "{pressure}",
+                        "follow_up": "Even now, {enemy_posture} can only own the lane if you hand it back.",
+                        "decision_prompt": "Settle the next exchange before the pressure turns into proof against you."
+                    }
+                },
+                {
+                    "id": "captain_progression_crisis_01",
+                    "slot": "set_progression",
+                    "tags": [
+                        "crisis",
+                        "defiance",
+                        "aggressive"
+                    ],
+                    "weight": 2,
+                    "conditions": {
+                        "set_result": [
+                            "strain",
+                            "struggle"
+                        ]
+                    },
+                    "tokens_required": [
+                        "crisis_turn",
+                        "stakes"
+                    ],
+                    "skeleton": {
+                        "summary": "{crisis_turn}",
+                        "follow_up": "{stakes}",
+                        "decision_prompt": "Hold one cleaner answer together and deny him the public finish."
+                    }
+                },
+                {
+                    "id": "captain_transition_control_01",
+                    "slot": "transition_setup",
+                    "tags": [
+                        "transition",
+                        "control",
+                        "steady"
+                    ],
+                    "weight": 3,
+                    "conditions": {
+                        "encounter_seed_slug": [
+                            "captains_mark"
+                        ],
+                        "set_result": [
+                            "target_met",
+                            "recovered",
+                            "push_set",
+                            "breakthrough"
+                        ]
+                    },
+                    "tokens_required": [
+                        "transition",
+                        "previous_landmark",
+                        "landmark"
+                    ],
+                    "skeleton": {
+                        "summary": "{transition}",
+                        "follow_up": "The ground behind you is {previous_landmark}, but {landmark} is already the only answer left.",
+                        "decision_prompt": "Step onto the mark before the captain can name it his again."
+                    }
+                },
+                {
+                    "id": "captain_transition_pressure_01",
+                    "slot": "transition_setup",
+                    "tags": [
+                        "transition",
+                        "pressure",
+                        "cautious"
+                    ],
+                    "weight": 2,
+                    "conditions": {
+                        "encounter_seed_slug": [
+                            "captains_mark"
+                        ],
+                        "set_result": [
+                            "close_call",
+                            "slipped",
+                            "strain",
+                            "struggle",
+                            "push_set"
+                        ]
+                    },
+                    "tokens_required": [
+                        "transition",
+                        "landmark",
+                        "stakes"
+                    ],
+                    "skeleton": {
+                        "summary": "{transition}",
+                        "follow_up": "You barely dragged the lane clear, and {landmark} is waiting to turn that weakness into proof. {stakes}",
+                        "decision_prompt": "Choose your step before the mark starts choosing for you."
+                    }
+                }
+            ],
+            "encounter_seeds": [
+                {
+                    "slug": "trial_lane",
+                    "title": "The Trial Lane",
+                    "scene_brief": "The captain tests you in the open trial lane, looking for the first weakness he can expose in front of the whole yard.",
+                    "player_goal": "survive the captain's first read and keep control of the exchange",
+                    "opponent_pressure": "the captain keeps probing for the same weakness and will press it the moment you show it again",
+                    "failure_cost": "if he reads you cleanly here, the whole yard sees you lose control before the road has even opened",
+                    "setting_detail": "banner cloth snaps overhead while the yard goes silent around the lane",
+                    "objective": "survive the captain's first read and keep control of the exchange",
+                    "threat": "the captain keeps testing for the first weakness you cannot hide",
+                    "prop": "the trial lane",
+                    "landmark": "the long trial lane laid out beneath the captain's banner",
+                    "hazard": "the open ground leaves every hesitation exposed",
+                    "stakes": "If the captain reads your weakness here, everyone in the yard sees the road close against you.",
+                    "enemy_posture": "the captain stays just off-center, testing your range and waiting for you to overcommit",
+                    "sensory_detail": "banner cloth snaps overhead while the yard goes silent around the lane",
+                    "pressure": "Every step through the lane gives the captain another chance to expose the same weakness.",
+                    "success_turn": "you deny the first read and force the captain to work harder for every clean opening",
+                    "advance_turn": "The captain's first read stops working, and you begin taking control of the exchange.",
+                    "struggle_turn": "the captain keeps driving the exchange back toward the part of the lane where you are easiest to read",
+                    "crisis_turn": "The captain has you pinned to the weakest stretch of the lane, and one more clean read could hand him the ground.",
+                    "transition": "The lane is still live, but the next exchange will decide who controls the finish."
+                },
+                {
+                    "slug": "captains_mark",
+                    "title": "The Captain's Mark",
+                    "scene_brief": "The last exchange runs through the painted captain's mark at the center of the lane, and taking it means proving the road is no longer his.",
+                    "player_goal": "take the mark and prove the road belongs to you",
+                    "opponent_pressure": "the captain hovers over the mark, forcing you to claim it under his full attention",
+                    "failure_cost": "if the mark rejects you here, the whole yard remembers that failure longer than any small win before it",
+                    "setting_detail": "the painted mark waits at dead center while everyone in the yard watches who dares step onto it first",
+                    "objective": "take the mark and prove the road belongs to you",
+                    "threat": "the captain's final demand for control",
+                    "prop": "the painted captain's mark",
+                    "landmark": "the painted mark at the lane's dead center",
+                    "hazard": "the final approach offers no cover and no second clean chance",
+                    "stakes": "if the mark rejects you the whole yard will carry that memory longer than any victory",
+                    "enemy_posture": "the captain keeps hovering over the mark like he already owns the right to it",
+                    "sensory_detail": "sweat darkens the paint and every footfall seems to land on the whole yard's nerves",
+                    "pressure": "if you hesitate now the whole yard will know exactly where you broke",
+                    "success_turn": "you take the mark cleanly and force the captain to acknowledge it",
+                    "advance_turn": "the mark starts feeling inevitable and the whole yard can see whose road this is",
+                    "struggle_turn": "the mark keeps drifting out of reach while the captain closes in",
+                    "crisis_turn": "the captain's mark is one falter away from becoming proof against you",
+                    "transition": "the mark is yours, but the road beyond the yard is already calling the next danger forward"
+                }
+            ],
+            "outcomes": {
+                "victory": "You earn the road beyond the yard. In {mission_name}, the {encounter_label} breaks your way and you {encounter_objective}.",
+                "partial": "The captain sends you back to sharpen the weak points, but the {encounter_label} bends just enough for your path to stay open.",
+                "failure": "The captain makes you yield the field after the {encounter_label} turns before you can {encounter_objective}."
+            }
         },
         {
-          "slug": "captains_mark",
-          "title": "The Captain's Mark",
-          "objective": "take the mark and prove the road belongs to you",
-          "threat": "the captain's final demand for control",
-          "prop": "the painted captain's mark",
-          "landmark": "the painted mark at the lane's dead center",
-          "hazard": "the final approach offers no cover and no second clean chance",
-          "stakes": "if the mark rejects you the whole yard will carry that memory longer than any victory",
-          "enemy_posture": "the captain keeps hovering over the mark like he already owns the right to it",
-          "sensory_detail": "sweat darkens the paint and every footfall seems to land on the whole yard's nerves",
-          "pressure": "if you hesitate now the whole yard will know exactly where you broke",
-          "success_turn": "you take the mark cleanly and force the captain to acknowledge it",
-          "advance_turn": "the mark starts feeling inevitable and the whole yard can see whose road this is",
-          "struggle_turn": "the mark keeps drifting out of reach while the captain closes in",
-          "crisis_turn": "the captain's mark is one falter away from becoming proof against you",
-          "transition": "the mark is yours, but the road beyond the yard is already calling the next danger forward"
-        }
-      ],
-      "outcomes": {
-        "victory": "You earn the road beyond the yard. In {mission_name}, the {encounter_label} breaks your way and you {encounter_objective}.",
-        "partial": "The captain sends you back to sharpen the weak points, but the {encounter_label} bends just enough for your path to stay open.",
-        "failure": "The captain makes you yield the field after the {encounter_label} turns before you can {encounter_objective}."
-      }
-    },
-    {
-      "slug": "shadows_in_the_streets",
-      "location_slug": "grim_hollow_village",
-      "name": "Shadows in the Streets",
-      "mission_number": 1,
-      "is_boss": false,
-      "replayable": true,
-      "mission_type": "intro_combat",
-      "goal": "Establish tone",
-      "narrative": "The streets of Grim Hollow are silent in the way ruined places are silent, as if the village is holding its breath to hear whether you belong here. Then the fog shifts, and shapes begin to move inside it.",
-      "threat": "Shamblers and weak but numerous undead",
-      "workout_feel": "Steady effort and controlled pacing",
-      "encounter_seeds": [
-        {
-          "slug": "market_crossroad",
-          "title": "The Market Crossroad",
-          "objective": "hold the market crossroad long enough for the doors to bar",
-          "threat": "the first shambler wave",
-          "prop": "the market crossroad",
-          "landmark": "the shuttered market square beneath hanging signboards",
-          "hazard": "fog and overturned stalls break sightlines while side streets keep vomiting dead into the square",
-          "stakes": "if the crossroad falls the doors never bar and the first houses are lost",
-          "enemy_posture": "the shamblers keep folding into the square from every lane, not fast but never stopping",
-          "sensory_detail": "wet fog clings to the teeth and loose shutters bang somewhere unseen",
-          "pressure": "every side street is feeding more dead toward the square",
-          "success_turn": "you force the first bodies away from the market stalls and buy the village a breath",
-          "advance_turn": "the whole crossroad starts opening all the way through and the square remembers how to breathe",
-          "struggle_turn": "the dead keep crawling through the fog and reaching for the square",
-          "crisis_turn": "the market crossroad is one bad exchange from disappearing under the dead again",
-          "transition": "the crossroad opens, but the grave bell is already starting to ring farther in"
+            "slug": "shadows_in_the_streets",
+            "location_slug": "grim_hollow_village",
+            "name": "Shadows in the Streets",
+            "mission_number": 1,
+            "is_boss": false,
+            "replayable": true,
+            "mission_type": "intro_combat",
+            "goal": "Establish tone",
+            "narrative": "The streets of Grim Hollow are silent in the way ruined places are silent, as if the village is holding its breath to hear whether you belong here. Then the fog shifts, and shapes begin to move inside it.",
+            "threat": "Shamblers and weak but numerous undead",
+            "workout_feel": "Steady effort and controlled pacing",
+            "encounter_seeds": [
+                {
+                    "slug": "market_crossroad",
+                    "title": "The Market Crossroad",
+                    "objective": "hold the market crossroad long enough for the doors to bar",
+                    "threat": "the first shambler wave",
+                    "prop": "the market crossroad",
+                    "landmark": "the shuttered market square beneath hanging signboards",
+                    "hazard": "fog and overturned stalls break sightlines while side streets keep vomiting dead into the square",
+                    "stakes": "if the crossroad falls the doors never bar and the first houses are lost",
+                    "enemy_posture": "the shamblers keep folding into the square from every lane, not fast but never stopping",
+                    "sensory_detail": "wet fog clings to the teeth and loose shutters bang somewhere unseen",
+                    "pressure": "every side street is feeding more dead toward the square",
+                    "success_turn": "you force the first bodies away from the market stalls and buy the village a breath",
+                    "advance_turn": "the whole crossroad starts opening all the way through and the square remembers how to breathe",
+                    "struggle_turn": "the dead keep crawling through the fog and reaching for the square",
+                    "crisis_turn": "the market crossroad is one bad exchange from disappearing under the dead again",
+                    "transition": "the crossroad opens, but the grave bell is already starting to ring farther in"
+                },
+                {
+                    "slug": "grave_bell",
+                    "title": "The Grave Bell",
+                    "objective": "reach the grave bell before it calls a larger wave",
+                    "threat": "the dead pressing up the chapel lane",
+                    "prop": "the grave bell rope",
+                    "landmark": "the chapel lane running straight to the grave bell",
+                    "hazard": "the narrow lane funnels every rush toward the rope while the bell sways just beyond easy reach",
+                    "stakes": "if the bell sounds full the whole street belongs to the dead again",
+                    "enemy_posture": "the dead keep piling up the lane, shoving one another forward toward the rope",
+                    "sensory_detail": "the rope creaks above the fog and old chapel stone leaks cold",
+                    "pressure": "if the bell gets a full toll the whole street will belong to the dead again",
+                    "success_turn": "you get close enough to the rope to turn the lane in your favor",
+                    "advance_turn": "the bell rope starts feeling like a live answer in your hands instead of theirs",
+                    "struggle_turn": "the lane keeps filling while the bell hangs just beyond your reach",
+                    "crisis_turn": "the bell is one full toll from giving the whole street back to the dead",
+                    "transition": "the bell is within reach, but the square behind you is still not safe"
+                }
+            ],
+            "outcomes": {
+                "victory": "The first wave falls away and Grim Hollow sees that someone is finally willing to answer the dead. The {encounter_label} breaks because you {encounter_objective}.",
+                "partial": "You buy the street a breath of safety, but the {encounter_label} still waits in the fog around the next corner.",
+                "failure": "The dead reclaim the street before you can {encounter_objective}."
+            }
         },
         {
-          "slug": "grave_bell",
-          "title": "The Grave Bell",
-          "objective": "reach the grave bell before it calls a larger wave",
-          "threat": "the dead pressing up the chapel lane",
-          "prop": "the grave bell rope",
-          "landmark": "the chapel lane running straight to the grave bell",
-          "hazard": "the narrow lane funnels every rush toward the rope while the bell sways just beyond easy reach",
-          "stakes": "if the bell sounds full the whole street belongs to the dead again",
-          "enemy_posture": "the dead keep piling up the lane, shoving one another forward toward the rope",
-          "sensory_detail": "the rope creaks above the fog and old chapel stone leaks cold",
-          "pressure": "if the bell gets a full toll the whole street will belong to the dead again",
-          "success_turn": "you get close enough to the rope to turn the lane in your favor",
-          "advance_turn": "the bell rope starts feeling like a live answer in your hands instead of theirs",
-          "struggle_turn": "the lane keeps filling while the bell hangs just beyond your reach",
-          "crisis_turn": "the bell is one full toll from giving the whole street back to the dead",
-          "transition": "the bell is within reach, but the square behind you is still not safe"
-        }
-      ],
-      "outcomes": {
-        "victory": "The first wave falls away and Grim Hollow sees that someone is finally willing to answer the dead. The {encounter_label} breaks because you {encounter_objective}.",
-        "partial": "You buy the street a breath of safety, but the {encounter_label} still waits in the fog around the next corner.",
-        "failure": "The dead reclaim the street before you can {encounter_objective}."
-      }
-    },
-    {
-      "slug": "the_burning_chapel",
-      "location_slug": "grim_hollow_village",
-      "name": "The Burning Chapel",
-      "mission_number": 2,
-      "is_boss": false,
-      "replayable": true,
-      "mission_type": "pressure_and_intensity",
-      "goal": "Raise urgency",
-      "narrative": "Flames claw through the chapel rafters and throw frantic light across the square. Something inside the fire refuses to burn, and the whole village seems to know it is waiting for you.",
-      "threat": "Faster undead with aggressive behavior",
-      "workout_feel": "Higher intensity with shorter rest",
-      "encounter_seeds": [
-        {
-          "slug": "burning_nave",
-          "title": "The Burning Nave",
-          "objective": "cut a path through the burning nave",
-          "threat": "the rushing dead inside the chapel",
-          "prop": "the burning nave",
-          "landmark": "the chapel nave split by fallen pews and fire",
-          "hazard": "sparks rain from the rafters and burning beams keep closing the lane without warning",
-          "stakes": "if the nave seals the chapel becomes a furnace and a tomb together",
-          "enemy_posture": "the rushing dead keep using flame and falling timber as cover for their lunges",
-          "sensory_detail": "smoke claws at the throat and firelight flashes off wet teeth",
-          "pressure": "the rafters are falling fast enough to trap you with the dead if you stall",
-          "success_turn": "you carve a lane through the fire and make the rush hesitate",
-          "advance_turn": "the whole nave starts opening in strips of firelight and the rush finally breaks around you",
-          "struggle_turn": "the flames and the dead keep folding the nave shut around you",
-          "crisis_turn": "the burning nave is one collapsing rafter from becoming a sealed grave",
-          "transition": "the nave opens, but the altar shadow is already starting to move"
+            "slug": "the_burning_chapel",
+            "location_slug": "grim_hollow_village",
+            "name": "The Burning Chapel",
+            "mission_number": 2,
+            "is_boss": false,
+            "replayable": true,
+            "mission_type": "pressure_and_intensity",
+            "goal": "Raise urgency",
+            "narrative": "Flames claw through the chapel rafters and throw frantic light across the square. Something inside the fire refuses to burn, and the whole village seems to know it is waiting for you.",
+            "threat": "Faster undead with aggressive behavior",
+            "workout_feel": "Higher intensity with shorter rest",
+            "encounter_seeds": [
+                {
+                    "slug": "burning_nave",
+                    "title": "The Burning Nave",
+                    "objective": "cut a path through the burning nave",
+                    "threat": "the rushing dead inside the chapel",
+                    "prop": "the burning nave",
+                    "landmark": "the chapel nave split by fallen pews and fire",
+                    "hazard": "sparks rain from the rafters and burning beams keep closing the lane without warning",
+                    "stakes": "if the nave seals the chapel becomes a furnace and a tomb together",
+                    "enemy_posture": "the rushing dead keep using flame and falling timber as cover for their lunges",
+                    "sensory_detail": "smoke claws at the throat and firelight flashes off wet teeth",
+                    "pressure": "the rafters are falling fast enough to trap you with the dead if you stall",
+                    "success_turn": "you carve a lane through the fire and make the rush hesitate",
+                    "advance_turn": "the whole nave starts opening in strips of firelight and the rush finally breaks around you",
+                    "struggle_turn": "the flames and the dead keep folding the nave shut around you",
+                    "crisis_turn": "the burning nave is one collapsing rafter from becoming a sealed grave",
+                    "transition": "the nave opens, but the altar shadow is already starting to move"
+                },
+                {
+                    "slug": "altar_shadow",
+                    "title": "The Altar Shadow",
+                    "objective": "drag the altar shadow into the open",
+                    "threat": "the thing refusing to burn behind the altar",
+                    "prop": "the cracked altar",
+                    "landmark": "the cracked altar drowned in orange light",
+                    "hazard": "heat shimmer and collapsing icon screens keep hiding the thing behind the altar",
+                    "stakes": "if the shadow keeps its cover the chapel fire turns fully to its side",
+                    "enemy_posture": "the hidden thing keeps baiting you closer, then slipping deeper behind the altar blaze",
+                    "sensory_detail": "wax runs across stone like blood and every ember snap sounds too close",
+                    "pressure": "every moment you give it lets the whole chapel burn harder in its favor",
+                    "success_turn": "you force the altar shadow to reveal itself and lose some of its cover",
+                    "advance_turn": "the altar stops protecting it and the whole chapel starts throwing its hiding places away",
+                    "struggle_turn": "the altar shadow keeps using flame and panic to stay hidden",
+                    "crisis_turn": "the altar is one missed answer from giving the whole fire back to the thing behind it",
+                    "transition": "the altar breaks open, but the village is already feeling the cost outside"
+                }
+            ],
+            "outcomes": {
+                "victory": "The fire stops serving them and starts looking like your warning to the village. The {encounter_label} stays yours because you {encounter_objective}.",
+                "partial": "You blunt the rush inside the chapel, but the {encounter_label} snaps back every time the flames surge.",
+                "failure": "The burning pressure swallows your timing before you can {encounter_objective}."
+            }
         },
         {
-          "slug": "altar_shadow",
-          "title": "The Altar Shadow",
-          "objective": "drag the altar shadow into the open",
-          "threat": "the thing refusing to burn behind the altar",
-          "prop": "the cracked altar",
-          "landmark": "the cracked altar drowned in orange light",
-          "hazard": "heat shimmer and collapsing icon screens keep hiding the thing behind the altar",
-          "stakes": "if the shadow keeps its cover the chapel fire turns fully to its side",
-          "enemy_posture": "the hidden thing keeps baiting you closer, then slipping deeper behind the altar blaze",
-          "sensory_detail": "wax runs across stone like blood and every ember snap sounds too close",
-          "pressure": "every moment you give it lets the whole chapel burn harder in its favor",
-          "success_turn": "you force the altar shadow to reveal itself and lose some of its cover",
-          "advance_turn": "the altar stops protecting it and the whole chapel starts throwing its hiding places away",
-          "struggle_turn": "the altar shadow keeps using flame and panic to stay hidden",
-          "crisis_turn": "the altar is one missed answer from giving the whole fire back to the thing behind it",
-          "transition": "the altar breaks open, but the village is already feeling the cost outside"
-        }
-      ],
-      "outcomes": {
-        "victory": "The fire stops serving them and starts looking like your warning to the village. The {encounter_label} stays yours because you {encounter_objective}.",
-        "partial": "You blunt the rush inside the chapel, but the {encounter_label} snaps back every time the flames surge.",
-        "failure": "The burning pressure swallows your timing before you can {encounter_objective}."
-      }
-    },
-    {
-      "slug": "the_graveyard_watcher",
-      "location_slug": "grim_hollow_village",
-      "name": "The Graveyard Watcher",
-      "mission_number": 3,
-      "is_boss": false,
-      "replayable": true,
-      "mission_type": "endurance_and_tension",
-      "goal": "Build fatigue pressure",
-      "narrative": "The graves have been opened from the wrong side, and the air over the stones feels strained, as if the whole cemetery is waiting for one clean mistake. Something patient watches from beyond the markers.",
-      "threat": "Lurking entity, slow and persistent",
-      "workout_feel": "Endurance and fatigue management",
-      "encounter_seeds": [
-        {
-          "slug": "broken_stones",
-          "title": "The Broken Stones",
-          "objective": "hold the path between the broken stones",
-          "threat": "the graveyard watcher circling just out of sight",
-          "prop": "the broken grave markers",
-          "landmark": "the broken path between tilted grave markers",
-          "hazard": "loose stone and sunken earth keep dragging at the footing",
-          "stakes": "if the watcher closes the ring here the whole graveyard becomes its hunting ground",
-          "enemy_posture": "the watcher keeps circling outside the fog line, choosing patience over a clean reveal",
-          "sensory_detail": "dew clings to cracked marble and the air smells of wet soil turned too recently",
-          "pressure": "the longer you let the watcher choose the angle the heavier the whole graveyard becomes",
-          "success_turn": "you keep the path open and force the watcher to circle wider",
-          "advance_turn": "the path between the stones starts holding under your will and the watcher runs out of easy angles",
-          "struggle_turn": "the watcher keeps turning the stones into a slower, meaner trap",
-          "crisis_turn": "the graveyard path is one patient mistake from closing into a full ring around you",
-          "transition": "the path stays open, but the mausoleum gate is already drawing the next test forward"
+            "slug": "the_graveyard_watcher",
+            "location_slug": "grim_hollow_village",
+            "name": "The Graveyard Watcher",
+            "mission_number": 3,
+            "is_boss": false,
+            "replayable": true,
+            "mission_type": "endurance_and_tension",
+            "goal": "Build fatigue pressure",
+            "narrative": "The graves have been opened from the wrong side, and the air over the stones feels strained, as if the whole cemetery is waiting for one clean mistake. Something patient watches from beyond the markers.",
+            "threat": "Lurking entity, slow and persistent",
+            "workout_feel": "Endurance and fatigue management",
+            "encounter_seeds": [
+                {
+                    "slug": "broken_stones",
+                    "title": "The Broken Stones",
+                    "objective": "hold the path between the broken stones",
+                    "threat": "the graveyard watcher circling just out of sight",
+                    "prop": "the broken grave markers",
+                    "landmark": "the broken path between tilted grave markers",
+                    "hazard": "loose stone and sunken earth keep dragging at the footing",
+                    "stakes": "if the watcher closes the ring here the whole graveyard becomes its hunting ground",
+                    "enemy_posture": "the watcher keeps circling outside the fog line, choosing patience over a clean reveal",
+                    "sensory_detail": "dew clings to cracked marble and the air smells of wet soil turned too recently",
+                    "pressure": "the longer you let the watcher choose the angle the heavier the whole graveyard becomes",
+                    "success_turn": "you keep the path open and force the watcher to circle wider",
+                    "advance_turn": "the path between the stones starts holding under your will and the watcher runs out of easy angles",
+                    "struggle_turn": "the watcher keeps turning the stones into a slower, meaner trap",
+                    "crisis_turn": "the graveyard path is one patient mistake from closing into a full ring around you",
+                    "transition": "the path stays open, but the mausoleum gate is already drawing the next test forward"
+                },
+                {
+                    "slug": "mausoleum_gate",
+                    "title": "The Mausoleum Gate",
+                    "objective": "reach the mausoleum gate before the watcher closes the circle",
+                    "threat": "the watcher finally pressing close enough to strike",
+                    "prop": "the mausoleum gate",
+                    "landmark": "the iron mausoleum gate at the cemetery's heart",
+                    "hazard": "narrow lanes of stone and hedge keep collapsing into blind angles",
+                    "stakes": "if the gate disappears behind the circle the cemetery wins the night",
+                    "enemy_posture": "the watcher finally cuts closer, trying to herd you away from the gate with each pass",
+                    "sensory_detail": "rust flakes under the fingers and every hinge whisper feels like a warning",
+                    "pressure": "if the circle closes here you will be fighting the whole graveyard for every step",
+                    "success_turn": "you get the gate in sight and make the watcher spend its patience",
+                    "advance_turn": "the gate starts feeling reachable and the watcher's circle finally loosens around it",
+                    "struggle_turn": "the circle keeps shrinking while the gate stays just out of reach",
+                    "crisis_turn": "the mausoleum gate is one narrowing turn from vanishing behind the circle",
+                    "transition": "the gate is almost yours, but the descent beyond it is already awake"
+                }
+            ],
+            "outcomes": {
+                "victory": "The watcher loses patience before you lose your nerve. In {mission_name}, the {encounter_label} gives way because you {encounter_objective}.",
+                "partial": "You hold through the graveyard drag, but the {encounter_label} remains heavy and unfinished among the stones.",
+                "failure": "Fatigue lets the graveyard settle against you before you can {encounter_objective}."
+            }
         },
         {
-          "slug": "mausoleum_gate",
-          "title": "The Mausoleum Gate",
-          "objective": "reach the mausoleum gate before the watcher closes the circle",
-          "threat": "the watcher finally pressing close enough to strike",
-          "prop": "the mausoleum gate",
-          "landmark": "the iron mausoleum gate at the cemetery's heart",
-          "hazard": "narrow lanes of stone and hedge keep collapsing into blind angles",
-          "stakes": "if the gate disappears behind the circle the cemetery wins the night",
-          "enemy_posture": "the watcher finally cuts closer, trying to herd you away from the gate with each pass",
-          "sensory_detail": "rust flakes under the fingers and every hinge whisper feels like a warning",
-          "pressure": "if the circle closes here you will be fighting the whole graveyard for every step",
-          "success_turn": "you get the gate in sight and make the watcher spend its patience",
-          "advance_turn": "the gate starts feeling reachable and the watcher's circle finally loosens around it",
-          "struggle_turn": "the circle keeps shrinking while the gate stays just out of reach",
-          "crisis_turn": "the mausoleum gate is one narrowing turn from vanishing behind the circle",
-          "transition": "the gate is almost yours, but the descent beyond it is already awake"
-        }
-      ],
-      "outcomes": {
-        "victory": "The watcher loses patience before you lose your nerve. In {mission_name}, the {encounter_label} gives way because you {encounter_objective}.",
-        "partial": "You hold through the graveyard drag, but the {encounter_label} remains heavy and unfinished among the stones.",
-        "failure": "Fatigue lets the graveyard settle against you before you can {encounter_objective}."
-      }
-    },
-    {
-      "slug": "the_hollow_well",
-      "location_slug": "grim_hollow_village",
-      "name": "The Hollow Well",
-      "mission_number": 4,
-      "is_boss": false,
-      "replayable": true,
-      "mission_type": "pre_boss_escalation",
-      "goal": "Build toward the boss reveal",
-      "narrative": "At the center of the village, the old well drops into a darkness that feels occupied rather than empty. The deeper truth of Grim Hollow is waiting below, and it already knows you are overhead.",
-      "threat": "Corrupted villagers and environmental pressure",
-      "workout_feel": "Mixed intensity with clear buildup",
-      "encounter_seeds": [
-        {
-          "slug": "well_square",
-          "title": "The Well Square",
-          "objective": "clear the square around the well",
-          "threat": "the corrupted villagers surging between the houses",
-          "prop": "the well square",
-          "landmark": "the village square crowded around the old well",
-          "hazard": "collapsed carts and bodies in the lane keep ruining clean movement around the curb",
-          "stakes": "if the square belongs to the surge the source below stays hidden and fed",
-          "enemy_posture": "the corrupted villagers keep washing in from porches and alleys, driven by something below the stones",
-          "sensory_detail": "well water glistens black and the square reeks of damp rot and lantern smoke",
-          "pressure": "every surge keeps trying to push you away from the one place that matters",
-          "success_turn": "you hold the square long enough to make the villagers break around you",
-          "advance_turn": "the square begins to clear in full and the well starts standing exposed at last",
-          "struggle_turn": "the square keeps flooding with bodies every time you try to settle it",
-          "crisis_turn": "the well square is one failed stand from drowning under bodies again",
-          "transition": "the square opens, but the descent is already calling something worse upward"
+            "slug": "the_hollow_well",
+            "location_slug": "grim_hollow_village",
+            "name": "The Hollow Well",
+            "mission_number": 4,
+            "is_boss": false,
+            "replayable": true,
+            "mission_type": "pre_boss_escalation",
+            "goal": "Build toward the boss reveal",
+            "narrative": "At the center of the village, the old well drops into a darkness that feels occupied rather than empty. The deeper truth of Grim Hollow is waiting below, and it already knows you are overhead.",
+            "threat": "Corrupted villagers and environmental pressure",
+            "workout_feel": "Mixed intensity with clear buildup",
+            "encounter_seeds": [
+                {
+                    "slug": "well_square",
+                    "title": "The Well Square",
+                    "objective": "clear the square around the well",
+                    "threat": "the corrupted villagers surging between the houses",
+                    "prop": "the well square",
+                    "landmark": "the village square crowded around the old well",
+                    "hazard": "collapsed carts and bodies in the lane keep ruining clean movement around the curb",
+                    "stakes": "if the square belongs to the surge the source below stays hidden and fed",
+                    "enemy_posture": "the corrupted villagers keep washing in from porches and alleys, driven by something below the stones",
+                    "sensory_detail": "well water glistens black and the square reeks of damp rot and lantern smoke",
+                    "pressure": "every surge keeps trying to push you away from the one place that matters",
+                    "success_turn": "you hold the square long enough to make the villagers break around you",
+                    "advance_turn": "the square begins to clear in full and the well starts standing exposed at last",
+                    "struggle_turn": "the square keeps flooding with bodies every time you try to settle it",
+                    "crisis_turn": "the well square is one failed stand from drowning under bodies again",
+                    "transition": "the square opens, but the descent is already calling something worse upward"
+                },
+                {
+                    "slug": "well_lip",
+                    "title": "The Well Lip",
+                    "objective": "take the lip of the well and force the source into the open",
+                    "threat": "the pressure coming up from the dark below",
+                    "prop": "the well lip",
+                    "landmark": "the slick stone lip of the village well",
+                    "hazard": "the stones sweat underfoot and something below keeps buckling the edge at the worst moment",
+                    "stakes": "if you lose the lip the dark below keeps drawing the whole village inward",
+                    "enemy_posture": "the pressure from below keeps timing its surges to upset your footing rather than meet you cleanly",
+                    "sensory_detail": "cold breath rises from the shaft and the rope creaks against ancient stone",
+                    "pressure": "if you lose the lip now the whole village will keep feeding the thing below it",
+                    "success_turn": "you claim the edge of the well and deny the dark its hiding place",
+                    "advance_turn": "the whole lip starts holding under your command and the thing below loses its cover",
+                    "struggle_turn": "the dark below keeps buckling the ground and stealing your footing",
+                    "crisis_turn": "the well lip is one broken step from dropping the whole fight back into the dark",
+                    "transition": "the well lip is yours, but the chamber below is already waiting"
+                }
+            ],
+            "outcomes": {
+                "victory": "You reach the true descent with your nerve intact. The {encounter_label} opens and the source can no longer hide beneath the village.",
+                "partial": "You force a path to the well, but the {encounter_label} still closes around the descent in violent bursts.",
+                "failure": "The pressure around the well buckles your progress before you can {encounter_objective}."
+            }
         },
         {
-          "slug": "well_lip",
-          "title": "The Well Lip",
-          "objective": "take the lip of the well and force the source into the open",
-          "threat": "the pressure coming up from the dark below",
-          "prop": "the well lip",
-          "landmark": "the slick stone lip of the village well",
-          "hazard": "the stones sweat underfoot and something below keeps buckling the edge at the worst moment",
-          "stakes": "if you lose the lip the dark below keeps drawing the whole village inward",
-          "enemy_posture": "the pressure from below keeps timing its surges to upset your footing rather than meet you cleanly",
-          "sensory_detail": "cold breath rises from the shaft and the rope creaks against ancient stone",
-          "pressure": "if you lose the lip now the whole village will keep feeding the thing below it",
-          "success_turn": "you claim the edge of the well and deny the dark its hiding place",
-          "advance_turn": "the whole lip starts holding under your command and the thing below loses its cover",
-          "struggle_turn": "the dark below keeps buckling the ground and stealing your footing",
-          "crisis_turn": "the well lip is one broken step from dropping the whole fight back into the dark",
-          "transition": "the well lip is yours, but the chamber below is already waiting"
-        }
-      ],
-      "outcomes": {
-        "victory": "You reach the true descent with your nerve intact. The {encounter_label} opens and the source can no longer hide beneath the village.",
-        "partial": "You force a path to the well, but the {encounter_label} still closes around the descent in violent bursts.",
-        "failure": "The pressure around the well buckles your progress before you can {encounter_objective}."
-      }
-    },
-    {
-      "slug": "the_necromancer_of_hollow",
-      "location_slug": "grim_hollow_village",
-      "name": "The Necromancer of Hollow",
-      "mission_number": 5,
-      "is_boss": true,
-      "replayable": true,
-      "mission_type": "boss",
-      "goal": "Confront the source beneath the well",
-      "boss_unlock_requirements": {
-        "complete_prior_missions": 4,
-        "min_hp": 30,
-        "source_doc_flags": [
-          "required_supplies"
-        ]
-      },
-      "narrative": "You descend beneath the well and enter a chamber where the air itself feels claimed. The necromancer is already waiting, calm in the knowledge that everything above has been shaped to wear you down before this final answer.",
-      "workout_feel": "Full workout structure with buildup sets leading into a final confrontation",
-      "encounter_seeds": [
-        {
-          "slug": "bone_dais",
-          "title": "The Bone Dais",
-          "objective": "break the necromancer's hold on the bone dais",
-          "threat": "the necromancer's first wave of dead guardians",
-          "prop": "the bone dais",
-          "landmark": "the bone-stacked dais at the chamber center",
-          "hazard": "rattling bone pillars and necrotic mist keep distorting the floor around the platform",
-          "stakes": "if the dais stands untouched the chamber itself will keep fighting for him",
-          "enemy_posture": "the guardians keep screening the dais while the necromancer watches for the exact lapse he wants",
-          "sensory_detail": "old marrow dust hangs in the torchlight and the chamber hums with grave magic",
-          "pressure": "every moment the dais stays his lets the chamber itself fight for him",
-          "success_turn": "you shake the dais hard enough to make his control flicker",
-          "advance_turn": "the dais starts giving way under him and the chamber finally stops answering cleanly to his will",
-          "struggle_turn": "the dais keeps feeding the dead while the necromancer stays untouched",
-          "crisis_turn": "the bone dais is one lost exchange from sealing the whole chamber back under his control",
-          "transition": "the dais cracks, but the ritual circle behind it is already waking up"
+            "slug": "the_necromancer_of_hollow",
+            "location_slug": "grim_hollow_village",
+            "name": "The Necromancer of Hollow",
+            "mission_number": 5,
+            "is_boss": true,
+            "replayable": true,
+            "mission_type": "boss",
+            "goal": "Confront the source beneath the well",
+            "boss_unlock_requirements": {
+                "complete_prior_missions": 4,
+                "min_hp": 30,
+                "source_doc_flags": [
+                    "required_supplies"
+                ]
+            },
+            "narrative": "You descend beneath the well and enter a chamber where the air itself feels claimed. The necromancer is already waiting, calm in the knowledge that everything above has been shaped to wear you down before this final answer.",
+            "workout_feel": "Full workout structure with buildup sets leading into a final confrontation",
+            "encounter_seeds": [
+                {
+                    "slug": "bone_dais",
+                    "title": "The Bone Dais",
+                    "objective": "break the necromancer's hold on the bone dais",
+                    "threat": "the necromancer's first wave of dead guardians",
+                    "prop": "the bone dais",
+                    "landmark": "the bone-stacked dais at the chamber center",
+                    "hazard": "rattling bone pillars and necrotic mist keep distorting the floor around the platform",
+                    "stakes": "if the dais stands untouched the chamber itself will keep fighting for him",
+                    "enemy_posture": "the guardians keep screening the dais while the necromancer watches for the exact lapse he wants",
+                    "sensory_detail": "old marrow dust hangs in the torchlight and the chamber hums with grave magic",
+                    "pressure": "every moment the dais stays his lets the chamber itself fight for him",
+                    "success_turn": "you shake the dais hard enough to make his control flicker",
+                    "advance_turn": "the dais starts giving way under him and the chamber finally stops answering cleanly to his will",
+                    "struggle_turn": "the dais keeps feeding the dead while the necromancer stays untouched",
+                    "crisis_turn": "the bone dais is one lost exchange from sealing the whole chamber back under his control",
+                    "transition": "the dais cracks, but the ritual circle behind it is already waking up"
+                },
+                {
+                    "slug": "ritual_circle",
+                    "title": "The Ritual Circle",
+                    "objective": "collapse the ritual circle and force the necromancer to stand alone",
+                    "threat": "the necromancer's remaining ritual power",
+                    "prop": "the ritual circle",
+                    "landmark": "the chalked ritual ring burning with corpse-light",
+                    "hazard": "each pulse of the sigils reshapes the floor and steals your timing for a breath",
+                    "stakes": "if the circle completes another full pulse the chamber returns to his control",
+                    "enemy_posture": "the necromancer keeps feeding the ring fragments of power and retreating behind its edge",
+                    "sensory_detail": "blue fire crawls through carved channels and the air tastes like pennies and ash",
+                    "pressure": "if the circle completes one more pulse the chamber will turn back in his favor",
+                    "success_turn": "you force the circle to stutter and drag the necromancer into a fairer fight",
+                    "advance_turn": "the ritual circle starts collapsing faster than he can rebuild it and the chamber begins to betray him",
+                    "struggle_turn": "the circle keeps rebuilding itself while he buys time behind it",
+                    "crisis_turn": "the ritual circle is one clean pulse from handing the whole chamber back to him",
+                    "transition": "the circle breaks, but the chamber still needs one last answer"
+                }
+            ],
+            "outcomes": {
+                "victory": "The necromancer falls and the whole chamber exhales. The {encounter_label} finally breaks, and you {encounter_objective}.",
+                "partial": "He retreats into shadow. The {encounter_label} bends, but the village is not yet free.",
+                "failure": "You survive, but barely, as the {encounter_label} slips away before you can {encounter_objective}."
+            }
         },
         {
-          "slug": "ritual_circle",
-          "title": "The Ritual Circle",
-          "objective": "collapse the ritual circle and force the necromancer to stand alone",
-          "threat": "the necromancer's remaining ritual power",
-          "prop": "the ritual circle",
-          "landmark": "the chalked ritual ring burning with corpse-light",
-          "hazard": "each pulse of the sigils reshapes the floor and steals your timing for a breath",
-          "stakes": "if the circle completes another full pulse the chamber returns to his control",
-          "enemy_posture": "the necromancer keeps feeding the ring fragments of power and retreating behind its edge",
-          "sensory_detail": "blue fire crawls through carved channels and the air tastes like pennies and ash",
-          "pressure": "if the circle completes one more pulse the chamber will turn back in his favor",
-          "success_turn": "you force the circle to stutter and drag the necromancer into a fairer fight",
-          "advance_turn": "the ritual circle starts collapsing faster than he can rebuild it and the chamber begins to betray him",
-          "struggle_turn": "the circle keeps rebuilding itself while he buys time behind it",
-          "crisis_turn": "the ritual circle is one clean pulse from handing the whole chamber back to him",
-          "transition": "the circle breaks, but the chamber still needs one last answer"
-        }
-      ],
-      "outcomes": {
-        "victory": "The necromancer falls and the whole chamber exhales. The {encounter_label} finally breaks, and you {encounter_objective}.",
-        "partial": "He retreats into shadow. The {encounter_label} bends, but the village is not yet free.",
-        "failure": "You survive, but barely, as the {encounter_label} slips away before you can {encounter_objective}."
-      }
-    },
-    {
-      "slug": "bellows_duty",
-      "location_slug": "the_emberforge",
-      "name": "Bellows Duty",
-      "mission_number": 1,
-      "is_boss": false,
-      "replayable": true,
-      "mission_type": "easy_workout",
-      "goal": "Learn the forge rhythm",
-      "threat": "Overheated machinery and worker strain",
-      "narrative": "The Emberforge teaches its lessons with heat, noise, and unforgiving timing. Every breath tastes of ash, and every clean answer keeps the machinery from turning the whole chamber against you.",
-      "workout_feel": "3 exercises only, low complexity",
-      "encounter_seeds": [
-        {
-          "slug": "bellows_bank",
-          "title": "The Bellows Bank",
-          "objective": "steady the bellows bank before the heat spikes",
-          "threat": "the forge machinery bucking under too much heat",
-          "prop": "the bellows bank",
-          "landmark": "the row of iron bellows beneath the chain hoists",
-          "hazard": "heat gusts and kicking pistons keep turning every clean line jagged",
-          "stakes": "if the bank loses rhythm the whole station cooks its crew",
-          "enemy_posture": "the machinery bucks in sequence, trying to drag you onto its tempo",
-          "sensory_detail": "coal ash coats the tongue and the bellows roar like chained beasts",
-          "pressure": "if the bellows drift any further the whole station will start fighting you",
-          "success_turn": "the bellows answer your rhythm and the heat loses some of its bite",
-          "advance_turn": "the whole bellows bank starts breathing on your count and the chamber cools just enough to obey",
-          "struggle_turn": "the machinery keeps jerking out of time and stealing your breathing",
-          "crisis_turn": "the bellows bank is one bad stutter from turning the whole station savage",
-          "transition": "the bank steadies, but the lower furnace is already asking for more"
+            "slug": "bellows_duty",
+            "location_slug": "the_emberforge",
+            "name": "Bellows Duty",
+            "mission_number": 1,
+            "is_boss": false,
+            "replayable": true,
+            "mission_type": "easy_workout",
+            "goal": "Learn the forge rhythm",
+            "threat": "Overheated machinery and worker strain",
+            "narrative": "The Emberforge teaches its lessons with heat, noise, and unforgiving timing. Every breath tastes of ash, and every clean answer keeps the machinery from turning the whole chamber against you.",
+            "workout_feel": "3 exercises only, low complexity",
+            "encounter_seeds": [
+                {
+                    "slug": "bellows_bank",
+                    "title": "The Bellows Bank",
+                    "objective": "steady the bellows bank before the heat spikes",
+                    "threat": "the forge machinery bucking under too much heat",
+                    "prop": "the bellows bank",
+                    "landmark": "the row of iron bellows beneath the chain hoists",
+                    "hazard": "heat gusts and kicking pistons keep turning every clean line jagged",
+                    "stakes": "if the bank loses rhythm the whole station cooks its crew",
+                    "enemy_posture": "the machinery bucks in sequence, trying to drag you onto its tempo",
+                    "sensory_detail": "coal ash coats the tongue and the bellows roar like chained beasts",
+                    "pressure": "if the bellows drift any further the whole station will start fighting you",
+                    "success_turn": "the bellows answer your rhythm and the heat loses some of its bite",
+                    "advance_turn": "the whole bellows bank starts breathing on your count and the chamber cools just enough to obey",
+                    "struggle_turn": "the machinery keeps jerking out of time and stealing your breathing",
+                    "crisis_turn": "the bellows bank is one bad stutter from turning the whole station savage",
+                    "transition": "the bank steadies, but the lower furnace is already asking for more"
+                },
+                {
+                    "slug": "furnace_mouth",
+                    "title": "The Furnace Mouth",
+                    "objective": "hold the furnace mouth open on your terms",
+                    "threat": "the furnace surge pushing back through the chamber",
+                    "prop": "the furnace mouth",
+                    "landmark": "the jaw-wide furnace mouth at the lower platform",
+                    "hazard": "heat backwash and falling cinders punish every lapse near the opening",
+                    "stakes": "if the mouth chokes shut the whole station drowns in its own fire",
+                    "enemy_posture": "the furnace surge keeps answering every pause with a harder blast",
+                    "sensory_detail": "iron glows white at the lip and the chamber shakes with every breath it takes",
+                    "pressure": "one bad lapse will let the whole station choke on its own heat",
+                    "success_turn": "you keep the furnace answering to you instead of the other way around",
+                    "advance_turn": "the mouth starts holding steady on your timing and the whole station stops fighting back so hard",
+                    "struggle_turn": "the furnace keeps trying to swallow the rhythm whole",
+                    "crisis_turn": "the furnace mouth is one lapse from choking the chamber in its own fire",
+                    "transition": "the mouth holds, but the deeper forge line is already waking up"
+                }
+            ],
+            "outcomes": {
+                "victory": "The bellows answer your rhythm, and {encounter_proof}",
+                "partial": "You keep the station alive, but the {encounter_label} still asks for cleaner command.",
+                "failure": "Heat and strain take the station before you can {encounter_objective}."
+            }
         },
         {
-          "slug": "furnace_mouth",
-          "title": "The Furnace Mouth",
-          "objective": "hold the furnace mouth open on your terms",
-          "threat": "the furnace surge pushing back through the chamber",
-          "prop": "the furnace mouth",
-          "landmark": "the jaw-wide furnace mouth at the lower platform",
-          "hazard": "heat backwash and falling cinders punish every lapse near the opening",
-          "stakes": "if the mouth chokes shut the whole station drowns in its own fire",
-          "enemy_posture": "the furnace surge keeps answering every pause with a harder blast",
-          "sensory_detail": "iron glows white at the lip and the chamber shakes with every breath it takes",
-          "pressure": "one bad lapse will let the whole station choke on its own heat",
-          "success_turn": "you keep the furnace answering to you instead of the other way around",
-          "advance_turn": "the mouth starts holding steady on your timing and the whole station stops fighting back so hard",
-          "struggle_turn": "the furnace keeps trying to swallow the rhythm whole",
-          "crisis_turn": "the furnace mouth is one lapse from choking the chamber in its own fire",
-          "transition": "the mouth holds, but the deeper forge line is already waking up"
-        }
-      ],
-      "outcomes": {
-        "victory": "The bellows answer your rhythm, and {encounter_proof}",
-        "partial": "You keep the station alive, but the {encounter_label} still asks for cleaner command.",
-        "failure": "Heat and strain take the station before you can {encounter_objective}."
-      }
-    },
-    {
-      "slug": "coal_run_to_the_lower_kiln",
-      "location_slug": "the_emberforge",
-      "name": "Coal Run to the Lower Kiln",
-      "mission_number": 2,
-      "is_boss": false,
-      "replayable": true,
-      "mission_type": "runner_task",
-      "run_type": "cardio",
-      "goal": "Deliver fuel before the flame fades",
-      "threat": "Timed route through heat vents",
-      "narrative": "The lower kiln is starving faster than the forge crews can admit. You have one run through vented tunnels, shifting catwalks, and hammering heat to keep the fire alive.",
-      "workout_feel": "Cardio challenge",
-      "encounter_seeds": [
-        {
-          "slug": "vent_tunnels",
-          "title": "The Vent Tunnels",
-          "objective": "carry the coal through the vent tunnels before the heat breaks your line",
-          "threat": "the furnace vents blasting across the route",
-          "prop": "the vent tunnels",
-          "landmark": "the vent tunnels ribbed with hot iron braces",
-          "hazard": "crossblasts and narrow footing keep trying to knock the run loose from under you",
-          "stakes": "if the tunnels close the charge dies before it reaches the kiln",
-          "enemy_posture": "the vents pulse in irregular bursts as if they are learning your pace",
-          "sensory_detail": "steam hisses through seams and every inhale tastes scorched",
-          "pressure": "every blast is trying to knock the route loose from under you",
-          "success_turn": "you slip the worst of the heat and keep the route alive",
-          "advance_turn": "the vent tunnels start staying open in sequence and the whole run finally moves with you",
-          "struggle_turn": "the vents keep slamming shut every clean lane you find",
-          "crisis_turn": "the vent tunnels are one heat burst from collapsing the whole delivery line",
-          "transition": "the tunnels clear, but the kiln bridge is already glowing ahead"
+            "slug": "coal_run_to_the_lower_kiln",
+            "location_slug": "the_emberforge",
+            "name": "Coal Run to the Lower Kiln",
+            "mission_number": 2,
+            "is_boss": false,
+            "replayable": true,
+            "mission_type": "runner_task",
+            "run_type": "cardio",
+            "goal": "Deliver fuel before the flame fades",
+            "threat": "Timed route through heat vents",
+            "narrative": "The lower kiln is starving faster than the forge crews can admit. You have one run through vented tunnels, shifting catwalks, and hammering heat to keep the fire alive.",
+            "workout_feel": "Cardio challenge",
+            "encounter_seeds": [
+                {
+                    "slug": "vent_tunnels",
+                    "title": "The Vent Tunnels",
+                    "objective": "carry the coal through the vent tunnels before the heat breaks your line",
+                    "threat": "the furnace vents blasting across the route",
+                    "prop": "the vent tunnels",
+                    "landmark": "the vent tunnels ribbed with hot iron braces",
+                    "hazard": "crossblasts and narrow footing keep trying to knock the run loose from under you",
+                    "stakes": "if the tunnels close the charge dies before it reaches the kiln",
+                    "enemy_posture": "the vents pulse in irregular bursts as if they are learning your pace",
+                    "sensory_detail": "steam hisses through seams and every inhale tastes scorched",
+                    "pressure": "every blast is trying to knock the route loose from under you",
+                    "success_turn": "you slip the worst of the heat and keep the route alive",
+                    "advance_turn": "the vent tunnels start staying open in sequence and the whole run finally moves with you",
+                    "struggle_turn": "the vents keep slamming shut every clean lane you find",
+                    "crisis_turn": "the vent tunnels are one heat burst from collapsing the whole delivery line",
+                    "transition": "the tunnels clear, but the kiln bridge is already glowing ahead"
+                },
+                {
+                    "slug": "kiln_bridge",
+                    "title": "The Kiln Bridge",
+                    "objective": "reach the lower kiln before the charge goes dead",
+                    "threat": "the heat surge rolling back from the lower kiln",
+                    "prop": "the kiln bridge",
+                    "landmark": "the chain-hung bridge over the lower kiln",
+                    "hazard": "the span sways over open fire while heat keeps climbing back at your face",
+                    "stakes": "if the bridge beats you the lower kiln starves and the whole run was wasted",
+                    "enemy_posture": "the surge from below keeps rising just as the bridge finds its worst sway",
+                    "sensory_detail": "chains groan overhead and orange light flickers through the grating",
+                    "pressure": "if the bridge beats you the whole run means nothing",
+                    "success_turn": "you keep the bridge under your feet and the charge alive in your hands",
+                    "advance_turn": "the kiln bridge starts shortening under your pace and the lower fire feels reachable at last",
+                    "struggle_turn": "the bridge keeps lengthening under the weight of the heat",
+                    "crisis_turn": "the kiln bridge is one stagger from turning the whole run into ash",
+                    "transition": "the bridge is yours, but the anvil line is already calling for the next test"
+                }
+            ],
+            "outcomes": {
+                "victory": "The kiln takes the charge before the fire can gutter out. {encounter_proof}",
+                "partial": "The fuel arrives late, but the {encounter_label} holds just long enough for the forge to keep breathing.",
+                "failure": "The vents steal your tempo before you can {encounter_objective}."
+            }
         },
         {
-          "slug": "kiln_bridge",
-          "title": "The Kiln Bridge",
-          "objective": "reach the lower kiln before the charge goes dead",
-          "threat": "the heat surge rolling back from the lower kiln",
-          "prop": "the kiln bridge",
-          "landmark": "the chain-hung bridge over the lower kiln",
-          "hazard": "the span sways over open fire while heat keeps climbing back at your face",
-          "stakes": "if the bridge beats you the lower kiln starves and the whole run was wasted",
-          "enemy_posture": "the surge from below keeps rising just as the bridge finds its worst sway",
-          "sensory_detail": "chains groan overhead and orange light flickers through the grating",
-          "pressure": "if the bridge beats you the whole run means nothing",
-          "success_turn": "you keep the bridge under your feet and the charge alive in your hands",
-          "advance_turn": "the kiln bridge starts shortening under your pace and the lower fire feels reachable at last",
-          "struggle_turn": "the bridge keeps lengthening under the weight of the heat",
-          "crisis_turn": "the kiln bridge is one stagger from turning the whole run into ash",
-          "transition": "the bridge is yours, but the anvil line is already calling for the next test"
-        }
-      ],
-      "outcomes": {
-        "victory": "The kiln takes the charge before the fire can gutter out. {encounter_proof}",
-        "partial": "The fuel arrives late, but the {encounter_label} holds just long enough for the forge to keep breathing.",
-        "failure": "The vents steal your tempo before you can {encounter_objective}."
-      }
-    },
-    {
-      "slug": "sparks_on_the_anvil_line",
-      "location_slug": "the_emberforge",
-      "name": "Sparks on the Anvil Line",
-      "mission_number": 3,
-      "is_boss": false,
-      "replayable": true,
-      "mission_type": "pressure_combat",
-      "goal": "Hold output under heat",
-      "threat": "Molten husks and forge-wraiths",
-      "narrative": "The anvil line spits sparks across the chamber while half-formed things crawl out of the heat, eager to see whether pressure can make you abandon the work before the forge does.",
-      "workout_feel": "Mid-intensity intervals",
-      "encounter_seeds": [
-        {
-          "slug": "anvil_line",
-          "title": "The Anvil Line",
-          "objective": "keep the anvil line moving under pressure",
-          "threat": "the forge creatures spilling out of the heat",
-          "prop": "the anvil line",
-          "landmark": "the hammer row beneath the forge cranes",
-          "hazard": "flying sparks and ringing metal punish any drift in timing",
-          "stakes": "if the line stalls the chamber stops being a forge and becomes a panic",
-          "enemy_posture": "the heat-born things keep probing the gaps between strikes, waiting for silence",
-          "sensory_detail": "the anvils thunder through the ribs and sparks bite at bare skin",
-          "pressure": "if the line stops the whole chamber will turn from work to chaos",
-          "success_turn": "you keep the hammers talking and force the creatures to give ground",
-          "advance_turn": "the whole anvil line starts striking in your rhythm and the chamber remembers its work instead of its panic",
-          "struggle_turn": "the line keeps stuttering while the heat things get bolder",
-          "crisis_turn": "the anvil line is one stall from becoming chaos for the whole chamber",
-          "transition": "the line holds, but the crucible chamber is already cracking open deeper in"
+            "slug": "sparks_on_the_anvil_line",
+            "location_slug": "the_emberforge",
+            "name": "Sparks on the Anvil Line",
+            "mission_number": 3,
+            "is_boss": false,
+            "replayable": true,
+            "mission_type": "pressure_combat",
+            "goal": "Hold output under heat",
+            "threat": "Molten husks and forge-wraiths",
+            "narrative": "The anvil line spits sparks across the chamber while half-formed things crawl out of the heat, eager to see whether pressure can make you abandon the work before the forge does.",
+            "workout_feel": "Mid-intensity intervals",
+            "encounter_seeds": [
+                {
+                    "slug": "anvil_line",
+                    "title": "The Anvil Line",
+                    "objective": "keep the anvil line moving under pressure",
+                    "threat": "the forge creatures spilling out of the heat",
+                    "prop": "the anvil line",
+                    "landmark": "the hammer row beneath the forge cranes",
+                    "hazard": "flying sparks and ringing metal punish any drift in timing",
+                    "stakes": "if the line stalls the chamber stops being a forge and becomes a panic",
+                    "enemy_posture": "the heat-born things keep probing the gaps between strikes, waiting for silence",
+                    "sensory_detail": "the anvils thunder through the ribs and sparks bite at bare skin",
+                    "pressure": "if the line stops the whole chamber will turn from work to chaos",
+                    "success_turn": "you keep the hammers talking and force the creatures to give ground",
+                    "advance_turn": "the whole anvil line starts striking in your rhythm and the chamber remembers its work instead of its panic",
+                    "struggle_turn": "the line keeps stuttering while the heat things get bolder",
+                    "crisis_turn": "the anvil line is one stall from becoming chaos for the whole chamber",
+                    "transition": "the line holds, but the crucible chamber is already cracking open deeper in"
+                },
+                {
+                    "slug": "slag_walk",
+                    "title": "The Slag Walk",
+                    "objective": "push the creatures off the slag walk",
+                    "threat": "the molten husks crowding the narrow path",
+                    "prop": "the slag walk",
+                    "landmark": "the narrow slag walk over the furnace trench",
+                    "hazard": "molten runoff spits through the grates and the walkway keeps shrinking under heat",
+                    "stakes": "if the walk is lost the trench takes the line with it",
+                    "enemy_posture": "the husks keep leaning shoulder-first, trying to bully every inch of space",
+                    "sensory_detail": "the metal grate glows through the soles and the trench belches sparks upward",
+                    "pressure": "one bad exchange will drop the whole fight into the furnace trench",
+                    "success_turn": "you take the stronger side of the walk and make the husks break first",
+                    "advance_turn": "the whole slag walk starts belonging to your footing and the husks lose their nerve",
+                    "struggle_turn": "the walk keeps shrinking while the husks keep leaning in",
+                    "crisis_turn": "the slag walk is one misstep from dropping everything into the trench",
+                    "transition": "the walk clears, but the crucible is already starting to split"
+                }
+            ],
+            "outcomes": {
+                "victory": "The line keeps moving and the forge creatures lose their chance to break the rhythm. The {encounter_label} gives because you {encounter_objective}.",
+                "partial": "You hold the anvil line together, but the {encounter_label} still surges whenever the chamber flares.",
+                "failure": "The heat takes the tempo before you can {encounter_objective}."
+            }
         },
         {
-          "slug": "slag_walk",
-          "title": "The Slag Walk",
-          "objective": "push the creatures off the slag walk",
-          "threat": "the molten husks crowding the narrow path",
-          "prop": "the slag walk",
-          "landmark": "the narrow slag walk over the furnace trench",
-          "hazard": "molten runoff spits through the grates and the walkway keeps shrinking under heat",
-          "stakes": "if the walk is lost the trench takes the line with it",
-          "enemy_posture": "the husks keep leaning shoulder-first, trying to bully every inch of space",
-          "sensory_detail": "the metal grate glows through the soles and the trench belches sparks upward",
-          "pressure": "one bad exchange will drop the whole fight into the furnace trench",
-          "success_turn": "you take the stronger side of the walk and make the husks break first",
-          "advance_turn": "the whole slag walk starts belonging to your footing and the husks lose their nerve",
-          "struggle_turn": "the walk keeps shrinking while the husks keep leaning in",
-          "crisis_turn": "the slag walk is one misstep from dropping everything into the trench",
-          "transition": "the walk clears, but the crucible is already starting to split"
-        }
-      ],
-      "outcomes": {
-        "victory": "The line keeps moving and the forge creatures lose their chance to break the rhythm. The {encounter_label} gives because you {encounter_objective}.",
-        "partial": "You hold the anvil line together, but the {encounter_label} still surges whenever the chamber flares.",
-        "failure": "The heat takes the tempo before you can {encounter_objective}."
-      }
-    },
-    {
-      "slug": "the_cracked_crucible",
-      "location_slug": "the_emberforge",
-      "name": "The Cracked Crucible",
-      "mission_number": 4,
-      "is_boss": false,
-      "replayable": true,
-      "mission_type": "pre_boss_escalation",
-      "goal": "Stop a forge core rupture",
-      "threat": "Living slag and collapsing platforms",
-      "narrative": "Each crack in the crucible throws hotter light across the chamber, as if the forge is trying to break open ahead of schedule and bury you in the thing it was made to contain.",
-      "workout_feel": "Mixed intensity with rising stakes",
-      "encounter_seeds": [
-        {
-          "slug": "crucible_shell",
-          "title": "The Crucible Shell",
-          "objective": "hold the cracked shell together long enough to finish the seal",
-          "threat": "the living slag forcing itself through the fractures",
-          "prop": "the cracked crucible shell",
-          "landmark": "the suspended crucible shell spiderwebbed with fractures",
-          "hazard": "splitting plates and showers of molten slag keep attacking the floor beneath you",
-          "stakes": "if the shell bursts the whole chamber opens like a wound",
-          "enemy_posture": "the living slag keeps testing each widening seam for the cleanest violent exit",
-          "sensory_detail": "the shell pops like thunder and molten light pulses through every crack",
-          "pressure": "every fracture is widening fast enough to take the floor with it",
-          "success_turn": "you hold the shell in place and force the slag back into the seams",
-          "advance_turn": "the shell starts locking back together and the chamber finally gets a breath to hold",
-          "struggle_turn": "the shell keeps splitting wider while the slag pushes harder through it",
-          "crisis_turn": "the crucible shell is one surge from blowing the whole floor apart",
-          "transition": "the shell holds for now, but the rupture core is already moving beneath it"
+            "slug": "the_cracked_crucible",
+            "location_slug": "the_emberforge",
+            "name": "The Cracked Crucible",
+            "mission_number": 4,
+            "is_boss": false,
+            "replayable": true,
+            "mission_type": "pre_boss_escalation",
+            "goal": "Stop a forge core rupture",
+            "threat": "Living slag and collapsing platforms",
+            "narrative": "Each crack in the crucible throws hotter light across the chamber, as if the forge is trying to break open ahead of schedule and bury you in the thing it was made to contain.",
+            "workout_feel": "Mixed intensity with rising stakes",
+            "encounter_seeds": [
+                {
+                    "slug": "crucible_shell",
+                    "title": "The Crucible Shell",
+                    "objective": "hold the cracked shell together long enough to finish the seal",
+                    "threat": "the living slag forcing itself through the fractures",
+                    "prop": "the cracked crucible shell",
+                    "landmark": "the suspended crucible shell spiderwebbed with fractures",
+                    "hazard": "splitting plates and showers of molten slag keep attacking the floor beneath you",
+                    "stakes": "if the shell bursts the whole chamber opens like a wound",
+                    "enemy_posture": "the living slag keeps testing each widening seam for the cleanest violent exit",
+                    "sensory_detail": "the shell pops like thunder and molten light pulses through every crack",
+                    "pressure": "every fracture is widening fast enough to take the floor with it",
+                    "success_turn": "you hold the shell in place and force the slag back into the seams",
+                    "advance_turn": "the shell starts locking back together and the chamber finally gets a breath to hold",
+                    "struggle_turn": "the shell keeps splitting wider while the slag pushes harder through it",
+                    "crisis_turn": "the crucible shell is one surge from blowing the whole floor apart",
+                    "transition": "the shell holds for now, but the rupture core is already moving beneath it"
+                },
+                {
+                    "slug": "rupture_core",
+                    "title": "The Rupture Core",
+                    "objective": "lock down the rupture core before the forge bursts",
+                    "threat": "the forge heart surging under the floor",
+                    "prop": "the rupture core",
+                    "landmark": "the forge floor above the buried rupture core",
+                    "hazard": "the floor flexes under each surge and throws sparks from every seam",
+                    "stakes": "if the core breaks loose the chamber and everyone in it are done",
+                    "enemy_posture": "the core keeps striking upward in waves, trying to time itself to your weakest breath",
+                    "sensory_detail": "the metal underfoot booms hollow and a red glow leaks through the plates",
+                    "pressure": "if the core gets one clean surge the whole chamber is gone",
+                    "success_turn": "you pin the core down and force the forge to stay inside its walls",
+                    "advance_turn": "the rupture core starts staying trapped under your timing and the forge finally holds together",
+                    "struggle_turn": "the core keeps punching up through the floor and stealing your footing",
+                    "crisis_turn": "the rupture core is one clean surge from tearing the whole chamber open",
+                    "transition": "the core slows, but the master forge is already answering the noise"
+                }
+            ],
+            "outcomes": {
+                "victory": "The crucible holds long enough for the deeper confrontation to begin on your terms. The {encounter_label} stays open because you {encounter_objective}.",
+                "partial": "You delay the rupture, but the {encounter_label} remains unstable and furious beneath every step.",
+                "failure": "The forge tears its own floor apart before you can {encounter_objective}."
+            }
         },
         {
-          "slug": "rupture_core",
-          "title": "The Rupture Core",
-          "objective": "lock down the rupture core before the forge bursts",
-          "threat": "the forge heart surging under the floor",
-          "prop": "the rupture core",
-          "landmark": "the forge floor above the buried rupture core",
-          "hazard": "the floor flexes under each surge and throws sparks from every seam",
-          "stakes": "if the core breaks loose the chamber and everyone in it are done",
-          "enemy_posture": "the core keeps striking upward in waves, trying to time itself to your weakest breath",
-          "sensory_detail": "the metal underfoot booms hollow and a red glow leaks through the plates",
-          "pressure": "if the core gets one clean surge the whole chamber is gone",
-          "success_turn": "you pin the core down and force the forge to stay inside its walls",
-          "advance_turn": "the rupture core starts staying trapped under your timing and the forge finally holds together",
-          "struggle_turn": "the core keeps punching up through the floor and stealing your footing",
-          "crisis_turn": "the rupture core is one clean surge from tearing the whole chamber open",
-          "transition": "the core slows, but the master forge is already answering the noise"
-        }
-      ],
-      "outcomes": {
-        "victory": "The crucible holds long enough for the deeper confrontation to begin on your terms. The {encounter_label} stays open because you {encounter_objective}.",
-        "partial": "You delay the rupture, but the {encounter_label} remains unstable and furious beneath every step.",
-        "failure": "The forge tears its own floor apart before you can {encounter_objective}."
-      }
-    },
-    {
-      "slug": "the_forgemaster_unbound",
-      "location_slug": "the_emberforge",
-      "name": "The Forgemaster Unbound",
-      "mission_number": 5,
-      "is_boss": true,
-      "replayable": true,
-      "mission_type": "boss",
-      "goal": "Stabilize the forge and defeat the fused master smith",
-      "boss_unlock_requirements": {
-        "complete_prior_missions": 4,
-        "min_hp": 40,
-        "source_doc_flags": [
-          "heat_resistant_supplies"
-        ]
-      },
-      "narrative": "Deep in the master forge, the smith who once ruled the city has fused with iron and flame until he feels less like a man than the will of the chamber itself. He strikes the anvil once, and every surface answers him.",
-      "workout_feel": "Full workout with rhythm-based intensity waves",
-      "encounter_seeds": [
-        {
-          "slug": "masters_anvil",
-          "title": "The Master's Anvil",
-          "objective": "break the forgemaster's hold on the anvil floor",
-          "threat": "the forgemaster's hammer rhythm",
-          "prop": "the master's anvil floor",
-          "landmark": "the vast anvil floor beneath the master chains",
-          "hazard": "shockwaves from each hammer blow keep skating across the floor and breaking stance",
-          "stakes": "if he owns the floor the whole forge remains his weapon",
-          "enemy_posture": "the forgemaster keeps stalking the centerline between blows, forcing you toward the hottest edge",
-          "sensory_detail": "each strike rings through the chamber like judgment and the chains tremble with it",
-          "pressure": "every unanswered strike lets the whole chamber keep fighting in his name",
-          "success_turn": "you disrupt his rhythm and make the chamber miss a beat with him",
-          "advance_turn": "the anvil floor starts slipping out from under his rhythm and the chamber finally echoes yours instead",
-          "struggle_turn": "the hammer rhythm keeps driving you toward the weakest edge of the floor",
-          "crisis_turn": "the anvil floor is one unanswered strike from becoming his completely",
-          "transition": "the anvil floor shudders, but the furnace heart behind him is already rising"
+            "slug": "the_forgemaster_unbound",
+            "location_slug": "the_emberforge",
+            "name": "The Forgemaster Unbound",
+            "mission_number": 5,
+            "is_boss": true,
+            "replayable": true,
+            "mission_type": "boss",
+            "goal": "Stabilize the forge and defeat the fused master smith",
+            "boss_unlock_requirements": {
+                "complete_prior_missions": 4,
+                "min_hp": 40,
+                "source_doc_flags": [
+                    "heat_resistant_supplies"
+                ]
+            },
+            "narrative": "Deep in the master forge, the smith who once ruled the city has fused with iron and flame until he feels less like a man than the will of the chamber itself. He strikes the anvil once, and every surface answers him.",
+            "workout_feel": "Full workout with rhythm-based intensity waves",
+            "encounter_seeds": [
+                {
+                    "slug": "masters_anvil",
+                    "title": "The Master's Anvil",
+                    "objective": "break the forgemaster's hold on the anvil floor",
+                    "threat": "the forgemaster's hammer rhythm",
+                    "prop": "the master's anvil floor",
+                    "landmark": "the vast anvil floor beneath the master chains",
+                    "hazard": "shockwaves from each hammer blow keep skating across the floor and breaking stance",
+                    "stakes": "if he owns the floor the whole forge remains his weapon",
+                    "enemy_posture": "the forgemaster keeps stalking the centerline between blows, forcing you toward the hottest edge",
+                    "sensory_detail": "each strike rings through the chamber like judgment and the chains tremble with it",
+                    "pressure": "every unanswered strike lets the whole chamber keep fighting in his name",
+                    "success_turn": "you disrupt his rhythm and make the chamber miss a beat with him",
+                    "advance_turn": "the anvil floor starts slipping out from under his rhythm and the chamber finally echoes yours instead",
+                    "struggle_turn": "the hammer rhythm keeps driving you toward the weakest edge of the floor",
+                    "crisis_turn": "the anvil floor is one unanswered strike from becoming his completely",
+                    "transition": "the anvil floor shudders, but the furnace heart behind him is already rising"
+                },
+                {
+                    "slug": "furnace_heart",
+                    "title": "The Furnace Heart",
+                    "objective": "take the furnace heart away from the forgemaster",
+                    "threat": "the fused fire answering his every motion",
+                    "prop": "the furnace heart",
+                    "landmark": "the suspended furnace heart behind the master anvil",
+                    "hazard": "whipping heat and molten spray turn every approach into a gauntlet",
+                    "stakes": "if the heart answers him the city never gets its forge back",
+                    "enemy_posture": "the fused fire keeps surging to his gestures like a war beast on command",
+                    "sensory_detail": "the heart beats light through the chamber walls and every pulse shakes the air",
+                    "pressure": "if the heart keeps answering him the city will never get its forge back",
+                    "success_turn": "you force the furnace heart to answer your timing instead of his",
+                    "advance_turn": "the furnace heart starts beating in your cadence and the whole forge begins turning away from him",
+                    "struggle_turn": "the heart keeps roaring back to him whenever you hesitate",
+                    "crisis_turn": "the furnace heart is one missed answer from returning the whole city to his fire",
+                    "transition": "the heart turns, but the forge still needs one last act of control"
+                }
+            ],
+            "outcomes": {
+                "victory": "The forge stabilizes and the city glows with disciplined fire once more. In {mission_name}, the {encounter_label} stays yours because you {encounter_objective}.",
+                "partial": "The master withdraws into the furnace heart, and the city survives on borrowed time while the {encounter_label} remains contested.",
+                "failure": "The chamber drives you back before you can {encounter_objective}."
+            }
         },
         {
-          "slug": "furnace_heart",
-          "title": "The Furnace Heart",
-          "objective": "take the furnace heart away from the forgemaster",
-          "threat": "the fused fire answering his every motion",
-          "prop": "the furnace heart",
-          "landmark": "the suspended furnace heart behind the master anvil",
-          "hazard": "whipping heat and molten spray turn every approach into a gauntlet",
-          "stakes": "if the heart answers him the city never gets its forge back",
-          "enemy_posture": "the fused fire keeps surging to his gestures like a war beast on command",
-          "sensory_detail": "the heart beats light through the chamber walls and every pulse shakes the air",
-          "pressure": "if the heart keeps answering him the city will never get its forge back",
-          "success_turn": "you force the furnace heart to answer your timing instead of his",
-          "advance_turn": "the furnace heart starts beating in your cadence and the whole forge begins turning away from him",
-          "struggle_turn": "the heart keeps roaring back to him whenever you hesitate",
-          "crisis_turn": "the furnace heart is one missed answer from returning the whole city to his fire",
-          "transition": "the heart turns, but the forge still needs one last act of control"
-        }
-      ],
-      "outcomes": {
-        "victory": "The forge stabilizes and the city glows with disciplined fire once more. In {mission_name}, the {encounter_label} stays yours because you {encounter_objective}.",
-        "partial": "The master withdraws into the furnace heart, and the city survives on borrowed time while the {encounter_label} remains contested.",
-        "failure": "The chamber drives you back before you can {encounter_objective}."
-      }
-    },
-    {
-      "slug": "quiet_hands",
-      "location_slug": "whispering_wilds",
-      "name": "Quiet Hands",
-      "mission_number": 1,
-      "is_boss": false,
-      "replayable": true,
-      "mission_type": "easy_workout",
-      "goal": "Establish stealth rhythm",
-      "threat": "Tripwires, lookouts, pressure to stay clean",
-      "narrative": "The Wilds do not care how strong you are if you cannot move without announcing yourself. Here, quiet hands, light steps, and disciplined breathing matter more than brute confidence.",
-      "workout_feel": "3 exercises only",
-      "encounter_seeds": [
-        {
-          "slug": "tripwire_path",
-          "title": "The Tripwire Path",
-          "objective": "cross the tripwire path without waking the lookout line",
-          "threat": "the hidden eyes of the Wilds",
-          "prop": "the tripwire path",
-          "landmark": "the fern-choked path beneath low hanging snares",
-          "hazard": "hidden cords, slick roots, and hanging thorns punish any heavy step",
-          "stakes": "if the lookout line wakes the whole canopy turns predator",
-          "enemy_posture": "unseen scouts keep shadowing the path, ready to turn one sound into a swarm",
-          "sensory_detail": "wet leaves brush the hands and even the insects seem to pause when you move",
-          "pressure": "one loud mistake will turn the whole canopy toward you",
-          "success_turn": "you move cleanly enough to make the lookout line doubt its own hearing",
-          "advance_turn": "the whole tripwire path starts feeling silent under your hands and the lookout line loses confidence",
-          "struggle_turn": "the forest keeps catching every small sound and passing it ahead of you",
-          "crisis_turn": "the tripwire path is one sharp noise from waking the whole canopy",
-          "transition": "the path clears, but the blind bridge is already waiting deeper in"
+            "slug": "quiet_hands",
+            "location_slug": "whispering_wilds",
+            "name": "Quiet Hands",
+            "mission_number": 1,
+            "is_boss": false,
+            "replayable": true,
+            "mission_type": "easy_workout",
+            "goal": "Establish stealth rhythm",
+            "threat": "Tripwires, lookouts, pressure to stay clean",
+            "narrative": "The Wilds do not care how strong you are if you cannot move without announcing yourself. Here, quiet hands, light steps, and disciplined breathing matter more than brute confidence.",
+            "workout_feel": "3 exercises only",
+            "encounter_seeds": [
+                {
+                    "slug": "tripwire_path",
+                    "title": "The Tripwire Path",
+                    "objective": "cross the tripwire path without waking the lookout line",
+                    "threat": "the hidden eyes of the Wilds",
+                    "prop": "the tripwire path",
+                    "landmark": "the fern-choked path beneath low hanging snares",
+                    "hazard": "hidden cords, slick roots, and hanging thorns punish any heavy step",
+                    "stakes": "if the lookout line wakes the whole canopy turns predator",
+                    "enemy_posture": "unseen scouts keep shadowing the path, ready to turn one sound into a swarm",
+                    "sensory_detail": "wet leaves brush the hands and even the insects seem to pause when you move",
+                    "pressure": "one loud mistake will turn the whole canopy toward you",
+                    "success_turn": "you move cleanly enough to make the lookout line doubt its own hearing",
+                    "advance_turn": "the whole tripwire path starts feeling silent under your hands and the lookout line loses confidence",
+                    "struggle_turn": "the forest keeps catching every small sound and passing it ahead of you",
+                    "crisis_turn": "the tripwire path is one sharp noise from waking the whole canopy",
+                    "transition": "the path clears, but the blind bridge is already waiting deeper in"
+                },
+                {
+                    "slug": "blind_bridge",
+                    "title": "The Blind Bridge",
+                    "objective": "take the blind bridge before the scouts fix your line",
+                    "threat": "the scouts shifting through the branches above you",
+                    "prop": "the blind bridge",
+                    "landmark": "the rope-and-root bridge stretched through mist",
+                    "hazard": "the bridge sways above a dark drop and every creak carries too far",
+                    "stakes": "if the bridge betrays you the route is blown before the safe side",
+                    "enemy_posture": "the scouts above keep pacing your progress, waiting for the bridge to announce you",
+                    "sensory_detail": "rope fibers rasp under the grip and mist beads on every plank",
+                    "pressure": "if the bridge hears you first the whole route is finished",
+                    "success_turn": "you own the bridge long enough to keep the route invisible",
+                    "advance_turn": "the blind bridge starts carrying you in silence and the route beyond it finally opens unseen",
+                    "struggle_turn": "the bridge keeps answering every scrape with new eyes in the trees",
+                    "crisis_turn": "the blind bridge is one betrayed step from exposing the whole route",
+                    "transition": "the bridge holds, but the courier trail is already opening farther ahead"
+                }
+            ],
+            "outcomes": {
+                "victory": "The lookouts never get a clean read on you, and {encounter_proof}",
+                "partial": "You stay mostly hidden, but the {encounter_label} still catches the small mistakes in your rhythm.",
+                "failure": "The Wilds hear too much from you before you can {encounter_objective}."
+            }
         },
         {
-          "slug": "blind_bridge",
-          "title": "The Blind Bridge",
-          "objective": "take the blind bridge before the scouts fix your line",
-          "threat": "the scouts shifting through the branches above you",
-          "prop": "the blind bridge",
-          "landmark": "the rope-and-root bridge stretched through mist",
-          "hazard": "the bridge sways above a dark drop and every creak carries too far",
-          "stakes": "if the bridge betrays you the route is blown before the safe side",
-          "enemy_posture": "the scouts above keep pacing your progress, waiting for the bridge to announce you",
-          "sensory_detail": "rope fibers rasp under the grip and mist beads on every plank",
-          "pressure": "if the bridge hears you first the whole route is finished",
-          "success_turn": "you own the bridge long enough to keep the route invisible",
-          "advance_turn": "the blind bridge starts carrying you in silence and the route beyond it finally opens unseen",
-          "struggle_turn": "the bridge keeps answering every scrape with new eyes in the trees",
-          "crisis_turn": "the blind bridge is one betrayed step from exposing the whole route",
-          "transition": "the bridge holds, but the courier trail is already opening farther ahead"
-        }
-      ],
-      "outcomes": {
-        "victory": "The lookouts never get a clean read on you, and {encounter_proof}",
-        "partial": "You stay mostly hidden, but the {encounter_label} still catches the small mistakes in your rhythm.",
-        "failure": "The Wilds hear too much from you before you can {encounter_objective}."
-      }
-    },
-    {
-      "slug": "message_through_the_bramble",
-      "location_slug": "whispering_wilds",
-      "name": "Message Through the Bramble",
-      "mission_number": 2,
-      "is_boss": false,
-      "replayable": true,
-      "mission_type": "runner_task",
-      "run_type": "cardio",
-      "goal": "Carry an intercepted note to the safehouse",
-      "threat": "Fast-moving forest route",
-      "narrative": "A stolen message has to cross the Wilds before the wrong eyes realize it is missing. The forest is fast, suspicious, and full of paths that only stay open if you move with conviction.",
-      "workout_feel": "Cardio challenge",
-      "encounter_seeds": [
-        {
-          "slug": "bramble_cut",
-          "title": "The Bramble Cut",
-          "objective": "carry the message through the bramble cut before the scouts close it",
-          "threat": "the Wilds' runners crossing your scent",
-          "prop": "the bramble cut",
-          "landmark": "the knife-thin cut through hooked bramble walls",
-          "hazard": "thorns snag at the limbs while the path keeps trying to spring shut behind you",
-          "stakes": "if the cut seals the message dies in the thicket with you",
-          "enemy_posture": "the runners keep crossing your scent from parallel paths, trying to rush you into mistakes",
-          "sensory_detail": "sap sticks to the skin and the briars whisper as if passing word ahead",
-          "pressure": "the path is trying to seal itself behind you as fast as you can open it",
-          "success_turn": "you keep the note moving and force the cut to stay open a little longer",
-          "advance_turn": "the cut starts staying open behind your pace and the message finally has a full line through",
-          "struggle_turn": "the cut keeps tangling tighter while the runners gain on you",
-          "crisis_turn": "the bramble cut is one slowed step from knitting shut around the message",
-          "transition": "the cut gives way, but the root arch is already narrowing the route"
+            "slug": "message_through_the_bramble",
+            "location_slug": "whispering_wilds",
+            "name": "Message Through the Bramble",
+            "mission_number": 2,
+            "is_boss": false,
+            "replayable": true,
+            "mission_type": "runner_task",
+            "run_type": "cardio",
+            "goal": "Carry an intercepted note to the safehouse",
+            "threat": "Fast-moving forest route",
+            "narrative": "A stolen message has to cross the Wilds before the wrong eyes realize it is missing. The forest is fast, suspicious, and full of paths that only stay open if you move with conviction.",
+            "workout_feel": "Cardio challenge",
+            "encounter_seeds": [
+                {
+                    "slug": "bramble_cut",
+                    "title": "The Bramble Cut",
+                    "objective": "carry the message through the bramble cut before the scouts close it",
+                    "threat": "the Wilds' runners crossing your scent",
+                    "prop": "the bramble cut",
+                    "landmark": "the knife-thin cut through hooked bramble walls",
+                    "hazard": "thorns snag at the limbs while the path keeps trying to spring shut behind you",
+                    "stakes": "if the cut seals the message dies in the thicket with you",
+                    "enemy_posture": "the runners keep crossing your scent from parallel paths, trying to rush you into mistakes",
+                    "sensory_detail": "sap sticks to the skin and the briars whisper as if passing word ahead",
+                    "pressure": "the path is trying to seal itself behind you as fast as you can open it",
+                    "success_turn": "you keep the note moving and force the cut to stay open a little longer",
+                    "advance_turn": "the cut starts staying open behind your pace and the message finally has a full line through",
+                    "struggle_turn": "the cut keeps tangling tighter while the runners gain on you",
+                    "crisis_turn": "the bramble cut is one slowed step from knitting shut around the message",
+                    "transition": "the cut gives way, but the root arch is already narrowing the route"
+                },
+                {
+                    "slug": "root_arch",
+                    "title": "The Root Arch",
+                    "objective": "reach the safehouse side of the root arch with the note intact",
+                    "threat": "the hunters closing from the side trails",
+                    "prop": "the root arch",
+                    "landmark": "the living root arch over the last safe route",
+                    "hazard": "twisting roots and blind side trails keep reaching across the line of escape",
+                    "stakes": "if the arch closes the safehouse never sees the note",
+                    "enemy_posture": "the hunters keep fanning from the side trails to force you into the narrowing gap",
+                    "sensory_detail": "wet bark gleams in dim light and every footfall thuds through hollow wood",
+                    "pressure": "if the arch closes before you cross it the message dies with the route",
+                    "success_turn": "you break into the safehouse line and keep the hunters a step late",
+                    "advance_turn": "the root arch starts holding wide enough for the message to live and the hunters finally fall a pace behind",
+                    "struggle_turn": "the arch keeps shrinking while the side trails wake up around you",
+                    "crisis_turn": "the root arch is one breath from closing on the message and the route together",
+                    "transition": "the arch opens, but the false lanterns are already swinging ahead"
+                }
+            ],
+            "outcomes": {
+                "victory": "The message reaches the safehouse before the Wilds can close their grip. {encounter_proof}",
+                "partial": "The note gets through, but the {encounter_label} narrows hard behind you before the forest truly quiets.",
+                "failure": "The forest cuts your line before you can {encounter_objective}."
+            }
         },
         {
-          "slug": "root_arch",
-          "title": "The Root Arch",
-          "objective": "reach the safehouse side of the root arch with the note intact",
-          "threat": "the hunters closing from the side trails",
-          "prop": "the root arch",
-          "landmark": "the living root arch over the last safe route",
-          "hazard": "twisting roots and blind side trails keep reaching across the line of escape",
-          "stakes": "if the arch closes the safehouse never sees the note",
-          "enemy_posture": "the hunters keep fanning from the side trails to force you into the narrowing gap",
-          "sensory_detail": "wet bark gleams in dim light and every footfall thuds through hollow wood",
-          "pressure": "if the arch closes before you cross it the message dies with the route",
-          "success_turn": "you break into the safehouse line and keep the hunters a step late",
-          "advance_turn": "the root arch starts holding wide enough for the message to live and the hunters finally fall a pace behind",
-          "struggle_turn": "the arch keeps shrinking while the side trails wake up around you",
-          "crisis_turn": "the root arch is one breath from closing on the message and the route together",
-          "transition": "the arch opens, but the false lanterns are already swinging ahead"
-        }
-      ],
-      "outcomes": {
-        "victory": "The message reaches the safehouse before the Wilds can close their grip. {encounter_proof}",
-        "partial": "The note gets through, but the {encounter_label} narrows hard behind you before the forest truly quiets.",
-        "failure": "The forest cuts your line before you can {encounter_objective}."
-      }
-    },
-    {
-      "slug": "lanterns_in_the_leaves",
-      "location_slug": "whispering_wilds",
-      "name": "Lanterns in the Leaves",
-      "mission_number": 3,
-      "is_boss": false,
-      "replayable": true,
-      "mission_type": "ambush_control",
-      "goal": "Turn the hunters into the hunted",
-      "threat": "Hidden archers and mimic lights",
-      "narrative": "False lanterns swing between the trees while arrows wait for the first careless step. The only safe answer is to seize the ambush before it becomes a cage.",
-      "workout_feel": "Quick bursts with sharp rests",
-      "encounter_seeds": [
-        {
-          "slug": "false_lanterns",
-          "title": "The False Lanterns",
-          "objective": "break the lantern line before it fixes your route",
-          "threat": "the mimic lights leading you into the kill lane",
-          "prop": "the false lantern line",
-          "landmark": "the hanging lantern line over the forest lane",
-          "hazard": "false light keeps bending depth and leading each step toward the wrong ground",
-          "stakes": "if the lights fix your route the hidden archers get the kill lane they want",
-          "enemy_posture": "the mimic lights keep drifting just enough to make certainty impossible",
-          "sensory_detail": "lantern glass clicks in the branches and pale light wavers on the leaves",
-          "pressure": "every wrong step gives the hidden archers a cleaner angle",
-          "success_turn": "you seize the lights first and make the ambush reveal itself too early",
-          "advance_turn": "the lantern line starts turning against its makers and the kill lane loses its shape",
-          "struggle_turn": "the lights keep sliding you toward the exact lane they want",
-          "crisis_turn": "the false lantern line is one bad read from locking you into the kill lane for good",
-          "transition": "the lights break, but the archer roost is already answering from above"
+            "slug": "lanterns_in_the_leaves",
+            "location_slug": "whispering_wilds",
+            "name": "Lanterns in the Leaves",
+            "mission_number": 3,
+            "is_boss": false,
+            "replayable": true,
+            "mission_type": "ambush_control",
+            "goal": "Turn the hunters into the hunted",
+            "threat": "Hidden archers and mimic lights",
+            "narrative": "False lanterns swing between the trees while arrows wait for the first careless step. The only safe answer is to seize the ambush before it becomes a cage.",
+            "workout_feel": "Quick bursts with sharp rests",
+            "encounter_seeds": [
+                {
+                    "slug": "false_lanterns",
+                    "title": "The False Lanterns",
+                    "objective": "break the lantern line before it fixes your route",
+                    "threat": "the mimic lights leading you into the kill lane",
+                    "prop": "the false lantern line",
+                    "landmark": "the hanging lantern line over the forest lane",
+                    "hazard": "false light keeps bending depth and leading each step toward the wrong ground",
+                    "stakes": "if the lights fix your route the hidden archers get the kill lane they want",
+                    "enemy_posture": "the mimic lights keep drifting just enough to make certainty impossible",
+                    "sensory_detail": "lantern glass clicks in the branches and pale light wavers on the leaves",
+                    "pressure": "every wrong step gives the hidden archers a cleaner angle",
+                    "success_turn": "you seize the lights first and make the ambush reveal itself too early",
+                    "advance_turn": "the lantern line starts turning against its makers and the kill lane loses its shape",
+                    "struggle_turn": "the lights keep sliding you toward the exact lane they want",
+                    "crisis_turn": "the false lantern line is one bad read from locking you into the kill lane for good",
+                    "transition": "the lights break, but the archer roost is already answering from above"
+                },
+                {
+                    "slug": "archer_roost",
+                    "title": "The Archer Roost",
+                    "objective": "take the archer roost away from the canopy hunters",
+                    "threat": "the hidden archers above the trail",
+                    "prop": "the archer roost",
+                    "landmark": "the roost platforms lashed high in the canopy",
+                    "hazard": "arrows and broken branches keep turning the forest floor into open punishment",
+                    "stakes": "if the roost holds the high ground the whole trail stays trapped",
+                    "enemy_posture": "the archers keep trading perches instead of holding one answerable angle",
+                    "sensory_detail": "bowstrings snap overhead and leaf litter kicks with each near miss",
+                    "pressure": "if the roost keeps the high ground the whole forest floor stays trapped",
+                    "success_turn": "you make the roost unsafe for them and steal the angle back",
+                    "advance_turn": "the roost starts collapsing as a safe perch and the whole canopy begins losing its grip on you",
+                    "struggle_turn": "the roost keeps raining pressure while the floor gives you nowhere clean to stand",
+                    "crisis_turn": "the archer roost is one missed answer from pinning the whole forest floor shut",
+                    "transition": "the roost cracks, but the nest beyond it is already shifting awake"
+                }
+            ],
+            "outcomes": {
+                "victory": "The lights stop dictating the route and the archers lose the high ground. The {encounter_label} snaps in your favor because you {encounter_objective}.",
+                "partial": "You break part of the trap, but the {encounter_label} still shifts in the canopy whenever you pause.",
+                "failure": "The hidden line closes around you before you can {encounter_objective}."
+            }
         },
         {
-          "slug": "archer_roost",
-          "title": "The Archer Roost",
-          "objective": "take the archer roost away from the canopy hunters",
-          "threat": "the hidden archers above the trail",
-          "prop": "the archer roost",
-          "landmark": "the roost platforms lashed high in the canopy",
-          "hazard": "arrows and broken branches keep turning the forest floor into open punishment",
-          "stakes": "if the roost holds the high ground the whole trail stays trapped",
-          "enemy_posture": "the archers keep trading perches instead of holding one answerable angle",
-          "sensory_detail": "bowstrings snap overhead and leaf litter kicks with each near miss",
-          "pressure": "if the roost keeps the high ground the whole forest floor stays trapped",
-          "success_turn": "you make the roost unsafe for them and steal the angle back",
-          "advance_turn": "the roost starts collapsing as a safe perch and the whole canopy begins losing its grip on you",
-          "struggle_turn": "the roost keeps raining pressure while the floor gives you nowhere clean to stand",
-          "crisis_turn": "the archer roost is one missed answer from pinning the whole forest floor shut",
-          "transition": "the roost cracks, but the nest beyond it is already shifting awake"
-        }
-      ],
-      "outcomes": {
-        "victory": "The lights stop dictating the route and the archers lose the high ground. The {encounter_label} snaps in your favor because you {encounter_objective}.",
-        "partial": "You break part of the trap, but the {encounter_label} still shifts in the canopy whenever you pause.",
-        "failure": "The hidden line closes around you before you can {encounter_objective}."
-      }
-    },
-    {
-      "slug": "the_thornveil_nest",
-      "location_slug": "whispering_wilds",
-      "name": "The Thornveil Nest",
-      "mission_number": 4,
-      "is_boss": false,
-      "replayable": true,
-      "mission_type": "pre_boss_escalation",
-      "goal": "Cut into the Wilds' command center",
-      "threat": "Assassins, poison vines, collapsing platforms",
-      "narrative": "Every step deeper into the nest gives the Wilds permission to reveal a sharper cruelty. The Matron is close enough now that the whole forest seems to move as an extension of her will.",
-      "workout_feel": "Fast mixed-intensity flow",
-      "encounter_seeds": [
-        {
-          "slug": "thorn_tunnels",
-          "title": "The Thorn Tunnels",
-          "objective": "cut through the thorn tunnels before the nest folds shut",
-          "threat": "the assassins moving through the walls of the nest",
-          "prop": "the thorn tunnels",
-          "landmark": "the woven thorn passages beneath the nest",
-          "hazard": "living brambles keep shifting the walls and choking the wrong routes closed",
-          "stakes": "if the tunnels fold the nest turns the whole approach into an execution box",
-          "enemy_posture": "the assassins keep ghosting between the woven walls where you can hear but not hold them",
-          "sensory_detail": "poison sap beads on black thorns and the air smells green and bitter",
-          "pressure": "the nest is trying to turn every passage into the wrong one",
-          "success_turn": "you keep the tunnels open and force the assassins to abandon the cleanest kills",
-          "advance_turn": "the tunnels start holding to your route and the nest begins losing its favorite traps",
-          "struggle_turn": "the tunnels keep folding into sharper traps around you",
-          "crisis_turn": "the thorn tunnels are one wrong turn from folding shut into a full assassination box",
-          "transition": "the tunnels open, but the inner canopy is already drawing tight"
+            "slug": "the_thornveil_nest",
+            "location_slug": "whispering_wilds",
+            "name": "The Thornveil Nest",
+            "mission_number": 4,
+            "is_boss": false,
+            "replayable": true,
+            "mission_type": "pre_boss_escalation",
+            "goal": "Cut into the Wilds' command center",
+            "threat": "Assassins, poison vines, collapsing platforms",
+            "narrative": "Every step deeper into the nest gives the Wilds permission to reveal a sharper cruelty. The Matron is close enough now that the whole forest seems to move as an extension of her will.",
+            "workout_feel": "Fast mixed-intensity flow",
+            "encounter_seeds": [
+                {
+                    "slug": "thorn_tunnels",
+                    "title": "The Thorn Tunnels",
+                    "objective": "cut through the thorn tunnels before the nest folds shut",
+                    "threat": "the assassins moving through the walls of the nest",
+                    "prop": "the thorn tunnels",
+                    "landmark": "the woven thorn passages beneath the nest",
+                    "hazard": "living brambles keep shifting the walls and choking the wrong routes closed",
+                    "stakes": "if the tunnels fold the nest turns the whole approach into an execution box",
+                    "enemy_posture": "the assassins keep ghosting between the woven walls where you can hear but not hold them",
+                    "sensory_detail": "poison sap beads on black thorns and the air smells green and bitter",
+                    "pressure": "the nest is trying to turn every passage into the wrong one",
+                    "success_turn": "you keep the tunnels open and force the assassins to abandon the cleanest kills",
+                    "advance_turn": "the tunnels start holding to your route and the nest begins losing its favorite traps",
+                    "struggle_turn": "the tunnels keep folding into sharper traps around you",
+                    "crisis_turn": "the thorn tunnels are one wrong turn from folding shut into a full assassination box",
+                    "transition": "the tunnels open, but the inner canopy is already drawing tight"
+                },
+                {
+                    "slug": "inner_canopy",
+                    "title": "The Inner Canopy",
+                    "objective": "take the inner canopy before the Matron chooses the first strike",
+                    "threat": "the Matron's unseen command of the nest",
+                    "prop": "the inner canopy",
+                    "landmark": "the suspended platforms at the nest's heart",
+                    "hazard": "swaying bridges and cutaway sightlines punish every rushed commitment",
+                    "stakes": "if the canopy belongs to the Matron before the duel, you start already losing",
+                    "enemy_posture": "the Matron keeps testing the canopy through hidden orders rather than showing herself first",
+                    "sensory_detail": "woven branches creak overhead and filtered light flashes across blade edges",
+                    "pressure": "if the canopy belongs to her when the duel begins you are already late",
+                    "success_turn": "you claim enough of the canopy to force the final duel into daylight",
+                    "advance_turn": "the inner canopy starts answering your line and the Matron loses the comfort of her shadows",
+                    "struggle_turn": "the canopy keeps bending to her will while your angles disappear",
+                    "crisis_turn": "the inner canopy is one lost angle from handing the duel to the Matron before it begins",
+                    "transition": "the canopy opens, but the Matron herself is already in motion"
+                }
+            ],
+            "outcomes": {
+                "victory": "You carve a line into the nest and force the real duel into the open. The {encounter_label} stays broken because you {encounter_objective}.",
+                "partial": "You reach the inner canopy, but the {encounter_label} remains tangled and hostile around the final approach.",
+                "failure": "The nest folds in on itself before you can {encounter_objective}."
+            }
         },
         {
-          "slug": "inner_canopy",
-          "title": "The Inner Canopy",
-          "objective": "take the inner canopy before the Matron chooses the first strike",
-          "threat": "the Matron's unseen command of the nest",
-          "prop": "the inner canopy",
-          "landmark": "the suspended platforms at the nest's heart",
-          "hazard": "swaying bridges and cutaway sightlines punish every rushed commitment",
-          "stakes": "if the canopy belongs to the Matron before the duel, you start already losing",
-          "enemy_posture": "the Matron keeps testing the canopy through hidden orders rather than showing herself first",
-          "sensory_detail": "woven branches creak overhead and filtered light flashes across blade edges",
-          "pressure": "if the canopy belongs to her when the duel begins you are already late",
-          "success_turn": "you claim enough of the canopy to force the final duel into daylight",
-          "advance_turn": "the inner canopy starts answering your line and the Matron loses the comfort of her shadows",
-          "struggle_turn": "the canopy keeps bending to her will while your angles disappear",
-          "crisis_turn": "the inner canopy is one lost angle from handing the duel to the Matron before it begins",
-          "transition": "the canopy opens, but the Matron herself is already in motion"
+            "slug": "the_thornveil_matron",
+            "location_slug": "whispering_wilds",
+            "name": "The Thornveil Matron",
+            "mission_number": 5,
+            "is_boss": true,
+            "replayable": true,
+            "mission_type": "boss",
+            "goal": "Win the speed-and-precision duel beneath the canopy",
+            "boss_unlock_requirements": {
+                "complete_prior_missions": 4,
+                "min_hp": 42,
+                "source_doc_flags": [
+                    "antidote_supplies"
+                ]
+            },
+            "narrative": "Beneath a canopy of hanging blades and woven roots, the Matron smiles before anyone sees her move. The whole arena feels built to reward a single lapse and punish it forever.",
+            "workout_feel": "Full workout built around repeated burst phases",
+            "encounter_seeds": [
+                {
+                    "slug": "blade_canopy",
+                    "title": "The Blade Canopy",
+                    "objective": "survive the Matron's first pass and hold the center line",
+                    "threat": "the Matron striking from angles the eye barely catches",
+                    "prop": "the blade canopy",
+                    "landmark": "the duel circle under hanging blade-vines",
+                    "hazard": "every dangling edge and shifting root is trying to steal one clean step",
+                    "stakes": "if the canopy tilts to her the duel never becomes fair again",
+                    "enemy_posture": "the Matron keeps appearing at the edge of sight and vanishing before a full answer lands",
+                    "sensory_detail": "metal leaves whisper together and the air smells of sap and poison",
+                    "pressure": "one clean lapse will let the whole arena tilt permanently her way",
+                    "success_turn": "you deny the first pass and force the Matron to fight you in clearer space",
+                    "advance_turn": "the blade canopy starts losing its cover for her and the duel finally sharpens into your sightlines",
+                    "struggle_turn": "the canopy keeps hiding her best angles while your own keep vanishing",
+                    "crisis_turn": "the blade canopy is one clean lapse from turning the whole arena to her side forever",
+                    "transition": "the center line holds, but the root throne behind her is already waking up"
+                },
+                {
+                    "slug": "root_throne",
+                    "title": "The Root Throne",
+                    "objective": "take the root throne and end the Wilds' hold on the duel",
+                    "threat": "the Matron drawing the whole nest into her final exchange",
+                    "prop": "the root throne",
+                    "landmark": "the twisted throne grown from the heart-root of the nest",
+                    "hazard": "the floor buckles with living roots and poisoned barbs whenever control slips",
+                    "stakes": "if the throne answers her the whole Wilds fight beside her",
+                    "enemy_posture": "the Matron keeps drawing the nest tighter around the throne with every feint",
+                    "sensory_detail": "roots throb underfoot and venom beads like dew along the bark",
+                    "pressure": "if the throne keeps answering her the whole forest will keep fighting at her shoulder",
+                    "success_turn": "you force the throne to answer your timing and make the Wilds hesitate",
+                    "advance_turn": "the root throne starts turning under your claim and the Wilds begin to hesitate with it",
+                    "struggle_turn": "the throne keeps feeding her clean escapes and uglier angles",
+                    "crisis_turn": "the root throne is one lost exchange from calling the whole Wilds back to her side",
+                    "transition": "the throne turns, but the Wilds still need one last command to break"
+                }
+            ],
+            "outcomes": {
+                "victory": "The hidden paths belong to you and the Wilds finally whisper your name with respect. The {encounter_label} breaks because you {encounter_objective}.",
+                "partial": "The Matron fades into deeper forest, and the {encounter_label} stays unresolved beneath the canopy.",
+                "failure": "The forest closes behind you, and the {encounter_label} turns escape into the only victory left."
+            }
         }
-      ],
-      "outcomes": {
-        "victory": "You carve a line into the nest and force the real duel into the open. The {encounter_label} stays broken because you {encounter_objective}.",
-        "partial": "You reach the inner canopy, but the {encounter_label} remains tangled and hostile around the final approach.",
-        "failure": "The nest folds in on itself before you can {encounter_objective}."
-      }
-    },
-    {
-      "slug": "the_thornveil_matron",
-      "location_slug": "whispering_wilds",
-      "name": "The Thornveil Matron",
-      "mission_number": 5,
-      "is_boss": true,
-      "replayable": true,
-      "mission_type": "boss",
-      "goal": "Win the speed-and-precision duel beneath the canopy",
-      "boss_unlock_requirements": {
-        "complete_prior_missions": 4,
-        "min_hp": 42,
-        "source_doc_flags": [
-          "antidote_supplies"
-        ]
-      },
-      "narrative": "Beneath a canopy of hanging blades and woven roots, the Matron smiles before anyone sees her move. The whole arena feels built to reward a single lapse and punish it forever.",
-      "workout_feel": "Full workout built around repeated burst phases",
-      "encounter_seeds": [
-        {
-          "slug": "blade_canopy",
-          "title": "The Blade Canopy",
-          "objective": "survive the Matron's first pass and hold the center line",
-          "threat": "the Matron striking from angles the eye barely catches",
-          "prop": "the blade canopy",
-          "landmark": "the duel circle under hanging blade-vines",
-          "hazard": "every dangling edge and shifting root is trying to steal one clean step",
-          "stakes": "if the canopy tilts to her the duel never becomes fair again",
-          "enemy_posture": "the Matron keeps appearing at the edge of sight and vanishing before a full answer lands",
-          "sensory_detail": "metal leaves whisper together and the air smells of sap and poison",
-          "pressure": "one clean lapse will let the whole arena tilt permanently her way",
-          "success_turn": "you deny the first pass and force the Matron to fight you in clearer space",
-          "advance_turn": "the blade canopy starts losing its cover for her and the duel finally sharpens into your sightlines",
-          "struggle_turn": "the canopy keeps hiding her best angles while your own keep vanishing",
-          "crisis_turn": "the blade canopy is one clean lapse from turning the whole arena to her side forever",
-          "transition": "the center line holds, but the root throne behind her is already waking up"
-        },
-        {
-          "slug": "root_throne",
-          "title": "The Root Throne",
-          "objective": "take the root throne and end the Wilds' hold on the duel",
-          "threat": "the Matron drawing the whole nest into her final exchange",
-          "prop": "the root throne",
-          "landmark": "the twisted throne grown from the heart-root of the nest",
-          "hazard": "the floor buckles with living roots and poisoned barbs whenever control slips",
-          "stakes": "if the throne answers her the whole Wilds fight beside her",
-          "enemy_posture": "the Matron keeps drawing the nest tighter around the throne with every feint",
-          "sensory_detail": "roots throb underfoot and venom beads like dew along the bark",
-          "pressure": "if the throne keeps answering her the whole forest will keep fighting at her shoulder",
-          "success_turn": "you force the throne to answer your timing and make the Wilds hesitate",
-          "advance_turn": "the root throne starts turning under your claim and the Wilds begin to hesitate with it",
-          "struggle_turn": "the throne keeps feeding her clean escapes and uglier angles",
-          "crisis_turn": "the root throne is one lost exchange from calling the whole Wilds back to her side",
-          "transition": "the throne turns, but the Wilds still need one last command to break"
-        }
-      ],
-      "outcomes": {
-        "victory": "The hidden paths belong to you and the Wilds finally whisper your name with respect. The {encounter_label} breaks because you {encounter_objective}.",
-        "partial": "The Matron fades into deeper forest, and the {encounter_label} stays unresolved beneath the canopy.",
-        "failure": "The forest closes behind you, and the {encounter_label} turns escape into the only victory left."
-      }
-    }
-  ]
+    ]
 }

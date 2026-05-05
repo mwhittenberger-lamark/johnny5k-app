@@ -53,14 +53,17 @@
           "recruits",
           "mentors",
           "low-stakes optimism"
-        ]
+        ],
+        "visual_prompt": "warm timber hall, training banners over scarred tables, firelight, travel packs stacked near the door, young adventurers recovering after drills"
       },
       "store": {
         "name": "Quartermaster Vale",
+        "owner_name": "Quartermaster Vale",
         "tone_tags": [
           "training supplies",
           "starter kits"
         ],
+        "owner_visual_prompt": "seasoned quartermaster with practical field leathers, ledger book, polished starter kit gear, direct but supportive expression",
         "stock": {
           "recovery_goods": [
             "field_bandage"
@@ -137,14 +140,17 @@
         "tone_tags": [
           "survivors",
           "quiet desperation"
-        ]
+        ],
+        "visual_prompt": "storm-beaten refuge lit by a few lanterns, boarded windows, wary survivors, damp cloaks, graveyard fog pressing against the glass"
       },
       "store": {
         "name": "Lantern Provisioner",
+        "owner_name": "Mara Fen",
         "tone_tags": [
           "grim supplies",
           "warded goods"
         ],
+        "owner_visual_prompt": "grim provisioner wrapped in warded layers, lantern charm at the belt, bundles of salt and candles, tired but alert gaze",
         "stock": {
           "recovery_goods": [
             "hot_meal_kit"
@@ -224,14 +230,17 @@
           "smiths",
           "laborers",
           "proud exhaustion"
-        ]
+        ],
+        "visual_prompt": "forge-side tavern with iron beams, ember glow, soot-dark walls, hammered mugs, exhausted smiths resting after brutal work"
       },
       "store": {
         "name": "Halden's Forge Goods",
+        "owner_name": "Halden",
         "tone_tags": [
           "heat-hardened kits",
           "charms for harsh work"
         ],
+        "owner_visual_prompt": "broad-shouldered forge merchant with scorched apron, brass tools, ember-lit beard, confident craftmaster posture",
         "stock": {
           "recovery_goods": [
             "restglass_phial"
@@ -310,14 +319,17 @@
           "informants",
           "smugglers",
           "people who never sit with their backs exposed"
-        ]
+        ],
+        "visual_prompt": "shadowed woodland tavern, hanging lanterns, secret booth alcoves, moss-dark beams, quiet figures trading information in low voices"
       },
       "store": {
         "name": "Mirelight Goods",
+        "owner_name": "Sable Mire",
         "tone_tags": [
           "quiet contraband",
           "travel utility"
         ],
+        "owner_visual_prompt": "elegant smuggler-merchant in layered forest leathers, subtle blades, mire lantern on the counter, unreadable half-smile",
         "stock": {
           "recovery_goods": [
             "field_bandage"

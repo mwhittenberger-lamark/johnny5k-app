@@ -160,7 +160,7 @@ function buildAdherenceSummary(input) {
     ? `Bias the next ${scheduledLabel} session toward ${input.workoutPattern.weekday}${input.workoutPattern.timeBucket ? ` ${input.workoutPattern.timeBucket}` : ''}, where completions in the last 14 days already cluster.`
     : isCardio
       ? 'Get the conditioning session logged so the week stays honest.'
-      : 'Open Workout and save today before the day gets noisy.'
+      : 'Open Workout and save today before you put it off.'
 
   return finalizeSummary({
     primaryType: 'adherence',
@@ -364,7 +364,7 @@ function buildBodySummary(input) {
       ? nutritionRisk && input.workoutCountRecent > 0
         ? 'Weight is stable, but training is still showing up. Food consistency looks like the cleaner thing to tighten next.'
         : 'This looks more like a consistency problem than a reason to change everything.'
-      : 'You already have a real body trend. Protect it with repeatable training, food, sleep, and movement instead of chasing novelty.',
+      : 'Your weight is moving in the right direction. Stick with the basics: training, food, sleep, and daily movement.',
     wins: [
       input.workoutCountRecent > 0 ? `${input.workoutCountRecent} workout${input.workoutCountRecent === 1 ? '' : 's'} are on the board from ${input.workoutWindowLabel}.` : '',
       input.avgSleep3d >= Math.max(7, input.targetSleep - 0.5) ? 'Sleep support is holding up well enough to trust the trend read more.' : '',

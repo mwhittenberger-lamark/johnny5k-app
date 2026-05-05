@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import ErrorState from '../../../components/ui/ErrorState'
 import SupportIconButton from '../../../components/ui/SupportIconButton'
 import ExerciseCard from '../../../components/workout/ExerciseCard'
@@ -33,6 +33,11 @@ export default function WorkoutActiveSession({
   const quickAddDisabled = Boolean(sessionController.addingSlot)
   const confirmBusy = sessionController.exiting || sessionController.restarting
   const attemptedDemoRefreshRef = useRef(false)
+  const [showExerciseList, setShowExerciseList] = useState(false)
+  const [showSessionTools, setShowSessionTools] = useState(false)
+  const hasLoggedWork = sessionController.totalLoggedSets > 0
+  const restGuidance = sessionController.activeRestGuidance
+  const currentExercisePosition = activeEx ? activeExerciseIdx + 1 : 0
 
   useEffect(() => {
     if (attemptedDemoRefreshRef.current) {
@@ -77,8 +82,8 @@ export default function WorkoutActiveSession({
           <button type="button" className="btn-primary" onClick={sessionController.openLiveMode}>
             Live Workout Mode
           </button>
-          <button type="button" className="btn-secondary" onClick={() => navigate('/activity-log')}>
-            Activity Log
+          <button type="button" className="btn-secondary" onClick={() => setShowExerciseList((current) => !current)}>
+            {showExerciseList ? 'Hide exercise list' : 'Show exercise list'}
           </button>
         </div>
       </header>
@@ -99,23 +104,96 @@ export default function WorkoutActiveSession({
               <h2>{sessionController.missionIntro.title}</h2>
               <p>{sessionController.missionIntro.message}</p>
               {sessionController.missionIntro.objective ? <p className="workout-ironquest-moment-detail">{sessionController.missionIntro.objective}</p> : null}
+              {sessionController.missionIntro.rivalPresence?.name ? (
+                <p className="workout-ironquest-moment-detail">
+                  {sessionController.missionIntro.rivalPresence.name}
+                  {sessionController.missionIntro.rivalPresence.title ? `, ${sessionController.missionIntro.rivalPresence.title}` : ''}
+                  {sessionController.missionIntro.rivalPresence.taunt ? `: ${sessionController.missionIntro.rivalPresence.taunt}` : ''}
+                </p>
+              ) : null}
               {sessionController.missionIntro.currentSituation ? <p className="workout-ironquest-moment-detail">{sessionController.missionIntro.currentSituation}</p> : null}
+              {sessionController.missionIntro.missionModifierSummary ? <p className="workout-ironquest-moment-detail">{sessionController.missionIntro.missionModifierSummary}</p> : null}
             </div>
           </div>
+          {sessionController.missionIntro.missionModifiers?.length ? (
+            <div className="workout-ironquest-modifier-list">
+              {sessionController.missionIntro.missionModifiers
+                .filter((modifier) => String(modifier?.appliesToLabel || '').trim().toLowerCase() !== 'board guidance')
+                .map((modifier) => (
+                  <div key={modifier.id || modifier.label} className="workout-ironquest-modifier-row">
+                    <strong>{modifier.label}</strong>
+                    <p>{modifier.effectSummary || 'This modifier is active for the current mission.'}</p>
+                    <small>{modifier.appliesToLabel || 'Current mission'} • {modifier.consumesOnLabel || 'Status unknown'}</small>
+                  </div>
+                ))}
+            </div>
+          ) : null}
         </section>
       ) : null}
 
-      <div className="ex-tabs">
-        {exercises.map((exercise, index) => (
-          <button
-            key={exercise.id}
-            className={`ex-tab ${index === activeExerciseIdx ? 'active' : ''} ${exercise.sets?.length ? 'has-sets' : ''}`}
-            onClick={() => setActiveExerciseIdx(index)}
-          >
-            {exercise.exercise_name}
+      <section className="dash-card workout-session-progress-card">
+        <div className="dashboard-card-head">
+          <span className="dashboard-chip workout">Session flow</span>
+          <span className="dashboard-chip subtle">{sessionController.completedExerciseCount}/{sessionController.totalExercises} exercises finished</span>
+        </div>
+
+        <div className="workout-session-progress-overview">
+          <div className="workout-session-progress-primary">
+            <span className="exercise-card-label">Current lift</span>
+            <strong>{activeEx?.exercise_name || 'Workout in progress'}</strong>
+            <p>
+              Exercise {currentExercisePosition} of {sessionController.totalExercises} · {sessionController.activeExerciseCompletedSets}/{sessionController.activeExercisePlannedSets} sets logged
+            </p>
+          </div>
+          <div className="workout-session-progress-secondary">
+            <span className="exercise-card-label">Next up</span>
+            <strong>{sessionController.nextExercise?.exercise_name || 'Finish the session'}</strong>
+            <p>
+              {sessionController.nextExercise
+                ? `${sessionController.nextExercise.planned_sets || Math.max(1, sessionController.nextExercise.sets?.length || 0)} planned sets · ${sessionController.nextExercise.planned_rep_min || '?'}-${sessionController.nextExercise.planned_rep_max || '?'} reps`
+                : 'Once this lift is done, you can close the workout cleanly.'}
+            </p>
+          </div>
+        </div>
+
+        {restGuidance ? (
+          <div className={`workout-session-rest-card ${restGuidance.tone}`}>
+            <div>
+              <span className="exercise-card-label">Pacing</span>
+              <strong>{restGuidance.title}</strong>
+              <p>{restGuidance.message}</p>
+            </div>
+            <div className="workout-session-rest-meta">
+              <strong>{restGuidance.elapsedLabel}</strong>
+              <span>{restGuidance.windowLabel}</span>
+            </div>
+          </div>
+        ) : null}
+
+        <div className="workout-session-flow-actions">
+          <button type="button" className="btn-outline" onClick={sessionController.goToPreviousExercise} disabled={!sessionController.previousExercise}>
+            Previous exercise
           </button>
-        ))}
-      </div>
+          <button type="button" className="btn-outline" onClick={sessionController.goToNextExercise} disabled={!sessionController.nextExercise}>
+            Next exercise
+          </button>
+        </div>
+
+        {showExerciseList ? (
+          <div className="ex-tabs workout-session-exercise-list">
+            {exercises.map((exercise, index) => (
+              <button
+                key={exercise.id}
+                className={`ex-tab ${index === activeExerciseIdx ? 'active' : ''} ${exercise.sets?.length ? 'has-sets' : ''} ${index < sessionController.completedExerciseCount ? 'done' : ''}`}
+                onClick={() => sessionController.goToExercise(index)}
+              >
+                <span>{exercise.exercise_name}</span>
+                <small>{(exercise.sets?.filter((set) => set.completed).length || 0)}/{Math.max(1, Number(exercise.planned_sets || 0), exercise.sets?.length || 0)} sets</small>
+              </button>
+            ))}
+          </div>
+        ) : null}
+      </section>
 
       {activeEx ? (
         <ExerciseCard
@@ -126,52 +204,72 @@ export default function WorkoutActiveSession({
           onSwapExercise={sessionController.handleSwapExercise}
           onRemoveExercise={sessionController.handleRemoveExercise}
           onSaveExerciseNote={sessionController.handleSaveExerciseNote}
+          hasPreviousExercise={Boolean(sessionController.previousExercise)}
+          hasNextExercise={Boolean(sessionController.nextExercise)}
+          nextExerciseName={sessionController.nextExercise?.exercise_name || ''}
+          currentExerciseIndex={activeExerciseIdx}
+          totalExercises={sessionController.totalExercises}
+          onGoToPreviousExercise={sessionController.goToPreviousExercise}
+          onGoToNextExercise={sessionController.goToNextExercise}
         />
       ) : null}
 
-      <section className="dash-card workout-quickadd-card">
+      <section className="dash-card workout-session-tools-card">
         <div className="dashboard-card-head">
-          <span className="dashboard-chip coach">Add-ons</span>
-          <span className="dashboard-chip subtle">Optional</span>
-        </div>
-        <p className="workout-session-note">
-          Add an abs or challenge slot without leaving the session. The base session stays intact, and these are there when you want the extra work.
-        </p>
-        <div className="workout-quickadd-grid">
-          <button
-            type="button"
-            className="btn-secondary"
-            onClick={() => sessionController.handleQuickAdd('abs')}
-            disabled={quickAddDisabled}
-          >
-            {sessionController.addingSlot === 'abs' ? 'Adding abs...' : 'Quick abs add-on'}
-          </button>
-          <button
-            type="button"
-            className="btn-secondary"
-            onClick={() => sessionController.handleQuickAdd('challenge')}
-            disabled={quickAddDisabled}
-          >
-            {sessionController.addingSlot === 'challenge' ? 'Adding challenge...' : 'Quick challenge'}
+          <span className="dashboard-chip coach">Session tools</span>
+          <button type="button" className="btn-outline small" onClick={() => setShowSessionTools((current) => !current)}>
+            {showSessionTools ? 'Hide tools' : 'Show tools'}
           </button>
         </div>
+        {showSessionTools ? (
+          <>
+            <p className="workout-session-note">Keep optional add-ons and session management here so the main screen stays focused on the next set.</p>
+            <div className="workout-quickadd-grid compact">
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => sessionController.handleQuickAdd('abs')}
+                disabled={quickAddDisabled}
+              >
+                {sessionController.addingSlot === 'abs' ? 'Adding abs...' : 'Quick abs add-on'}
+              </button>
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => sessionController.handleQuickAdd('challenge')}
+                disabled={quickAddDisabled}
+              >
+                {sessionController.addingSlot === 'challenge' ? 'Adding challenge...' : 'Quick challenge'}
+              </button>
+            </div>
+            <div className="workout-page-actions-row workout-page-actions-row-compact">
+              <button className="btn-outline" onClick={() => navigate('/activity-log')}>
+                Activity log
+              </button>
+              <button className="btn-outline" onClick={() => navigate('/workout/library')} disabled={sessionController.exiting || sessionController.restarting || sessionController.completing}>
+                My exercise library
+              </button>
+              <button className="btn-outline" onClick={sessionController.requestRestartSession} disabled={sessionController.restarting}>
+                {sessionController.restarting ? 'Restarting...' : 'Start over'}
+              </button>
+              <button className="btn-secondary" onClick={sessionController.requestExitSession} disabled={sessionController.exiting || sessionController.restarting || sessionController.completing}>
+                {sessionController.exiting ? 'Exiting...' : 'Exit and discard'}
+              </button>
+            </div>
+          </>
+        ) : null}
       </section>
 
-      <section className="dash-card workout-page-actions">
+      <section className="dash-card workout-session-complete-card">
         <div className="dashboard-card-head">
-          <span className="dashboard-chip workout">Session actions</span>
+          <span className="dashboard-chip workout">Finish workout</span>
         </div>
-        <p className="workout-session-note">Exit discards this in-progress workout completely. Start over deletes it too, but keeps you here so you can rebuild today&apos;s session.</p>
-        <div className="workout-page-actions-row">
-          <button className="btn-outline" onClick={() => navigate('/workout/library')} disabled={sessionController.exiting || sessionController.restarting || sessionController.completing}>
-            My exercise library
-          </button>
-          <button className="btn-secondary" onClick={sessionController.requestExitSession} disabled={sessionController.exiting || sessionController.restarting || sessionController.completing}>
-            {sessionController.exiting ? 'Exiting...' : 'Exit and discard'}
-          </button>
-          <button className="btn-outline" onClick={sessionController.requestRestartSession} disabled={sessionController.restarting}>
-            {sessionController.restarting ? 'Restarting...' : 'Start over / change split'}
-          </button>
+        <p className="workout-session-note">
+          {hasLoggedWork
+            ? `${sessionController.totalLoggedSets} sets logged so far across ${sessionController.completedExerciseCount}/${sessionController.totalExercises} finished exercises.`
+            : 'No sets are logged yet. You can still finish the workout here if you are done adjusting today.'}
+        </p>
+        <div className="settings-actions">
           <button className="btn-primary" onClick={sessionController.handleComplete} disabled={sessionController.completing}>
             {sessionController.completing ? 'Completing workout...' : 'Complete workout'}
           </button>

@@ -5,13 +5,18 @@ import {
   buildBestNextMove,
   buildCoachBackupAction,
   buildCoachBackupStep,
+  buildCoachLine,
   buildDashboardContextualVisibility,
+  buildDailyFocusModel,
+  buildInspirationalStories,
   buildMealRhythmModel,
+  buildMomentumCard,
   buildProteinRunwayModel,
   buildQuickPrompts,
   buildReminderQueueModel,
   buildStepForecastModel,
   buildTrainingCardModel,
+  buildWeekRhythmDrawerCopy,
   dedupeSecondaryDashboardAction,
   getInspirationalThoughtWindow,
   getNextInspirationalThoughtBoundary,
@@ -239,5 +244,50 @@ describe('dashboardRecommendationHelpers', () => {
     })
 
     expect(visibility.step_finish_forecast).toBe(true)
+  })
+
+  it('keeps daily focus and coach line copy plain in softer recovery states', () => {
+    const snapshot = {
+      goal: { target_protein_g: 180 },
+      nutrition_totals: { protein_g: 120 },
+      recovery_summary: { mode: 'soft' },
+      today_schedule: { day_type: 'cardio' },
+      training_status: { recorded: false, scheduled_day_type: 'cardio', status: 'open' },
+      steps: { today: 3200, target: 8000 },
+    }
+
+    const focus = buildDailyFocusModel(snapshot)
+    const coachLine = buildCoachLine(snapshot)
+    const text = [focus.instruction, focus.support, coachLine].join(' ')
+
+    expect(text).not.toMatch(/signal|traction|recover on purpose|heroic|heroics|boring and repeatable|day gets noisy/i)
+    expect(text).toContain('Get the cardio done, then make the rest of the day easy.')
+    expect(coachLine).toBe('Cardio is scheduled today. Log it before the day gets away from you.')
+  })
+
+  it('keeps momentum and thought copy plain instead of sounding synthetic', () => {
+    const stories = buildInspirationalStories({
+      goal: { target_calories: 2400 },
+      nutrition_totals: { calories: 1300 },
+      steps: { today: 2200, target: 8000 },
+      today_schedule: { day_type: 'rest' },
+      training_status: { recorded: false, scheduled_day_type: 'rest', status: 'rest_day' },
+      streaks: { logging_days: 1, training_days: 0, sleep_days: 0, cardio_days: 0 },
+    }, 'evening')
+    const momentum = buildMomentumCard({
+      score_7d: 82,
+      score_7d_breakdown: {
+        meal_days: { value: 6 },
+        movement_days: { value: 4 },
+        sleep_days: { value: 5 },
+      },
+      streaks: { logging_days: 6, training_days: 4, sleep_days: 5 },
+    }, [])
+    const weekRhythm = buildWeekRhythmDrawerCopy(45)
+    const text = [stories[0]?.body, stories[1]?.title, stories[3]?.body, momentum.body, weekRhythm].join(' ')
+
+    expect(text).not.toMatch(/signal|traction|heroics|day gets noisy/i)
+    expect(momentum.body).toBe('Your recent board looks solid. The goal now is to protect the pattern, not reinvent it.')
+    expect(weekRhythm).toBe('The board still needs more repeat days. Focus on filling the weakest buckets instead of chasing a perfect day.')
   })
 })

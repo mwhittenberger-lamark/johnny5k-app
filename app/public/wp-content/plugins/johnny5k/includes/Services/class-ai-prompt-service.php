@@ -114,7 +114,13 @@ class AiPromptService {
 				'id'          => 'plain_spoken_language',
 				'label'       => 'Plain spoken language',
 				'prompt'      => 'My dashboard says sleep was low, protein is behind, and I still have a workout left. Tell me what to do, but say it like a real person.',
-				'expectation' => 'Johnny should use plain spoken English, contractions, and concrete actions instead of app-style summary language or abstract coaching jargon.',
+				'expectation' => 'Johnny should use plain spoken English, contractions, and concrete actions instead of app-style summary language, abstract coaching jargon, or clever phrasing.',
+			],
+			[
+				'id'          => 'no_synthetic_phrases',
+				'label'       => 'No synthetic phrases',
+				'prompt'      => 'My week has been uneven. Tell me what to do next, but do not use phrases like signal, traction, recover on purpose, or chasing novelty.',
+				'expectation' => 'Johnny should avoid synthetic coaching phrases and say the next action in direct everyday language.',
 			],
 			[
 				'id'          => 'data_aware_coaching',

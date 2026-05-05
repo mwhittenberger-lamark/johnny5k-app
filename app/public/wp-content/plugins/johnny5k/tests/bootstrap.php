@@ -1099,11 +1099,14 @@ require_once dirname( __DIR__ ) . '/includes/Services/class-ai-prompt-service.ph
 require_once dirname( __DIR__ ) . '/includes/Services/class-cost-tracker.php';
 require_once dirname( __DIR__ ) . '/includes/Services/class-ai-service.php';
 require_once dirname( __DIR__ ) . '/includes/Services/class-ironquest-ai-narrative-service.php';
+require_once dirname( __DIR__ ) . '/includes/Services/class-ironquest-story-engine-service.php';
 require_once dirname( __DIR__ ) . '/includes/Services/class-coach-delivery-service.php';
 require_once dirname( __DIR__ ) . '/includes/Services/class-behavior-analytics-service.php';
+require_once dirname( __DIR__ ) . '/includes/Services/class-ironquest-analytics-service.php';
 require_once dirname( __DIR__ ) . '/includes/Services/class-workout-action-service.php';
 require_once dirname( __DIR__ ) . '/includes/Services/class-sms-service.php';
 require_once dirname( __DIR__ ) . '/includes/Services/class-push-service.php';
+require_once dirname( __DIR__ ) . '/includes/Services/class-internal-diagnostics-logger.php';
 require_once dirname( __DIR__ ) . '/includes/Support/class-training-day-types.php';
 require_once dirname( __DIR__ ) . '/includes/Support/class-private-media-service.php';
 require_once dirname( __DIR__ ) . '/includes/Admin/class-overview-stats.php';

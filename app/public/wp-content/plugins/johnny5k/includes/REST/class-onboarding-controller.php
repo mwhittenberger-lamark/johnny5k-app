@@ -412,7 +412,19 @@ class OnboardingController {
 
 		$existing_items = get_user_meta( $user_id, self::GENERATED_IMAGES_META_KEY, true );
 		$existing_items = is_array( $existing_items ) ? $existing_items : [];
-		$merged_items = array_slice( array_merge( $created_items, $existing_items ), 0, 24 );
+			$reward_items = array_values(
+				array_filter(
+					$existing_items,
+					static fn( $item ): bool => is_array( $item ) && 0 === strpos( sanitize_key( (string) ( $item['type'] ?? '' ) ), 'ironquest_' )
+				)
+			);
+			$standard_items = array_values(
+				array_filter(
+					$existing_items,
+					static fn( $item ): bool => ! is_array( $item ) || 0 !== strpos( sanitize_key( (string) ( $item['type'] ?? '' ) ), 'ironquest_' )
+				)
+			);
+		$merged_items = array_merge( $created_items, $reward_items, array_slice( $standard_items, 0, 24 ) );
 		update_user_meta( $user_id, self::GENERATED_IMAGES_META_KEY, $merged_items );
 		self::increment_generated_images_daily_usage( $user_id, count( $created_items ) );
 

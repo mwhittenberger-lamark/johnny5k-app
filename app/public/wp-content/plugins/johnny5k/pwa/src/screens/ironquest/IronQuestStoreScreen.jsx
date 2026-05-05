@@ -1,9 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ironquestApi } from '../../api/modules/ironquest'
+import IronQuestConsequenceLedger from '../../components/ironquest/IronQuestConsequenceLedger'
+import IronQuestRecentMissionUpdate from '../../components/ironquest/IronQuestRecentMissionUpdate'
 import AppIcon from '../../components/ui/AppIcon'
 import AppLoadingScreen from '../../components/ui/AppLoadingScreen'
 import EmptyState from '../../components/ui/EmptyState'
+import { useIronQuestRecentMissionUpdate } from '../../hooks/useIronQuestRecentMissionUpdate'
+import { useIronQuestWorldArt } from '../../hooks/useIronQuestWorldArt'
+import { subscribeIronQuestStateChanged } from '../../lib/ironquestSync'
 
 export default function IronQuestStoreScreen() {
   const navigate = useNavigate()
@@ -14,6 +19,7 @@ export default function IronQuestStoreScreen() {
   const [sellingItemId, setSellingItemId] = useState('')
   const [purchaseNotice, setPurchaseNotice] = useState('')
   const [error, setError] = useState('')
+  const [generatingArt, setGeneratingArt] = useState(false)
 
   const loadStore = useCallback(async ({ background = false } = {}) => {
     if (background) {
@@ -44,10 +50,23 @@ export default function IronQuestStoreScreen() {
     void loadStore()
   }, [loadStore])
 
+  useEffect(() => {
+    return subscribeIronQuestStateChanged(() => {
+      void loadStore({ background: true })
+    })
+  }, [loadStore])
+
   const store = hub?.store ?? null
+  const storeMerchant = store?.merchant ?? null
   const inventory = store?.inventory ?? {}
   const sections = store?.sections ?? {}
   const recommendedPurchase = store?.recommended_purchase ?? null
+  const missionModifiers = hub?.mission_modifiers ?? null
+  const merchantArt = useIronQuestWorldArt(
+    storeMerchant?.art?.art_key,
+    storeMerchant?.art?.label || 'Storekeeper portrait',
+    storeMerchant?.art?.status || '',
+  )
   const sectionEntries = useMemo(() => {
     const entries = Object.entries(sections).filter(([, value]) => Array.isArray(value) && value.length)
     if (Array.isArray(inventory?.sellback) && inventory.sellback.length) {
@@ -55,6 +74,7 @@ export default function IronQuestStoreScreen() {
     }
     return entries
   }, [inventory?.sellback, sections])
+  const recentMissionUpdate = useIronQuestRecentMissionUpdate()
 
   const handlePurchase = useCallback(async (itemId) => {
     if (!itemId) {
@@ -116,6 +136,28 @@ export default function IronQuestStoreScreen() {
     }
   }, [])
 
+  const handleGenerateStoreArt = useCallback(async () => {
+    setGeneratingArt(true)
+    setError('')
+    setPurchaseNotice('')
+
+    try {
+      const result = await ironquestApi.generateWorldArt({
+        art_type: 'store_owner',
+        location_slug: store?.location_slug || hub?.location?.slug || '',
+      })
+      setHub((current) => ({
+        ...(current ?? {}),
+        store: result?.store ?? current?.store ?? null,
+      }))
+      setPurchaseNotice(result?.generated ? 'Merchant portrait forged for this region.' : 'Merchant portrait refreshed.')
+    } catch (generateError) {
+      setError(generateError?.message || 'Could not forge merchant art right now.')
+    } finally {
+      setGeneratingArt(false)
+    }
+  }, [hub?.location?.slug, store?.location_slug])
+
   if (loading && !hub) {
     return (
       <AppLoadingScreen
@@ -155,6 +197,40 @@ export default function IronQuestStoreScreen() {
           <span className="dashboard-chip awards">{store?.store_name || 'General Store'}</span>
           <span className="dashboard-chip subtle">{store?.location_name || 'Current region'}</span>
         </div>
+        <div className="ironquest-world-art-shell ironquest-world-art-shell-store">
+          <div className="ironquest-world-art-frame ironquest-world-art-frame-portrait">
+            {merchantArt?.src ? (
+              <img
+                className="ironquest-world-art-image"
+                src={merchantArt.src}
+                alt={storeMerchant?.art?.alt || storeMerchant?.name || 'Storekeeper portrait'}
+              />
+            ) : (
+              <div className="ironquest-world-art-placeholder">
+                <span>{storeMerchant?.name || 'Storekeeper portrait pending'}</span>
+              </div>
+            )}
+          </div>
+          <div className="ironquest-world-art-copy">
+            <span className="ironquest-world-art-kicker">Local Merchant</span>
+            <strong>{storeMerchant?.name || 'Storekeeper'}</strong>
+            <p>{storeMerchant?.description || 'A merchant portrait will make this region feel like a place instead of a list.'}</p>
+            <div className="ironquest-actions">
+              <button
+                type="button"
+                className="btn-secondary small"
+                onClick={() => void handleGenerateStoreArt()}
+                disabled={generatingArt}
+              >
+                {generatingArt
+                  ? 'Forging portrait…'
+                  : storeMerchant?.art?.status === 'ready'
+                    ? 'Refresh portrait'
+                    : 'Forge portrait'}
+              </button>
+            </div>
+          </div>
+        </div>
         <div className="ironquest-store-summary-grid">
           <SummaryCard icon="award" label="Gold" value={store?.gold ?? 0} />
           <SummaryCard icon="coach" label="HP" value={`${store?.hp_current ?? 0}/${store?.hp_max ?? 100}`} />
@@ -165,6 +241,15 @@ export default function IronQuestStoreScreen() {
           <strong>Johnny's call</strong>
           <p>{recommendedPurchase?.label || 'Buy the next thing that makes the next mission cleaner, not busier.'}</p>
         </div>
+        <IronQuestConsequenceLedger
+          className="ironquest-modifier-callout"
+          title="Active consequences"
+          summary={missionModifiers?.summary || 'This is what is active now, what it touches, and when it falls off.'}
+          entries={missionModifiers?.entries || []}
+          emptyMessage="No store or tavern consequences are active right now. Buying prep or charms will show their scope and expiry here immediately."
+          compact
+        />
+        {recentMissionUpdate ? <IronQuestRecentMissionUpdate update={recentMissionUpdate} compact /> : null}
         {purchaseNotice ? <p className="ironquest-panel-copy">{purchaseNotice}</p> : null}
         <div className="ironquest-actions">
           <button type="button" className="btn-primary small" onClick={() => navigate('/workout')}>

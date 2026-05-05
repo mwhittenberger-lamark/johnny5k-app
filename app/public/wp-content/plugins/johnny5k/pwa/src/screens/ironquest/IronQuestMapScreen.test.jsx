@@ -11,6 +11,8 @@ const configMock = vi.hoisted(() => vi.fn())
 const locationMock = vi.hoisted(() => vi.fn())
 const travelToLocationMock = vi.hoisted(() => vi.fn())
 const fastTravelMock = vi.hoisted(() => vi.fn())
+const generateWorldArtMock = vi.hoisted(() => vi.fn())
+const useIronQuestWorldArtMock = vi.hoisted(() => vi.fn())
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
@@ -21,7 +23,12 @@ vi.mock('../../api/modules/ironquest', () => ({
     location: locationMock,
     travelToLocation: travelToLocationMock,
     fastTravel: fastTravelMock,
+    generateWorldArt: generateWorldArtMock,
   },
+}))
+
+vi.mock('../../hooks/useIronQuestWorldArt', () => ({
+  useIronQuestWorldArt: (...args) => useIronQuestWorldArtMock(...args),
 }))
 
 vi.mock('../../components/ui/AppLoadingScreen', () => ({
@@ -132,27 +139,88 @@ function buildLocationDetail() {
     location: {
       slug: 'grim_hollow_village',
       name: 'Grim Hollow Village',
+      tavern: {
+        name: 'The Last Lantern',
+        flavor_text: 'A lantern-lit refuge where ash settles on every table before dawn.',
+        art: {
+          art_key: 'tavern_scene_grim_hollow_village',
+          status: 'missing',
+        },
+      },
+      store: {
+        name: 'Lantern Provisioner',
+        merchant: {
+          name: 'Mira Fen',
+          description: 'A sharp-eyed provisioner with soot-dark gloves and a ledger memory.',
+          art: {
+            art_key: 'store_owner_grim_hollow_village',
+            status: 'missing',
+          },
+        },
+      },
     },
     missions: [
       {
         slug: 'grave_bell',
         name: 'Grave Bell',
+        location_slug: 'grim_hollow_village',
         mission_type: 'structured_progression',
         workout_feel: 'Measured pressure',
         goal: 'Hold the center lane while the bells keep drawing the dead closer.',
         threat: 'The bell tower and the restless dead',
         replayable: true,
         is_boss: false,
+        completion_count: 1,
+        progress_state: {
+          state: 'replay',
+          label: 'Replay',
+          description: 'First-clear rewards are gone. This run is for repeat loot and momentum.',
+        },
+        rival_presence: {
+          name: 'Serik Voss',
+          taunt: 'Keep your pace clean. I only bother remembering the ones who do.',
+        },
+        reward_state: {
+          primary_label: 'Rewards already claimed',
+          secondary_label: 'Cleared 1x',
+          available_labels: [],
+          claimed_labels: ['First-clear journal reward'],
+        },
+        art: {
+          art_key: 'mission_card_grim_hollow_village_grave_bell',
+          status: 'missing',
+        },
       },
       {
         slug: 'widow_of_the_square',
         name: 'Widow of the Square',
+        location_slug: 'grim_hollow_village',
         mission_type: 'boss',
         workout_feel: 'Boss duel',
         goal: 'Break the cursed square before the widow locks the village in place again.',
         threat: 'The widow and her square of bone charms',
         replayable: false,
         is_boss: true,
+        completion_count: 0,
+        progress_state: {
+          state: 'boss_ready',
+          label: 'Boss ready',
+          description: 'The lane is clear. This is the decisive boss attempt.',
+        },
+        rival_presence: {
+          name: 'Serik Voss',
+          taunt: 'You survived the village. Now prove you deserve to be the one it remembers.',
+        },
+        reward_state: {
+          primary_label: 'Region trophy + Conqueror title',
+          secondary_label: 'No clears yet',
+          available_labels: ['First-clear journal reward', 'Region trophy', 'Conqueror title', 'Boss portrait'],
+          claimed_labels: [],
+        },
+        art: {
+          art_key: 'mission_card_grim_hollow_village_widow_of_the_square',
+          status: 'missing',
+        },
       },
     ],
   }
@@ -175,6 +243,7 @@ describe('IronQuestMapScreen', () => {
   let root
 
   beforeEach(() => {
+    window.localStorage.clear()
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
@@ -183,6 +252,13 @@ describe('IronQuestMapScreen', () => {
     locationMock.mockReset()
     travelToLocationMock.mockReset()
     fastTravelMock.mockReset()
+    generateWorldArtMock.mockReset()
+    useIronQuestWorldArtMock.mockReset()
+    useIronQuestWorldArtMock.mockImplementation((artKey) => (
+      artKey === 'mission_card_grim_hollow_village_grave_bell'
+        ? { src: 'blob:grave-bell-art' }
+        : null
+    ))
   })
 
   afterEach(async () => {
@@ -191,6 +267,7 @@ describe('IronQuestMapScreen', () => {
         root.unmount()
       })
     }
+    window.localStorage.clear()
     container?.remove()
   })
 
@@ -216,6 +293,26 @@ describe('IronQuestMapScreen', () => {
     profileMock.mockResolvedValue(buildProfilePayload())
     configMock.mockResolvedValue(buildConfigPayload())
     locationMock.mockResolvedValue(buildLocationDetail())
+    generateWorldArtMock.mockResolvedValue({
+      generated: true,
+      art: { status: 'ready' },
+      tavern: {
+        tavern: {
+          art: {
+            art_key: 'tavern_scene_grim_hollow_village',
+            status: 'ready',
+          },
+        },
+      },
+      store: {
+        merchant: {
+          art: {
+            art_key: 'store_owner_grim_hollow_village',
+            status: 'ready',
+          },
+        },
+      },
+    })
     travelToLocationMock.mockResolvedValue({
       ...buildProfilePayload(),
       profile: {
@@ -246,6 +343,35 @@ describe('IronQuestMapScreen', () => {
     expect(container.textContent).toContain('Mission preview')
     expect(container.textContent).toContain('Grave Bell')
     expect(container.textContent).toContain('Widow of the Square')
+    expect(container.textContent).toContain('The Last Lantern')
+    expect(container.textContent).toContain('Mira Fen')
+    expect(container.textContent).toContain('Forge scene')
+    expect(container.textContent).toContain('Forge portrait')
+    expect(container.textContent).toContain('Forge art')
+    expect(container.textContent).toContain('Replay')
+    expect(container.textContent).toContain('Boss ready')
+    expect(container.textContent).toContain('Rival')
+    expect(container.textContent).toContain('Keep your pace clean. I only bother remembering the ones who do.')
+    expect(container.textContent).toContain('Rewards already claimed')
+    expect(container.textContent).toContain('Region trophy + Conqueror title')
+
+    const forgeSceneButton = Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.trim() === 'Forge scene')
+    await click(forgeSceneButton)
+    await flushPromises()
+
+    expect(generateWorldArtMock).toHaveBeenCalledWith({
+      art_type: 'tavern_scene',
+      location_slug: 'grim_hollow_village',
+    })
+
+    const forgePortraitButton = Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.trim() === 'Forge portrait')
+    await click(forgePortraitButton)
+    await flushPromises()
+
+    expect(generateWorldArtMock).toHaveBeenCalledWith({
+      art_type: 'store_owner',
+      location_slug: 'grim_hollow_village',
+    })
 
     const travelButton = Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.trim() === 'Travel here')
     await click(travelButton)

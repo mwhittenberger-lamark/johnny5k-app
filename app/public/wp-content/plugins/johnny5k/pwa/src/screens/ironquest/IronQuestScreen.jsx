@@ -1,12 +1,18 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ironquestApi } from '../../api/modules/ironquest'
+import IronQuestConsequenceLedger from '../../components/ironquest/IronQuestConsequenceLedger'
 import AppIcon from '../../components/ui/AppIcon'
 import AppLoadingScreen from '../../components/ui/AppLoadingScreen'
 import EmptyState from '../../components/ui/EmptyState'
+import IronQuestRecentMissionUpdate from '../../components/ironquest/IronQuestRecentMissionUpdate'
 import { formatUsFriendlyDate } from '../../lib/dateFormat'
 import { getTavernJohnnyLine, getTavernMissionPreview, getTavernResolution } from '../../lib/ironquestTavern'
+import { hasRecentIronQuestUnlock } from '../../lib/ironquestRecentMissionUpdate'
+import { dispatchIronQuestStateChanged, subscribeIronQuestStateChanged } from '../../lib/ironquestSync'
+import { useIronQuestRecentMissionUpdate } from '../../hooks/useIronQuestRecentMissionUpdate'
 import { useIronQuestStarterPortrait } from '../../hooks/useIronQuestStarterPortrait'
+import { useIronQuestWorldArt } from '../../hooks/useIronQuestWorldArt'
 import { useAuthStore } from '../../store/authStore'
 
 const DAILY_OBJECTIVES = [
@@ -62,6 +68,12 @@ export default function IronQuestScreen() {
     void loadIronQuestHub()
   }, [loadIronQuestHub])
 
+  useEffect(() => {
+    return subscribeIronQuestStateChanged(() => {
+      void loadIronQuestHub({ background: true })
+    })
+  }, [loadIronQuestHub])
+
   const handleActivateIronQuest = useCallback(async () => {
     setActivating(true)
     setError('')
@@ -86,6 +98,9 @@ export default function IronQuestScreen() {
   const activeRun = hub?.active_run ?? null
   const dailyState = hub?.daily_state ?? {}
   const routeState = useMemo(() => hub?.route_state ?? {}, [hub?.route_state])
+  const missionModifiers = useMemo(() => hub?.mission_modifiers ?? {}, [hub?.mission_modifiers])
+  const rivalState = useMemo(() => hub?.rival_state ?? {}, [hub?.rival_state])
+  const recentMissionUpdate = useIronQuestRecentMissionUpdate()
   const travelBreakdown = routeState?.travel_points_breakdown ?? {}
   const recentUnlocks = useMemo(() => Array.isArray(hub?.recent_unlocks) ? hub.recent_unlocks : [], [hub?.recent_unlocks])
   const unlockHistory = useMemo(() => Array.isArray(hub?.unlock_history) ? hub.unlock_history : [], [hub?.unlock_history])
@@ -101,11 +116,14 @@ export default function IronQuestScreen() {
     isActive: Boolean(mission.isActive ?? mission.is_active ?? (String(activeRun?.mission_slug || '').trim() === mission.slug)),
     isSelected: Boolean(mission.isSelected ?? mission.is_selected ?? (selectedMissionSlug === mission.slug)),
     board_role: mission.board_role || (mission.is_boss ? 'boss' : 'optional'),
+    completion_count: Number(mission.completion_count || 0) || 0,
     reward_preview: mission.reward_preview || {
       xp_multiplier: 1,
       gold_multiplier: 1,
       travel_points_bonus: 0,
     },
+    progress_state: mission.progress_state || {},
+    reward_state: mission.reward_state || {},
     effect_tags: Array.isArray(mission.effect_tags) ? mission.effect_tags : [],
   }))
   const unlockedLocations = useMemo(() => Array.isArray(routeState?.unlocked_locations) ? routeState.unlocked_locations : [], [routeState])
@@ -166,11 +184,12 @@ export default function IronQuestScreen() {
       .filter(unlock => unlock.unlock_type === 'location_arc')
       .map(unlock => {
         const match = locations.find(entry => entry.slug === unlock.unlock_key)
-        return {
-          key: `${unlock.id}-${unlock.unlock_key}`,
-          title: match?.name || humanizeSlug(unlock.unlock_key),
-          subtitle: buildUnlockSubtitle(unlock),
-          createdAt: unlock.created_at,
+      return {
+        key: `${unlock.id}-${unlock.unlock_key}`,
+        unlockKey: unlock.unlock_key,
+        title: match?.name || humanizeSlug(unlock.unlock_key),
+        subtitle: buildUnlockSubtitle(unlock),
+        createdAt: unlock.created_at,
         }
       })
   ), [locations, unlockHistory])
@@ -179,6 +198,7 @@ export default function IronQuestScreen() {
       .filter(unlock => unlock.unlock_type === 'title')
       .map(unlock => ({
         key: `${unlock.id}-${unlock.unlock_key}`,
+        unlockKey: unlock.unlock_key,
         title: unlock?.meta?.label || humanizeSlug(unlock.unlock_key),
         subtitle: buildUnlockSubtitle(unlock),
         createdAt: unlock.created_at,
@@ -189,6 +209,7 @@ export default function IronQuestScreen() {
       .filter(unlock => unlock.unlock_type === 'relic')
       .map(unlock => ({
         key: `${unlock.id}-${unlock.unlock_key}`,
+        unlockKey: unlock.unlock_key,
         title: unlock?.meta?.label || humanizeSlug(unlock.unlock_key),
         subtitle: buildUnlockSubtitle(unlock),
         createdAt: unlock.created_at,
@@ -199,6 +220,7 @@ export default function IronQuestScreen() {
       .filter(unlock => unlock.unlock_type === 'journal_entry')
       .map(unlock => ({
         key: `${unlock.id}-${unlock.unlock_key}`,
+        unlockKey: unlock.unlock_key,
         title: unlock?.meta?.label || humanizeSlug(unlock.unlock_key),
         subtitle: resolveJournalEntrySubtitle(unlock),
         createdAt: unlock.created_at,
@@ -209,6 +231,14 @@ export default function IronQuestScreen() {
     ...item,
     complete: Boolean(dailyState?.[item.key]),
   }))
+  const completedObjectivesCount = dailyObjectives.filter(item => item.complete).length
+  const nextIncompleteObjective = dailyObjectives.find(item => !item.complete) ?? null
+  const primaryMissionCta = activeRun ? 'Continue mission' : currentMission ? 'Start mission' : 'Open workout'
+  const currentMissionSummary = currentMission?.goal || currentMission?.threat || currentMission?.narrative || 'Pick the next objective to frame your next session.'
+  const nextUnlockSummary = nextUnlock
+    ? `${nextUnlockLocation?.name || humanizeSlug(nextUnlock.location_slug)}${typeof nextUnlock.travel_remaining === 'number' ? ` in ${nextUnlock.travel_remaining} point${nextUnlock.travel_remaining === 1 ? '' : 's'}` : ''}`
+    : 'All seeded route unlocks are open.'
+  const latestUnlock = recentUnlocks[0] ?? unlockHistory[0] ?? null
   const tavernResolution = useMemo(() => getTavernResolution(dailyState), [dailyState])
   const tavernMissionPreview = useMemo(() => getTavernMissionPreview(dailyState), [dailyState])
   const tavernJohnnyLine = useMemo(() => getTavernJohnnyLine(dailyState), [dailyState])
@@ -279,6 +309,10 @@ export default function IronQuestScreen() {
         activeLocationChanged: Boolean(result?.route_changes?.active_location_changed),
       })
       await loadIronQuestHub({ background: true })
+      dispatchIronQuestStateChanged({
+        reason: 'fast_travel',
+        locationSlug: nextUnlock.location_slug,
+      })
     } catch (routeError) {
       setError(routeError?.data?.message || routeError?.message || 'Could not apply fast travel.')
     } finally {
@@ -299,6 +333,10 @@ export default function IronQuestScreen() {
         location_slug: destinationSlug,
       })
       setHub(result)
+      dispatchIronQuestStateChanged({
+        reason: 'travel',
+        locationSlug: destinationSlug,
+      })
       setRouteNotice({
         title: 'Region changed',
         message: result?.message || 'Region changed.',
@@ -393,26 +431,98 @@ export default function IronQuestScreen() {
         </section>
       ) : (
         <>
-          <section className="dash-card ironquest-hero-card">
-            <div className="dashboard-card-head">
-              <span className="dashboard-chip awards">Current region</span>
-              <span className="dashboard-chip subtle">Level {profile.level || 1}</span>
-            </div>
-            <h2>{location?.name || 'The Training Grounds'}</h2>
+          <HubAccordionCard
+            sectionId="overview"
+            className="ironquest-hero-card"
+            eyebrow="Overview"
+            meta={`Level ${profile.level || 1}`}
+            title={currentMission?.name || location?.name || 'Quest overview'}
+            description={currentMissionSummary}
+            defaultOpen
+          >
             <div className="ironquest-hero-shell">
+              <div className="ironquest-hero-shell-copy">
+                <p className="ironquest-hero-kicker">Current region: {location?.name || 'The Training Grounds'}</p>
+                <h2>{currentMission?.name || 'Ready for the next mission'}</h2>
+                <p className="ironquest-hero-copy">
+                  {currentMissionSummary}
+                </p>
+                <div className="ironquest-hero-summary-grid">
+                  <div className="ironquest-hero-summary-card">
+                    <span>Daily progress</span>
+                    <strong>{completedObjectivesCount}/{dailyObjectives.length} objectives</strong>
+                    <p>{completedObjectivesCount === dailyObjectives.length ? 'Everything important is cleared today.' : 'Clear the next objective to keep momentum.'}</p>
+                  </div>
+                  <div className="ironquest-hero-summary-card">
+                    <span>Route watch</span>
+                    <strong>{nextUnlockSummary}</strong>
+                    <p>{nextUnlock ? 'Travel points and fast travel both move this forward.' : 'Use the map to review what is already open.'}</p>
+                  </div>
+                  <div className="ironquest-hero-summary-card">
+                    <span>Current loadout</span>
+                    <strong>{profile.class_slug ? humanizeSlug(profile.class_slug) : 'Unchosen'} / {profile.motivation_slug ? humanizeSlug(profile.motivation_slug) : 'Unchosen'}</strong>
+                    <p>{location?.tavern?.name ? `${location.tavern.name} is open for a Tavern action.` : location?.tone || 'Keep stacking clean sessions and the world keeps moving.'}</p>
+                  </div>
+                </div>
+                <div className="ironquest-actions ironquest-hero-actions">
+                  <button type="button" className="btn-primary small" onClick={() => navigate('/workout')}>
+                    {primaryMissionCta}
+                  </button>
+                  <button type="button" className="btn-secondary small" onClick={() => navigate('/ironquest/map')}>
+                    World map
+                  </button>
+                  <button type="button" className="btn-secondary small" onClick={() => navigate('/ironquest/character')}>
+                    Character sheet
+                  </button>
+                  {location?.tavern?.name ? (
+                    <button type="button" className="btn-secondary small" onClick={handleEnterTavern}>
+                      Enter Tavern
+                    </button>
+                  ) : null}
+                  <button type="button" className="btn-secondary small" onClick={() => navigate('/settings')}>
+                    Mode settings
+                  </button>
+                </div>
+                {Array.isArray(missionModifiers?.entries) && missionModifiers.entries.length ? (
+                  <IronQuestConsequenceLedger
+                    className="ironquest-modifier-callout"
+                    title="Active consequences"
+                    summary={missionModifiers.summary || 'Current store and tavern effects are active on this route.'}
+                    entries={missionModifiers.entries}
+                    compact
+                  />
+                ) : null}
+                {rivalState?.key ? (
+                  <div className="ironquest-modifier-callout">
+                    <strong>{rivalState.name}{rivalState.title ? `, ${rivalState.title}` : ''}</strong>
+                    <p>{rivalState.hook || rivalState.description || 'A rival champion is moving on this route too.'}</p>
+                    <div className="ironquest-hero-meta">
+                      {rivalState.statusLabel ? <span className={`dashboard-chip ${rivalState.statusTone || 'coach'}`}>{rivalState.statusLabel}</span> : null}
+                      {rivalState.missionName ? <span className="dashboard-chip subtle">Watching {rivalState.missionName}</span> : null}
+                    </div>
+                    {rivalState.taunt ? <p className="ironquest-panel-copy">{rivalState.taunt}</p> : null}
+                    {rivalState.stakes ? <p className="ironquest-panel-copy">{rivalState.stakes}</p> : null}
+                  </div>
+                ) : null}
+                {recentMissionUpdate ? (
+                  <IronQuestRecentMissionUpdate update={recentMissionUpdate} />
+                ) : null}
+                {location?.tavern?.name ? (
+                  <p className="ironquest-hero-helper">
+                    Tavern open now: <strong>{location.tavern.name}</strong>
+                  </p>
+                ) : null}
+              </div>
               {starterPortrait?.src ? (
-                <div className="ironquest-hero-portrait-frame">
-                  <img src={starterPortrait.src} alt={starterPortrait.label || 'Starter portrait'} className="ironquest-hero-portrait" />
+                <div className="ironquest-hero-portrait-column">
+                  <div className="ironquest-hero-portrait-frame">
+                    <img src={starterPortrait.src} alt={starterPortrait.label || 'Starter portrait'} className="ironquest-hero-portrait" />
+                  </div>
+                  <p className="ironquest-hero-portrait-caption">Your starter portrait anchors the quest identity for this run.</p>
                 </div>
               ) : null}
-              <div className="ironquest-hero-shell-copy">
-                <p className="ironquest-hero-copy">
-                  {location?.tone || 'The path is open. Keep stacking clean sessions and the world keeps moving.'}
-                </p>
-                {starterPortrait?.src ? <p className="ironquest-hero-portrait-caption">Your starter portrait anchors the quest identity for this run.</p> : null}
-              </div>
             </div>
-            <div className="ironquest-stat-grid">
+            <div className="ironquest-stat-grid ironquest-hero-stat-grid">
               <StatCard label="XP" value={profile.xp || 0} icon="star" />
               <StatCard label="Gold" value={profile.gold || 0} icon="award" />
               <StatCard label="HP" value={`${profile.hp_current || 0}/${profile.hp_max || 100}`} icon="coach" />
@@ -424,38 +534,18 @@ export default function IronQuestScreen() {
               <MetaPill label="Motivation" value={profile.motivation_slug ? humanizeSlug(profile.motivation_slug) : 'Unchosen'} />
               <MetaPill label="Tier" value={location?.level_range?.label || 'Starter route'} />
             </div>
-            <div className="ironquest-actions">
-              <button type="button" className="btn-primary small" onClick={() => navigate('/workout')}>
-                Start mission
-              </button>
-              <button type="button" className="btn-secondary small" onClick={() => navigate('/ironquest/map')}>
-                World map
-              </button>
-              <button type="button" className="btn-secondary small" onClick={() => navigate('/ironquest/character')}>
-                Character sheet
-              </button>
-              {location?.tavern?.name ? (
-                <button type="button" className="btn-secondary small" onClick={handleEnterTavern}>
-                  Enter Tavern
-                </button>
-              ) : null}
-              <button type="button" className="btn-secondary small" onClick={() => navigate('/settings')}>
-                Mode settings
-              </button>
-            </div>
-            {location?.tavern?.name ? (
-              <p className="ironquest-hero-helper">
-                Tavern open now: <strong>{location.tavern.name}</strong>
-              </p>
-            ) : null}
-          </section>
+          </HubAccordionCard>
 
           <section className="ironquest-grid">
-            <article className="dash-card ironquest-panel">
-              <div className="dashboard-card-head">
-                <span className="dashboard-chip workout">Mission board</span>
-                <span className="dashboard-chip subtle">{missionBoard.length} available</span>
-              </div>
+            <HubAccordionCard
+              sectionId="mission-board"
+              className="ironquest-panel"
+              eyebrow="Mission board"
+              meta={`${missionBoard.length} available`}
+              title={currentMission?.name || 'Mission board'}
+              description={bossMission ? `Boss of this arc: ${bossMission.name}` : 'Pick the next objective to frame your next session.'}
+              defaultOpen
+            >
               {tavernMissionPreview ? (
                 <div className="ironquest-rumor-callout">
                   <div className="dashboard-card-head">
@@ -500,13 +590,17 @@ export default function IronQuestScreen() {
                 ))}
               </div>
               {bossMission ? <p className="ironquest-panel-footnote">Boss of this arc: {bossMission.name}</p> : null}
-            </article>
+            </HubAccordionCard>
 
-            <article className="dash-card ironquest-panel">
-              <div className="dashboard-card-head">
-                <span className="dashboard-chip awards">Daily objectives</span>
-                <span className="dashboard-chip subtle">{dailyObjectives.filter(item => item.complete).length} / {dailyObjectives.length}</span>
-              </div>
+            <HubAccordionCard
+              sectionId="daily-objectives"
+              className="ironquest-panel"
+              eyebrow="Daily objectives"
+              meta={`${completedObjectivesCount}/${dailyObjectives.length}`}
+              title={nextIncompleteObjective ? nextIncompleteObjective.label : 'All daily objectives cleared'}
+              description={nextIncompleteObjective ? nextIncompleteObjective.description : 'Everything important is cleared today.'}
+              defaultOpen
+            >
               <div className="ironquest-objective-list">
                 {dailyObjectives.map(item => (
                   <div key={item.key} className={`ironquest-objective ${item.complete ? 'complete' : ''}`}>
@@ -520,15 +614,18 @@ export default function IronQuestScreen() {
                   </div>
                 ))}
               </div>
-            </article>
+            </HubAccordionCard>
           </section>
 
           <section className="ironquest-grid">
-            <article className="dash-card ironquest-panel">
-              <div className="dashboard-card-head">
-                <span className="dashboard-chip coach">Journey path</span>
-                <span className="dashboard-chip subtle">{pathCards.length} regions seeded</span>
-              </div>
+            <HubAccordionCard
+              sectionId="journey-path"
+              className="ironquest-panel"
+              eyebrow="Journey path"
+              meta={`${pathCards.length} regions`}
+              title={location?.name || 'Journey path'}
+              description={nextUnlock ? `Next unlock: ${nextUnlockSummary}` : 'All seeded route unlocks are open.'}
+            >
               <div className="ironquest-path-list">
                 {pathCards.map(card => (
                   <div key={card.slug} className={`ironquest-path-card ${card.current ? 'current' : ''} ${card.unlocked ? 'reached' : ''} ${card.cleared ? 'complete' : ''}`}>
@@ -557,13 +654,16 @@ export default function IronQuestScreen() {
                   </div>
                 ))}
               </div>
-            </article>
+            </HubAccordionCard>
 
-            <article className="dash-card ironquest-panel">
-              <div className="dashboard-card-head">
-                <span className="dashboard-chip awards">Route progress</span>
-                <span className="dashboard-chip subtle">{clearedLocations.length} cleared</span>
-              </div>
+            <HubAccordionCard
+              sectionId="route-progress"
+              className="ironquest-panel"
+              eyebrow="Route progress"
+              meta={`${clearedLocations.length} cleared`}
+              title={nextUnlock ? `Next unlock: ${nextUnlockLocation?.name || humanizeSlug(nextUnlock.location_slug)}` : 'Route complete'}
+              description={nextUnlock ? `${nextUnlock.travel_remaining || 0} remaining. Movement ${movementTravelPoints}, fast travel ${purchasedTravelPoints}.` : 'All seeded route unlocks are open.'}
+            >
               <div className="ironquest-detail-list">
                 <DetailRow label="Movement travel" value={`${movementTravelPoints} earned`} />
                 <DetailRow label="Fast travel" value={`${purchasedTravelPoints} purchased`} />
@@ -648,13 +748,16 @@ export default function IronQuestScreen() {
                   return <span key={slug} className="dashboard-chip success">{match?.name || humanizeSlug(slug)}</span>
                 })}
               </div>
-            </article>
+            </HubAccordionCard>
 
-            <article className="dash-card ironquest-panel">
-              <div className="dashboard-card-head">
-                <span className="dashboard-chip awards">Reward inventory</span>
-                <span className="dashboard-chip subtle">{unlockHistory.length} total rewards</span>
-              </div>
+            <HubAccordionCard
+              sectionId="reward-inventory"
+              className="ironquest-panel"
+              eyebrow="Reward inventory"
+              meta={`${unlockHistory.length} total`}
+              title={`${regionInventory.length} regions, ${titleInventory.length} titles, ${relicInventory.length} relics`}
+              description="Unlocked regions, titles, relics, trophies, and journal entries in one place."
+            >
               <div className="ironquest-stat-grid ironquest-reward-stat-grid">
                 {rewardStats.map(item => (
                   <StatCard key={item.key} label={item.label} value={item.value} icon={item.icon} />
@@ -671,7 +774,12 @@ export default function IronQuestScreen() {
                       {regionInventory.map(item => (
                         <div key={item.slug} className={`ironquest-reward-item ${item.current ? 'current' : ''}`}>
                           <div>
-                            <strong>{item.title}</strong>
+                            <strong>
+                              {item.title}
+                              {hasRecentIronQuestUnlock(recentMissionUpdate, item.cleared ? 'location_arc' : 'location', item.slug) ? (
+                                <span className="dashboard-chip success">New</span>
+                              ) : null}
+                            </strong>
                             <p>{item.subtitle}</p>
                           </div>
                           <div className="ironquest-item-meta">
@@ -704,7 +812,12 @@ export default function IronQuestScreen() {
                       {titleInventory.map(item => (
                         <div key={item.key} className="ironquest-reward-item">
                           <div>
-                            <strong>{item.title}</strong>
+                            <strong>
+                              {item.title}
+                              {hasRecentIronQuestUnlock(recentMissionUpdate, 'title', item.unlockKey) ? (
+                                <span className="dashboard-chip success">New</span>
+                              ) : null}
+                            </strong>
                             <p>{item.subtitle}</p>
                           </div>
                           <small>{formatUsFriendlyDate(item.createdAt, item.createdAt)}</small>
@@ -725,7 +838,12 @@ export default function IronQuestScreen() {
                       {relicInventory.map(item => (
                         <div key={item.key} className="ironquest-reward-item">
                           <div>
-                            <strong>{item.title}</strong>
+                            <strong>
+                              {item.title}
+                              {hasRecentIronQuestUnlock(recentMissionUpdate, 'relic', item.unlockKey) ? (
+                                <span className="dashboard-chip success">New</span>
+                              ) : null}
+                            </strong>
                             <p>{item.subtitle}</p>
                           </div>
                           <small>{formatUsFriendlyDate(item.createdAt, item.createdAt)}</small>
@@ -746,7 +864,12 @@ export default function IronQuestScreen() {
                       {trophyInventory.map(item => (
                         <div key={item.key} className="ironquest-reward-item">
                           <div>
-                            <strong>{item.title}</strong>
+                            <strong>
+                              {item.title}
+                              {hasRecentIronQuestUnlock(recentMissionUpdate, 'location_arc', item.unlockKey) ? (
+                                <span className="dashboard-chip success">New</span>
+                              ) : null}
+                            </strong>
                             <p>{item.subtitle}</p>
                           </div>
                           <small>{formatUsFriendlyDate(item.createdAt, item.createdAt)}</small>
@@ -767,7 +890,12 @@ export default function IronQuestScreen() {
                       {journalInventory.map(item => (
                         <div key={item.key} className="ironquest-reward-item">
                           <div>
-                            <strong>{item.title}</strong>
+                            <strong>
+                              {item.title}
+                              {hasRecentIronQuestUnlock(recentMissionUpdate, 'journal_entry', item.unlockKey) ? (
+                                <span className="dashboard-chip success">New</span>
+                              ) : null}
+                            </strong>
                             <p>{item.subtitle}</p>
                           </div>
                           <small>{formatUsFriendlyDate(item.createdAt, item.createdAt)}</small>
@@ -779,19 +907,27 @@ export default function IronQuestScreen() {
                   )}
                 </div>
               </div>
-            </article>
+            </HubAccordionCard>
 
-            <article className="dash-card ironquest-panel">
-              <div className="dashboard-card-head">
-                <span className="dashboard-chip awards">Reward history</span>
-                <span className="dashboard-chip subtle">{recentUnlocks.length} recent</span>
-              </div>
+            <HubAccordionCard
+              sectionId="reward-history"
+              className="ironquest-panel"
+              eyebrow="Reward history"
+              meta={`${recentUnlocks.length} recent`}
+              title={latestUnlock ? buildUnlockTitle(latestUnlock, locations) : 'No rewards yet'}
+              description={latestUnlock ? buildUnlockSubtitle(latestUnlock) : 'Rewards will start collecting here.'}
+            >
               {unlockHistory.length ? (
                 <div className="ironquest-reward-list">
                   {unlockHistory.map(unlock => (
                     <div key={`${unlock.id}-${unlock.unlock_type}-${unlock.unlock_key}`} className="ironquest-reward-item">
                       <div>
-                        <strong>{buildUnlockTitle(unlock, locations)}</strong>
+                        <strong>
+                          {buildUnlockTitle(unlock, locations)}
+                          {hasRecentIronQuestUnlock(recentMissionUpdate, unlock.unlock_type, unlock.unlock_key) ? (
+                            <span className="dashboard-chip success">New</span>
+                          ) : null}
+                        </strong>
                         <p>{buildUnlockSubtitle(unlock)}</p>
                       </div>
                       <small>{formatUsFriendlyDate(unlock.created_at, unlock.created_at)}</small>
@@ -806,7 +942,7 @@ export default function IronQuestScreen() {
                   message="As IronQuest grants regions, route milestones, and other unlocks, this ledger becomes your visible inventory history."
                 />
               )}
-            </article>
+            </HubAccordionCard>
           </section>
         </>
       )}
@@ -828,6 +964,35 @@ function StatCard({ icon, label, value }) {
 
 function MissionAccordionCard({ mission, open, onToggle, onSelectMission, selectingMissionSlug }) {
   const panelId = `ironquest-mission-panel-${mission.slug}`
+  const [artRefreshKey, setArtRefreshKey] = useState(0)
+  const missionArt = useIronQuestWorldArt(
+    mission?.art?.art_key,
+    mission?.art?.label || mission?.name || 'Mission art',
+    artRefreshKey,
+  )
+  const [generatingArt, setGeneratingArt] = useState(false)
+  const [artError, setArtError] = useState('')
+  const progressState = mission?.progress_state || {}
+  const rewardState = mission?.reward_state || {}
+  const missionStatusChips = buildMissionStatusChips(mission)
+
+  const handleGenerateMissionArt = useCallback(async () => {
+    setGeneratingArt(true)
+    setArtError('')
+
+    try {
+      await ironquestApi.generateWorldArt({
+        art_type: 'mission_card',
+        location_slug: mission?.location_slug || '',
+        mission_slug: mission?.slug || '',
+      })
+      setArtRefreshKey((value) => value + 1)
+    } catch (error) {
+      setArtError(error?.message || 'Could not forge mission art right now.')
+    } finally {
+      setGeneratingArt(false)
+    }
+  }, [mission?.location_slug, mission?.slug])
 
   return (
     <section className={`ironquest-mission-accordion ironquest-mission-card ${mission.isActive ? 'active' : ''} ${mission.isSelected ? 'selected' : ''}`}>
@@ -845,6 +1010,10 @@ function MissionAccordionCard({ mission, open, onToggle, onSelectMission, select
             {mission.is_boss ? <span className="dashboard-chip awards">Boss</span> : null}
             {mission.isActive ? <span className="dashboard-chip success">Active now</span> : null}
             {!mission.isActive && mission.isSelected ? <span className="dashboard-chip workout">Selected next</span> : null}
+            {mission?.rival_presence?.name ? <span className="dashboard-chip coach">Rival</span> : null}
+            {missionStatusChips.map((chip) => (
+              <span key={chip.label} className={`dashboard-chip ${chip.tone}`}>{chip.label}</span>
+            ))}
           </div>
           <div className="ironquest-mission-accordion-title-row">
             <strong>{mission.name}</strong>
@@ -861,8 +1030,49 @@ function MissionAccordionCard({ mission, open, onToggle, onSelectMission, select
       </button>
       <div id={panelId} className={`workout-accordion-panel ironquest-mission-accordion-panel ${open ? 'expanded' : ''}`}>
         <div className="workout-accordion-panel-inner ironquest-mission-accordion-panel-inner">
+          <div className="ironquest-mission-art-shell">
+            <div className="ironquest-mission-art-frame">
+              {missionArt?.src ? (
+                <img
+                  className="ironquest-world-art-image"
+                  src={missionArt.src}
+                  alt={mission?.art?.alt || mission?.name || 'Mission art'}
+                />
+              ) : (
+                <div className="ironquest-world-art-placeholder">
+                  <span>{mission?.name || 'Mission art pending'}</span>
+                </div>
+              )}
+            </div>
+            <div className="ironquest-mission-art-copy">
+              <span className="ironquest-world-art-kicker">Mission Card Art</span>
+              <strong>{mission?.art?.label || `${mission.name} Art`}</strong>
+              <p>{mission.goal || mission.threat || 'Forge a mission image to make the board read like an actual campaign deck.'}</p>
+              <div className="ironquest-actions">
+                <button
+                  type="button"
+                  className="btn-secondary small"
+                  onClick={() => void handleGenerateMissionArt()}
+                  disabled={generatingArt}
+                >
+                  {generatingArt
+                    ? 'Forging art…'
+                    : missionArt?.src || mission?.art?.status === 'ready'
+                      ? 'Refresh art'
+                      : 'Forge art'}
+                </button>
+              </div>
+              {artError ? <p className="ironquest-inline-error">{artError}</p> : null}
+            </div>
+          </div>
+          {mission?.rival_presence?.taunt ? <p className="ironquest-mission-status-copy">{mission.rival_presence.taunt}</p> : null}
+          {mission?.rival_presence?.stakes ? <p className="ironquest-panel-copy">{mission.rival_presence.stakes}</p> : null}
           <p>{mission.narrative || mission.goal || 'No mission briefing yet.'}</p>
+          {progressState?.description ? <p className="ironquest-mission-status-copy">{progressState.description}</p> : null}
           <div className="ironquest-detail-list">
+            <DetailRow label="Run status" value={progressState?.label || 'Standard mission'} />
+            <DetailRow label="Reward state" value={rewardState?.primary_label || 'Standard mission rewards'} />
+            <DetailRow label="History" value={rewardState?.secondary_label || formatMissionHistory(mission?.completion_count)} />
             <DetailRow label="Threat" value={mission.threat || 'No threat card yet'} />
             <DetailRow label="Feel" value={mission.workout_feel || 'Standard training session'} />
             <DetailRow label="Run type" value={humanizeSlug(mission.run_type || 'workout')} />
@@ -870,6 +1080,20 @@ function MissionAccordionCard({ mission, open, onToggle, onSelectMission, select
             <DetailRow label="Gold bias" value={mission.reward_preview?.gold_multiplier > 1 ? `${Math.round((mission.reward_preview.gold_multiplier - 1) * 100)}% bonus` : 'Standard'} />
             <DetailRow label="Travel effect" value={mission.reward_preview?.travel_points_bonus ? `+${mission.reward_preview.travel_points_bonus} route point` : 'None'} />
           </div>
+          {Array.isArray(rewardState?.available_labels) && rewardState.available_labels.length ? (
+            <div className="ironquest-mission-reward-band">
+              {rewardState.available_labels.map(label => (
+                <span key={`available-${label}`} className="dashboard-chip workout">{label}</span>
+              ))}
+            </div>
+          ) : null}
+          {Array.isArray(rewardState?.claimed_labels) && rewardState.claimed_labels.length ? (
+            <div className="ironquest-mission-reward-band">
+              {rewardState.claimed_labels.map(label => (
+                <span key={`claimed-${label}`} className="dashboard-chip subtle">{label}</span>
+              ))}
+            </div>
+          ) : null}
           {Array.isArray(mission.effect_tags) && mission.effect_tags.length ? (
             <div className="ironquest-hero-meta">
               {mission.effect_tags.map(tag => (
@@ -914,6 +1138,65 @@ function DetailRow({ label, value }) {
       <span>{label}</span>
       <strong>{value}</strong>
     </div>
+  )
+}
+
+function buildMissionStatusChips(mission) {
+  const state = String(mission?.progress_state?.state || '').trim()
+
+  switch (state) {
+    case 'first_clear_available':
+      return [{ label: 'First clear', tone: 'workout' }]
+    case 'replay':
+      return [{ label: 'Replay', tone: 'subtle' }]
+    case 'boss_ready':
+      return [{ label: 'Boss ready', tone: 'awards' }]
+    case 'boss_cleared':
+      return [{ label: 'Boss cleared', tone: 'success' }]
+    case 'boss_locked':
+      return [{ label: 'Boss path', tone: 'subtle' }]
+    default:
+      return []
+  }
+}
+
+function formatMissionHistory(completionCount) {
+  const count = Number(completionCount || 0) || 0
+  return count > 0 ? `Cleared ${count}x` : 'No clears yet'
+}
+
+function HubAccordionCard({
+  sectionId,
+  className = '',
+  eyebrow,
+  meta,
+  title,
+  description,
+  defaultOpen = false,
+  children,
+}) {
+  const panelId = `ironquest-hub-section-${sectionId}`
+
+  return (
+    <details className={`dash-card ironquest-hub-card-accordion ${className}`.trim()} open={defaultOpen}>
+      <summary className="ironquest-hub-card-summary" aria-controls={panelId}>
+        <div className="ironquest-hub-card-summary-copy">
+          <div className="ironquest-hub-card-summary-kicker">
+            <span>{eyebrow}</span>
+            {meta ? <span className="ironquest-hub-card-summary-meta">{meta}</span> : null}
+          </div>
+          <strong>{title}</strong>
+          {description ? <p>{description}</p> : null}
+        </div>
+        <span className="ironquest-hub-card-summary-icon" aria-hidden="true">
+          <span className="ironquest-hub-card-summary-icon-bar horizontal" />
+          <span className="ironquest-hub-card-summary-icon-bar vertical" />
+        </span>
+      </summary>
+      <div id={panelId} className="ironquest-hub-card-body">
+        {children}
+      </div>
+    </details>
   )
 }
 

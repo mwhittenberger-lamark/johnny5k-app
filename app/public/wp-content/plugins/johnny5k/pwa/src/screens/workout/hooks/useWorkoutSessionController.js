@@ -3,6 +3,8 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { ironquestApi } from '../../../api/modules/ironquest'
 import { showGlobalToast } from '../../../lib/uiFeedback'
 import { buildIronQuestMissionIntro, buildIronQuestWorkoutToast } from '../../../lib/ironquestFeedback'
+import { persistRecentIronQuestMissionUpdate } from '../../../lib/ironquestRecentMissionUpdate'
+import { dispatchIronQuestStateChanged } from '../../../lib/ironquestSync'
 import { useLatest } from './useLatest'
 import { buildWorkoutCompletionReview, formatDayType, formatWorkoutElapsedTime, getPausedTimerNowValue } from '../workoutScreenUtils'
 
@@ -28,6 +30,7 @@ export function buildRestoredIronQuestMissionIntro(activeMissionPayload, session
     profile: activeMissionPayload?.profile ?? null,
     location: activeMissionPayload?.location ?? null,
     mission: matchingMission,
+    mission_modifiers: activeMissionPayload?.mission_modifiers ?? null,
   }, {
     readinessScore,
   })
@@ -112,6 +115,12 @@ export function useWorkoutSessionController({
     stance: 'steady',
   })
   const [pendingSessionAction, setPendingSessionAction] = useState(null)
+  const [lastSessionActivity, setLastSessionActivity] = useState(() => ({
+    kind: 'exercise',
+    at: Date.now(),
+    exerciseId: 0,
+    exerciseName: '',
+  }))
   const queryClient = useQueryClient()
   const locationStateRef = useLatest(location.state && typeof location.state === 'object' ? location.state : null)
 
@@ -153,7 +162,7 @@ export function useWorkoutSessionController({
     onSettled: invalidateWorkoutQueries,
   })
   const completeSessionMutation = useMutation({
-    mutationFn: () => completeSession(),
+    mutationFn: (options = {}) => completeSession(options),
     onSettled: invalidateWorkoutQueries,
   })
   const skipSessionMutation = useMutation({
@@ -175,10 +184,44 @@ export function useWorkoutSessionController({
 
   const activeSessionStartedAt = session?.session?.started_at || null
   const sessionTimerPaused = sessionTimerPausedAt != null
+  const activeExercise = exercises[activeExerciseIdx] ?? null
+  const previousExercise = activeExerciseIdx > 0 ? exercises[activeExerciseIdx - 1] ?? null : null
+  const nextExercise = activeExerciseIdx < exercises.length - 1 ? exercises[activeExerciseIdx + 1] ?? null : null
   const activeSessionTimerLabel = formatWorkoutElapsedTime(
     activeSessionStartedAt,
     getPausedTimerNowValue(timerNow, sessionTimerPausedAt, sessionTimerPausedMs),
   )
+  const totalExercises = exercises.length
+  const totalLoggedSets = exercises.reduce((total, exercise) => total + getLoggedSetCount(exercise), 0)
+  const totalPlannedSets = exercises.reduce((total, exercise) => total + getPlannedSetCount(exercise), 0)
+  const completedExerciseCount = exercises.reduce((total, exercise) => total + (isExerciseFinished(exercise) ? 1 : 0), 0)
+  const activeExerciseLoggedSets = getLoggedSetCount(activeExercise)
+  const activeExerciseCompletedSets = getCompletedSetCount(activeExercise)
+  const activeExercisePlannedSets = getPlannedSetCount(activeExercise)
+  const activeRestGuidance = buildActiveRestGuidance({
+    kind: lastSessionActivity.kind,
+    startedAt: lastSessionActivity.at,
+    now: timerNow,
+  })
+
+  useEffect(() => {
+    if (!activeExercise?.id) {
+      return
+    }
+
+    setLastSessionActivity((current) => {
+      if (current.exerciseId === Number(activeExercise.id || 0)) {
+        return current
+      }
+
+      return {
+        kind: 'exercise',
+        at: Date.now(),
+        exerciseId: Number(activeExercise.id || 0),
+        exerciseName: String(activeExercise.exercise_name || '').trim(),
+      }
+    })
+  }, [activeExercise?.exercise_name, activeExercise?.id])
 
   useEffect(() => {
     if (!exercises.length && activeExerciseIdx !== 0) {
@@ -312,12 +355,46 @@ export function useWorkoutSessionController({
     }
   }, [completionReview, navigate])
 
-  async function handleCreateSet(sessionExerciseId, setData) {
-    return logSetMutation.mutateAsync({ sessionExerciseId, setData })
+  async function handleCreateSet(sessionExerciseId, setData, options = {}) {
+    const result = await logSetMutation.mutateAsync({ sessionExerciseId, setData })
+
+    setLastSessionActivity({
+      kind: 'set',
+      at: Date.now(),
+      exerciseId: Number(options.exerciseId || activeExercise?.id || 0),
+      exerciseName: String(options.exerciseName || activeExercise?.exercise_name || '').trim(),
+    })
+
+    if (options.autoAdvance && Number.isInteger(options.nextExerciseIndex)) {
+      setActiveExerciseIdx(options.nextExerciseIndex)
+      if (options.nextExerciseName) {
+        setStatusNotice(`Set logged. Next up: ${options.nextExerciseName}.`)
+      }
+    }
+
+    return result
   }
 
-  async function handleUpdateSet(setId, setData) {
-    return updateSetMutation.mutateAsync({ setId, setData })
+  async function handleUpdateSet(setId, setData, options = {}) {
+    const result = await updateSetMutation.mutateAsync({ setId, setData })
+
+    if (options.trackActivity !== false) {
+      setLastSessionActivity({
+        kind: 'set',
+        at: Date.now(),
+        exerciseId: Number(options.exerciseId || activeExercise?.id || 0),
+        exerciseName: String(options.exerciseName || activeExercise?.exercise_name || '').trim(),
+      })
+    }
+
+    if (options.autoAdvance && Number.isInteger(options.nextExerciseIndex)) {
+      setActiveExerciseIdx(options.nextExerciseIndex)
+      if (options.nextExerciseName) {
+        setStatusNotice(`Exercise complete. Move to ${options.nextExerciseName}.`)
+      }
+    }
+
+    return result
   }
 
   async function handleDeleteSet(setId) {
@@ -348,14 +425,22 @@ export function useWorkoutSessionController({
   async function handleComplete() {
     const completedDayType = String(displayDayType || '')
     const completedSessionLabel = displaySessionTitle || `${todayLabel} • ${formatDayType(displayDayType)} day`
+    const ironQuestRunId = Number(missionIntro?.storyState?.run_id || missionIntro?.runId || 0)
     setCompleting(true)
     try {
-      const result = await completeSessionMutation.mutateAsync()
+      const result = await completeSessionMutation.mutateAsync({ ironQuestRunId })
       setMissionIntro(null)
       const review = buildWorkoutCompletionReview({
         result,
         dayType: completedDayType,
         sessionLabel: completedSessionLabel,
+      })
+      const recentMissionUpdate = persistRecentIronQuestMissionUpdate(review?.ironQuestReveal)
+
+      dispatchIronQuestStateChanged({
+        reason: 'mission_resolved',
+        locationSlug: result?.ironquest?.profile?.current_location_slug || '',
+        recentMissionUpdate,
       })
 
       if (review) {
@@ -561,6 +646,23 @@ export function useWorkoutSessionController({
     setLiveModeOpen(false)
   }, [])
 
+  const goToPreviousExercise = useCallback(() => {
+    setActiveExerciseIdx((current) => Math.max(0, current - 1))
+  }, [setActiveExerciseIdx])
+
+  const goToNextExercise = useCallback(() => {
+    setActiveExerciseIdx((current) => Math.min(Math.max(0, exercises.length - 1), current + 1))
+  }, [exercises.length, setActiveExerciseIdx])
+
+  const goToExercise = useCallback((index) => {
+    const numericIndex = Number(index)
+    if (!Number.isInteger(numericIndex)) {
+      return
+    }
+
+    setActiveExerciseIdx(Math.max(0, Math.min(Math.max(0, exercises.length - 1), numericIndex)))
+  }, [exercises.length, setActiveExerciseIdx])
+
   const setIronQuestLiveStance = useCallback((stance) => {
     const normalizedStance = ['steady', 'aggressive', 'cautious'].includes(String(stance || '').trim().toLowerCase())
       ? String(stance || '').trim().toLowerCase()
@@ -612,6 +714,10 @@ export function useWorkoutSessionController({
           name: current.missionName,
           summary: current.objective,
         },
+        mission_modifiers: {
+          summary: current.missionModifierSummary,
+          entries: current.missionModifiers,
+        },
       }, { readinessScore }) : current)
 
       return payload
@@ -653,7 +759,18 @@ export function useWorkoutSessionController({
     activeSessionTimerLabel,
     completing,
     completionReview,
+    completedExerciseCount,
     exiting,
+    activeExerciseCompletedSets,
+    activeExerciseLoggedSets,
+    activeExercisePlannedSets,
+    activeRestGuidance,
+    activeExercise,
+    previousExercise,
+    nextExercise,
+    totalExercises,
+    totalLoggedSets,
+    totalPlannedSets,
     handleCloseCompletionReview,
     handleComplete,
     handleCreateSet,
@@ -675,6 +792,9 @@ export function useWorkoutSessionController({
     ironQuestStoryBusy,
     liveModeOpen,
     missionIntro,
+    goToExercise,
+    goToNextExercise,
+    goToPreviousExercise,
     openLiveMode,
     closeLiveMode,
     pauseSessionTimer,
@@ -693,4 +813,76 @@ export function useWorkoutSessionController({
     takingRestDay,
     undoing,
   }
+}
+
+function getLoggedSetCount(exercise) {
+  return Array.isArray(exercise?.sets) ? exercise.sets.length : 0
+}
+
+function getCompletedSetCount(exercise) {
+  return Array.isArray(exercise?.sets)
+    ? exercise.sets.filter((set) => Boolean(set?.completed)).length
+    : 0
+}
+
+function getPlannedSetCount(exercise) {
+  const planned = Number(exercise?.planned_sets || 0)
+  const logged = getLoggedSetCount(exercise)
+  return Math.max(1, planned, logged)
+}
+
+function isExerciseFinished(exercise) {
+  if (!exercise) {
+    return false
+  }
+
+  return getCompletedSetCount(exercise) >= getPlannedSetCount(exercise)
+}
+
+function buildActiveRestGuidance({ kind, startedAt, now }) {
+  const elapsedMs = Math.max(0, Number(now || 0) - Number(startedAt || now || 0))
+  const elapsedSeconds = Math.floor(elapsedMs / 1000)
+  const isExerciseTransition = kind === 'exercise'
+  const minSeconds = isExerciseTransition ? 60 : 30
+  const maxSeconds = isExerciseTransition ? 120 : 60
+
+  if (elapsedSeconds < minSeconds) {
+    return {
+      tone: 'tight',
+      title: 'Keep moving',
+      elapsedLabel: formatElapsedLabel(elapsedSeconds),
+      windowLabel: isExerciseTransition ? 'Aim for 1:00-2:00 between exercises' : 'Aim for 0:30-1:00 between sets',
+      message: isExerciseTransition
+        ? 'Set up the next station and keep the transition efficient before the session loses pace.'
+        : 'You are still inside the target rest window. Breathe, reset, and get ready for the next set.',
+    }
+  }
+
+  if (elapsedSeconds <= maxSeconds) {
+    return {
+      tone: 'sweet',
+      title: 'Good time to go',
+      elapsedLabel: formatElapsedLabel(elapsedSeconds),
+      windowLabel: isExerciseTransition ? 'Transition window is still on target' : 'Rest window is still on target',
+      message: isExerciseTransition
+        ? 'Move into the next exercise now while the transition still matches the plan.'
+        : 'Rest is right where Johnny wants it. Take the next set while the work stays sharp.',
+    }
+  }
+
+  return {
+    tone: 'drift',
+    title: 'Pace is slipping',
+    elapsedLabel: formatElapsedLabel(elapsedSeconds),
+    windowLabel: isExerciseTransition ? 'You are past the ideal exercise switch window' : 'You are past the ideal set-rest window',
+    message: isExerciseTransition
+      ? 'Downtime is stretching. Start the next lift now unless you are making a deliberate change.'
+      : 'Rest has drifted long. Step back in and take the next set before the session cools off.',
+  }
+}
+
+function formatElapsedLabel(totalSeconds) {
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  return `${minutes}:${String(seconds).padStart(2, '0')} elapsed`
 }

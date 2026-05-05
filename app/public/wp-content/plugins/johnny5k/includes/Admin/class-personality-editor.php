@@ -88,7 +88,7 @@ class PersonalityEditor {
 		echo '</div>';
 		echo '<hr style="margin:24px 0" />';
 		echo '<h2>Persona Contract QA</h2>';
-		echo '<p>Run fixed checks for concise coaching, non-corporate tone, data-aware guidance, and honest next steps.</p>';
+		echo '<p>Run fixed checks for concise coaching, plainspoken language, non-corporate tone, data-aware guidance, honest next steps, and avoidance of synthetic coaching phrases.</p>';
 		echo '<p><button type="button" id="jf-run-all-checks" class="button button-secondary">Run All Contract Checks</button></p>';
 		echo '<div id="jf-contract-check-list" style="display:grid;gap:12px"></div>';
 		echo '<div id="jf-contract-results" style="display:grid;gap:12px;margin-top:16px"></div>';

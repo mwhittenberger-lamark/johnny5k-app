@@ -161,6 +161,12 @@ function findButtonByText(label) {
   return Array.from(document.querySelectorAll('button')).find(button => button.textContent?.trim() === label)
 }
 
+async function clickButtonByText(label) {
+  const button = findButtonByText(label)
+  expect(button).not.toBeUndefined()
+  await click(button)
+}
+
 describe('LiveWorkoutMode IronQuest story', () => {
   beforeEach(() => {
     window.scrollTo = vi.fn()
@@ -185,6 +191,8 @@ describe('LiveWorkoutMode IronQuest story', () => {
     const props = buildProps()
 
     await renderComponent(<LiveWorkoutMode {...props} />)
+    await flushEffects()
+    await clickButtonByText('Quest interface')
     await flushEffects()
 
     expect(document.body.textContent).toContain('Pick your opening move before the yard closes around you.')
@@ -222,13 +230,19 @@ describe('LiveWorkoutMode IronQuest story', () => {
     })
 
     await renderComponent(<LiveWorkoutMode {...props} />)
-  await flushEffects()
+    await flushEffects()
+    await clickButtonByText('Quest interface')
+    await flushEffects()
 
     expect(document.body.textContent).toContain('Encounter line broken')
     expect(document.body.textContent).toContain('Bench Press broke the center line and the captain is backing away from the rack.')
+    expect(document.body.textContent).toContain('The captain is giving ground and the whole yard is watching the finish now.')
+
+    await clickButtonByText('Johnny interface')
+    await flushEffects()
+
     expect(document.body.textContent).toContain('Recent mission beats')
     expect(document.body.textContent).toContain('Encounter shift')
-    expect(document.body.textContent).toContain('The captain is giving ground and the whole yard is watching the finish now.')
   })
 
   it('skips the standard post-save coach reply when an IronQuest story beat is available', async () => {
@@ -241,6 +255,8 @@ describe('LiveWorkoutMode IronQuest story', () => {
     })
 
     await renderComponent(<LiveWorkoutMode {...props} />)
+    await flushEffects()
+    await clickButtonByText('Sets interface')
     await flushEffects()
 
     const initialChatCount = vi.mocked(aiApi.chat).mock.calls.length

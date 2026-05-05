@@ -238,23 +238,23 @@ export function buildDailyFocusModel(snapshot) {
       : 'Skip extra cleanup. Close what matters and leave the rest for tomorrow.'
   } else if (scheduledType === 'rest' || training?.recorded_type === 'rest') {
     instruction = proteinRemaining > 0 ? `Hit ${proteinRemaining}g protein and recover.` : 'Keep recovery clean today.'
-    support = 'Rest day is scheduled. Make the next training day easier, not noisier.'
+    support = 'Rest day is scheduled. Recover today so tomorrow’s workout feels better.'
   } else if (scheduledType === 'cardio' && !training?.recorded) {
     instruction = proteinRemaining > 0 ? `Log cardio and close ${proteinRemaining}g protein.` : 'Log cardio today.'
     support = recoveryMode === 'normal'
       ? 'Recovery is normal. Get the conditioning work logged and keep the rest clean.'
-      : 'Recovery is soft. Keep the conditioning work crisp and recover on purpose.'
+      : 'Recovery is soft. Get the cardio done, then make the rest of the day easy.'
   } else if (!training?.recorded) {
     instruction = proteinRemaining > 0 ? `Complete today’s workout and close ${proteinRemaining}g protein.` : 'Complete today’s workout.'
     support = recoveryMode === 'normal'
       ? 'Recovery is normal. You are good to push.'
-      : 'Recovery is soft. Keep the work crisp instead of heroic.'
+      : 'Recovery is soft. Do the work, then shut it down.'
   } else if (proteinRemaining > 0) {
     instruction = `Close ${proteinRemaining}g protein and recover.`
     support = 'Training is handled. Food and sleep finish the job.'
   } else {
     instruction = 'Recovery is the job now.'
-    support = 'The main work is logged. Keep the finish boring and repeatable.'
+    support = 'The main work is logged. Eat, sleep, and call it a day.'
   }
 
   const improvementItems = scoreContributorItems.length ? scoreContributorItems : []
@@ -362,7 +362,7 @@ function getScoreContributorMeta(key, remaining = 0, value = 0, target = 0) {
         detail: `${value}/${target} days`,
         action: remaining <= 1 ? 'Log cardio today' : `+ Add ${remaining} cardio days this week`,
         dailyFocus: remaining <= 1 ? 'Log cardio today' : `Add ${remaining} cardio days this week`,
-        impact: 'Cardio is still a clean way to add signal if training momentum is thin.',
+        impact: 'Cardio is still a clean way to keep the week moving if training has been light.',
       }
     case 'training_sessions':
       return {
@@ -469,7 +469,7 @@ export function buildMomentumScoreModel(snapshot) {
     body = 'The main score drivers are already represented. Keep the pattern alive instead of adding noise.'
   } else if (weeklyScore >= 80) {
     title = 'The score is strong, but it still needs protection'
-    body = 'The week has traction. One clean rep in the weakest open bucket keeps momentum from slipping.'
+    body = 'The week is in a good spot. One clean entry in the weakest open bucket keeps it moving.'
   } else if (weeklyScore >= 50) {
     title = 'The score is building, and the gaps are clear'
     body = 'You do not need a perfect day. You need one more clean entry in the weakest bucket.'
@@ -503,7 +503,7 @@ export function buildInspirationalStories(snapshot, thoughtWindowKey = 'morning'
         title: 'The first clean decision usually decides the tone.',
         body: currentBestStreak >= 3
           ? 'Momentum stays alive when the first reps of the day stay visible. Protect the habit that has kept this streak on the board.'
-          : 'Most resets do not begin with motivation. They begin with one clean meal, one short walk, or one workout start before the day gets noisy.',
+          : 'Most resets start with one clean meal, one short walk, or one workout start.',
         actionLabel: 'Ask Johnny what to protect',
         prompt: 'What is the one habit from this morning that is most worth protecting for the rest of the week?',
       },
@@ -597,7 +597,7 @@ export function buildInspirationalStories(snapshot, thoughtWindowKey = 'morning'
       },
       {
         chip: `${windowLabel} · Thought 02`,
-        title: 'Night discipline is usually subtraction, not intensity.',
+        title: 'At night, simpler usually wins.',
         body: caloriesRemaining > 0
           ? `You still have about ${Math.round(caloriesRemaining)} calories available. Spend them intentionally or leave some margin. Both are better than an unplanned drift.`
           : 'The cleanest evening win is usually restraint. The board rarely improves because of one extra impulsive meal at the end of the day.',
@@ -623,7 +623,7 @@ export function buildInspirationalStories(snapshot, thoughtWindowKey = 'morning'
         chip: `${windowLabel} · Thought 04`,
         title: 'Evening movement still counts even when it is not dramatic.',
         body: stepGap > 0
-          ? `There is still a ${stepGap.toLocaleString()}-step gap. You do not need heroics, just enough movement to stop the day from ending completely idle.`
+          ? `There is still a ${stepGap.toLocaleString()}-step gap. A short walk is enough to keep the day from ending completely idle.`
           : 'The movement target is already basically handled. The win now is recovery, not piling on extra effort for no reason.',
         actionLabel: 'Open body metrics',
         href: '/body',
@@ -645,10 +645,10 @@ export function buildCoachLine(snapshot) {
   if (training?.recorded_type === 'rest') return 'Recovery is the assignment today. Keep the basics clean.'
   if (training?.recorded) return 'Workout logged. Close protein and protect recovery.'
   if (scheduledType === 'rest') return 'Rest day is scheduled. Hit protein and keep movement easy.'
-  if (scheduledType === 'cardio') return 'Cardio is scheduled today. Log it before the day gets noisy.'
+  if (scheduledType === 'cardio') return 'Cardio is scheduled today. Log it before the day gets away from you.'
   if (sleep != null && sleep < 7) return 'Recovery is light. Keep training crisp and let nutrition do more of the work.'
   if (todaySteps < targetSteps * 0.4) return 'Movement is still open. A short walk plus a clean meal would move the day forward.'
-  return 'You have enough signal for a strong day. Hit the next action early.'
+  return 'You have enough on the board for a good day. Hit the next action early.'
 }
 
 export function buildCoachMetricGrid(metrics) {
@@ -728,7 +728,7 @@ export function buildCoachNextStepMeta(snapshot, meta) {
   const protein = Number(snapshot?.nutrition_totals?.protein_g ?? 0)
   const weeklyScore = Number(snapshot?.score_7d ?? 0)
 
-  if (plannedType === 'cardio' && !training?.recorded) return { label: 'Conditioning focus', hint: 'Clear the open cardio box before the day gets noisy.', icon: 'bolt' }
+  if (plannedType === 'cardio' && !training?.recorded) return { label: 'Conditioning focus', hint: 'Clear the open cardio box before the day gets away from you.', icon: 'bolt' }
   if (plannedType === 'rest' || training?.recorded_type === 'rest') return { label: 'Recovery focus', hint: 'Keep the easy basics sharp so tomorrow starts cleaner.', icon: 'star' }
   if (sleepHours > 0 && sleepHours < Math.max(6.5, targetSleep - 1)) return { label: 'Energy saver', hint: 'Keep output crisp and let recovery carry more of the load.', icon: 'coach' }
   if (stepsToday < stepTarget * 0.55) return { label: 'Movement move', hint: 'The fastest way to rescue the board is usually a short walk.', icon: 'bolt' }
@@ -1516,7 +1516,7 @@ export function buildBestNextMove(snapshot) {
 
   return {
     title: 'Close the day cleanly, not perfectly',
-    body: 'You already have useful signal on the board. Protect the next meal, keep movement honest, and avoid creating cleanup for tomorrow.',
+    body: 'You already have a decent day on the board. Protect the next meal, keep movement honest, and avoid creating cleanup for tomorrow.',
     context: 'Momentum is already in play',
     actionLabel: 'Ask Johnny',
     prompt: 'My dashboard is in decent shape. What is the single smartest move left for today?',
@@ -1540,14 +1540,14 @@ export function buildMomentumCard(snapshot, awards) {
   if (weeklyScore >= 80 || bestWeeklyBucket >= 6) {
     badge = `${weeklyScore} score`
     title = 'Momentum is holding'
-    body = 'Your recent board has real traction. The goal now is to protect the pattern, not reinvent it.'
+    body = 'Your recent board looks solid. The goal now is to protect the pattern, not reinvent it.'
   } else if (weeklyScore >= 50 || bestWeeklyBucket >= 4) {
     badge = `${weeklyScore} score`
     title = 'Rhythm is building'
     body = 'The recent pattern is getting more stable. Keep stacking ordinary entries so the week stops depending on one big day.'
   } else if (awards.length > 0) {
     title = 'Momentum needs another clean rep'
-    body = 'You have prior wins on the board, but the current signal needs fresh consistency. Rebuild with the next meal, workout, or recovery entry.'
+    body = 'You have prior wins on the board, but this week needs fresh consistency. Rebuild with the next meal, workout, or recovery entry.'
   }
 
   return {
@@ -1639,8 +1639,8 @@ function formatNumber(value, decimals = 0) {
 
 export function buildWeekRhythmDrawerCopy(score) {
   if (score >= 80) return 'The week has strong consistency across the basics. The job is to protect it, not complicate it.'
-  if (score >= 50) return 'The week has usable traction. One or two clean entries in the weaker buckets will move this fast.'
-  return 'The board still needs repeated signal. Focus on filling the weakest buckets instead of chasing a perfect day.'
+  if (score >= 50) return 'The week is moving in the right direction. One or two clean entries in the weaker buckets will move this fast.'
+  return 'The board still needs more repeat days. Focus on filling the weakest buckets instead of chasing a perfect day.'
 }
 
 export function buildRecoveryWindowLabel(recoverySummary) {
@@ -1704,7 +1704,7 @@ export function normalizeWorkoutTimeTier(value) {
 export function routeRecoveryAction(recoverySummary, navigate) {
   const action = recoverySummary?.recommended_action
   const target = action?.target || 'body'
-  const notice = action?.notice || 'Johnny opened recovery so you can act on the current signal.'
+  const notice = action?.notice || 'Johnny opened recovery so you can act on what needs attention.'
 
   if (target === 'sleep' || target === 'steps' || target === 'cardio') {
     navigate('/body', { state: { focusTab: target, johnnyActionNotice: notice } })
@@ -1876,7 +1876,7 @@ export function buildSleepDebtModel(snapshot) {
     modeClass,
     title: debtHours > 0 ? `${debtHours.toFixed(1)}h of sleep debt is still hanging around` : 'Recent sleep is not carrying obvious debt',
     body: debtHours > 0
-      ? 'Your recent sleep signal is lighter than target. That does not mean stop everything, but it does mean the rest of today should get easier, not harder.'
+      ? 'Your recent sleep is lighter than target. That does not mean stop everything, but it does mean the rest of today should get easier, not harder.'
       : 'Recent sleep is close enough to target that the main job is protecting tonight instead of digging out.',
     lastSleepLabel: lastSleep > 0 ? `${formatNumber(lastSleep, 1)}h` : 'Not logged',
     debtLabel: debtHours > 0 ? `${debtHours.toFixed(1)}h` : 'No debt',

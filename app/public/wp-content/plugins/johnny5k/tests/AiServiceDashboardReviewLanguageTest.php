@@ -77,6 +77,7 @@ class AiServiceDashboardReviewLanguageTest extends ServiceTestCase {
 		$ids = array_column( $checks, 'id' );
 
 		self::assertContains( 'plain_spoken_language', $ids );
+		self::assertContains( 'no_synthetic_phrases', $ids );
 		self::assertContains( 'no_summary_framing', $ids );
 	}
 }

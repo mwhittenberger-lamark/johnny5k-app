@@ -33,4 +33,10 @@ export const adminApi = {
   diagnostics: (limit = 50) => api.get(`/admin/diagnostics?limit=${limit}`),
   ironQuestState: (userId) => api.get(`/admin/ironquest/state?user_id=${userId}`),
   runIronQuestAction: (data) => api.post('/admin/ironquest/action', data),
+  storyWorkbenchPreview: (data) => api.post('/admin/ironquest/story-workbench-preview', data),
+  storyWorkbenchReview: (data) => api.post('/admin/ironquest/story-workbench-review', data),
+  storyWorkbenchExport: (data) => api.post('/admin/ironquest/story-workbench-export', data),
+  storyWorkbenchApply: (data) => api.post('/admin/ironquest/story-workbench-apply', data),
+  storyWorkbenchSaveScene: (data) => api.post('/admin/ironquest/story-workbench-scene', data),
+  storyWorkbenchSuggestScene: (data) => api.post('/admin/ironquest/story-workbench-scene-suggest', data),
 }

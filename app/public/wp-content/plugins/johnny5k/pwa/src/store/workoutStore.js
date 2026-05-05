@@ -29,6 +29,7 @@ export const useWorkoutStore = create(persist((set, get) => ({
   setTimeTier: (tier) => set({ timeTier: resolveWorkoutTimeTier(tier, get().timeTier) }),
   setReadinessScore: (score) => set({ readinessScore: score, sessionMode: score <= 3 ? 'maintenance' : 'normal' }),
   setActiveExerciseIdx: (index) => set({ activeExerciseIdx: Math.max(0, index) }),
+  dismissResumedSessionGate: () => set({ wasResumed: false }),
   setPreviewDayType: (dayType) => set({ previewDayType: dayType || '' }),
   resetPlanningState: () => set({
     timeTier: 'medium',
@@ -684,10 +685,10 @@ export const useWorkoutStore = create(persist((set, get) => ({
     set({ undoToast: null, activeExerciseIdx: Math.min(get().activeExerciseIdx, maxIndex) })
   },
 
-  completeSession: async () => {
+  completeSession: async (options = {}) => {
     const { sessionId, session } = get()
     const result = await workoutApi.complete(sessionId, {})
-    const ironquest = await resolveIronQuestMissionForSession(session)
+    const ironquest = await resolveIronQuestMissionForSession(session, options)
     get().clearDiscardedSession(sessionId)
     get().clearSessionState()
     get().resetPlanningState()
@@ -840,14 +841,22 @@ async function startIronQuestMissionForSession(sessionData) {
   }
 }
 
-async function resolveIronQuestMissionForSession(sessionData) {
+async function resolveIronQuestMissionForSession(sessionData, options = {}) {
   const sessionId = Number(sessionData?.session?.id || 0)
+  const explicitRunId = Number(options?.ironQuestRunId || 0)
 
   if (!sessionId) {
     return null
   }
 
   try {
+    if (explicitRunId > 0) {
+      return await ironquestApi.resolveMission({
+        run_id: explicitRunId,
+        result_band: 'victory',
+      })
+    }
+
     const activeMissionState = await ironquestApi.activeMission()
     const activeRun = activeMissionState?.active_run ?? null
 

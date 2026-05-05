@@ -1592,7 +1592,7 @@ export default function NutritionScreen() {
             <AppIcon name="plus" />
             <span>{showAddMethodPicker || showAddForm ? 'Close add meal' : 'Add meal'}</span>
           </button>
-          <button className="btn-secondary header-action-button" title="Snap meal photo" onClick={() => {
+          <button className="btn-secondary header-action-button nutrition-header-secondary-action" title="Snap meal photo" onClick={() => {
             setActiveView('today')
             closeAddMealFlow()
             setShowLabelScanPrompt(false)
@@ -1601,13 +1601,13 @@ export default function NutritionScreen() {
             <AppIcon name="camera" />
             <span>{showMealPhotoPrompt ? 'Close meal pic' : 'Snap a meal pic'}</span>
           </button>
-          <button className="btn-secondary header-action-button" title="Scan nutrition label" onClick={() => {
+          <button className="btn-secondary header-action-button nutrition-header-secondary-action" title="Scan nutrition label" onClick={() => {
             openLabelScanPrompt()
           }} type="button">
             <AppIcon name="label" />
             <span>Scan label</span>
           </button>
-          <button className="btn-secondary header-action-button" title="Jump to Beverage Board" onClick={openBeverageBoard} type="button">
+          <button className="btn-secondary header-action-button nutrition-header-secondary-action" title="Jump to Beverage Board" onClick={openBeverageBoard} type="button">
             <AppIcon name="water" />
             <span>Beverage Board</span>
           </button>

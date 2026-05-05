@@ -125,6 +125,7 @@ export default function LiveWorkoutMode({
   const coachLogRef = useRef(null)
   const voiceTestingCardRef = useRef(null)
   const latestAssistantMessageKeyRef = useRef('')
+  const pendingJohnnyFocusKeyRef = useRef('')
   const restToastTimerRef = useRef(null)
   const restGuidanceMessageKeyRef = useRef('')
   const voiceSupported = typeof window !== 'undefined' && (window.SpeechRecognition || window.webkitSpeechRecognition)
@@ -568,8 +569,24 @@ export default function LiveWorkoutMode({
     if (!nextKey || latestAssistantMessageKeyRef.current === nextKey) return
 
     latestAssistantMessageKeyRef.current = nextKey
+
+    if (hasIronQuestOverlay && activeIronQuestPanel !== 'johnny') {
+      pendingJohnnyFocusKeyRef.current = nextKey
+      setActiveIronQuestPanel('johnny')
+      return
+    }
+
     scrollPanelToSection(johnnyCardRef)
-  }, [coachMessages, isOpen, scrollPanelToSection])
+  }, [activeIronQuestPanel, coachMessages, hasIronQuestOverlay, isOpen, scrollPanelToSection])
+
+  useEffect(() => {
+    if (!isOpen) return
+    if (!pendingJohnnyFocusKeyRef.current) return
+    if (hasIronQuestOverlay && activeIronQuestPanel !== 'johnny') return
+
+    scrollPanelToSection(johnnyCardRef)
+    pendingJohnnyFocusKeyRef.current = ''
+  }, [activeIronQuestPanel, hasIronQuestOverlay, isOpen, scrollPanelToSection])
 
   useEffect(() => {
     setFrameIndex(0)
@@ -1484,16 +1501,14 @@ export default function LiveWorkoutMode({
         </div>
       </div>
 
-      <div className="live-workout-progress-grid">
-        <div className="live-workout-progress-card">
-          <span>Current set</span>
-          <strong>Set {currentSetIdx + 1} / {totalSetCount}</strong>
-          <small>{currentSet?.completed ? 'Logged already' : 'Ready to log'}</small>
+      <div className="live-workout-set-toolbar">
+        <div className="live-workout-set-status">
+          <span className="dashboard-chip workout">Set {currentSetIdx + 1} of {totalSetCount}</span>
+          <span className="dashboard-chip subtle">{currentSet?.completed ? 'Logged already' : 'Ready to log'}</span>
         </div>
-        <div className="live-workout-progress-card">
-          <span>Completed sets</span>
-          <strong>{activeExercise.sets?.filter(set => set.completed).length || 0}</strong>
-          <small>{activeExercise.planned_sets || totalSetCount} planned today</small>
+        <div className="live-workout-set-stepper">
+          <button type="button" className="btn-outline small live-workout-set-step" onClick={() => moveSet(-1)} disabled={currentSetIdx <= 0}>Previous set</button>
+          <button type="button" className="btn-outline small live-workout-set-step" onClick={() => moveSet(1)} disabled={currentSetIdx >= totalSetCount - 1}>Next set</button>
         </div>
       </div>
 
@@ -1535,9 +1550,20 @@ export default function LiveWorkoutMode({
       </div>
       {setError ? <p className="error live-workout-inline-error">{setError}</p> : null}
 
+      <div className="live-workout-progress-grid live-workout-progress-grid-compact">
+        <div className="live-workout-progress-card">
+          <span>Completed sets</span>
+          <strong>{activeExercise.sets?.filter(set => set.completed).length || 0}</strong>
+          <small>{activeExercise.planned_sets || totalSetCount} planned today</small>
+        </div>
+        <div className="live-workout-progress-card">
+          <span>Exercise</span>
+          <strong>{activeExerciseIdx + 1} / {totalExerciseCount}</strong>
+          <small>{currentSet?.completed ? 'Move on or edit below' : 'Log this set and keep moving'}</small>
+        </div>
+      </div>
+
       <div className="live-workout-nav-grid">
-        <button type="button" className="btn-outline live-workout-nav-next-set" onClick={() => moveSet(1)} disabled={currentSetIdx >= totalSetCount - 1}>Next set</button>
-        <button type="button" className="btn-outline live-workout-nav-previous-set" onClick={() => moveSet(-1)} disabled={currentSetIdx <= 0}>Previous set</button>
         <button type="button" className="btn-secondary live-workout-nav-next-exercise" onClick={() => moveExercise(1)} disabled={activeExerciseIdx >= totalExerciseCount - 1}>Next exercise</button>
         <button type="button" className="btn-secondary live-workout-nav-previous-exercise" onClick={() => moveExercise(-1)} disabled={activeExerciseIdx <= 0}>Previous exercise</button>
       </div>

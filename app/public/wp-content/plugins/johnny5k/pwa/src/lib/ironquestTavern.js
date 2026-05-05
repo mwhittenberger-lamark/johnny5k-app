@@ -47,3 +47,70 @@ export function getTavernJohnnyLine(source) {
   const resolution = getTavernResolution(source)
   return String(resolution?.johnny_line || '').trim()
 }
+
+function humanizeTavernAction(actionId) {
+  return String(actionId || '')
+    .replace(/[_-]+/g, ' ')
+    .replace(/\b\w/g, (character) => character.toUpperCase())
+    .trim() || 'Tavern action'
+}
+
+export function getTavernConsequenceEntries(source) {
+  const resolution = getTavernResolution(source)
+  if (!resolution || typeof resolution !== 'object') {
+    return []
+  }
+
+  const effects = resolution?.effects && typeof resolution.effects === 'object'
+    ? resolution.effects
+    : {}
+  const actionLabel = humanizeTavernAction(resolution?.action_id)
+  const effectParts = []
+
+  if (Number(effects?.hp_delta)) {
+    effectParts.push(`+${Number(effects.hp_delta)} HP`)
+  }
+
+  if (Number(effects?.gold_delta)) {
+    effectParts.push(`+${Number(effects.gold_delta)} gold`)
+  }
+
+  if (Number(effects?.xp_delta)) {
+    effectParts.push(`+${Number(effects.xp_delta)} XP`)
+  }
+
+  const entries = []
+
+  if (effectParts.length) {
+    entries.push({
+      id: `tavern_resolution_${String(resolution?.action_id || 'resolved').trim()}`,
+      label: `${actionLabel} payout`,
+      effect_summary: effectParts.join(' • '),
+      applies_to_label: 'Resolved immediately',
+      consumes_on_label: 'Already applied today',
+    })
+  }
+
+  const missionPreview = getTavernMissionPreview(source)
+  if (missionPreview) {
+    entries.push({
+      id: `tavern_preview_${String(missionPreview?.slug || 'lead').trim()}`,
+      label: 'Rumor lead',
+      effect_summary: `${missionPreview?.name || 'Next mission'} is highlighted on the mission board.`,
+      applies_to_label: 'Mission board guidance',
+      consumes_on_label: 'Visible until daily reset',
+    })
+  }
+
+  if (!entries.length) {
+    entries.push({
+      id: `tavern_resolution_${String(resolution?.action_id || 'resolved').trim()}`,
+      label: actionLabel,
+      effect_summary: 'This tavern outcome is locked in for today.',
+      applies_to_label: 'Resolved today',
+      consumes_on_label: 'Clears on the next daily reset',
+    })
+  }
+
+  return entries
+}

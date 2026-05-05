@@ -16,6 +16,26 @@ function formatPhotoDate(value) {
   return formatUsShortDate(value, value)
 }
 
+function normalizeComparisonPayload(result) {
+  const rawComparison = result?.data?.comparison ?? null
+
+  if (rawComparison && typeof rawComparison === 'object') {
+    return {
+      summary: String(rawComparison.comparison ?? '').trim(),
+      visibleChanges: Array.isArray(rawComparison.visible_changes)
+        ? rawComparison.visible_changes.filter(Boolean).map((item) => String(item))
+        : [],
+      confidence: String(rawComparison.confidence ?? '').trim(),
+    }
+  }
+
+  return {
+    summary: typeof rawComparison === 'string' ? rawComparison.trim() : '',
+    visibleChanges: [],
+    confidence: '',
+  }
+}
+
 export default function ProgressPhotosScreen() {
   const [photos, setPhotos] = useState([])
   const [baselines, setBaselines] = useState({})
@@ -140,7 +160,7 @@ export default function ProgressPhotosScreen() {
 
   const uploadButtonLabel = uploading ? 'Uploading…' : `Upload ${titleCase(angle)} Photo`
 
-  const activeComparison = comparisonResult?.data?.comparison ?? null
+  const activeComparison = useMemo(() => normalizeComparisonPayload(comparisonResult), [comparisonResult])
 
   useEffect(() => {
     if (!timelineDateGroups.length) {
@@ -373,7 +393,7 @@ export default function ProgressPhotosScreen() {
         </section>
       ) : null}
 
-      {comparisonResult && activeComparison ? (
+      {comparisonResult && activeComparison.summary ? (
         <section className="dash-card progress-comparison-card">
           <div className="dashboard-card-head">
             <span className="dashboard-chip ai">AI comparison</span>
@@ -399,10 +419,10 @@ export default function ProgressPhotosScreen() {
             </figure>
           </div>
 
-          <p>{activeComparison.comparison}</p>
-          {activeComparison.visible_changes?.length ? (
+          <p>{activeComparison.summary}</p>
+          {activeComparison.visibleChanges.length ? (
             <ul className="progress-howto-list">
-              {activeComparison.visible_changes.map((item) => (
+              {activeComparison.visibleChanges.map((item) => (
                 <li key={item}>{item}</li>
               ))}
             </ul>

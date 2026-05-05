@@ -40,7 +40,7 @@ The Character Sheet should do five things:
 
 Show:
 
-- starter portrait
+- starter portrait with current-form portrait override when available
 - displayed title
 - class
 - motivation
@@ -48,6 +48,7 @@ Show:
 - XP progress
 - HP
 - gold
+- current-form summary or derived visual gear line
 
 ### 2. Campaign Status
 
@@ -61,13 +62,20 @@ Show:
 
 ### 3. Active Effects
 
-Show currently active bonuses and temporary modifiers.
+Show currently active bonuses and temporary modifiers as a consequence ledger.
 
 Examples:
 
 - rumor lead active
 - store charm active for next mission
-- relic passive affecting travel
+- prep queued for the next mission
+- mission in progress
+
+Each active effect should answer:
+
+- what is active
+- where it applies
+- when it expires
 
 ### 4. Inventory Summary
 
@@ -88,6 +96,16 @@ Recommended items:
 - last region unlocked
 - last boss reward
 - recent title earned
+- recent portrait forged
+
+### 6. Collections
+
+Show compact ownership collections for:
+
+- titles
+- relics
+- portraits
+- journal entries
 
 ## Entry Points
 
@@ -119,7 +137,18 @@ The sheet should be renderable from an expanded profile payload.
       "portrait_attachment_id": 88,
       "display_title": "Last One Standing",
       "class_slug": "mage",
-      "motivation_slug": "discipline"
+      "motivation_slug": "discipline",
+      "current_form": {
+        "label": "Current Form Portrait",
+        "generated_image_id": "current_form_42",
+        "stale": false,
+        "visual_loadout": {
+          "level_band_label": "Seasoned Adventurer",
+          "title": "Last One Standing",
+          "active_charm": "Coin Charm",
+          "summary_line": "Seasoned Adventurer • Mage • Training Grounds Kit • Title: Last One Standing • Charm: Coin Charm"
+        }
+      }
     },
     "progression": {
       "level": 7,
@@ -140,7 +169,9 @@ The sheet should be renderable from an expanded profile payload.
       {
         "id": "rumor_bonus",
         "label": "Rumor lead",
-        "effect_summary": "Mission preview improved for the next run"
+        "effect_summary": "Mission preview improved for the next run",
+        "applies_to_label": "Mission board guidance",
+        "consumes_on_label": "Visible until daily reset"
       }
     ],
     "inventory_summary": {
@@ -148,6 +179,12 @@ The sheet should be renderable from an expanded profile payload.
       "relic_count": 4,
       "consumable_count": 2,
       "equipped_title": "Last One Standing"
+    },
+    "collections": {
+      "titles": [],
+      "relics": [],
+      "portraits": [],
+      "journal": []
     },
     "recent_history": [
       {
@@ -180,10 +217,10 @@ Keep the action area small.
 
 Recommended buttons:
 
-- `Mission Board`
+- `Start Mission`
 - `Enter Tavern`
 - `General Store`
-- `View Inventory`
+- `Forge Current Form`
 
 ## Johnny Layer
 
@@ -214,6 +251,8 @@ Inventory detail lives here.
 
 The sheet is the place where owned items become understandable.
 
+This replaces a standalone inventory-and-gear route for Phase 2.
+
 ### General Store
 
 The store should link back to the sheet after purchase so players can see the impact.
@@ -230,3 +269,4 @@ The Character Sheet is successful if:
 - IronQuest progression has a clear permanent home
 - inventory and store systems have somewhere natural to connect
 - the hub becomes less cluttered because long-term detail moved here
+- temporary modifiers are understandable without the player remembering hidden rules

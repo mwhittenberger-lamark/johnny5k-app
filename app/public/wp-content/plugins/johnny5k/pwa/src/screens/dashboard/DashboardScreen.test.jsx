@@ -178,7 +178,7 @@ describe('DashboardScreen', () => {
 
     const text = [review.title, review.message, review.nextStep, review.encouragement, review.starterPrompt].join(' ')
 
-    expect(text).not.toMatch(/reviewed your board|signal|traction|clear next move|recover on purpose|keep logging clean/i)
+    expect(text).not.toMatch(/reviewed your board|signal|traction|clear next move|recover on purpose|keep logging clean|not noisier|chasing novelty|heroic|heroics/i)
     expect(review.message).not.toMatch(/^Johnny sees/i)
     expect(review.nextStep).toMatch(/start|open|handle|do|get|log|keep/i)
   })
