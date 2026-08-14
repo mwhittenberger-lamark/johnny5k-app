@@ -1,4 +1,10 @@
 import { formatUsShortDate, formatUsWeekday } from '../../lib/dateFormat'
+
+export function isJohnnyLiveWorkoutLaunch(location) {
+  return location?.pathname === '/workout/live'
+    || location?.state?.openLiveWorkout === true
+    || new URLSearchParams(location?.search || '').get('live') === '1'
+}
 import { buildIronQuestWorkoutReveal } from '../../lib/ironquestFeedback'
 import { DEFAULT_CUSTOM_WORKOUT_DAY_TYPE } from '../../lib/trainingDayTypes'
 
@@ -316,11 +322,16 @@ export function normalizeExerciseCandidate(value) {
 
 export function formatPreviewSetRepLabel(exercise) {
   const sets = maxInt(1, Number(exercise?.sets || 1))
+  if (exercise?.target_type === 'duration') {
+    const seconds = maxInt(5, Number(exercise?.duration_seconds || exercise?.planned_duration_seconds || 0))
+    const durationLabel = seconds >= 60 && seconds % 60 === 0 ? `${seconds / 60} Min` : `${seconds} Sec`
+    return `${sets} ${sets === 1 ? 'Set' : 'Sets'} x ${durationLabel}`
+  }
   const repMin = maxInt(1, Number(exercise?.rep_min || 0))
   const repMax = maxInt(repMin, Number(exercise?.rep_max || repMin))
   const setLabel = `${sets} ${sets === 1 ? 'Set' : 'Sets'}`
   const repLabel = repMin === repMax ? `${repMin}` : `${repMin}-${repMax}`
-  return `${setLabel} x ${repLabel} Reps`
+  return `${setLabel} x ${repLabel} Reps${exercise?.reps_per_side ? ' Per Side' : ''}`
 }
 
 export function formatRemoveButtonLabel(exercise) {

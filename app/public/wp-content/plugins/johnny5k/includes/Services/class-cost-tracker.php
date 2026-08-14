@@ -20,6 +20,7 @@ class CostTracker {
 			'gpt-4.1-mini'        => [ 'in' => 0.0004, 'out' => 0.0016 ],
 			'gpt-4.1-nano'        => [ 'in' => 0.0001, 'out' => 0.0004 ],
 			'gpt-5.2'             => [ 'in' => 0.00175, 'out' => 0.014 ],
+			'gpt-5.6-sol'         => [ 'in' => 0.005, 'out' => 0.03 ],
 		];
 
 	// Current Gemini Developer API prices (USD) for text input/output tokens.

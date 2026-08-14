@@ -23,6 +23,7 @@ const dashboardState = vi.hoisted(() => ({
 
 const workoutState = vi.hoisted(() => ({
   session: null,
+  bootstrapSession: vi.fn(() => Promise.resolve()),
   reloadSession: vi.fn(() => Promise.resolve()),
   exitSession: vi.fn(() => Promise.resolve()),
 }))
@@ -109,6 +110,14 @@ async function click(element) {
   })
 }
 
+async function typeInTextarea(element, value) {
+  await act(async () => {
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set
+    setter?.call(element, value)
+    element.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+}
+
 async function pressKey(key) {
   await act(async () => {
     window.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key }))
@@ -137,6 +146,8 @@ describe('JohnnyAssistantDrawer', () => {
     johnnyState.consumeStarterPayload.mockReturnValue(null)
     dashboardState.invalidate.mockReset()
     dashboardState.loadSnapshot.mockReset()
+    workoutState.bootstrapSession.mockReset()
+    workoutState.bootstrapSession.mockResolvedValue()
     workoutState.reloadSession.mockReset()
     workoutState.exitSession.mockReset()
     aiApiMock.getThread.mockClear()
@@ -322,5 +333,29 @@ describe('JohnnyAssistantDrawer', () => {
       recipeCollectionFilter: 'cookbook',
       johnnyActionNotice: 'Johnny saved that recipe to My Cookbook.',
     })
+  })
+
+  it('refreshes the mounted workout screen after creating a custom workout', async () => {
+    aiApiMock.chat.mockResolvedValueOnce({
+      reply: 'Monday Circuit is ready.',
+      used_tools: ['create_custom_workout'],
+      action_results: [{ action: 'create_custom_workout', ok: true, name: 'Monday Circuit' }],
+      actions: [],
+    })
+
+    await renderComponent(
+      <MemoryRouter initialEntries={['/workout']}>
+        <JohnnyAssistantDrawer />
+      </MemoryRouter>,
+    )
+    await flushPendingWork()
+
+    const textarea = document.querySelector('textarea[aria-label="Message Johnny"]')
+    const sendButton = document.querySelector('button[aria-label="Send message to Johnny"]')
+    await typeInTextarea(textarea, 'Build Monday Circuit')
+    await click(sendButton)
+    await flushPendingWork()
+
+    expect(workoutState.bootstrapSession).toHaveBeenCalledTimes(1)
   })
 })

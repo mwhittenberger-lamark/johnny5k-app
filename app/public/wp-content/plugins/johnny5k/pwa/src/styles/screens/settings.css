@@ -1302,3 +1302,126 @@
 :root[data-experience-mode='ironquest'] .settings-trend-bar-fill {
   background: linear-gradient(180deg, var(--accent2), var(--accent));
 }
+
+/* Johnny profile dossier */
+:root:not([data-experience-mode='ironquest']) .johnny-profile-screen {
+  --profile-ink: #f4f2ea;
+  --profile-muted: #98a39c;
+  --profile-panel: #171e1a;
+  --profile-panel-2: #202923;
+  --profile-border: #354139;
+  --profile-signal: #e8cb4c;
+  max-width: 980px;
+  padding-bottom: 118px;
+  color: var(--profile-ink);
+}
+:root:not([data-experience-mode='ironquest']) .johnny-profile-screen::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: radial-gradient(circle at 78% 8%, rgba(232,203,76,.09), transparent 25%), linear-gradient(155deg,#111713,#090d0b 70%);
+}
+:root:not([data-experience-mode='ironquest']) .johnny-profile-header {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0,1fr) auto;
+  align-items: end;
+  gap: 22px;
+  margin-bottom: 18px;
+  padding: 22px;
+  border: 1px solid var(--profile-border);
+  border-radius: 25px;
+  overflow: hidden;
+  background: linear-gradient(145deg,rgba(31,40,35,.98),rgba(16,21,18,.98));
+  box-shadow: 0 24px 55px rgba(0,0,0,.3);
+}
+:root:not([data-experience-mode='ironquest']) .johnny-profile-header::after {
+  content: 'PROFILE / ACTIVE';
+  position: absolute;
+  right: -25px;
+  top: 48px;
+  color: rgba(232,203,76,.055);
+  font: 800 38px 'Oswald',sans-serif;
+  letter-spacing: 3px;
+  transform: rotate(-90deg);
+  pointer-events: none;
+}
+:root:not([data-experience-mode='ironquest']) .johnny-profile-header .support-icon-button { z-index: 2; }
+:root:not([data-experience-mode='ironquest']) .johnny-profile-header-main { display:flex;align-items:center;gap:16px;min-width:0; }
+:root:not([data-experience-mode='ironquest']) .johnny-profile-monogram {
+  display:grid;place-items:center;flex:0 0 66px;height:66px;border:1px solid #5e5b40;border-radius:18px;
+  background:linear-gradient(145deg,#302f22,#171b16);color:var(--profile-signal);font:800 25px 'Oswald',sans-serif;box-shadow:inset 0 0 0 4px rgba(232,203,76,.04);
+}
+:root:not([data-experience-mode='ironquest']) .johnny-profile-header-copy { min-width:0; }
+:root:not([data-experience-mode='ironquest']) .johnny-profile-header-copy>span { color:var(--profile-signal);font:600 10px 'JetBrains Mono',monospace;letter-spacing:1.4px;text-transform:uppercase; }
+:root:not([data-experience-mode='ironquest']) .johnny-profile-header h1 { margin:3px 0 4px;color:var(--profile-ink);font:700 clamp(1.65rem,4vw,2.25rem) 'Oswald',sans-serif; }
+:root:not([data-experience-mode='ironquest']) .johnny-profile-header-copy p { max-width:510px;margin:0;color:var(--profile-muted);font-size:.82rem;line-height:1.5; }
+:root:not([data-experience-mode='ironquest']) .johnny-profile-status { display:grid;gap:5px;min-width:185px;padding:12px 14px;border-left:1px solid var(--profile-border); }
+:root:not([data-experience-mode='ironquest']) .johnny-profile-status span { color:var(--profile-muted);font:600 9px 'JetBrains Mono',monospace;letter-spacing:.8px;text-transform:uppercase; }
+:root:not([data-experience-mode='ironquest']) .johnny-profile-status i { display:inline-block;width:7px;height:7px;margin-right:6px;border-radius:50%;background:#82aa86;box-shadow:0 0 0 4px rgba(130,170,134,.1); }
+:root:not([data-experience-mode='ironquest']) .johnny-profile-status strong { color:var(--profile-ink);font:700 15px 'Oswald',sans-serif; }
+:root:not([data-experience-mode='ironquest']) .johnny-profile-screen .settings-accordion-stack { gap:10px; }
+:root:not([data-experience-mode='ironquest']) .johnny-profile-screen .settings-accordion-group {
+  border:1px solid var(--profile-border);border-radius:18px;background:linear-gradient(155deg,rgba(27,35,30,.98),rgba(15,20,17,.98));box-shadow:none;
+}
+:root:not([data-experience-mode='ironquest']) .johnny-profile-screen .settings-accordion-group.open { border-color:#55573f;box-shadow:0 15px 34px rgba(0,0,0,.2); }
+:root:not([data-experience-mode='ironquest']) .johnny-profile-screen .settings-accordion-trigger { padding:15px 17px;align-items:center; }
+:root:not([data-experience-mode='ironquest']) .johnny-profile-screen .settings-accordion-eyebrow { color:var(--profile-signal);font:600 9px 'JetBrains Mono',monospace;letter-spacing:1.1px; }
+:root:not([data-experience-mode='ironquest']) .johnny-profile-screen .settings-accordion-trigger h2 { color:var(--profile-ink);font:700 1.16rem 'Oswald',sans-serif;letter-spacing:.1px; }
+:root:not([data-experience-mode='ironquest']) .johnny-profile-screen .settings-accordion-trigger p { color:var(--profile-muted);font-size:.78rem; }
+:root:not([data-experience-mode='ironquest']) .johnny-profile-screen .settings-accordion-count { min-height:25px;padding:0 9px;border:1px solid #414b44;background:#222b26;color:#b7c0ba;font:600 9px 'JetBrains Mono',monospace; }
+:root:not([data-experience-mode='ironquest']) .johnny-profile-screen .workout-accordion-icon-bar { background:var(--profile-signal); }
+:root:not([data-experience-mode='ironquest']) .johnny-profile-screen .settings-accordion-panel { padding:0 12px 12px; }
+:root:not([data-experience-mode='ironquest']) .johnny-profile-screen .settings-accordion-panel-inner { gap:10px; }
+:root:not([data-experience-mode='ironquest']) .johnny-profile-screen .dash-card,
+:root:not([data-experience-mode='ironquest']) .johnny-profile-screen .settings-section,
+:root:not([data-experience-mode='ironquest']) .johnny-profile-screen .target-preview-card {
+  border:1px solid #303a33;border-radius:15px;background:linear-gradient(145deg,rgba(31,40,35,.92),rgba(18,24,21,.94));color:var(--profile-ink);box-shadow:none;
+}
+:root:not([data-experience-mode='ironquest']) .johnny-profile-screen h2,
+:root:not([data-experience-mode='ironquest']) .johnny-profile-screen h3 { color:var(--profile-ink);font-family:'Oswald',sans-serif; }
+:root:not([data-experience-mode='ironquest']) .johnny-profile-screen .settings-subtitle,
+:root:not([data-experience-mode='ironquest']) .johnny-profile-screen .settings-field-hint,
+:root:not([data-experience-mode='ironquest']) .johnny-profile-screen .settings-checkin-meta { color:var(--profile-muted); }
+:root:not([data-experience-mode='ironquest']) .johnny-profile-screen .settings-identity-main { gap:12px; }
+:root:not([data-experience-mode='ironquest']) .johnny-profile-screen .settings-identity-copy p,
+:root:not([data-experience-mode='ironquest']) .johnny-profile-screen .settings-prediction-summary { color:#b6beb8; }
+:root:not([data-experience-mode='ironquest']) .johnny-profile-screen .settings-identity-stat,
+:root:not([data-experience-mode='ironquest']) .johnny-profile-screen .settings-prediction-stat,
+:root:not([data-experience-mode='ironquest']) .johnny-profile-screen .settings-inline-panel,
+:root:not([data-experience-mode='ironquest']) .johnny-profile-screen .settings-checkin-answer { border-color:#364139;background:#131916; }
+:root:not([data-experience-mode='ironquest']) .johnny-profile-screen .settings-identity-stat span,
+:root:not([data-experience-mode='ironquest']) .johnny-profile-screen .settings-prediction-stat span { color:#87928b;font:600 9px 'JetBrains Mono',monospace; }
+:root:not([data-experience-mode='ironquest']) .johnny-profile-screen .settings-identity-stat strong,
+:root:not([data-experience-mode='ironquest']) .johnny-profile-screen .settings-prediction-stat strong { color:var(--profile-ink);font-family:'Oswald',sans-serif; }
+:root:not([data-experience-mode='ironquest']) .johnny-profile-screen .settings-trend-card { border-color:#41483c;background:linear-gradient(180deg,#111713,#1d261f); }
+:root:not([data-experience-mode='ironquest']) .johnny-profile-screen .settings-trend-bar-fill { background:linear-gradient(180deg,#f0da6f,#9f8b31); }
+:root:not([data-experience-mode='ironquest']) .johnny-profile-screen .settings-trend-bar-track { background:#29312c; }
+:root:not([data-experience-mode='ironquest']) .johnny-profile-screen .settings-field-label,
+:root:not([data-experience-mode='ironquest']) .johnny-profile-screen .ui-field-label { color:#d7dcd6; }
+:root:not([data-experience-mode='ironquest']) .johnny-profile-screen input:not([type='checkbox']):not([type='range']),
+:root:not([data-experience-mode='ironquest']) .johnny-profile-screen select,
+:root:not([data-experience-mode='ironquest']) .johnny-profile-screen textarea { border-color:#3a453e;background:#101613;color:var(--profile-ink); }
+:root:not([data-experience-mode='ironquest']) .johnny-profile-screen input:focus,
+:root:not([data-experience-mode='ironquest']) .johnny-profile-screen select:focus,
+:root:not([data-experience-mode='ironquest']) .johnny-profile-screen textarea:focus { border-color:var(--profile-signal);box-shadow:0 0 0 2px rgba(232,203,76,.12); }
+:root:not([data-experience-mode='ironquest']) .johnny-profile-screen .btn-primary,
+:root:not([data-experience-mode='ironquest']) .johnny-profile-screen .btn-secondary { border-color:#e9d05c;background:linear-gradient(180deg,#f0da6f,#e8cb4c);color:#151917; }
+:root:not([data-experience-mode='ironquest']) .johnny-profile-screen .btn-outline { border-color:#465149;background:#202823;color:#d9ded8; }
+:root:not([data-experience-mode='ironquest']) .johnny-profile-screen .dashboard-chip { border-color:#57583e;background:rgba(232,203,76,.09);color:var(--profile-signal); }
+:root:not([data-experience-mode='ironquest']) .johnny-profile-screen .switch-track { background:#303a34; }
+:root:not([data-experience-mode='ironquest']) .johnny-profile-screen .switch-input:checked + .switch-track { background:#b9a33f; }
+:root:not([data-experience-mode='ironquest']) .johnny-profile-screen>.settings-onboarding-section { margin-top:10px; }
+:root:not([data-experience-mode='ironquest']) .johnny-profile-screen>.settings-actions-stack { position:sticky;bottom:12px;z-index:8;margin-top:14px;padding:10px;border:1px solid #41493f;border-radius:16px;background:rgba(15,20,17,.92);box-shadow:0 16px 40px rgba(0,0,0,.42);backdrop-filter:blur(12px); }
+:root:not([data-experience-mode='ironquest']) .johnny-profile-screen .settings-action-note { color:#89948d; }
+@media(max-width:720px){
+  :root:not([data-experience-mode='ironquest']) .johnny-profile-header{grid-template-columns:1fr;align-items:start;padding:17px;}
+  :root:not([data-experience-mode='ironquest']) .johnny-profile-status{min-width:0;padding:10px 0 0;border-left:0;border-top:1px solid var(--profile-border);}
+  :root:not([data-experience-mode='ironquest']) .johnny-profile-monogram{flex-basis:54px;height:54px;border-radius:15px;font-size:21px;}
+  :root:not([data-experience-mode='ironquest']) .johnny-profile-header::after{display:none;}
+  :root:not([data-experience-mode='ironquest']) .johnny-profile-screen .settings-accordion-trigger{grid-template-columns:minmax(0,1fr) auto;gap:8px;}
+  :root:not([data-experience-mode='ironquest']) .johnny-profile-screen .settings-accordion-description{grid-column:1/-1;}
+  :root:not([data-experience-mode='ironquest']) .johnny-profile-screen .settings-accordion-meta{justify-self:auto;}
+}

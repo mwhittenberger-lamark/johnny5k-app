@@ -1,16 +1,30 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_CUSTOM_WORKOUT_DAY_TYPE } from '../../lib/trainingDayTypes'
 import {
+  isJohnnyLiveWorkoutLaunch,
   applyRepAdjustmentsToPreviewExercises,
   buildSwitchItUpPlan,
   buildEffectiveRepAdjustments,
   buildWorkoutCompletionReview,
   createSeededRandom,
   getPausedTimerNowValue,
+  formatPreviewSetRepLabel,
   normalizeCustomWorkoutDayType,
   shuffleItems,
   syncPreviewExerciseOrder,
 } from './workoutScreenUtils'
+
+describe('isJohnnyLiveWorkoutLaunch', () => {
+  it('recognizes the dedicated live-workout route', () => {
+    expect(isJohnnyLiveWorkoutLaunch({ pathname: '/workout/live', search: '', state: null })).toBe(true)
+  })
+
+  it('keeps Johnny live-workout intent through a URL handoff', () => {
+    expect(isJohnnyLiveWorkoutLaunch({ search: '?live=1', state: null })).toBe(true)
+    expect(isJohnnyLiveWorkoutLaunch({ search: '', state: { openLiveWorkout: true } })).toBe(true)
+    expect(isJohnnyLiveWorkoutLaunch({ search: '', state: null })).toBe(false)
+  })
+})
 
 describe('workoutScreenUtils', () => {
   it('preserves draft order and appends missing ids during preview sync', () => {
@@ -69,5 +83,11 @@ describe('workoutScreenUtils', () => {
   it('freezes timer math while the timer is paused', () => {
     expect(getPausedTimerNowValue(20_000, 18_500, 2_000)).toBe(16_500)
     expect(getPausedTimerNowValue(20_000, null, 2_000)).toBe(18_000)
+  })
+
+  it('formats rep, per-side, and timed workout prescriptions', () => {
+    expect(formatPreviewSetRepLabel({ sets: 3, rep_min: 8, rep_max: 10 })).toBe('3 Sets x 8-10 Reps')
+    expect(formatPreviewSetRepLabel({ sets: 3, rep_min: 20, rep_max: 20, reps_per_side: true })).toBe('3 Sets x 20 Reps Per Side')
+    expect(formatPreviewSetRepLabel({ sets: 3, target_type: 'duration', duration_seconds: 60 })).toBe('3 Sets x 1 Min')
   })
 })

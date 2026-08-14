@@ -1,0 +1,213 @@
+/* Final Johnny surface pass. Kept separate so legacy component declarations cannot win the cascade. */
+.johnny-prototype-stage {
+  background: radial-gradient(circle at 50% 0%, #141D26 0%, #060A0F 70%);
+}
+.johnny-prototype-phone {
+  border-color: var(--track);
+  box-shadow: 0 40px 80px -20px rgba(0, 0, 0, 0.7), 0 0 0 8px rgba(5, 8, 12, 0.31), inset 0 1px 0 rgba(200, 225, 245, 0.07);
+}
+.johnny-prototype-phone .ambient-bg::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: repeating-linear-gradient(90deg, rgba(190, 220, 240, 0.05) 0 1px, transparent 1px 38px);
+  opacity: 0.5;
+}
+.johnny-prototype-phone .ambient-glow { opacity: 0.32; }
+.johnny-prototype-phone .glow-2 { opacity: 0.16; }
+.johnny-prototype-phone .ambient-bg svg { bottom: 120px; opacity: 0.14; }
+.johnny-prototype-phone .bubble { border-radius: var(--radius); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(210, 230, 245, 0.08); }
+.johnny-prototype-phone .bubble.ai { color: var(--chalk); }
+.johnny-prototype-phone .workout-card { border-radius: var(--radius-md); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(210, 230, 245, 0.09); }
+.johnny-prototype-phone .johnny-daily-brief,
+.johnny-prototype-phone .johnny-daily-trend,
+.johnny-prototype-phone .johnny-nutrition-water {
+  border-color: var(--glass-border);
+  background: linear-gradient(145deg, var(--glass-strong), rgba(10, 14, 20, 0.96));
+  backdrop-filter: var(--glass-filter);
+  -webkit-backdrop-filter: var(--glass-filter);
+  box-shadow: var(--glass-shadow);
+}
+
+.johnny-prototype-phone .wc-row,
+.johnny-prototype-phone .wc-arrow,
+.johnny-prototype-phone .nav-arrow,
+.johnny-prototype-phone .johnny-bar-row > i,
+.johnny-prototype-phone .activate-btn.secondary-cta,
+.johnny-prototype-phone .johnny-nutrition-steps {
+  border-color: var(--border);
+  background: var(--surface-2);
+}
+.johnny-prototype-phone .wc-row { border-radius: var(--radius-sm); background: rgba(16, 22, 29, 0.5); border-color: var(--surface-alt); }
+
+.johnny-prototype-phone .nav-dot { background: var(--border); }
+.johnny-prototype-phone .johnny-clear-chat { border-color: var(--glass-border); background: rgba(10, 14, 20, 0.52); }
+.johnny-prototype-phone .johnny-clear-chat:hover { border-color: var(--glass-user-border); }
+.johnny-prototype-phone .brand-status.busy { color: var(--text-soft); }
+.johnny-prototype-phone .johnny-daily-brief { border-color: var(--glass-user-border); box-shadow: var(--glass-shadow), inset 3px 0 rgba(232, 184, 74, 0.7); }
+.johnny-prototype-phone .johnny-daily-brief > header,
+.johnny-prototype-phone .johnny-daily-brief-grid > div { border-color: var(--glass-border); }
+.johnny-prototype-phone .johnny-daily-brief > footer p,
+.johnny-prototype-phone .bubble em { color: var(--text-soft); }
+.johnny-prototype-phone .johnny-daily-brief > footer button { border-color: var(--border); background: var(--surface-2); }
+.johnny-prototype-phone .johnny-daily-brief > footer button.primary { border-color: rgba(232, 184, 74, 0.5); background: var(--whistle); color: var(--ink); }
+.johnny-prototype-phone .workout-card.planning { border-color: var(--glass-user-border); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3), inset 3px 0 var(--whistle), inset 0 1px rgba(210, 230, 245, 0.09); }
+.johnny-prototype-phone .wc-planning-note { border-color: var(--glass-user-border); background: var(--glass-user); color: var(--text-soft); }
+.johnny-prototype-phone .wc-demo { border-color: var(--glass-user-border); background: var(--glass-user); }
+.johnny-prototype-phone .wc-demo:hover { border-color: var(--whistle); background: rgba(232, 184, 74, 0.2); }
+.johnny-prototype-phone .activate-btn { border-color: var(--chalk); background: linear-gradient(180deg, #F0CD7A, var(--whistle)); color: var(--ink); }
+.johnny-prototype-phone .activate-btn.secondary-cta { border-color: var(--chalk); background: linear-gradient(180deg, var(--surface-alt), var(--surface-2)); }
+.johnny-prototype-phone .nav-arrow,
+.johnny-prototype-phone .nav-arrow:active { border-color: var(--chalk); background: rgba(16, 22, 29, 0.5); color: var(--chalk); }
+.johnny-prototype-phone .johnny-decision-rail button,
+.johnny-prototype-phone .johnny-decision-rail button.primary { border-color: var(--chalk); }
+.johnny-prototype-phone .johnny-visual-card { border-radius: var(--radius-md); box-shadow: var(--glass-shadow); }
+.johnny-prototype-phone .johnny-chart-grid,
+.johnny-prototype-phone .johnny-daily-trend-grid { stroke: var(--border); }
+.johnny-prototype-phone .johnny-daily-trend circle { fill: var(--deep); stroke: var(--whistle); }
+.johnny-prototype-phone .johnny-bar-row > i { background: var(--surface-3); }
+.johnny-prototype-phone .johnny-progress-ring { background: radial-gradient(circle closest-side, var(--field-2) 78%, transparent 79% 100%), conic-gradient(var(--whistle) var(--progress), var(--track) 0); }
+
+.johnny-prototype-phone .johnny-cardio-grid input,
+.johnny-prototype-phone .johnny-cardio-grid select,
+.johnny-prototype-phone .johnny-daily-log-fields input,
+.johnny-prototype-phone .johnny-daily-log-fields select,
+.johnny-prototype-phone .johnny-daily-log-photo > select,
+.johnny-prototype-phone .johnny-nutrition-steps input,
+.johnny-prototype-phone .johnny-nutrition-drink-search input,
+.johnny-prototype-phone .johnny-nutrition-drink-selection select {
+  border-color: var(--border);
+  background: var(--deep);
+  color: var(--chalk);
+}
+
+.ui-overlay.johnny-exercise-video-overlay .ui-overlay-backdrop,
+.ui-overlay.johnny-daily-log-shell .ui-overlay-backdrop,
+.ui-overlay.johnny-profile-modal-shell .ui-overlay-backdrop { background: rgba(5, 8, 12, 0.78); }
+
+.ui-dialog.johnny-exercise-video-dialog,
+.ui-dialog.johnny-daily-log-modal,
+.ui-dialog.johnny-nutrition-log-modal,
+.ui-dialog.johnny-profile-modal {
+  border-color: var(--border);
+  background: linear-gradient(160deg, var(--field-2), var(--deep));
+  color: var(--chalk);
+  backdrop-filter: var(--glass-filter);
+  -webkit-backdrop-filter: var(--glass-filter);
+  box-shadow: var(--glass-shadow);
+}
+
+.johnny-exercise-video-dialog header,
+.johnny-profile-modal-bar { border-color: var(--border); background: rgba(17, 25, 34, 0.96); }
+.johnny-exercise-video-frame { background: var(--deep); }
+.johnny-exercise-video-preview {
+  background:
+    radial-gradient(circle at 50% 35%, rgba(232, 184, 74, 0.15), transparent 34%),
+    linear-gradient(145deg, var(--surface-2), var(--deep));
+}
+.johnny-daily-log-photo,
+.johnny-nutrition-food-placeholder,
+.johnny-nutrition-drink-selection { border-color: var(--border); background: rgba(17, 25, 34, 0.72); }
+.johnny-profile-modal-scroll { background: var(--field); }
+.johnny-daily-log-head h2,
+.johnny-nutrition-food-placeholder h3,
+.johnny-nutrition-water h3,
+.johnny-nutrition-water > header strong,
+.johnny-daily-trend > header strong { color: var(--chalk); }
+.johnny-daily-log-head p,
+.johnny-daily-log-photo small,
+.johnny-nutrition-food-placeholder p,
+.johnny-nutrition-water > p,
+.johnny-nutrition-drink-results span,
+.johnny-nutrition-drink-selection span,
+.johnny-nutrition-drink-heading span,
+.johnny-daily-trend > footer { color: var(--mist); }
+.johnny-daily-log-head > button,
+.johnny-daily-log-later,
+.johnny-nutrition-done,
+.johnny-profile-modal-bar > button,
+.johnny-generated-image-error button { border-color: var(--border); background: var(--surface-2); color: var(--text-soft); }
+.johnny-daily-log-photo > label { border-color: var(--border); color: var(--text-soft); }
+.johnny-daily-log-photo > label.selected { border-color: var(--good); color: var(--chalk); }
+.johnny-daily-log-error { background: color-mix(in srgb, var(--rust) 12%, transparent); color: var(--rust); }
+.johnny-daily-log-success { background: color-mix(in srgb, var(--good) 12%, transparent); color: var(--good); }
+.johnny-daily-log-save,
+.johnny-nutrition-steps button { border-color: rgba(232, 184, 74, 0.5); background: linear-gradient(180deg, #F0CD7A, var(--whistle)); color: var(--ink); }
+.johnny-daily-trend > header span { color: var(--mist); }
+.johnny-daily-trend-line { stroke: var(--whistle); }
+.johnny-nutrition-food-placeholder .johnny-nutrition-coming-soon { border-color: var(--border); background: var(--surface-2); color: var(--mist); }
+.johnny-nutrition-water-bar button { border-color: var(--border); background: var(--surface-2); }
+.johnny-nutrition-water-bar button span { background: color-mix(in srgb, var(--signal) 40%, var(--track)); }
+.johnny-nutrition-water-bar button.filled span { background: linear-gradient(180deg, color-mix(in srgb, var(--signal) 76%, white), var(--signal)); }
+.johnny-nutrition-done { width: 100%; }
+.johnny-nutrition-drink-finder { border-color: var(--border); }
+.johnny-nutrition-drink-search button,
+.johnny-nutrition-drink-selection button { border-color: var(--border); background: var(--surface-alt); color: var(--whistle); }
+.johnny-nutrition-drink-results > button { border-color: var(--border); background: var(--surface-2); color: var(--chalk); }
+.johnny-nutrition-drink-results > button:hover { border-color: var(--mist); }
+.johnny-nutrition-drink-selection { border-color: var(--glass-user-border); background: var(--glass-user); }
+.johnny-nutrition-drink-selection button { border-color: var(--whistle); background: var(--whistle); color: var(--ink); }
+.johnny-profile-modal-bar > button span,
+.johnny-profile-modal-bar > span { color: var(--whistle); }
+.johnny-profile-modal-loading,
+.johnny-exercise-demo-state,
+.johnny-exercise-video-dialog .ui-dialog-body > p,
+.johnny-exercise-video-preview small { color: var(--mist); }
+.johnny-exercise-demo-state a { border-color: var(--glass-user-border); color: var(--whistle); }
+.johnny-exercise-video-preview { color: var(--chalk); }
+.johnny-exercise-video-preview::before { background: var(--whistle); color: var(--ink); }
+
+/* The live workout was still carrying the retired green palette. */
+.demo-live-shell { background: rgba(5, 8, 12, 0.88); color: var(--chalk); }
+.demo-live-panel {
+  border-color: var(--track);
+  background: linear-gradient(180deg, var(--field), var(--deep));
+  box-shadow: 0 35px 80px rgba(0, 0, 0, 0.72), inset 0 1px 0 rgba(200, 225, 245, 0.07);
+}
+.demo-live-header > strong,
+.demo-live-rail-label,
+.demo-live-watch,
+.demo-live-metric > span,
+.demo-live-logged > span,
+.demo-live-metric small,
+.demo-live-logged small,
+.demo-live-ring small,
+.demo-live-overlay > p { color: var(--mist); }
+.demo-live-header button,
+.demo-live-metric button,
+.demo-live-logged button,
+.demo-live-timer-actions button,
+.demo-live-demo header button {
+  border-color: var(--border);
+  background: var(--surface-2);
+  color: var(--chalk);
+}
+.demo-live-rail button::after { background: var(--track); }
+.demo-live-rail button.done::after { background: var(--good); }
+.demo-live-rail button.active::after { background: var(--whistle); box-shadow: 0 0 10px rgba(232, 184, 74, 0.3); }
+.demo-live-coach { border-color: var(--border); background: var(--surface); }
+.demo-live-coach > b { background: var(--whistle); color: var(--ink); }
+.demo-live-coach p { color: var(--text-soft); }
+.demo-live-stage > span { color: var(--rust); }
+.demo-live-stage > h1 { color: var(--chalk); }
+.demo-live-stage > em { background: var(--whistle); color: var(--ink); }
+.demo-live-metric,
+.demo-live-logged { border-radius: var(--radius); border-color: var(--border-soft); background: var(--field-2); }
+.demo-live-actions { border-color: var(--border-soft); background: linear-gradient(180deg, transparent, var(--deep) 40%); }
+.demo-live-actions button { border-color: var(--border); color: var(--mist); }
+.demo-live-actions .primary { border-color: var(--whistle); background: var(--whistle); color: var(--ink); }
+.demo-live-ring .bg { stroke: var(--surface-3); }
+.demo-live-ring .fg { stroke: var(--rust); }
+.demo-live-timer-actions .primary { border-color: var(--rust); background: var(--rust); color: var(--ink); }
+.demo-live-overlay { background: rgba(5, 8, 12, 0.95); }
+.demo-live-overlay > span { color: var(--good); }
+.demo-live-overlay > button,
+.demo-live-overlay.done > span { color: var(--whistle); }
+.demo-live-overlay.done .finish { background: var(--whistle); color: var(--ink); }
+.demo-live-confirm { background: rgba(5, 8, 12, 0.8); }
+.demo-live-confirm > div { border-color: var(--border); background: var(--field-2); }
+.demo-live-confirm button { border-color: var(--border); background: var(--surface-alt); color: var(--chalk); }
+.demo-live-confirm .danger { border-color: var(--rust); background: var(--rust); color: var(--ink); }
+.demo-live-demo { background: var(--deep); }
+.demo-live-demo iframe { background: var(--deep); }
+.demo-live-demo p { color: var(--text-soft); }

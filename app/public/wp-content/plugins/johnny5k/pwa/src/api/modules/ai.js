@@ -8,6 +8,8 @@ export const aiApi = {
     context: options.context ?? {},
     chat_options: options.chatOptions ?? {},
   }),
+	dailyBrief: () => api.post('/ai/daily-brief', {}),
+	exerciseDemo: (exercise) => api.post('/ai/exercise-demo', exercise),
   analyseMeal: (base64, mealNote = '') => api.post('/ai/analyse/meal', { image_base64: base64, meal_note: mealNote }),
   analyseLabel: ({ frontImageBase64, backImageBase64, labelNote = '' } = {}) => api.post('/ai/analyse/label', {
     front_image_base64: frontImageBase64,

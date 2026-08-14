@@ -43,7 +43,8 @@ registerRoute(
   ({ request, url }) => request.method === 'GET'
     && url.origin === self.location.origin
     && url.pathname.startsWith('/wp-json/fit/v1/')
-    && !url.pathname.startsWith('/wp-json/fit/v1/auth/'),
+    && !url.pathname.startsWith('/wp-json/fit/v1/auth/')
+    && !url.pathname.startsWith('/wp-json/fit/v1/onboarding/generated-images/'),
   // Authenticated app data needs fresh reads immediately after writes.
   new NetworkFirst({
     cacheName: 'jf-api-safe-reads-v2',

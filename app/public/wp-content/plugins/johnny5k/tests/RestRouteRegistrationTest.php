@@ -52,6 +52,7 @@ class RestRouteRegistrationTest extends ServiceTestCase {
 		Router::register_routes();
 
 		$this->assertRouteRegistered( '/auth/login', [ AuthController::class, 'login' ], '__return_true' );
+		$this->assertRouteRegistered( '/auth/dev-login', [ AuthController::class, 'dev_login' ], [ AuthController::class, 'dev_login_permission' ] );
 		$this->assertRouteRegistered( '/dashboard', [ \Johnny5k\REST\DashboardController::class, 'get_daily_snapshot' ] );
 		$this->assertRouteRegistered( '/dashboard/coaching-context', [ \Johnny5k\REST\DashboardController::class, 'get_coaching_context' ] );
 		$this->assertRouteRegistered( '/ai/chat', [ AiChatController::class, 'chat' ] );

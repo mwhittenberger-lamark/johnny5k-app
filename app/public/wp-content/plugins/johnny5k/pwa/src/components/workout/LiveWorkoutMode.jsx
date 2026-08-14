@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { aiApi } from '../../api/modules/ai'
 import { onboardingApi } from '../../api/modules/onboarding'
 import AppDialog from '../ui/AppDialog'
+import ToastPortal from '../ui/ToastPortal'
 import ExerciseDemoImageLightbox from './ExerciseDemoImageLightbox'
 import { getDefaultLiveWorkoutFrames } from '../../lib/appImages'
 import { getAccessibleScrollBehavior, useOverlayAccessibility } from '../../lib/accessibility'
@@ -119,6 +120,7 @@ export default function LiveWorkoutMode({
   const spokenMessageRef = useRef('')
   const isOpenRef = useRef(isOpen)
   const panelRef = useRef(null)
+  const performanceInputRef = useRef(null)
   const stickyMetaRef = useRef(null)
   const currentLiftRef = useRef(null)
   const johnnyCardRef = useRef(null)
@@ -137,13 +139,17 @@ export default function LiveWorkoutMode({
     ? ''
     : voicePrefs.instantVoiceURI
   const activeExercise = exercises?.[activeExerciseIdx] ?? null
+  const isTimedTarget = activeExercise?.target_type === 'duration'
   const activeExerciseDemoImageUrl = String(activeExercise?.demo_image_url || '').trim()
   const totalExerciseCount = Array.isArray(exercises) ? exercises.length : 0
   const totalSetCount = getLiveTotalSetCount(activeExercise)
-  const nextExercise = exercises?.[activeExerciseIdx + 1] ?? null
+  const isCircuitWorkout = session?.session?.workout_structure === 'circuit'
+  const activeCircuitRound = isCircuitWorkout ? Math.min(totalSetCount, (activeExercise?.sets?.filter(set => set.completed).length || 0) + 1) : 1
+  const nextExercise = exercises?.[activeExerciseIdx + 1]
+    ?? (isCircuitWorkout && activeCircuitRound < totalSetCount ? exercises?.[0] ?? null : null)
   const currentSet = activeExercise?.sets?.[currentSetIdx] ?? null
   const currentSetKey = activeExercise?.id ? `${activeExercise.id}:${currentSetIdx}` : 'idle'
-  const currentDraft = drafts[currentSetKey] ?? buildDraftFromSet(currentSet)
+  const currentDraft = drafts[currentSetKey] ?? buildDraftFromSet(currentSet, activeExercise)
   const effectiveRestNow = getPausedTimerNowValue(now, restTimerPausedAt, restTimerPausedMs)
   const workoutTimerLabel = timerLabel || ''
   const restElapsedSeconds = Math.max(0, Math.floor((effectiveRestNow - Number(lastTransition?.at || effectiveRestNow)) / 1000))
@@ -495,7 +501,7 @@ export default function LiveWorkoutMode({
 
     setDrafts(current => {
       if (currentSet) {
-        return { ...current, [currentSetKey]: buildDraftFromSet(currentSet) }
+        return { ...current, [currentSetKey]: buildDraftFromSet(currentSet, activeExercise) }
       }
 
       if (current[currentSetKey]) {
@@ -505,10 +511,10 @@ export default function LiveWorkoutMode({
       const previousSet = activeExercise?.sets?.[Math.max(0, currentSetIdx - 1)] ?? null
       return {
         ...current,
-        [currentSetKey]: previousSet ? buildDraftFromSet(previousSet) : buildDraftFromSet(null),
+        [currentSetKey]: previousSet ? buildDraftFromSet(previousSet, activeExercise) : buildDraftFromSet(null, activeExercise),
       }
     })
-  }, [activeExercise?.id, activeExercise?.sets, currentSet, currentSetIdx, currentSetKey, isOpen])
+  }, [activeExercise, currentSet, currentSetIdx, currentSetKey, isOpen])
 
   const enqueueCoachEvent = useCallback((event) => {
     queueRef.current = coalesceQueuedCoachEvents(queueRef.current, event)
@@ -741,7 +747,7 @@ export default function LiveWorkoutMode({
     setDrafts(current => ({
       ...current,
       [currentSetKey]: {
-        ...buildDraftFromSet(currentSet),
+        ...buildDraftFromSet(currentSet, activeExercise),
         ...(current[currentSetKey] ?? {}),
         [field]: value,
       },
@@ -866,9 +872,11 @@ export default function LiveWorkoutMode({
   async function handleSaveSet() {
     if (savingSet) return
 
-    const reps = parseInt(currentDraft.reps, 10) || 0
-    if (reps <= 0) {
-      setSetError('Enter reps before saving this set.')
+    const visiblePerformanceValue = performanceInputRef.current?.value
+    const reps = parseInt(isTimedTarget ? currentDraft.reps : (visiblePerformanceValue ?? currentDraft.reps), 10) || 0
+    const durationSeconds = parseInt(isTimedTarget ? (visiblePerformanceValue ?? currentDraft.duration_seconds) : currentDraft.duration_seconds, 10) || 0
+    if (isTimedTarget ? durationSeconds <= 0 : reps <= 0) {
+      setSetError(isTimedTarget ? 'Enter the completed duration before saving this set.' : 'Enter reps before saving this set.')
       return
     }
 
@@ -888,6 +896,7 @@ export default function LiveWorkoutMode({
     const payload = {
       weight: parseFloat(currentDraft.weight) || 0,
       reps,
+      duration_seconds: isTimedTarget ? durationSeconds : undefined,
       rir: currentDraft.rir !== '' ? parseFloat(currentDraft.rir) : currentSet?.rir ?? null,
       completed: true,
     }
@@ -1010,7 +1019,28 @@ export default function LiveWorkoutMode({
       }
     } catch (error) {
       setLastTransition(previousTransition)
-      setSetError(error?.message || 'Could not save that set right now.')
+      const message = error?.message || 'Could not save that set right now.'
+      setSetError(message)
+      showGlobalToast({
+        title: 'Set not saved',
+        message,
+        tone: 'error',
+        kind: 'live-workout-set-save-error',
+      })
+      reportClientDiagnostic({
+        source: 'live_workout_set_save',
+        message: 'A live workout set failed to save.',
+        error,
+        context: {
+          workout_session_id: workoutSessionId,
+          session_exercise_id: Number(activeExercise?.id || 0),
+          exercise_name: activeExercise?.exercise_name || '',
+          set_number: setNumber,
+          circuit_round: isCircuitWorkout ? activeCircuitRound : 0,
+          reps,
+          duration_seconds: durationSeconds,
+        },
+      })
     } finally {
       setSavingSet(false)
     }
@@ -1484,7 +1514,7 @@ export default function LiveWorkoutMode({
     <section ref={currentLiftRef} className="dash-card live-workout-exercise-card live-workout-interface-card">
       <div className="live-workout-section-head">
         <span className="dashboard-chip workout">Current lift</span>
-        <span className="dashboard-chip subtle">Exercise {activeExerciseIdx + 1} of {totalExerciseCount}</span>
+        <span className="dashboard-chip subtle">{isCircuitWorkout ? `Round ${activeCircuitRound} of ${totalSetCount} · Station` : 'Exercise'} {activeExerciseIdx + 1} of {totalExerciseCount}</span>
       </div>
       <div className="live-workout-exercise-head">
         <div>
@@ -1524,12 +1554,13 @@ export default function LiveWorkoutMode({
             />
           </label>
           <label>
-            <span>Reps</span>
+            <span>{isTimedTarget ? 'Seconds' : `Reps${activeExercise?.reps_per_side ? ' / side' : ''}`}</span>
             <input
+              ref={performanceInputRef}
               inputMode="numeric"
-              value={currentDraft.reps}
-              onChange={event => setDraftField('reps', event.target.value)}
-              placeholder="0"
+              value={isTimedTarget ? currentDraft.duration_seconds : currentDraft.reps}
+              onChange={event => setDraftField(isTimedTarget ? 'duration_seconds' : 'reps', event.target.value)}
+              placeholder={isTimedTarget ? String(activeExercise?.planned_duration_seconds || 0) : '0'}
             />
           </label>
         </div>
@@ -1841,10 +1872,12 @@ export default function LiveWorkoutMode({
         </section>
 
         {restToast ? (
-          <div className="live-workout-toast" role="status" aria-live="polite">
-            <strong>{restToast.title}</strong>
-            <p>{restToast.message}</p>
-          </div>
+          <ToastPortal>
+            <div className="live-workout-toast" role="status" aria-live="polite">
+              <strong>{restToast.title}</strong>
+              <p>{restToast.message}</p>
+            </div>
+          </ToastPortal>
         ) : null}
 
         {showIntroModal ? (
@@ -2031,10 +2064,11 @@ function buildLiveWorkoutContext({
   }
 }
 
-function buildDraftFromSet(set) {
+function buildDraftFromSet(set, exercise = null) {
   return {
     weight: set?.weight != null ? String(set.weight) : '',
     reps: set?.reps != null ? String(set.reps) : '',
+    duration_seconds: set?.duration_seconds != null ? String(set.duration_seconds) : (exercise?.target_type === 'duration' ? String(exercise?.planned_duration_seconds || '') : ''),
     rir: set?.rir != null ? String(set.rir) : '',
   }
 }

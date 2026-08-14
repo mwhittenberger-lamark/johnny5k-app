@@ -198,6 +198,7 @@ class ComposerStaticInitd8c9d6ad36a7cb08a90658324e8bb9aa
         'Johnny5k\\Services\\IronQuestStoryEngineService' => __DIR__ . '/../..' . '/includes/Services/class-ironquest-story-engine-service.php',
         'Johnny5k\\Services\\IronQuestWorldArtService' => __DIR__ . '/../..' . '/includes/Services/class-ironquest-world-art-service.php',
         'Johnny5k\\Services\\JobLogger' => __DIR__ . '/../..' . '/includes/Services/class-job-logger.php',
+        'Johnny5k\\Services\\JohnnyGeneratedImageService' => __DIR__ . '/../..' . '/includes/Services/class-johnny-generated-image-service.php',
         'Johnny5k\\Services\\NutritionSourceService' => __DIR__ . '/../..' . '/includes/Services/class-nutrition-source-service.php',
         'Johnny5k\\Services\\PrebuiltWorkoutLibraryService' => __DIR__ . '/../..' . '/includes/Services/class-prebuilt-workout-library-service.php',
         'Johnny5k\\Services\\PushService' => __DIR__ . '/../..' . '/includes/Services/class-push-service.php',

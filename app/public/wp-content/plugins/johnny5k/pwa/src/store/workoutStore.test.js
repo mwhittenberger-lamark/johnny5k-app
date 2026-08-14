@@ -76,6 +76,19 @@ beforeEach(() => {
 })
 
 describe('useWorkoutStore', () => {
+	 it('hydrates persistent workout approval with the current draft', async () => {
+		const store = await loadWorkoutStore()
+		workoutApiMock.current.mockResolvedValue({
+			session: null,
+			custom_workout_draft: { id: 'draft-1', name: 'Circuit', exercises: [] },
+			workout_approval: { date: '2026-08-07', workout_id: 'draft-1' },
+		})
+
+		await store.getState().bootstrapSession()
+
+		expect(store.getState().workoutApproval).toEqual({ date: '2026-08-07', workout_id: 'draft-1' })
+	})
+
   it('normalises preview exercise order input', async () => {
     const store = await loadWorkoutStore()
 

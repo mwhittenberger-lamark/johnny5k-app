@@ -138,6 +138,7 @@ class BodyMetricsController {
 		$date       = sanitize_text_field( $req->get_param( 'date' ) ?: UserTime::today( $user_id ) );
 		$waist_in   = $req->get_param( 'waist_in' )    ? (float) $req->get_param( 'waist_in' )    : null;
 		$body_fat   = $req->get_param( 'body_fat_pct' ) ? (float) $req->get_param( 'body_fat_pct' ) : null;
+		$resting_hr = $req->get_param( 'resting_hr' ) ? (int) $req->get_param( 'resting_hr' ) : null;
 		$notes      = sanitize_text_field( $req->get_param( 'notes' ) ?: '' );
 
 		if ( $weight_lb <= 0 ) {
@@ -151,6 +152,7 @@ class BodyMetricsController {
 			'weight_lb'    => $weight_lb,
 			'waist_in'     => $waist_in,
 			'body_fat_pct' => $body_fat,
+			'resting_hr'   => $resting_hr,
 			'notes'        => $notes ?: null,
 		], fn( $v ) => $v !== null ) );
 
@@ -186,9 +188,18 @@ class BodyMetricsController {
 		}
 
 		global $wpdb;
+		$values = [ 'weight_lb' => $weight_lb, 'metric_date' => $date ];
+		foreach ( [ 'waist_in', 'body_fat_pct', 'resting_hr' ] as $field ) {
+			if ( null !== $req->get_param( $field ) ) {
+				$values[ $field ] = 'resting_hr' === $field ? (int) $req->get_param( $field ) : (float) $req->get_param( $field );
+			}
+		}
+		if ( null !== $req->get_param( 'notes' ) ) {
+			$values['notes'] = sanitize_text_field( (string) $req->get_param( 'notes' ) ) ?: null;
+		}
 		$updated = $wpdb->update(
 			$wpdb->prefix . 'fit_body_metrics',
-			[ 'weight_lb' => $weight_lb, 'metric_date' => $date ],
+			$values,
 			[ 'id' => $id, 'user_id' => $user_id ]
 		);
 

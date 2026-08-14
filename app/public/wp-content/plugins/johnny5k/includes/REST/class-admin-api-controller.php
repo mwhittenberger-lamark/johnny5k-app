@@ -52,25 +52,25 @@ class AdminApiController {
 		return [
 			[
 				'id' => 'classic',
-				'label' => 'Classic Launch',
-				'description' => 'The current Johnny5k palette.',
+				'label' => 'Modern Skyscraper',
+				'description' => 'Steel-blue glass at dusk with amber window light, coral warnings, and mint success states.',
 				'colors' => [
-					'bg' => '#E6F3FD',
-					'bg2' => '#FFFFFF',
-					'bg3' => '#CCE6F8',
-					'text' => '#0F1F55',
-					'textMuted' => '#5878A0',
-					'text2' => '#0F1F55',
-					'textMuted2' => '#5878A0',
-					'text3' => '#0F1F55',
-					'textMuted3' => '#5878A0',
-					'border' => '#A8D4F0',
-					'accent' => '#FF5530',
-					'accent2' => '#00BCDE',
-					'accent3' => '#FF38A0',
-					'danger' => '#FF2E50',
-					'success' => '#22C47E',
-					'yellow' => '#FFD000',
+					'bg' => '#0A0E14',
+					'bg2' => '#111922',
+					'bg3' => '#16212B',
+					'text' => '#EAF1F6',
+					'textMuted' => '#7C8E9C',
+					'text2' => '#EAF1F6',
+					'textMuted2' => '#7C8E9C',
+					'text3' => '#EAF1F6',
+					'textMuted3' => '#7C8E9C',
+					'border' => '#253244',
+					'accent' => '#E8B84A',
+					'accent2' => '#4FC3E0',
+					'accent3' => '#4FC3E0',
+					'danger' => '#D9724A',
+					'success' => '#5FD9A0',
+					'yellow' => '#E8B84A',
 				],
 			],
 			[
@@ -2238,7 +2238,7 @@ class AdminApiController {
 	public static function get_settings( \WP_REST_Request $req ): \WP_REST_Response {
 		return new \WP_REST_Response( [
 			'ai_settings'   => get_option( 'jf_ai_settings', [
-				'default_model'                        => 'gpt-5.4-mini',
+				'default_model'                        => 'gpt-5.6-sol',
 				'web_search_enabled'                   => 1,
 				'tool_calls_enabled'                   => 1,
 				'progress_photo_compare_debug_enabled' => 0,
@@ -2264,7 +2264,7 @@ class AdminApiController {
 		$live_workout_frames = $req->get_param( 'live_workout_frames' );
 
 		update_option( 'jf_ai_settings', [
-			'default_model'                        => sanitize_text_field( (string) ( $ai_settings['default_model'] ?? 'gpt-5.4-mini' ) ),
+			'default_model'                        => sanitize_text_field( (string) ( $ai_settings['default_model'] ?? 'gpt-5.6-sol' ) ),
 			'web_search_enabled'                   => ! empty( $ai_settings['web_search_enabled'] ) ? 1 : 0,
 			'tool_calls_enabled'                   => ! empty( $ai_settings['tool_calls_enabled'] ) ? 1 : 0,
 			'progress_photo_compare_debug_enabled' => ! empty( $ai_settings['progress_photo_compare_debug_enabled'] ) ? 1 : 0,

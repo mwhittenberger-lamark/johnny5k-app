@@ -30,6 +30,10 @@ export function formatUsShortDate(value, fallback = '') {
   return formatUsDate(value, { month: 'short', day: 'numeric' }, fallback)
 }
 
+export function formatUsChartDate(value, fallback = '') {
+  return formatUsDate(value, { month: '2-digit', day: '2-digit', year: '2-digit' }, fallback)
+}
+
 export function formatUsFriendlyDate(value, fallback = '') {
   return formatUsDate(value, { weekday: 'short', month: 'short', day: 'numeric' }, fallback)
 }

@@ -77,6 +77,33 @@ class WorkoutController {
 			],
 		] );
 
+		register_rest_route( $ns, '/workout/saved-library', [
+			[
+				'methods'             => 'GET',
+				'callback'            => [ __CLASS__, 'get_saved_workout_library' ],
+				'permission_callback' => $auth,
+			],
+			[
+				'methods'             => 'POST',
+				'callback'            => [ __CLASS__, 'save_saved_workout' ],
+				'permission_callback' => $auth,
+			],
+		] );
+
+		register_rest_route( $ns, '/workout/saved-library/(?P<id>\d+)', [
+			'methods'             => 'DELETE',
+			'callback'            => [ __CLASS__, 'delete_saved_workout' ],
+			'permission_callback' => $auth,
+			'args'                => [ 'id' => [ 'required' => true, 'type' => 'integer' ] ],
+		] );
+
+		register_rest_route( $ns, '/workout/saved-library/(?P<id>\d+)/queue', [
+			'methods'             => 'POST',
+			'callback'            => [ __CLASS__, 'queue_saved_workout' ],
+			'permission_callback' => $auth,
+			'args'                => [ 'id' => [ 'required' => true, 'type' => 'integer' ] ],
+		] );
+
 		register_rest_route( $ns, '/workout/prebuilt-library', [
 			'methods'             => 'GET',
 			'callback'            => [ __CLASS__, 'get_prebuilt_workout_library' ],
@@ -396,11 +423,24 @@ class WorkoutController {
 				'exercises' => [],
 				'session_mode' => 'normal',
 				'custom_workout_draft' => self::get_custom_workout_draft( $user_id ),
+				'workout_approval' => self::get_today_workout_approval( $user_id ),
 			], 200 );
 		}
 
 		$req->set_param( 'id', $session_id );
 		return self::get_session( $req );
+	}
+
+	private static function get_today_workout_approval( int $user_id ): array {
+		$approval = get_user_meta( $user_id, 'jf_workout_approval', true );
+		if ( ! is_array( $approval ) || (string) ( $approval['date'] ?? '' ) !== UserTime::today( $user_id ) ) {
+			return [];
+		}
+		return [
+			'date' => sanitize_text_field( (string) ( $approval['date'] ?? '' ) ),
+			'workout_id' => sanitize_text_field( (string) ( $approval['workout_id'] ?? '' ) ),
+			'approved_at' => sanitize_text_field( (string) ( $approval['approved_at'] ?? '' ) ),
+		];
 	}
 
 	public static function get_recent_history_sessions( \WP_REST_Request $req ): \WP_REST_Response {
@@ -413,6 +453,7 @@ class WorkoutController {
 
 		$rows = $wpdb->get_results( $wpdb->prepare(
 			"SELECT s.id, s.session_date, s.planned_day_type, s.actual_day_type, s.time_tier,
+			        s.workout_structure, s.rounds_total, s.custom_title,
 			        s.readiness_score, s.duration_minutes, s.estimated_calories, s.completed_at,
 			        COUNT(DISTINCT wse.id) AS exercise_count,
 			        COALESCE(SUM(CASE WHEN ws.completed = 1 THEN 1 ELSE 0 END), 0) AS completed_sets
@@ -450,7 +491,8 @@ class WorkoutController {
 		if ( ! $session ) {
 			return new \WP_REST_Response( [ 'message' => 'Session not found.' ], 404 );
 		}
-		$session->custom_title = self::get_custom_workout_session_title( $user_id, $sess_id );
+		$stored_custom_title = sanitize_text_field( (string) ( $session->custom_title ?? '' ) );
+		$session->custom_title = $stored_custom_title ?: self::get_custom_workout_session_title( $user_id, $sess_id );
 
 		if ( ! $session->completed && ! $session->skip_requested && empty( $session->started_at ) ) {
 			$session->started_at = current_time( 'mysql', true );
@@ -502,6 +544,7 @@ class WorkoutController {
 			'session'   => $session,
 			'exercises' => $exercises,
 			'session_mode' => $session_mode,
+			'workout_approval' => self::get_today_workout_approval( $user_id ),
 		] );
 	}
 
@@ -517,6 +560,123 @@ class WorkoutController {
 			'saved' => true,
 			'custom_workout_draft' => $result,
 		], 200 );
+	}
+
+	public static function get_saved_workout_library( \WP_REST_Request $req ): \WP_REST_Response {
+		global $wpdb;
+		$table = $wpdb->prefix . 'fit_saved_workouts';
+		$rows = $wpdb->get_results( $wpdb->prepare(
+			"SELECT id, name, workout_structure, workout_json, created_at, updated_at
+			 FROM {$table} WHERE user_id = %d ORDER BY updated_at DESC, id DESC LIMIT 100",
+			get_current_user_id()
+		) );
+
+		$items = [];
+		foreach ( $rows ?: [] as $row ) {
+			$draft = json_decode( (string) $row->workout_json, true );
+			if ( ! is_array( $draft ) || empty( $draft['exercises'] ) ) {
+				continue;
+			}
+			$items[] = self::format_saved_workout( $row, $draft );
+		}
+
+		return new \WP_REST_Response( $items, 200 );
+	}
+
+	public static function save_saved_workout( \WP_REST_Request $req ): \WP_REST_Response {
+		global $wpdb;
+		$user_id = get_current_user_id();
+		$payload = $req->get_json_params() ?: $req->get_params();
+		$draft = self::normalize_custom_workout_draft_payload( $user_id, is_array( $payload ) ? $payload : [] );
+		if ( is_wp_error( $draft ) ) {
+			return new \WP_REST_Response( [ 'message' => $draft->get_error_message() ], 400 );
+		}
+
+		$draft['source_type'] = 'saved_workout_library';
+		$draft['source_id'] = 0;
+		$table = $wpdb->prefix . 'fit_saved_workouts';
+		$now = current_time( 'mysql', true );
+		$inserted = $wpdb->insert( $table, [
+			'user_id'          => $user_id,
+			'name'             => $draft['name'],
+			'workout_structure'=> $draft['workout_structure'],
+			'workout_json'     => wp_json_encode( $draft ),
+			'created_at'       => $now,
+			'updated_at'       => $now,
+		], [ '%d', '%s', '%s', '%s', '%s', '%s' ] );
+
+		if ( false === $inserted ) {
+			return new \WP_REST_Response( [ 'message' => 'Could not save that workout.' ], 500 );
+		}
+
+		$id = (int) $wpdb->insert_id;
+		$draft['source_id'] = $id;
+		$wpdb->update( $table, [ 'workout_json' => wp_json_encode( $draft ) ], [ 'id' => $id, 'user_id' => $user_id ], [ '%s' ], [ '%d', '%d' ] );
+		$row = (object) [ 'id' => $id, 'name' => $draft['name'], 'workout_structure' => $draft['workout_structure'], 'created_at' => $now, 'updated_at' => $now ];
+
+		return new \WP_REST_Response( [ 'saved' => true, 'workout' => self::format_saved_workout( $row, $draft ) ], 201 );
+	}
+
+	public static function queue_saved_workout( \WP_REST_Request $req ): \WP_REST_Response {
+		$record = self::get_saved_workout_record( get_current_user_id(), (int) $req->get_param( 'id' ) );
+		if ( ! $record ) {
+			return new \WP_REST_Response( [ 'message' => 'That saved workout was not found.' ], 404 );
+		}
+
+		$draft = json_decode( (string) $record->workout_json, true );
+		if ( ! is_array( $draft ) ) {
+			return new \WP_REST_Response( [ 'message' => 'That saved workout can no longer be opened.' ], 422 );
+		}
+		$draft['id'] = 'saved_' . (int) $record->id . '_' . wp_generate_uuid4();
+		$draft['source_type'] = 'saved_workout_library';
+		$draft['source_id'] = (int) $record->id;
+		$result = self::save_custom_workout_draft_for_user( get_current_user_id(), $draft );
+		if ( is_wp_error( $result ) ) {
+			return new \WP_REST_Response( [ 'message' => $result->get_error_message() ], 400 );
+		}
+
+		return new \WP_REST_Response( [ 'queued' => true, 'saved_workout' => self::format_saved_workout( $record, $draft ), 'custom_workout_draft' => $result ], 200 );
+	}
+
+	public static function delete_saved_workout( \WP_REST_Request $req ): \WP_REST_Response {
+		global $wpdb;
+		$deleted = $wpdb->delete(
+			$wpdb->prefix . 'fit_saved_workouts',
+			[ 'id' => (int) $req->get_param( 'id' ), 'user_id' => get_current_user_id() ],
+			[ '%d', '%d' ]
+		);
+		if ( ! $deleted ) {
+			return new \WP_REST_Response( [ 'message' => 'That saved workout was not found.' ], 404 );
+		}
+
+		return new \WP_REST_Response( [ 'deleted' => true ], 200 );
+	}
+
+	private static function get_saved_workout_record( int $user_id, int $id ): ?object {
+		global $wpdb;
+		$table = $wpdb->prefix . 'fit_saved_workouts';
+		$row = $wpdb->get_row( $wpdb->prepare(
+			"SELECT id, name, workout_structure, workout_json, created_at, updated_at FROM {$table} WHERE id = %d AND user_id = %d",
+			$id,
+			$user_id
+		) );
+		return $row ?: null;
+	}
+
+	private static function format_saved_workout( object $row, array $draft ): array {
+		return [
+			'id'                => (int) $row->id,
+			'name'              => sanitize_text_field( (string) ( $draft['name'] ?? $row->name ?? '' ) ),
+			'workout_structure' => self::normalize_workout_structure( $draft['workout_structure'] ?? $row->workout_structure ?? '' ),
+			'rounds'            => max( 1, (int) ( $draft['rounds'] ?? 1 ) ),
+			'day_type'          => sanitize_key( (string) ( $draft['day_type'] ?? '' ) ),
+			'time_tier'         => sanitize_key( (string) ( $draft['time_tier'] ?? 'medium' ) ),
+			'coach_note'        => sanitize_textarea_field( (string) ( $draft['coach_note'] ?? '' ) ),
+			'exercise_count'    => count( $draft['exercises'] ?? [] ),
+			'exercises'         => array_values( $draft['exercises'] ?? [] ),
+			'created_at'        => (string) ( $row->created_at ?? '' ),
+			'updated_at'        => (string) ( $row->updated_at ?? '' ),
+		];
 	}
 
 	public static function get_prebuilt_workout_library( \WP_REST_Request $req ): \WP_REST_Response {
@@ -579,6 +739,8 @@ class WorkoutController {
 			'set_number' => (int) ( $req->get_param( 'set_number' ) ?: 1 ),
 			'weight' => (float) ( $req->get_param( 'weight' ) ?: 0 ),
 			'reps' => (int) ( $req->get_param( 'reps' ) ?: 0 ),
+			'duration_seconds' => $req->get_param( 'duration_seconds' ) !== null ? self::nullable_bounded_int( $req->get_param( 'duration_seconds' ), 0, 3600 ) : null,
+			'circuit_round' => $req->get_param( 'circuit_round' ) !== null ? self::nullable_bounded_int( $req->get_param( 'circuit_round' ), 1, 20 ) : null,
 			'rir' => $req->get_param( 'rir' ) !== null ? (float) $req->get_param( 'rir' ) : null,
 			'rpe' => $req->get_param( 'rpe' ) !== null ? (float) $req->get_param( 'rpe' ) : null,
 			'completed' => $req->get_param( 'completed' ) !== null ? (int) (bool) $req->get_param( 'completed' ) : 1,
@@ -597,6 +759,8 @@ class WorkoutController {
 			'set_id' => (int) $req->get_param( 'set_id' ),
 			'weight' => $req->get_param( 'weight' ) !== null ? (float) $req->get_param( 'weight' ) : null,
 			'reps' => $req->get_param( 'reps' ) !== null ? (int) $req->get_param( 'reps' ) : null,
+			'duration_seconds' => $req->get_param( 'duration_seconds' ) !== null ? self::nullable_bounded_int( $req->get_param( 'duration_seconds' ), 0, 3600 ) : null,
+			'circuit_round' => $req->get_param( 'circuit_round' ) !== null ? self::nullable_bounded_int( $req->get_param( 'circuit_round' ), 1, 20 ) : null,
 			'rir' => $req->get_param( 'rir' ) !== null ? (float) $req->get_param( 'rir' ) : null,
 			'completed' => $req->get_param( 'completed' ) !== null ? (int) (bool) $req->get_param( 'completed' ) : null,
 			'pain_flag' => $req->get_param( 'pain_flag' ) !== null ? (int) (bool) $req->get_param( 'pain_flag' ) : null,
@@ -656,6 +820,8 @@ class WorkoutController {
 			'set_number' => (int) ( $req->get_param( 'set_number' ) ?: 1 ),
 			'weight' => (float) ( $req->get_param( 'weight' ) ?: 0 ),
 			'reps' => (int) ( $req->get_param( 'reps' ) ?: 0 ),
+			'duration_seconds' => $req->get_param( 'duration_seconds' ) !== null ? self::nullable_bounded_int( $req->get_param( 'duration_seconds' ), 0, 3600 ) : null,
+			'circuit_round' => $req->get_param( 'circuit_round' ) !== null ? self::nullable_bounded_int( $req->get_param( 'circuit_round' ), 1, 20 ) : null,
 			'rir' => $req->get_param( 'rir' ) !== null ? (float) $req->get_param( 'rir' ) : null,
 			'rpe' => $req->get_param( 'rpe' ) !== null ? (float) $req->get_param( 'rpe' ) : null,
 			'completed' => $req->get_param( 'completed' ) !== null ? (int) (bool) $req->get_param( 'completed' ) : 1,
@@ -684,6 +850,9 @@ class WorkoutController {
 			'planned_rep_min' => (int) ( $req->get_param( 'planned_rep_min' ) ?: 8 ),
 			'planned_rep_max' => (int) ( $req->get_param( 'planned_rep_max' ) ?: 12 ),
 			'planned_sets' => (int) ( $req->get_param( 'planned_sets' ) ?: 1 ),
+			'target_type' => self::normalize_workout_target_type( $req->get_param( 'target_type' ) ),
+			'planned_duration_seconds' => self::normalize_duration_seconds( $req->get_param( 'planned_duration_seconds' ) ),
+			'reps_per_side' => (int) (bool) $req->get_param( 'reps_per_side' ),
 			'was_swapped' => $req->get_param( 'was_swapped' ) !== null ? (int) (bool) $req->get_param( 'was_swapped' ) : 0,
 			'original_exercise_id' => $req->get_param( 'original_exercise_id' ) !== null ? (int) $req->get_param( 'original_exercise_id' ) : null,
 			'notes' => $req->get_param( 'notes' ) !== null ? (string) $req->get_param( 'notes' ) : null,
@@ -957,6 +1126,7 @@ class WorkoutController {
 
 		$row = $wpdb->get_row( $wpdb->prepare(
 			"SELECT s.id, s.session_date, s.planned_day_type, s.actual_day_type, s.time_tier,
+			        s.workout_structure, s.rounds_total, s.custom_title,
 			        s.readiness_score, s.duration_minutes, s.estimated_calories, s.completed_at,
 			        COUNT(DISTINCT wse.id) AS exercise_count,
 			        COALESCE(SUM(CASE WHEN ws.completed = 1 THEN 1 ELSE 0 END), 0) AS completed_sets
@@ -979,6 +1149,9 @@ class WorkoutController {
 		}
 
 		update_user_meta( $user_id, self::CUSTOM_WORKOUT_DRAFT_META, $draft );
+		// Any edit creates a new decision point. Do not let an approval for the
+		// previous contents silently authorize the changed workout.
+		delete_user_meta( $user_id, 'jf_workout_approval' );
 		return $draft;
 	}
 
@@ -1004,6 +1177,10 @@ class WorkoutController {
 			if ( $plan_exercise_id <= 0 || $exercise_id <= 0 ) {
 				return null;
 			}
+			$target_type = self::normalize_workout_target_type( $payload['target_type'] ?? '' );
+			$duration_seconds = 'duration' === $target_type
+				? self::normalize_duration_seconds( $payload['target_duration_seconds'] ?? $payload['duration_seconds'] ?? null )
+				: null;
 
 			return [
 				'plan_exercise_id' => $plan_exercise_id,
@@ -1016,6 +1193,10 @@ class WorkoutController {
 				'rep_min'          => max( 1, (int) ( $payload['rep_min'] ?? 8 ) ),
 				'rep_max'          => max( 1, (int) ( $payload['rep_max'] ?? 12 ) ),
 				'sets'             => max( 1, (int) ( $payload['sets'] ?? 3 ) ),
+				'target_type'      => $target_type,
+				'duration_seconds' => $duration_seconds,
+				'reps_per_side'    => 'reps' === $target_type && ! empty( $payload['reps_per_side'] ),
+				'notes'            => sanitize_textarea_field( (string) ( $payload['notes'] ?? '' ) ),
 				'was_swapped'      => false,
 			];
 		}, $draft['exercises'] ) ) ) : [];
@@ -1023,6 +1204,9 @@ class WorkoutController {
 		if ( '' === $id || '' === $name || empty( $items ) ) {
 			return null;
 		}
+
+		$workout_structure = self::normalize_workout_structure( $draft['workout_structure'] ?? '' );
+		$rounds = 'circuit' === $workout_structure ? self::bounded_int( $draft['rounds'] ?? 1, 1, 20 ) : 1;
 
 		return [
 			'id'         => $id,
@@ -1035,6 +1219,11 @@ class WorkoutController {
 			'description' => sanitize_textarea_field( (string) ( $draft['description'] ?? '' ) ),
 			'required_gym_setup' => sanitize_text_field( (string) ( $draft['required_gym_setup'] ?? '' ) ),
 			'body_part_icons'    => array_values( array_filter( array_map( 'sanitize_key', is_array( $draft['body_part_icons'] ?? null ) ? $draft['body_part_icons'] : [] ) ) ),
+			'workout_structure'  => $workout_structure,
+			'rounds'             => $rounds,
+			'rest_between_exercises_seconds' => self::nullable_bounded_int( $draft['rest_between_exercises_seconds'] ?? null, 0, 900 ),
+			'rest_between_rounds_seconds'    => self::nullable_bounded_int( $draft['rest_between_rounds_seconds'] ?? null, 0, 1800 ),
+			'interpretation_notes' => self::sanitize_text_list( $draft['interpretation_notes'] ?? [] ),
 			'created_at' => $created_at,
 			'exercises'  => $items,
 		];
@@ -1073,6 +1262,15 @@ class WorkoutController {
 			return new \WP_Error( 'missing_custom_workout_exercises', 'Add at least one valid exercise to build a custom workout.' );
 		}
 
+		$workout_structure = self::normalize_workout_structure( $payload['workout_structure'] ?? '' );
+		$rounds = 'circuit' === $workout_structure ? self::bounded_int( $payload['rounds'] ?? 1, 1, 20 ) : 1;
+		if ( 'circuit' === $workout_structure ) {
+			foreach ( $resolved_exercises as &$resolved_exercise ) {
+				$resolved_exercise['sets'] = $rounds;
+			}
+			unset( $resolved_exercise );
+		}
+
 		return [
 			'id'         => sanitize_text_field( (string) ( $payload['id'] ?? 'custom_' . wp_generate_uuid4() ) ),
 			'name'       => $name,
@@ -1084,6 +1282,11 @@ class WorkoutController {
 			'description' => sanitize_textarea_field( (string) ( $payload['description'] ?? '' ) ),
 			'required_gym_setup' => sanitize_text_field( (string) ( $payload['required_gym_setup'] ?? '' ) ),
 			'body_part_icons'    => array_values( array_filter( array_map( 'sanitize_key', is_array( $payload['body_part_icons'] ?? null ) ? $payload['body_part_icons'] : [] ) ) ),
+			'workout_structure'  => $workout_structure,
+			'rounds'             => $rounds,
+			'rest_between_exercises_seconds' => self::nullable_bounded_int( $payload['rest_between_exercises_seconds'] ?? null, 0, 900 ),
+			'rest_between_rounds_seconds'    => self::nullable_bounded_int( $payload['rest_between_rounds_seconds'] ?? null, 0, 1800 ),
+			'interpretation_notes' => self::sanitize_text_list( $payload['interpretation_notes'] ?? [] ),
 			'created_at' => current_time( 'mysql', true ),
 			'exercises'  => $resolved_exercises,
 		];
@@ -1108,6 +1311,15 @@ class WorkoutController {
 			return [];
 		}
 
+		$target_type = self::normalize_workout_target_type( $payload['target_type'] ?? '' );
+		$duration_seconds = 'duration' === $target_type
+			? self::normalize_duration_seconds( $payload['target_duration_seconds'] ?? $payload['duration_seconds'] ?? null )
+			: null;
+		if ( 'duration' === $target_type && null === $duration_seconds ) {
+			return new \WP_Error( 'missing_workout_duration', sprintf( 'Add a duration for "%s".', (string) ( $exercise->name ?? $exercise_name ) ) );
+		}
+		$target_reps = isset( $payload['target_reps'] ) ? self::bounded_int( $payload['target_reps'], 1, 500 ) : null;
+
 		return [
 			'exercise_id'    => (int) $exercise->id,
 			'exercise_name'  => sanitize_text_field( (string) ( $exercise->name ?? '' ) ),
@@ -1115,9 +1327,13 @@ class WorkoutController {
 			'equipment'      => sanitize_text_field( (string) ( $exercise->equipment ?? '' ) ),
 			'difficulty'     => sanitize_text_field( (string) ( $exercise->difficulty ?? '' ) ),
 			'slot_type'      => sanitize_key( (string) ( $payload['slot_type'] ?? 'accessory' ) ) ?: 'accessory',
-			'rep_min'        => max( 1, (int) ( $payload['rep_min'] ?? $exercise->default_rep_min ?? 8 ) ),
-			'rep_max'        => max( 1, (int) ( $payload['rep_max'] ?? $exercise->default_rep_max ?? 12 ) ),
-			'sets'           => max( 1, (int) ( $payload['sets'] ?? $exercise->default_sets ?? 3 ) ),
+			'rep_min'        => $target_reps ?? self::bounded_int( $payload['target_rep_min'] ?? $payload['rep_min'] ?? $exercise->default_rep_min ?? 8, 1, 500 ),
+			'rep_max'        => $target_reps ?? self::bounded_int( $payload['target_rep_max'] ?? $payload['rep_max'] ?? $exercise->default_rep_max ?? 12, 1, 500 ),
+			'sets'           => self::bounded_int( $payload['sets'] ?? $exercise->default_sets ?? 3, 1, 20 ),
+			'target_type'    => $target_type,
+			'duration_seconds' => $duration_seconds,
+			'reps_per_side'  => 'reps' === $target_type && ! empty( $payload['reps_per_side'] ),
+			'notes'          => sanitize_textarea_field( (string) ( $payload['notes'] ?? '' ) ),
 		];
 	}
 
@@ -1172,6 +1388,11 @@ class WorkoutController {
 			'time_tier'           => $time_tier,
 			'session_mode'        => self::session_mode_from_readiness( $readiness ),
 			'plan_exercise_count' => count( $ordered_exercises ),
+			'workout_structure'   => self::normalize_workout_structure( $draft['workout_structure'] ?? '' ),
+			'rounds'              => self::bounded_int( $draft['rounds'] ?? 1, 1, 20 ),
+			'rest_between_exercises_seconds' => self::nullable_bounded_int( $draft['rest_between_exercises_seconds'] ?? null, 0, 900 ),
+			'rest_between_rounds_seconds'    => self::nullable_bounded_int( $draft['rest_between_rounds_seconds'] ?? null, 0, 1800 ),
+			'interpretation_notes' => self::sanitize_text_list( $draft['interpretation_notes'] ?? [] ),
 			'exercises'           => $ordered_exercises,
 		];
 	}
@@ -1187,6 +1408,8 @@ class WorkoutController {
 			return new \WP_Error( 'custom_workout_empty', 'That custom workout does not have any valid exercises left.' );
 		}
 
+		$workout_structure = self::normalize_workout_structure( $draft['workout_structure'] ?? '' );
+		$rounds = 'circuit' === $workout_structure ? self::bounded_int( $draft['rounds'] ?? 1, 1, 20 ) : 1;
 		$wpdb->insert( $p . 'fit_workout_sessions', [
 			'user_id'             => $user_id,
 			'session_date'        => UserTime::today( $user_id ),
@@ -1195,6 +1418,11 @@ class WorkoutController {
 			'completed'           => 0,
 			'skip_requested'      => 0,
 			'is_optional_session' => 0,
+			'workout_structure'   => $workout_structure,
+			'rounds_total'        => $rounds,
+			'rest_between_exercises_seconds' => self::nullable_bounded_int( $draft['rest_between_exercises_seconds'] ?? null, 0, 900 ),
+			'rest_between_rounds_seconds'    => self::nullable_bounded_int( $draft['rest_between_rounds_seconds'] ?? null, 0, 1800 ),
+			'custom_title'        => sanitize_text_field( (string) ( $draft['name'] ?? '' ) ),
 		] );
 		$session_id = (int) $wpdb->insert_id;
 
@@ -1206,6 +1434,9 @@ class WorkoutController {
 				'planned_rep_min'     => (int) ( $exercise['rep_min'] ?? 8 ),
 				'planned_rep_max'     => (int) ( $exercise['rep_max'] ?? 12 ),
 				'planned_sets'        => (int) ( $exercise['sets'] ?? 3 ),
+				'target_type'         => self::normalize_workout_target_type( $exercise['target_type'] ?? '' ),
+				'planned_duration_seconds' => self::normalize_duration_seconds( $exercise['duration_seconds'] ?? null ),
+				'reps_per_side'       => ! empty( $exercise['reps_per_side'] ) ? 1 : 0,
 				'sort_order'          => $index + 1,
 				'was_swapped'         => 0,
 				'original_exercise_id'=> null,
@@ -1215,6 +1446,8 @@ class WorkoutController {
 		return [
 			'session_id'   => $session_id,
 			'day_type'     => (string) ( $draft['day_type'] ?? TrainingDayTypes::custom_workout_fallback() ),
+			'workout_structure' => $workout_structure,
+			'rounds'       => $rounds,
 			'exercises'    => $ordered_exercises,
 			'skip_count'   => TrainingEngine::rolling_skip_count( $user_id ),
 			'skip_warning' => TrainingEngine::rolling_skip_count( $user_id ) >= 3,
@@ -1340,6 +1573,38 @@ class WorkoutController {
 		}
 
 		return sanitize_text_field( (string) ( $session_titles[ $session_id ] ?? '' ) );
+	}
+
+	private static function normalize_workout_structure( $value ): string {
+		return 'circuit' === sanitize_key( (string) $value ) ? 'circuit' : 'standard';
+	}
+
+	private static function normalize_workout_target_type( $value ): string {
+		return 'duration' === sanitize_key( (string) $value ) ? 'duration' : 'reps';
+	}
+
+	private static function bounded_int( $value, int $minimum, int $maximum ): int {
+		return max( $minimum, min( $maximum, (int) $value ) );
+	}
+
+	private static function nullable_bounded_int( $value, int $minimum, int $maximum ): ?int {
+		if ( null === $value || '' === $value ) {
+			return null;
+		}
+
+		return self::bounded_int( $value, $minimum, $maximum );
+	}
+
+	private static function normalize_duration_seconds( $value ): ?int {
+		return self::nullable_bounded_int( $value, 5, 3600 );
+	}
+
+	private static function sanitize_text_list( $value ): array {
+		if ( ! is_array( $value ) ) {
+			return [];
+		}
+
+		return array_values( array_filter( array_map( static fn( $item ): string => sanitize_text_field( (string) $item ), $value ) ) );
 	}
 
 	private static function store_custom_workout_session_title( int $user_id, int $session_id, string $title ): void {

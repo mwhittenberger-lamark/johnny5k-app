@@ -21,4 +21,6 @@
 @import './styles/screens/nutrition.css' layer(screens);
 @import './styles/screens/settings.css' layer(screens);
 @import './styles/screens/ironquest.css' layer(screens);
+@import './styles/screens/johnny-home.css' layer(screens);
+@import './styles/screens/modern-skyscraper.css' layer(screens);
 @import './styles/legacy.css' layer(legacy);

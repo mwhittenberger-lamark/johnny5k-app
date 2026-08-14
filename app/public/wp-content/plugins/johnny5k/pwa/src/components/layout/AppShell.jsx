@@ -6,7 +6,7 @@ import { authApi } from '../../api/modules/auth'
 import { onboardingApi } from '../../api/modules/onboarding'
 import { getAppImageUrl } from '../../lib/appImages'
 import { reportClientDiagnostic } from '../../lib/clientDiagnostics'
-import { DAILY_CHECK_IN_QUESTIONS, createDailyCheckInAnswers, getDailyCheckInDateKey, getNextDailyCheckInBoundary, isDailyCheckInWindowOpen, normalizeDailyCheckInEntry } from '../../lib/dailyCheckIn'
+import { createDailyCheckInAnswers, getDailyCheckInDateKey, getNextDailyCheckInBoundary, isDailyCheckInWindowOpen, normalizeDailyCheckInEntry } from '../../lib/dailyCheckIn'
 import { useOverlayAccessibility } from '../../lib/accessibility'
 import {
   buildInstallPromptSnoozedUntil,
@@ -18,6 +18,7 @@ import {
 } from '../../lib/onboarding'
 import { useAuthStore } from '../../store/authStore'
 import { useJohnnyAssistantStore } from '../../store/johnnyAssistantStore'
+import DailyCheckInModal from '../checkin/DailyCheckInModal'
 import AppIcon from '../ui/AppIcon'
 import AppDialog from '../ui/AppDialog'
 
@@ -688,58 +689,6 @@ export default function AppShell({ children }) {
         </Suspense>
       ) : null}
     </div>
-  )
-}
-
-function DailyCheckInModal({ answers, closeButtonRef, onAnswer, onClose }) {
-  return (
-    <AppDialog
-      ariaLabel="Daily check-in"
-      className="app-shell-checkin-modal"
-      onClose={onClose}
-      open
-      overlayClassName="app-shell-checkin-shell"
-      size="lg"
-    >
-        <div className="app-shell-checkin-head">
-          <div>
-            <p className="dashboard-eyebrow">Daily check-in</p>
-            <h2 id="daily-checkin-title">Start the day on purpose</h2>
-            <p>Before coffee or breakfast, drink some water first. Then give Johnny a quick read on how today feels.</p>
-          </div>
-          <button ref={closeButtonRef} type="button" className="app-shell-checkin-close" onClick={onClose}>
-            Close
-          </button>
-        </div>
-
-        <div className="app-shell-checkin-body">
-          {DAILY_CHECK_IN_QUESTIONS.map(question => (
-            <section key={question.key} className="app-shell-checkin-question">
-              <div className="dashboard-card-head">
-                <span className="dashboard-chip subtle">{question.key}</span>
-              </div>
-              <h3>{question.label}</h3>
-              <div className="app-shell-checkin-options" role="group" aria-label={question.label}>
-                {question.options.map(option => (
-                  <button
-                    key={option}
-                    type="button"
-                    className={`app-shell-checkin-option ${answers?.[question.key] === option ? 'active' : ''}`}
-                    onClick={() => onAnswer(question.key, option)}
-                    aria-pressed={answers?.[question.key] === option}
-                  >
-                    {option}
-                  </button>
-                ))}
-              </div>
-            </section>
-          ))}
-        </div>
-
-        <div className="app-shell-checkin-actions">
-          <button type="button" className="btn-secondary" onClick={onClose}>Continue to app</button>
-        </div>
-    </AppDialog>
   )
 }
 

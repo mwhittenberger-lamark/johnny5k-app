@@ -1,4 +1,4 @@
-import { api } from '../core/restClient'
+import { api, refreshNonce } from '../core/restClient'
 
 export const onboardingApi = {
   getState: () => api.get('/onboarding'),
@@ -15,6 +15,12 @@ export const onboardingApi = {
   deleteHeadshot: () => api.del('/onboarding/headshot', {}),
   headshotBlob: () => api.blob('/onboarding/headshot'),
   getGeneratedImages: () => api.get('/onboarding/generated-images'),
+  generatedImageData: (id) => api.get(`/onboarding/generated-images/${id}/data`),
+  generatedImageUrl: (id) => api.authenticatedAssetUrl(`/onboarding/generated-images/${id}`),
+  refreshGeneratedImageUrl: async (id) => {
+    await refreshNonce()
+    return api.authenticatedAssetUrl(`/onboarding/generated-images/${id}`)
+  },
   generateImages: (data) => api.post('/onboarding/generated-images', data),
   updateGeneratedImage: (id, data) => api.post(`/onboarding/generated-images/${id}`, data),
   deleteGeneratedImage: (id) => api.del(`/onboarding/generated-images/${id}`),

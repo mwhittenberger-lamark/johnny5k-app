@@ -1,4 +1,4 @@
-import { formatUsShortDate } from '../../../lib/dateFormat'
+import { formatUsChartDate, formatUsShortDate } from '../../../lib/dateFormat'
 import AppIcon from '../../../components/ui/AppIcon'
 import { DashboardIconBadge, StreakRow } from './dashboardSharedCards'
 import { buildDashboardWeeklyTrendBars } from './dashboardSharedCardUtils'
@@ -67,7 +67,7 @@ export function MomentumDashboardCard({ momentumCard, onOpenRewards }) {
 }
 
 export function WeeklyTrendCard({ weights, onOpenProgress }) {
-  const trendBars = buildDashboardWeeklyTrendBars(weights, formatUsShortDate)
+  const trendBars = buildDashboardWeeklyTrendBars(weights, formatUsChartDate)
 
   return (
     <section className="dash-card settings-trend-card dashboard-weekly-trend-card">

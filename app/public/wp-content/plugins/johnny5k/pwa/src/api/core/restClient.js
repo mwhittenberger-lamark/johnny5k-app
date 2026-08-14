@@ -414,6 +414,13 @@ async function requestBlob(method, path) {
   return res.blob()
 }
 
+function authenticatedAssetUrl(path) {
+  const nonce = getNonce()
+  const url = `${BASE}${path}`
+  if (!nonce) return url
+  return `${url}${url.includes('?') ? '&' : '?'}_wpnonce=${encodeURIComponent(nonce)}`
+}
+
 export function decodeBase64ToBlob(base64, mimeType = 'audio/mpeg') {
   const binary = atob(String(base64 || ''))
   const bytes = new Uint8Array(binary.length)
@@ -430,6 +437,7 @@ export const api = {
   del: (path, body, options) => request('DELETE', path, body, false, options),
   upload: (path, form, options) => request('POST', path, form, true, options),
   blob: (path) => requestBlob('GET', path),
+  authenticatedAssetUrl,
 }
 
 export { BASE, WP_CORE_BASE }

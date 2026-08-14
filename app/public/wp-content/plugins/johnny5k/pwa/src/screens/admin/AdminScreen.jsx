@@ -2622,7 +2622,7 @@ function IronQuestTab() {
 function SettingsTab() {
   const [settings, setSettings] = useState({
     ai_settings: {
-      default_model: 'gpt-5.4-mini',
+      default_model: 'gpt-5.6-sol',
       web_search_enabled: 1,
       tool_calls_enabled: 1,
       progress_photo_compare_debug_enabled: 0,

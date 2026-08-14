@@ -89,6 +89,7 @@ return array(
     'Johnny5k\\Services\\IronQuestStoryEngineService' => $baseDir . '/includes/Services/class-ironquest-story-engine-service.php',
     'Johnny5k\\Services\\IronQuestWorldArtService' => $baseDir . '/includes/Services/class-ironquest-world-art-service.php',
     'Johnny5k\\Services\\JobLogger' => $baseDir . '/includes/Services/class-job-logger.php',
+    'Johnny5k\\Services\\JohnnyGeneratedImageService' => $baseDir . '/includes/Services/class-johnny-generated-image-service.php',
     'Johnny5k\\Services\\NutritionSourceService' => $baseDir . '/includes/Services/class-nutrition-source-service.php',
     'Johnny5k\\Services\\PrebuiltWorkoutLibraryService' => $baseDir . '/includes/Services/class-prebuilt-workout-library-service.php',
     'Johnny5k\\Services\\PushService' => $baseDir . '/includes/Services/class-push-service.php',

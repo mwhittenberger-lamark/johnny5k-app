@@ -4,6 +4,7 @@ namespace Johnny5k\REST;
 defined( 'ABSPATH' ) || exit;
 
 use Johnny5k\Services\AiService;
+use Johnny5k\Services\UserTime;
 
 class AiChatController extends RestController {
 
@@ -14,6 +15,18 @@ class AiChatController extends RestController {
 		register_rest_route( $ns, '/ai/chat', [
 			'methods'             => 'POST',
 			'callback'            => [ __CLASS__, 'chat' ],
+			'permission_callback' => $auth,
+		] );
+
+		register_rest_route( $ns, '/ai/daily-brief', [
+			'methods'             => 'POST',
+			'callback'            => [ __CLASS__, 'daily_brief' ],
+			'permission_callback' => $auth,
+		] );
+
+		register_rest_route( $ns, '/ai/exercise-demo', [
+			'methods'             => 'POST',
+			'callback'            => [ __CLASS__, 'exercise_demo' ],
 			'permission_callback' => $auth,
 		] );
 
@@ -119,11 +132,69 @@ class AiChatController extends RestController {
 			'used_web_search'   => (bool) ( $result['used_web_search'] ?? false ),
 			'used_tools'        => $result['used_tools'] ?? [],
 			'action_results'    => $result['action_results'] ?? [],
+			'tool_errors'       => $result['tool_errors'] ?? [],
 			'queued_follow_ups' => $result['queued_follow_ups'] ?? [],
 			'why'               => $result['why'] ?? '',
 			'context_used'      => $result['context_used'] ?? [],
 			'confidence'        => $result['confidence'] ?? '',
 		] );
+	}
+
+	public static function daily_brief( \WP_REST_Request $req ): \WP_REST_Response {
+		global $wpdb;
+		$user_id  = get_current_user_id();
+		$timezone = UserTime::timezone( $user_id );
+		$now      = new \DateTimeImmutable( 'now', $timezone );
+		$today    = $now->format( 'Y-m-d' );
+		$yesterday = $now->modify( '-1 day' )->format( 'Y-m-d' );
+		$meta_key = 'jf_johnny_daily_brief_date';
+		$first_interaction = get_user_meta( $user_id, $meta_key, true ) !== $today;
+
+		if ( $first_interaction ) {
+			update_user_meta( $user_id, $meta_key, $today );
+		}
+
+		$snapshot = DashboardController::get_daily_snapshot_data( $user_id );
+		$yesterday_calories = (int) round( (float) $wpdb->get_var( $wpdb->prepare(
+			"SELECT COALESCE(SUM(mi.calories), 0)
+			 FROM {$wpdb->prefix}fit_meals m
+			 LEFT JOIN {$wpdb->prefix}fit_meal_items mi ON mi.meal_id = m.id
+			 WHERE m.user_id = %d AND DATE(m.meal_datetime) = %s AND m.confirmed = 1",
+			$user_id,
+			$yesterday
+		) ) );
+
+		return new \WP_REST_Response( [
+			'first_interaction' => $first_interaction,
+			'date'              => $today,
+			'timezone'          => $timezone->getName(),
+			'local_hour'        => (int) $now->format( 'G' ),
+			'latest_weight'     => $snapshot['latest_weight'] ?? null,
+			'yesterday'         => [
+				'date'     => $yesterday,
+				'calories' => $yesterday_calories,
+			],
+			'sleep'             => $snapshot['sleep'] ?? null,
+			'training_status'   => $snapshot['training_status'] ?? [],
+			'today_schedule'    => $snapshot['today_schedule'] ?? null,
+		] );
+	}
+
+	public static function exercise_demo( \WP_REST_Request $req ): \WP_REST_Response {
+		$name = sanitize_text_field( (string) ( $req->get_param( 'exercise_name' ) ?: '' ) );
+		if ( '' === $name ) {
+			return self::message( 'An exercise name is required.', 400 );
+		}
+
+		$result = AiService::find_exercise_demo( get_current_user_id(), $name, [
+			'equipment'      => sanitize_text_field( (string) ( $req->get_param( 'equipment' ) ?: '' ) ),
+			'primary_muscle' => sanitize_text_field( (string) ( $req->get_param( 'primary_muscle' ) ?: '' ) ),
+		] );
+		if ( is_wp_error( $result ) ) {
+			return new \WP_REST_Response( [ 'message' => $result->get_error_message() ], 502 );
+		}
+
+		return new \WP_REST_Response( $result, 200 );
 	}
 
 	public static function analyse_meal( \WP_REST_Request $req ): \WP_REST_Response {
@@ -284,6 +355,9 @@ class AiChatController extends RestController {
 				}
 				if ( isset( $meta['action_results'] ) ) {
 					$row['action_results'] = is_array( $meta['action_results'] ) ? $meta['action_results'] : [];
+				}
+				if ( isset( $meta['tool_errors'] ) ) {
+					$row['tool_errors'] = is_array( $meta['tool_errors'] ) ? $meta['tool_errors'] : [];
 				}
 				if ( isset( $meta['why'] ) ) {
 					$row['why'] = sanitize_textarea_field( (string) $meta['why'] );

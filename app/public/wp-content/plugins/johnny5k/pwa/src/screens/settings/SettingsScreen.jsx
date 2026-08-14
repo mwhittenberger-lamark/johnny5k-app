@@ -25,7 +25,7 @@ import { resolveExperienceModeFromIronQuestPayload } from '../../lib/experienceM
 import { buildHeightCm, buildPushPromptSnoozedUntil, formatPhoneInput, formatReminderHour, formatMissingFields, getTimezoneRegion, getTimezoneRegions, getTimezonesForRegion, isPushPromptSnoozed, normalizePhoneNumber, normalizePushPromptStatus, normalizeTargets, PUSH_PROMPT_SNOOZE_DAYS, reminderHourOptions, settingsFormFromState } from '../../lib/onboarding'
 import { buildThirtyDayPrediction } from '../../lib/thirtyDayPrediction'
 import { DAY_TYPE_OPTIONS } from '../../lib/trainingDayTypes'
-import { formatUsShortDate } from '../../lib/dateFormat'
+import { formatUsChartDate, formatUsShortDate } from '../../lib/dateFormat'
 import { openSupportGuide } from '../../lib/supportHelp'
 import { applyColorScheme, getColorSchemeOptions, getDefaultIronQuestColorSchemeId, isIronQuestColorScheme, normalizeColorScheme, setAvailableColorSchemes } from '../../lib/theme'
 import { confirmGlobalAction } from '../../lib/uiFeedback'
@@ -1118,12 +1118,20 @@ export default function SettingsScreen() {
   }
 
   return (
-    <div className="screen settings-screen">
-      <header className="screen-header support-icon-anchor">
+    <div className="screen settings-screen johnny-profile-screen">
+      <header className="screen-header support-icon-anchor johnny-profile-header">
         <SupportIconButton label="Get help with profile settings" onClick={handleOpenSettingsSupport} />
-        <div>
-          <h1>Profile</h1>
-          <p className="settings-subtitle">Update your identity, trajectory, and daily defaults.</p>
+        <div className="johnny-profile-header-main">
+          <div className="johnny-profile-monogram" aria-hidden="true">{buildProfileInitials(form.first_name, form.last_name)}</div>
+          <div className="johnny-profile-header-copy">
+            <span>Johnny profile</span>
+            <h1>{form.first_name ? `${form.first_name}’s profile` : 'Your profile'}</h1>
+            <p>Identity, trajectory, and the daily signals Johnny uses to coach you.</p>
+          </div>
+        </div>
+        <div className="johnny-profile-status" aria-label="Profile status">
+          <span><i /> Profile active</span>
+          <strong>{buildProfileGoalHeadline(form.current_goal, form.goal_rate)}</strong>
         </div>
       </header>
 
@@ -2320,6 +2328,11 @@ function SettingsAccordionSection({ sectionKey, eyebrow, title, description, ite
   )
 }
 
+function buildProfileInitials(firstName, lastName) {
+  const initials = [firstName, lastName].map(value => String(value || '').trim().charAt(0)).filter(Boolean).join('')
+  return initials.toUpperCase() || 'J5'
+}
+
 function formatFollowUpState(state) {
   switch (state) {
     case 'missed':
@@ -2487,7 +2500,7 @@ function buildProfileTrendBars(weights) {
   return points.map(point => ({
     ...point,
     height: 24 + (((point.value - min) / range) * 76),
-    label: formatUsShortDate(point.date, point.date).replace(/^\w+\s/, ''),
+    label: formatUsChartDate(point.date, point.date),
     valueLabel: point.value % 1 === 0 ? `${point.value}` : point.value.toFixed(1),
   }))
 }

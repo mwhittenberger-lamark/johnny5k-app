@@ -16,6 +16,7 @@ import { useAuthStore } from '../../store/authStore'
 import { useWorkoutStore } from '../../store/workoutStore'
 import { buildCoachingPromptOptions, buildCoachingSummary, runCoachingAction } from '../../lib/coachingSummary'
 import WorkoutActiveSession from './components/WorkoutActiveSession'
+import JohnnyDemoLiveWorkout from '../../components/workout/JohnnyDemoLiveWorkout'
 import WorkoutCompletionReviewModal from './components/WorkoutCompletionReviewModal'
 import WorkoutLaunchpad from './components/WorkoutLaunchpad'
 import WorkoutOfflineStatusCard from './components/WorkoutOfflineStatusCard'
@@ -25,9 +26,11 @@ import { useWorkoutSessionController } from './hooks/useWorkoutSessionController
 import { useIronQuestStarterPortrait } from '../../hooks/useIronQuestStarterPortrait'
 import { useIronQuestRecentMissionUpdate } from '../../hooks/useIronQuestRecentMissionUpdate'
 import { subscribeIronQuestStateChanged } from '../../lib/ironquestSync'
-import { weekdayLabelForDate, weekdayOrderForDate } from './workoutScreenUtils'
+import { isJohnnyLiveWorkoutLaunch, weekdayLabelForDate, weekdayOrderForDate } from './workoutScreenUtils'
 
 export default function WorkoutScreen() {
+  const location = useLocation()
+  const navigate = useNavigate()
   const openDrawer = useJohnnyAssistantStore(state => state.openDrawer)
   const dashboardSnapshot = useDashboardStore(state => state.snapshot)
   const loadDashboardSnapshot = useDashboardStore(state => state.loadSnapshot)
@@ -82,7 +85,8 @@ export default function WorkoutScreen() {
   } = useWorkoutStore()
   const [statusNotice, setStatusNotice] = useState('')
   const [statusError, setStatusError] = useState('')
-  const [showPreWorkoutScreen, setShowPreWorkoutScreen] = useState(true)
+  const [johnnyLiveWorkoutRequested, setJohnnyLiveWorkoutRequested] = useState(() => isJohnnyLiveWorkoutLaunch(location))
+  const [showPreWorkoutScreen, setShowPreWorkoutScreen] = useState(() => !isJohnnyLiveWorkoutLaunch(location))
   const [cachedPlanSnapshot, setCachedPlanSnapshot] = useState(() => readCachedWorkoutPlanSnapshot())
   const [workoutQueueState, setWorkoutQueueState] = useState(() => {
     const snapshot = getOfflineWriteQueueSnapshot()
@@ -96,11 +100,10 @@ export default function WorkoutScreen() {
   const [recoveringWorkout, setRecoveringWorkout] = useState(false)
   const [resolvingTavernActionId, setResolvingTavernActionId] = useState('')
   const [tavernStateOverride, setTavernStateOverride] = useState(null)
-  const location = useLocation()
-  const navigate = useNavigate()
   const isOnline = useOnlineStatus()
   const previousQueueCountRef = useRef(workoutQueueState.count)
   const previousOnlineRef = useRef(isOnline)
+  const handledJohnnyLiveLaunchRef = useRef(false)
   const planQuery = useQuery({
     queryKey: ['training-plan'],
     queryFn: trainingApi.getPlan,
@@ -227,6 +230,26 @@ export default function WorkoutScreen() {
   const tavernMissionPreview = useMemo(() => getTavernMissionPreview(tavernState), [tavernState])
   const tavernResolvedAction = useMemo(() => getTavernResolution(tavernState), [tavernState])
   const recentMissionUpdate = useIronQuestRecentMissionUpdate()
+
+  useEffect(() => {
+    const shouldOpenLiveWorkout = isJohnnyLiveWorkoutLaunch(location)
+    const waitingForLaunchData = !session?.session?.id && !customWorkoutDraft && planLoading
+    if (!shouldOpenLiveWorkout || handledJohnnyLiveLaunchRef.current || !bootstrapped || loading || waitingForLaunchData) return
+
+    handledJohnnyLiveLaunchRef.current = true
+    setJohnnyLiveWorkoutRequested(true)
+    const launchLiveWorkout = async () => {
+      try {
+        if (!session?.session?.id) await sessionController.handleStartSession()
+        setShowPreWorkoutScreen(false)
+        sessionController.openLiveMode()
+      } catch (launchError) {
+        handledJohnnyLiveLaunchRef.current = false
+        setStatusError(launchError?.message || 'The live workout could not be opened. Try again.')
+      }
+    }
+    void launchLiveWorkout()
+  }, [bootstrapped, customWorkoutDraft, loading, location, navigate, planLoading, session?.session?.id, sessionController])
 
   useEffect(() => {
     return subscribeIronQuestStateChanged((detail) => {
@@ -483,6 +506,28 @@ export default function WorkoutScreen() {
     )
   }
 
+  if ((johnnyLiveWorkoutRequested || location.pathname.endsWith('/workout/live')) && session && exercises.length) {
+    return (
+      <JohnnyDemoLiveWorkout
+        isOpen
+        session={session}
+        exercises={exercises}
+        activeExerciseIdx={activeExerciseIdx}
+        onSetActiveExerciseIdx={setActiveExerciseIdx}
+        onCreateSet={sessionController.handleCreateSet}
+        onUpdateSet={sessionController.handleUpdateSet}
+        onClose={() => {
+          setJohnnyLiveWorkoutRequested(false)
+          sessionController.closeLiveMode()
+          navigate('/dashboard')
+        }}
+        onComplete={sessionController.handleComplete}
+        timerLabel={sessionController.activeSessionTimerLabel}
+        displayDayType={planning.displayDayType}
+      />
+    )
+  }
+
   if (!session || showPreWorkoutScreen) {
     return (
       <WorkoutLaunchpad
@@ -504,6 +549,10 @@ export default function WorkoutScreen() {
         offlineStatus={<WorkoutOfflineStatusCard {...workoutOfflineStatus} />}
         coachingSummary={launchpadCoachingSummary?.primaryType === 'recovery' ? launchpadCoachingSummary : null}
         onOpenWorkoutSupport={handleOpenWorkoutSupport}
+        onAskJohnny={() => openDrawer('Build me a workout. Ask only what you need, then create a reviewable standard or circuit workout with exact sets, reps or timed targets, rounds, and rest.', {
+          context: { current_screen: 'workout', workout_builder: true },
+          meta: { surface: 'workout_launchpad', promptKind: 'workout_builder' },
+        })}
         onPrebuiltQueued={handlePrebuiltQueued}
         planning={planning}
         tavernDay={{
@@ -552,6 +601,11 @@ export default function WorkoutScreen() {
       sessionController={{ ...sessionController, dismissUndoToast }}
       undoToast={undoToast}
       navigate={navigate}
+      forceLiveWorkoutOpen={johnnyLiveWorkoutRequested}
+      onCloseForcedLiveWorkout={() => {
+        setJohnnyLiveWorkoutRequested(false)
+        navigate('/dashboard')
+      }}
     />
   )
 }

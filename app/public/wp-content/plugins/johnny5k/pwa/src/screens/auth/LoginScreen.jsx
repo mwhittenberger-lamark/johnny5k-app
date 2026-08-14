@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
+import { useEffect, useRef, useState } from 'react'
+import { useLocation, useNavigate, Link } from 'react-router-dom'
 import { authApi } from '../../api/modules/auth'
 import ClearableInput from '../../components/ui/ClearableInput'
 import ErrorState from '../../components/ui/ErrorState'
@@ -13,7 +13,26 @@ export default function LoginScreen() {
   const [loading, setLoading]   = useState(false)
   const { setAuth, clearAuth, appImages } = useAuthStore()
   const navigate = useNavigate()
+  const location = useLocation()
   const welcomeImage = getAppImageUrl(appImages, 'login_welcome')
+  const devLoginAttempted = useRef(false)
+
+  useEffect(() => {
+    if (devLoginAttempted.current || new URLSearchParams(location.search).get('dev-login') !== '1') return
+    devLoginAttempted.current = true
+    setError('')
+    setLoading(true)
+    authApi.devLogin()
+      .then(data => {
+        setAuth(data)
+        navigate(data.onboarding_complete ? '/dashboard' : '/onboarding/welcome', { replace: true })
+      })
+      .catch(err => {
+        clearAuth()
+        setError(err.message || 'Development login is unavailable')
+      })
+      .finally(() => setLoading(false))
+  }, [clearAuth, location.search, navigate, setAuth])
 
   async function handleSubmit(e) {
     e.preventDefault()

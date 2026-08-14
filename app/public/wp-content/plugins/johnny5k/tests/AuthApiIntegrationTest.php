@@ -8,6 +8,36 @@ use Johnny5k\REST\AuthController;
 use Johnny5k\Tests\Support\ApiIntegrationTestCase;
 
 class AuthApiIntegrationTest extends ApiIntegrationTestCase {
+	public function test_dev_login_creates_a_session_only_for_local_loopback_requests(): void {
+		$user_id = wp_insert_user( [
+			'user_login' => 'mike',
+			'user_email' => 'mike@panempire.com',
+			'user_pass' => 'not-used-by-dev-login',
+			'role' => 'subscriber',
+		] );
+		add_filter( 'johnny5k_environment_type', static fn(): string => 'local' );
+		$_SERVER['REMOTE_ADDR'] = '127.0.0.1';
+		$this->wpdb()->expectGetVar( 'SELECT `onboarding_complete` FROM wp_fit_user_profiles', 1 );
+
+		$response = AuthController::dev_login( new \WP_REST_Request( 'POST', '/fit/v1/auth/dev-login' ) );
+		$data = $response->get_data();
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame( $user_id, $data['user_id'] );
+		$this->assertSame( 'mike@panempire.com', $data['email'] );
+		$this->assertTrue( $data['development_login'] );
+		$this->assertSame( $user_id, get_current_user_id() );
+	}
+
+	public function test_dev_login_is_hidden_for_non_loopback_requests(): void {
+		add_filter( 'johnny5k_environment_type', static fn(): string => 'local' );
+		$_SERVER['REMOTE_ADDR'] = '203.0.113.10';
+
+		$result = AuthController::dev_login_permission( new \WP_REST_Request( 'POST', '/fit/v1/auth/dev-login' ) );
+
+		$this->assertInstanceOf( \WP_Error::class, $result );
+		$this->assertSame( 404, $result->get_error_data()['status'] ?? 0 );
+	}
 	public function test_auth_register_then_validate_returns_authenticated_session_payload(): void {
 		$db = $this->wpdb();
 

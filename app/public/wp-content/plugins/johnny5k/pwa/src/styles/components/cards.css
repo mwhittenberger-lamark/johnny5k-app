@@ -2,7 +2,9 @@
   background: var(--surface-card);
   border: 1.5px solid var(--border);
   border-radius: var(--radius);
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: var(--glass-filter);
+  -webkit-backdrop-filter: var(--glass-filter);
   padding: var(--space-2);
   margin-bottom: var(--space-3);
 }
@@ -56,7 +58,9 @@
   background: var(--surface-card);
   border: 1.5px solid var(--border);
   border-radius: var(--radius);
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: var(--glass-filter);
+  -webkit-backdrop-filter: var(--glass-filter);
   padding: var(--space-3);
   text-align: center;
 }
@@ -78,6 +82,12 @@
   font-size: 0.75rem;
   color: var(--text-muted);
   font-weight: 600;
+}
+
+:root[data-color-scheme='classic'] .dash-card,
+:root[data-color-scheme='classic'] .small-card {
+  border-width: 1px;
+  border-color: var(--glass-border);
 }
 
 .skip-warning {

@@ -32,6 +32,12 @@ class AuthController {
 			],
 		] );
 
+		register_rest_route( $ns, '/auth/dev-login', [
+			'methods'             => 'POST',
+			'callback'            => [ __CLASS__, 'dev_login' ],
+			'permission_callback' => [ __CLASS__, 'dev_login_permission' ],
+		] );
+
 		register_rest_route( $ns, '/auth/register', [
 			'methods'             => 'POST',
 			'callback'            => [ __CLASS__, 'register' ],
@@ -111,6 +117,31 @@ class AuthController {
 		);
 
 		return self::auth_response( $user, 200, [ 'valid' => true ] );
+	}
+
+	/**
+	 * Create a real WordPress cookie session for local browser testing without
+	 * putting a password into automation. This endpoint is deliberately
+	 * unavailable outside a local environment and a loopback request.
+	 */
+	public static function dev_login( \WP_REST_Request $req ): \WP_REST_Response {
+		$permission = self::dev_login_permission( $req );
+		if ( is_wp_error( $permission ) ) {
+			return self::error( 'dev_login_unavailable', 'Development login is unavailable.', 404 );
+		}
+
+		$default_email = defined( 'JF_DEV_LOGIN_EMAIL' ) ? JF_DEV_LOGIN_EMAIL : 'mike@panempire.com';
+		$email = sanitize_email( (string) apply_filters( 'johnny5k_dev_login_email', $default_email ) );
+		$user = get_user_by( 'email', $email );
+		if ( ! $user ) {
+			return self::error( 'dev_login_user_missing', 'The configured development user does not exist.', 404 );
+		}
+
+		self::start_session( $user );
+		return self::auth_response( $user, 200, [
+			'valid' => true,
+			'development_login' => true,
+		] );
 	}
 
 	// ── POST /auth/register ────────────────────────────────────────────────────
@@ -270,6 +301,21 @@ class AuthController {
 		if ( ! $user || ! $user->ID ) {
 			return new \WP_Error( 'rest_not_logged_in', 'Authentication required.', [ 'status' => 401 ] );
 		}
+		return true;
+	}
+
+	public static function dev_login_permission( \WP_REST_Request $req ): bool|\WP_Error {
+		$environment = function_exists( 'wp_get_environment_type' )
+			? wp_get_environment_type()
+			: ( defined( 'WP_ENVIRONMENT_TYPE' ) ? WP_ENVIRONMENT_TYPE : 'production' );
+		$environment = (string) apply_filters( 'johnny5k_environment_type', $environment );
+		$remote_addr = (string) ( $_SERVER['REMOTE_ADDR'] ?? '' );
+		$is_loopback = '::1' === $remote_addr || '127.0.0.1' === $remote_addr;
+
+		if ( 'local' !== $environment || ! $is_loopback ) {
+			return new \WP_Error( 'rest_no_route', 'No route was found matching the URL and request method.', [ 'status' => 404 ] );
+		}
+
 		return true;
 	}
 

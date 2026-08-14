@@ -147,6 +147,12 @@ class OnboardingController {
 				'permission_callback' => $auth,
 			],
 		] );
+
+		register_rest_route( $ns, '/onboarding/generated-images/(?P<id>[a-z0-9\-]+)/data', [
+			'methods'             => 'GET',
+			'callback'            => [ __CLASS__, 'get_generated_image_data' ],
+			'permission_callback' => $auth,
+		] );
 	}
 
 	// ── GET /onboarding ───────────────────────────────────────────────────────
@@ -342,6 +348,41 @@ class OnboardingController {
 		}
 
 		return self::stream_private_attachment( (int) $match['attachment_id'] );
+	}
+
+	public static function get_generated_image_data( \WP_REST_Request $req ): \WP_REST_Response {
+		$user_id = get_current_user_id();
+		$image_id = sanitize_text_field( (string) $req->get_param( 'id' ) );
+		$items = self::get_generated_images_payload( $user_id );
+		$match = null;
+		foreach ( $items as $item ) {
+			if ( (string) ( $item['id'] ?? '' ) === $image_id ) {
+				$match = $item;
+				break;
+			}
+		}
+
+		if ( ! $match || empty( $match['attachment_id'] ) ) {
+			return new \WP_REST_Response( [ 'message' => 'Generated image not found.' ], 404 );
+		}
+
+		$data_url = PrivateMediaService::attachment_to_data_url(
+			(int) $match['attachment_id'],
+			'generated_image_missing',
+			'The generated image file could not be found.',
+			[ 'image/jpeg', 'image/png', 'image/webp' ]
+		);
+		if ( is_wp_error( $data_url ) ) {
+			return new \WP_REST_Response( [ 'message' => $data_url->get_error_message() ], 404 );
+		}
+
+		$response = new \WP_REST_Response( [
+			'image_id' => $image_id,
+			'data_url' => $data_url,
+		], 200 );
+		$response->header( 'Cache-Control', 'private, no-store' );
+
+		return $response;
 	}
 
 	public static function generate_personalized_images( \WP_REST_Request $req ): \WP_REST_Response {

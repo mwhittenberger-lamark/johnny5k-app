@@ -16,7 +16,7 @@ const RegisterScreen = lazy(() => import('./screens/auth/RegisterScreen'))
 const ForgotPasswordScreen = lazy(() => import('./screens/auth/ForgotPasswordScreen'))
 const ResetPasswordScreen = lazy(() => import('./screens/auth/ResetPasswordScreen'))
 const OnboardingRoutes = lazy(() => import('./screens/onboarding/OnboardingRoutes'))
-const DashboardScreen = lazy(() => import('./screens/dashboard/DashboardScreen'))
+const JohnnyHomeScreen = lazy(() => import('./screens/johnny/JohnnyHomeScreen'))
 const WorkoutScreen = lazy(() => import('./screens/workout/WorkoutScreen'))
 const ExerciseLibraryScreen = lazy(() => import('./screens/workout/ExerciseLibraryScreen'))
 const NutritionScreen = lazy(() => import('./screens/nutrition/NutritionScreen'))
@@ -93,18 +93,23 @@ export const router = createBrowserRouter([
                 children: [
                   {
                     index: true,
-                    element: lazyElement(DashboardScreen),
+                    element: lazyElement(JohnnyHomeScreen),
                     errorElement: <RouteErrorScreen area="dashboard" />,
                   },
                   {
                     path: '/dashboard',
-                    element: lazyElement(DashboardScreen),
+                    element: lazyElement(JohnnyHomeScreen),
                     errorElement: <RouteErrorScreen area="dashboard" />,
                   },
                   {
                     path: '/workout',
                     element: lazyElement(WorkoutScreen),
                     errorElement: <RouteErrorScreen area="workout" />,
+                  },
+                  {
+                    path: '/workout/live',
+                    element: lazyElement(WorkoutScreen),
+                    errorElement: <RouteErrorScreen area="live workout" />,
                   },
                   {
                     path: '/workout/library',

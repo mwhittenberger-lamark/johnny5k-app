@@ -8,6 +8,33 @@ class InternalDiagnosticsLogger {
 	private const OPTION_KEY = 'jf_internal_diagnostics_log';
 	private const MAX_ENTRIES = 100;
 
+	public static function record_johnny_chat_result( int $user_id, string $thread_key, string $prompt, array $result ): array {
+		$tool_errors = is_array( $result['tool_errors'] ?? null ) ? $result['tool_errors'] : [];
+		$first_error = '';
+		if ( ! empty( $tool_errors[0]['error'] ) ) {
+			$first_error = sanitize_text_field( (string) $tool_errors[0]['error'] );
+		}
+
+		return self::record_client_event(
+			[
+				'source'        => 'johnny_chat',
+				'message'       => substr( sanitize_textarea_field( $prompt ), 0, 500 ),
+				'error_message' => $first_error,
+				'status_code'   => '' === $first_error ? 200 : 500,
+				'current_path'  => '/dashboard',
+				'context'       => [
+					'thread_key'     => sanitize_text_field( $thread_key ),
+					'reply'          => substr( sanitize_textarea_field( (string) ( $result['reply'] ?? '' ) ), 0, 1000 ),
+					'used_tools'     => is_array( $result['used_tools'] ?? null ) ? $result['used_tools'] : [],
+					'action_results' => is_array( $result['action_results'] ?? null ) ? $result['action_results'] : [],
+					'tool_errors'    => $tool_errors,
+					'model'          => sanitize_text_field( (string) ( $result['model'] ?? '' ) ),
+				],
+			],
+			$user_id
+		);
+	}
+
 	public static function record_client_event( array $payload, int $user_id = 0 ): array {
 		$user = $user_id > 0 ? get_user_by( 'id', $user_id ) : null;
 

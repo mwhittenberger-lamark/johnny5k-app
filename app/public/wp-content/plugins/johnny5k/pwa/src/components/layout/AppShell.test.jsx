@@ -196,6 +196,26 @@ describe('AppShell', () => {
     expect(document.getElementById('app-shell-mobile-nav')).toBeNull()
   })
 
+  it('opens the persisted daily check-in mini screen from the Johnny home event', async () => {
+    await renderComponent(
+      <MemoryRouter initialEntries={['/dashboard']}>
+        <AppShell>
+          <div>Screen content</div>
+        </AppShell>
+      </MemoryRouter>,
+    )
+
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent('johnny5k:open-daily-checkin'))
+    })
+
+    const dialog = document.querySelector('[role="dialog"][aria-label="Daily check-in"]')
+    expect(dialog).toBeTruthy()
+    expect(dialog?.textContent).toContain('Start the day on purpose')
+    expect(authState.setDailyCheckInEntry).toHaveBeenCalled()
+    expect(authState.setPreferenceMeta).toHaveBeenCalled()
+  })
+
   it('hides the mobile admin link for mike@panempire.com while leaving the rest of the menu intact', async () => {
     authState.canAccessPwaAdmin = true
     authState.email = 'mike@panempire.com'

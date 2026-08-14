@@ -15,3 +15,5 @@
 /app/public/wp-content/uploads/**
 /app/public/wp-content/.DS_Store
 /app/public/wp-content/**/.DS_Store
+/app/public/wp-content/plugins/johnny5k/.phpstan.cache/
+/app/public/wp-content/plugins/johnny5k/node_modules/

@@ -253,7 +253,7 @@ class WorkoutActionService {
 		}
 
 		$sets = $wpdb->get_results( $wpdb->prepare(
-			"SELECT set_number, weight, reps, rir, rpe, completed, pain_flag, notes
+			"SELECT set_number, weight, reps, duration_seconds, circuit_round, rir, rpe, completed, pain_flag, notes
 			 FROM {$p}fit_workout_sets
 			 WHERE session_exercise_id = %d
 			 ORDER BY set_number, id",
@@ -273,6 +273,9 @@ class WorkoutActionService {
 				'planned_rep_min' => (int) $exercise->planned_rep_min,
 				'planned_rep_max' => (int) $exercise->planned_rep_max,
 				'planned_sets' => (int) $exercise->planned_sets,
+				'target_type' => (string) ( $exercise->target_type ?? 'reps' ),
+				'planned_duration_seconds' => null !== ( $exercise->planned_duration_seconds ?? null ) ? (int) $exercise->planned_duration_seconds : null,
+				'reps_per_side' => (int) ( $exercise->reps_per_side ?? 0 ),
 				'sort_order' => (int) $exercise->sort_order,
 				'was_swapped' => (int) $exercise->was_swapped,
 				'original_exercise_id' => null !== $exercise->original_exercise_id ? (int) $exercise->original_exercise_id : null,
@@ -282,6 +285,8 @@ class WorkoutActionService {
 						'set_number' => (int) $set->set_number,
 						'weight' => (float) $set->weight,
 						'reps' => (int) $set->reps,
+						'duration_seconds' => null !== ( $set->duration_seconds ?? null ) ? (int) $set->duration_seconds : null,
+						'circuit_round' => null !== ( $set->circuit_round ?? null ) ? (int) $set->circuit_round : null,
 						'rir' => null !== $set->rir ? (float) $set->rir : null,
 						'rpe' => null !== $set->rpe ? (float) $set->rpe : null,
 						'completed' => (int) $set->completed,
@@ -325,6 +330,9 @@ class WorkoutActionService {
 			'planned_rep_min' => (int) ( $command['planned_rep_min'] ?? 8 ),
 			'planned_rep_max' => (int) ( $command['planned_rep_max'] ?? 12 ),
 			'planned_sets' => (int) ( $command['planned_sets'] ?? 1 ),
+			'target_type' => 'duration' === ( $command['target_type'] ?? '' ) ? 'duration' : 'reps',
+			'planned_duration_seconds' => isset( $command['planned_duration_seconds'] ) ? (int) $command['planned_duration_seconds'] : null,
+			'reps_per_side' => ! empty( $command['reps_per_side'] ) ? 1 : 0,
 			'sort_order' => $sort_order,
 			'was_swapped' => array_key_exists( 'was_swapped', $command ) ? (int) (bool) $command['was_swapped'] : 0,
 			'original_exercise_id' => array_key_exists( 'original_exercise_id', $command ) && null !== $command['original_exercise_id'] ? (int) $command['original_exercise_id'] : null,
@@ -344,6 +352,8 @@ class WorkoutActionService {
 					'set_number' => max( 1, (int) ( $set['set_number'] ?? 1 ) ),
 					'weight' => (float) ( $set['weight'] ?? 0 ),
 					'reps' => (int) ( $set['reps'] ?? 0 ),
+					'duration_seconds' => isset( $set['duration_seconds'] ) ? (int) $set['duration_seconds'] : null,
+					'circuit_round' => isset( $set['circuit_round'] ) ? (int) $set['circuit_round'] : null,
 					'rir' => array_key_exists( 'rir', $set ) && null !== $set['rir'] ? (float) $set['rir'] : null,
 					'rpe' => array_key_exists( 'rpe', $set ) && null !== $set['rpe'] ? (float) $set['rpe'] : null,
 					'completed' => array_key_exists( 'completed', $set ) ? (int) (bool) $set['completed'] : 1,
@@ -393,6 +403,8 @@ class WorkoutActionService {
 				'set_number' => (int) $set->set_number,
 				'weight' => (float) $set->weight,
 				'reps' => (int) $set->reps,
+				'duration_seconds' => null !== ( $set->duration_seconds ?? null ) ? (int) $set->duration_seconds : null,
+				'circuit_round' => null !== ( $set->circuit_round ?? null ) ? (int) $set->circuit_round : null,
 				'rir' => null !== $set->rir ? (float) $set->rir : null,
 				'rpe' => null !== $set->rpe ? (float) $set->rpe : null,
 				'completed' => (int) $set->completed,
@@ -432,6 +444,8 @@ class WorkoutActionService {
 			'set_number' => $set_number,
 			'weight' => (float) ( $command['weight'] ?? 0 ),
 			'reps' => (int) ( $command['reps'] ?? 0 ),
+			'duration_seconds' => isset( $command['duration_seconds'] ) ? (int) $command['duration_seconds'] : null,
+			'circuit_round' => isset( $command['circuit_round'] ) ? (int) $command['circuit_round'] : null,
 			'rir' => array_key_exists( 'rir', $command ) && null !== $command['rir'] ? (float) $command['rir'] : null,
 			'rpe' => array_key_exists( 'rpe', $command ) && null !== $command['rpe'] ? (float) $command['rpe'] : null,
 			'completed' => array_key_exists( 'completed', $command ) ? (int) (bool) $command['completed'] : 1,
@@ -586,17 +600,22 @@ class WorkoutActionService {
 			return new \WP_Error( 'workout_session_not_found', 'Session not found.', [ 'status' => 404 ] );
 		}
 
-		$wpdb->insert( $p . 'fit_workout_sets', array_filter( [
+		$inserted = $wpdb->insert( $p . 'fit_workout_sets', array_filter( [
 			'session_exercise_id' => (int) ( $command['session_exercise_id'] ?? 0 ),
 			'set_number' => (int) ( $command['set_number'] ?? 1 ),
 			'weight' => (float) ( $command['weight'] ?? 0 ),
 			'reps' => (int) ( $command['reps'] ?? 0 ),
+			'duration_seconds' => isset( $command['duration_seconds'] ) ? (int) $command['duration_seconds'] : null,
+			'circuit_round' => isset( $command['circuit_round'] ) ? (int) $command['circuit_round'] : null,
 			'rir' => array_key_exists( 'rir', $command ) && null !== $command['rir'] ? (float) $command['rir'] : null,
 			'rpe' => array_key_exists( 'rpe', $command ) && null !== $command['rpe'] ? (float) $command['rpe'] : null,
 			'completed' => array_key_exists( 'completed', $command ) ? (int) (bool) $command['completed'] : 1,
 			'pain_flag' => array_key_exists( 'pain_flag', $command ) ? (int) (bool) $command['pain_flag'] : 0,
 			'notes' => isset( $command['notes'] ) ? sanitize_text_field( (string) $command['notes'] ) : null,
 		], fn( $value ) => null !== $value ) );
+		if ( false === $inserted || (int) $wpdb->insert_id <= 0 ) {
+			return new \WP_Error( 'workout_set_insert_failed', 'The set could not be saved. Please try again.', [ 'status' => 500 ] );
+		}
 
 		return [ 'set_id' => (int) $wpdb->insert_id ];
 	}
@@ -616,6 +635,8 @@ class WorkoutActionService {
 		$update = array_filter( [
 			'weight' => array_key_exists( 'weight', $command ) && null !== $command['weight'] ? (float) $command['weight'] : null,
 			'reps' => array_key_exists( 'reps', $command ) && null !== $command['reps'] ? (int) $command['reps'] : null,
+			'duration_seconds' => array_key_exists( 'duration_seconds', $command ) && null !== $command['duration_seconds'] ? (int) $command['duration_seconds'] : null,
+			'circuit_round' => array_key_exists( 'circuit_round', $command ) && null !== $command['circuit_round'] ? (int) $command['circuit_round'] : null,
 			'rir' => array_key_exists( 'rir', $command ) && null !== $command['rir'] ? (float) $command['rir'] : null,
 			'completed' => array_key_exists( 'completed', $command ) && null !== $command['completed'] ? (int) (bool) $command['completed'] : null,
 			'pain_flag' => array_key_exists( 'pain_flag', $command ) && null !== $command['pain_flag'] ? (int) (bool) $command['pain_flag'] : null,

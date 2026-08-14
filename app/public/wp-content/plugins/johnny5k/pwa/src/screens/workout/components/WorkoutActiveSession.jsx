@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import ErrorState from '../../../components/ui/ErrorState'
 import SupportIconButton from '../../../components/ui/SupportIconButton'
 import ExerciseCard from '../../../components/workout/ExerciseCard'
-import LiveWorkoutMode from '../../../components/workout/LiveWorkoutMode'
+import JohnnyDemoLiveWorkout from '../../../components/workout/JohnnyDemoLiveWorkout'
+import ToastPortal from '../../../components/ui/ToastPortal'
 import WorkoutSessionConfirmModal from './WorkoutSessionConfirmModal'
 import { formatDayType } from '../workoutScreenUtils'
 
@@ -28,6 +29,8 @@ export default function WorkoutActiveSession({
   sessionController,
   undoToast,
   navigate,
+  forceLiveWorkoutOpen = false,
+  onCloseForcedLiveWorkout,
 }) {
   const activeEx = exercises[activeExerciseIdx]
   const quickAddDisabled = Boolean(sessionController.addingSlot)
@@ -133,16 +136,16 @@ export default function WorkoutActiveSession({
 
       <section className="dash-card workout-session-progress-card">
         <div className="dashboard-card-head">
-          <span className="dashboard-chip workout">Session flow</span>
+          <span className="dashboard-chip workout">{sessionController.isCircuitWorkout ? `Circuit · Round ${sessionController.activeCircuitRound} of ${sessionController.circuitRounds}` : 'Session flow'}</span>
           <span className="dashboard-chip subtle">{sessionController.completedExerciseCount}/{sessionController.totalExercises} exercises finished</span>
         </div>
 
         <div className="workout-session-progress-overview">
           <div className="workout-session-progress-primary">
-            <span className="exercise-card-label">Current lift</span>
+            <span className="exercise-card-label">{sessionController.isCircuitWorkout ? 'Current station' : 'Current lift'}</span>
             <strong>{activeEx?.exercise_name || 'Workout in progress'}</strong>
             <p>
-              Exercise {currentExercisePosition} of {sessionController.totalExercises} · {sessionController.activeExerciseCompletedSets}/{sessionController.activeExercisePlannedSets} sets logged
+              {sessionController.isCircuitWorkout ? 'Station' : 'Exercise'} {currentExercisePosition} of {sessionController.totalExercises} · {sessionController.activeExerciseCompletedSets}/{sessionController.activeExercisePlannedSets} {sessionController.isCircuitWorkout ? 'rounds' : 'sets'} logged
             </p>
           </div>
           <div className="workout-session-progress-secondary">
@@ -150,7 +153,7 @@ export default function WorkoutActiveSession({
             <strong>{sessionController.nextExercise?.exercise_name || 'Finish the session'}</strong>
             <p>
               {sessionController.nextExercise
-                ? `${sessionController.nextExercise.planned_sets || Math.max(1, sessionController.nextExercise.sets?.length || 0)} planned sets · ${sessionController.nextExercise.planned_rep_min || '?'}-${sessionController.nextExercise.planned_rep_max || '?'} reps`
+                ? formatActiveTarget(sessionController.nextExercise, sessionController.isCircuitWorkout)
                 : 'Once this lift is done, you can close the workout cleanly.'}
             </p>
           </div>
@@ -277,24 +280,26 @@ export default function WorkoutActiveSession({
       </section>
 
       {undoToast ? (
-        <div className="undo-toast" role="status" aria-live="polite">
-          <div>
-            <strong>Workout updated</strong>
-            <p>{undoToast.message}</p>
+        <ToastPortal>
+          <div className="undo-toast" role="status" aria-live="polite">
+            <div>
+              <strong>Workout updated</strong>
+              <p>{undoToast.message}</p>
+            </div>
+            <div className="undo-toast-actions">
+              <button type="button" className="btn-outline small" onClick={sessionController.handleUndoAction} disabled={sessionController.undoing}>
+                {sessionController.undoing ? 'Undoing...' : undoToast.actionLabel || 'Undo'}
+              </button>
+              <button type="button" className="undo-toast-dismiss" onClick={sessionController.dismissUndoToast}>
+                Dismiss
+              </button>
+            </div>
           </div>
-          <div className="undo-toast-actions">
-            <button type="button" className="btn-outline small" onClick={sessionController.handleUndoAction} disabled={sessionController.undoing}>
-              {sessionController.undoing ? 'Undoing...' : undoToast.actionLabel || 'Undo'}
-            </button>
-            <button type="button" className="undo-toast-dismiss" onClick={sessionController.dismissUndoToast}>
-              Dismiss
-            </button>
-          </div>
-        </div>
+        </ToastPortal>
       ) : null}
 
-      <LiveWorkoutMode
-        isOpen={sessionController.liveModeOpen}
+      <JohnnyDemoLiveWorkout
+        isOpen={forceLiveWorkoutOpen || sessionController.liveModeOpen}
         session={session}
         exercises={exercises}
         liveFrames={liveWorkoutFrames}
@@ -306,7 +311,11 @@ export default function WorkoutActiveSession({
         onChooseIronQuestStoryOpening={sessionController.chooseIronQuestStoryOpening}
         onProgressIronQuestStory={sessionController.progressIronQuestStory}
         onUpdateSet={sessionController.handleUpdateSet}
-        onClose={sessionController.closeLiveMode}
+        onClose={() => {
+          sessionController.closeLiveMode()
+          if (forceLiveWorkoutOpen) onCloseForcedLiveWorkout?.()
+        }}
+        onComplete={sessionController.handleComplete}
         onSetIronQuestStance={sessionController.setIronQuestLiveStance}
         onSetIronQuestBeatsEnabled={sessionController.setIronQuestLiveBeatsEnabled}
         ironQuestStoryBusy={sessionController.ironQuestStoryBusy}
@@ -328,4 +337,16 @@ export default function WorkoutActiveSession({
       />
     </div>
   )
+}
+
+function formatActiveTarget(exercise, isCircuitWorkout) {
+  const prefix = isCircuitWorkout ? 'Next station' : `${exercise.planned_sets || 1} planned sets`
+  if (exercise.target_type === 'duration') {
+    const seconds = Number(exercise.planned_duration_seconds || 0)
+    const duration = seconds >= 60 && seconds % 60 === 0 ? `${seconds / 60} min` : `${seconds} sec`
+    return `${prefix} · ${duration}`
+  }
+  const min = exercise.planned_rep_min || '?'
+  const max = exercise.planned_rep_max || min
+  return `${prefix} · ${min}${String(min) === String(max) ? '' : `-${max}`} reps${exercise.reps_per_side ? ' per side' : ''}`
 }

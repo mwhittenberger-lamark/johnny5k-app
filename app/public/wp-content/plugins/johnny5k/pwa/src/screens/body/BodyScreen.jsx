@@ -7,7 +7,7 @@ import { workoutApi } from '../../api/modules/workout'
 import ClearableInput from '../../components/ui/ClearableInput'
 import SupportIconButton from '../../components/ui/SupportIconButton'
 import { getAccessibleScrollBehavior } from '../../lib/accessibility'
-import { formatUsShortDate } from '../../lib/dateFormat'
+import { formatUsChartDate, formatUsShortDate } from '../../lib/dateFormat'
 import { resolveIronQuestSleepStateDate } from '../../lib/ironquestDailyProgress'
 import { buildIronQuestDailyToast } from '../../lib/ironquestFeedback'
 import { settingsFormFromState } from '../../lib/onboarding'
@@ -682,7 +682,7 @@ export default function BodyScreen() {
               emptyLabel="No weight trend yet"
               tickLabels={buildTickLabels(weightSeries)}
               valueLabels={buildTickValueLabels(weightSeries, point => formatSparkValue(point.value))}
-              tooltipFormatter={point => `${formatDate(point.label)}: ${formatSparkValue(point.value)} lbs`}
+              tooltipFormatter={point => `${formatGraphDate(point.label)}: ${formatSparkValue(point.value)} lbs`}
             />
           </section>
           <section ref={weightFormRef} className="dash-card body-form-card">
@@ -749,7 +749,7 @@ export default function BodyScreen() {
               referenceLabel={`${sleepTarget}h goal`}
               emptyLabel="No sleep trend yet"
               tickLabels={buildTickLabels(sleepSeries)}
-              tooltipFormatter={point => `${formatDate(point.label)}: ${formatSparkValue(point.value)} h`}
+              tooltipFormatter={point => `${formatGraphDate(point.label)}: ${formatSparkValue(point.value)} h`}
             />
           </section>
           <section ref={sleepFormRef} className="dash-card body-form-card">
@@ -823,7 +823,7 @@ export default function BodyScreen() {
               referenceLabel={`${Number(stepTarget).toLocaleString()} goal`}
               emptyLabel="No step trend yet"
               tickLabels={buildTickLabels(stepSeries)}
-              tooltipFormatter={point => `${formatDate(point.label)}: ${Math.round(point.value).toLocaleString()} steps`}
+              tooltipFormatter={point => `${formatGraphDate(point.label)}: ${Math.round(point.value).toLocaleString()} steps`}
             />
           </section>
           <section ref={stepsFormRef} className="dash-card body-form-card steps-form-card">
@@ -1311,7 +1311,7 @@ function CardioTab({ invalidate, cardioLogs, cardioSeries, cardioRange, currentW
           fill="rgba(255, 208, 0, 0.18)"
           emptyLabel="No cardio trend yet"
           tickLabels={buildTickLabels(cardioSeries)}
-          tooltipFormatter={point => `${formatDate(point.label)}: ${Math.round(point.value)} min cardio`}
+          tooltipFormatter={point => `${formatGraphDate(point.label)}: ${Math.round(point.value)} min cardio`}
         />
       </section>
       <section ref={cardioFormRef} className="dash-card body-form-card cardio-card">
@@ -1592,6 +1592,11 @@ function formatDate(value) {
   return formatUsShortDate(value, value)
 }
 
+function formatGraphDate(value) {
+  if (!value) return '—'
+  return formatUsChartDate(value, value)
+}
+
 function formatDayType(value) {
 	if (!value) return 'Workout'
 	return value.replace(/_/g, ' ').replace(/\b\w/g, ch => ch.toUpperCase())
@@ -1620,7 +1625,7 @@ function selectSeries(items, days, valueGetter, labelGetter) {
 function buildTickLabels(series) {
   if (!series || series.length < 2) return []
   const indices = buildSparkTickIndices(series)
-  return indices.map(index => formatDate(series[index]?.label))
+  return indices.map(index => formatGraphDate(series[index]?.label))
 }
 
 function buildTickValueLabels(series, formatter = point => formatSparkValue(point?.value)) {

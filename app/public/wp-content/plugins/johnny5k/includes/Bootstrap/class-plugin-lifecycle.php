@@ -4,6 +4,7 @@ namespace Johnny5k\Bootstrap;
 defined( 'ABSPATH' ) || exit;
 
 use Johnny5k\Database\Schema;
+use Johnny5k\Database\Migrator;
 
 class PluginLifecycle {
 
@@ -34,6 +35,7 @@ class PluginLifecycle {
 		}
 
 		Schema::create_tables();
+		Migrator::maybe_migrate();
 		update_option( 'jf_db_version', JF_DB_VERSION );
 	}
 }

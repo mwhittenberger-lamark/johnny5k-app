@@ -184,9 +184,19 @@ export function useWorkoutSessionController({
 
   const activeSessionStartedAt = session?.session?.started_at || null
   const sessionTimerPaused = sessionTimerPausedAt != null
+  const isCircuitWorkout = session?.session?.workout_structure === 'circuit'
+  const circuitRounds = Math.max(1, Number(session?.session?.rounds_total || 1))
   const activeExercise = exercises[activeExerciseIdx] ?? null
-  const previousExercise = activeExerciseIdx > 0 ? exercises[activeExerciseIdx - 1] ?? null : null
-  const nextExercise = activeExerciseIdx < exercises.length - 1 ? exercises[activeExerciseIdx + 1] ?? null : null
+  const activeCircuitRound = isCircuitWorkout
+    ? Math.min(circuitRounds, getCompletedSetCount(activeExercise) + 1)
+    : 1
+  const circuitHasNextRound = isCircuitWorkout && activeCircuitRound < circuitRounds
+  const previousExercise = activeExerciseIdx > 0
+    ? exercises[activeExerciseIdx - 1] ?? null
+    : (isCircuitWorkout && activeCircuitRound > 1 ? exercises[exercises.length - 1] ?? null : null)
+  const nextExercise = activeExerciseIdx < exercises.length - 1
+    ? exercises[activeExerciseIdx + 1] ?? null
+    : (circuitHasNextRound ? exercises[0] ?? null : null)
   const activeSessionTimerLabel = formatWorkoutElapsedTime(
     activeSessionStartedAt,
     getPausedTimerNowValue(timerNow, sessionTimerPausedAt, sessionTimerPausedMs),
@@ -356,7 +366,10 @@ export function useWorkoutSessionController({
   }, [completionReview, navigate])
 
   async function handleCreateSet(sessionExerciseId, setData, options = {}) {
-    const result = await logSetMutation.mutateAsync({ sessionExerciseId, setData })
+    const normalizedSetData = isCircuitWorkout
+      ? { ...setData, set_number: activeCircuitRound, circuit_round: activeCircuitRound }
+      : setData
+    const result = await logSetMutation.mutateAsync({ sessionExerciseId, setData: normalizedSetData })
 
     setLastSessionActivity({
       kind: 'set',
@@ -365,7 +378,13 @@ export function useWorkoutSessionController({
       exerciseName: String(options.exerciseName || activeExercise?.exercise_name || '').trim(),
     })
 
-    if (options.autoAdvance && Number.isInteger(options.nextExerciseIndex)) {
+    if (isCircuitWorkout && nextExercise) {
+      const nextIndex = activeExerciseIdx < exercises.length - 1 ? activeExerciseIdx + 1 : 0
+      setActiveExerciseIdx(nextIndex)
+      setStatusNotice(nextIndex === 0
+        ? `Round ${activeCircuitRound} complete. Starting round ${activeCircuitRound + 1}.`
+        : `Round ${activeCircuitRound}: next up is ${nextExercise.exercise_name}.`)
+    } else if (options.autoAdvance && Number.isInteger(options.nextExerciseIndex)) {
       setActiveExerciseIdx(options.nextExerciseIndex)
       if (options.nextExerciseName) {
         setStatusNotice(`Set logged. Next up: ${options.nextExerciseName}.`)
@@ -651,8 +670,11 @@ export function useWorkoutSessionController({
   }, [setActiveExerciseIdx])
 
   const goToNextExercise = useCallback(() => {
-    setActiveExerciseIdx((current) => Math.min(Math.max(0, exercises.length - 1), current + 1))
-  }, [exercises.length, setActiveExerciseIdx])
+    setActiveExerciseIdx((current) => {
+      if (isCircuitWorkout && current >= exercises.length - 1 && circuitHasNextRound) return 0
+      return Math.min(Math.max(0, exercises.length - 1), current + 1)
+    })
+  }, [circuitHasNextRound, exercises.length, isCircuitWorkout, setActiveExerciseIdx])
 
   const goToExercise = useCallback((index) => {
     const numericIndex = Number(index)
@@ -762,12 +784,15 @@ export function useWorkoutSessionController({
     completedExerciseCount,
     exiting,
     activeExerciseCompletedSets,
+    activeCircuitRound,
     activeExerciseLoggedSets,
     activeExercisePlannedSets,
     activeRestGuidance,
     activeExercise,
     previousExercise,
     nextExercise,
+    isCircuitWorkout,
+    circuitRounds,
     totalExercises,
     totalLoggedSets,
     totalPlannedSets,

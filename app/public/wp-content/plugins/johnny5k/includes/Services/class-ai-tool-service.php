@@ -103,11 +103,110 @@ class AiToolService {
 				'description' => 'Get today’s steps plus recent sleep, weight, and cardio summary.',
 				'parameters'  => [ 'type' => 'object', 'properties' => $empty_object, 'additionalProperties' => false ],
 			],
+			'get_weight_history' => [
+				'read_only'   => true,
+				'enabled'     => true,
+				'description' => 'Get the user’s complete stored weight-loss history, including every dated weight, waist, body-fat, resting-heart-rate, and notes entry plus starting weight, target weight, total change, goal progress, and date span. Use for any question about weight progress, loss, change, history, or trend. When at least two weight entries exist, this tool also returns a ready-to-render weight line chart; do not call create_visualization again for the same weight series.',
+				'parameters'  => [ 'type' => 'object', 'properties' => $empty_object, 'additionalProperties' => false ],
+			],
 			'get_current_workout' => [
 				'read_only'   => true,
 				'enabled'     => true,
-				'description' => 'Get the user’s current or today’s workout session and exercises, including logged sets, reps, weights, and the most recent completed workout details.',
+				'description' => 'Get the user’s queued workout draft and approval state as well as the current or today’s workout session, exercises, logged sets, reps, weights, and most recent completed workout details.',
 				'parameters'  => [ 'type' => 'object', 'properties' => $empty_object, 'additionalProperties' => false ],
+			],
+			'get_saved_workouts' => [
+				'read_only'   => true,
+				'enabled'     => true,
+				'description' => 'List the user’s reusable workouts from My Workouts, including IDs, names, structure, exercise counts, and exercise prescriptions. Use when the user asks what workouts they have, asks to see or search their saved workouts, or needs the exact name or ID before loading one.',
+				'parameters'  => [
+					'type' => 'object',
+					'properties' => [
+						'query' => [ 'type' => 'string', 'description' => 'Optional name, day type, or exercise text to search.' ],
+						'limit' => [ 'type' => 'integer', 'minimum' => 1, 'maximum' => 100 ],
+					],
+					'additionalProperties' => false,
+				],
+			],
+			'present_choices' => [
+				'read_only'   => true,
+				'enabled'     => true,
+				'description' => 'Show a compact decision rail beneath your reply when the user has 2 to 4 genuinely useful next choices. Use reply choices for clarifications and decisions, and navigation choices only to open an app screen. Call this at most once per response. Do not use it for a direct answer with no meaningful decision.',
+				'parameters'  => [
+					'type'                 => 'object',
+					'properties'           => [
+						'prompt' => [ 'type' => 'string', 'description' => 'Optional short question or decision label shown above the buttons.' ],
+						'style' => [ 'type' => 'string', 'enum' => [ 'chips', 'actions' ], 'description' => 'Use chips for short answers and actions for more consequential next steps.' ],
+						'choices' => [
+							'type' => 'array',
+							'minItems' => 2,
+							'maxItems' => 4,
+							'items' => [
+								'type'                 => 'object',
+								'properties'           => [
+									'label' => [ 'type' => 'string', 'description' => 'Concise button text.' ],
+									'type' => [ 'type' => 'string', 'enum' => [ 'reply', 'navigate' ] ],
+									'response' => [ 'type' => 'string', 'description' => 'Natural-language message sent back to Johnny for a reply choice.' ],
+									'route' => [ 'type' => 'string', 'description' => 'App route for a navigation choice.' ],
+									'emphasis' => [ 'type' => 'string', 'enum' => [ 'primary', 'secondary' ] ],
+								],
+								'required'             => [ 'label', 'type' ],
+								'additionalProperties' => false,
+							],
+						],
+					],
+					'required'             => [ 'choices' ],
+					'additionalProperties' => false,
+				],
+			],
+			'create_visualization' => [
+				'read_only'   => true,
+				'enabled'     => true,
+				'description' => 'Create a chart or infographic card in the Johnny conversation. Use after retrieving the relevant user data when a visual comparison, trend, progress summary, or step-by-step explanation would be clearer than prose. Never invent values. Keep charts to 12 data points or fewer and cite the data source in source_label.',
+				'parameters'  => [
+					'type'                 => 'object',
+					'properties'           => [
+						'type' => [ 'type' => 'string', 'enum' => [ 'line', 'bar', 'progress', 'comparison', 'infographic' ] ],
+						'title' => [ 'type' => 'string', 'description' => 'Short, specific visual title.' ],
+						'subtitle' => [ 'type' => 'string', 'description' => 'Optional one-line context.' ],
+						'unit' => [ 'type' => 'string', 'description' => 'Short unit such as lb, reps, hours, steps, %, kcal, or g.' ],
+						'source_label' => [ 'type' => 'string', 'description' => 'Where the displayed values came from, such as Workout history or Daily check-ins.' ],
+						'target' => [ 'type' => 'number', 'description' => 'Optional target for progress charts.' ],
+						'items' => [
+							'type' => 'array', 'minItems' => 1, 'maxItems' => 12,
+							'items' => [
+								'type' => 'object',
+								'properties' => [
+									'label' => [ 'type' => 'string' ],
+									'value' => [ 'type' => 'number' ],
+									'secondary_value' => [ 'type' => 'number', 'description' => 'Optional comparison value.' ],
+									'detail' => [ 'type' => 'string', 'description' => 'Optional concise annotation or infographic description.' ],
+								],
+								'required' => [ 'label' ],
+								'additionalProperties' => false,
+							],
+						],
+					],
+					'required'             => [ 'type', 'title', 'items' ],
+					'additionalProperties' => false,
+				],
+			],
+			'generate_image' => [
+				'read_only'   => false,
+				'enabled'     => true,
+				'description' => 'Generate and privately save one image for the current user with OpenAI. Use only when the user explicitly asks Johnny to create, generate, illustrate, draw, or make an image, poster, artwork, meal concept, or shareable graphic. Do not use this for numeric charts or factual infographics; use create_visualization instead. Johnny allows up to 2 OpenAI-generated images per user per day.',
+				'parameters'  => [
+					'type'                 => 'object',
+					'properties'           => [
+						'prompt' => [ 'type' => 'string', 'description' => 'A detailed visual description grounded in the user request.' ],
+						'title' => [ 'type' => 'string', 'description' => 'Short display title.' ],
+						'alt_text' => [ 'type' => 'string', 'description' => 'Concise accessible description of the intended image.' ],
+						'category' => [ 'type' => 'string', 'enum' => [ 'exercise_illustration', 'workout_poster', 'meal_concept', 'motivation', 'share_card', 'other' ] ],
+						'aspect_ratio' => [ 'type' => 'string', 'enum' => [ '1:1', '4:3', '3:4', '16:9', '9:16' ] ],
+					],
+					'required'             => [ 'prompt', 'title', 'alt_text', 'category' ],
+					'additionalProperties' => false,
+				],
 			],
 			'log_steps' => [
 				'read_only'   => false,
@@ -180,21 +279,47 @@ class AiToolService {
 			'create_custom_workout' => [
 				'read_only'   => false,
 				'enabled'     => true,
-				'description' => 'Create a named one-off custom workout draft for the user and queue it on the workout screen. Use when the user wants Johnny to build a specific custom workout for today instead of editing the full weekly plan.',
+				'description' => 'Use this whenever the user wants Johnny to produce, assemble, choose, design, recommend, or otherwise give them a concrete workout to perform—not only when they use a specific phrase. This creates the reviewable standard or circuit workout draft that the app renders as an editable card. Never provide a requested workout prescription only as prose. Preserve exercise order and exact rep, duration, per-side, sets, rounds, and rest instructions. Use circuit when the intended structure repeats a sequence. Convert minutes to seconds and disclose consequential assumptions in interpretation_notes.',
 				'parameters'  => [
 					'type'                 => 'object',
 					'properties'           => [
 						'name'           => [ 'type' => 'string', 'description' => 'The custom workout name Johnny wants the user to see.' ],
 						'day_type'       => [ 'type' => 'string', 'description' => 'Optional base day type: ' . TrainingDayTypes::ai_list() . '.' ],
 						'time_tier'      => [ 'type' => 'string', 'description' => 'Optional workout length: short, medium, or full.' ],
+						'workout_structure' => [ 'type' => 'string', 'enum' => [ 'standard', 'circuit' ] ],
+						'rounds' => [ 'type' => 'integer', 'minimum' => 1, 'maximum' => 20, 'description' => 'Required for a circuit.' ],
+						'rest_between_exercises_seconds' => [ 'type' => 'integer', 'minimum' => 0, 'maximum' => 900 ],
+						'rest_between_rounds_seconds' => [ 'type' => 'integer', 'minimum' => 0, 'maximum' => 1800 ],
+						'exercises' => [
+							'type' => 'array',
+							'minItems' => 1,
+							'maxItems' => 30,
+							'items' => [
+								'type' => 'object',
+								'properties' => [
+									'exercise_name' => [ 'type' => 'string' ],
+									'target_type' => [ 'type' => 'string', 'enum' => [ 'reps', 'duration' ] ],
+									'target_reps' => [ 'type' => 'integer', 'minimum' => 1, 'maximum' => 500 ],
+									'target_rep_min' => [ 'type' => 'integer', 'minimum' => 1, 'maximum' => 500 ],
+									'target_rep_max' => [ 'type' => 'integer', 'minimum' => 1, 'maximum' => 500 ],
+									'target_duration_seconds' => [ 'type' => 'integer', 'minimum' => 5, 'maximum' => 3600 ],
+									'sets' => [ 'type' => 'integer', 'minimum' => 1, 'maximum' => 20 ],
+									'reps_per_side' => [ 'type' => 'boolean' ],
+									'notes' => [ 'type' => 'string' ],
+								],
+								'required' => [ 'exercise_name', 'target_type' ],
+								'additionalProperties' => false,
+							],
+						],
 						'exercise_names' => [
 							'type'        => 'array',
 							'items'       => [ 'type' => 'string' ],
 							'description' => 'Ordered list of exercise names Johnny selected for this custom workout.',
 						],
 						'coach_note'   => [ 'type' => 'string', 'description' => 'Optional short note about why Johnny built this workout.' ],
+						'interpretation_notes' => [ 'type' => 'array', 'items' => [ 'type' => 'string' ], 'description' => 'Corrections or consequential assumptions to show in review.' ],
 					],
-					'required'             => [ 'name', 'exercise_names' ],
+					'required'             => [ 'name', 'workout_structure', 'exercises' ],
 					'additionalProperties' => false,
 				],
 			],
@@ -222,6 +347,31 @@ class AiToolService {
 					'additionalProperties' => false,
 				],
 			],
+			'save_workout_to_library' => [
+				'read_only'   => false,
+				'enabled'     => true,
+				'description' => 'Save the user’s queued workout draft or active workout session to their reusable My Workouts library. Use only when the user explicitly asks to save, store, or keep the workout.',
+				'parameters'  => [
+					'type' => 'object',
+					'properties' => [
+						'name' => [ 'type' => 'string', 'description' => 'Optional library name override.' ],
+					],
+					'additionalProperties' => false,
+				],
+			],
+			'load_saved_workout' => [
+				'read_only'   => false,
+				'enabled'     => true,
+				'description' => 'Find a workout in the user’s My Workouts library by saved ID or name and queue a fresh copy on the Workout screen when the user explicitly asks to load or use it.',
+				'parameters'  => [
+					'type' => 'object',
+					'properties' => [
+						'id' => [ 'type' => 'integer', 'minimum' => 1 ],
+						'name' => [ 'type' => 'string' ],
+					],
+					'additionalProperties' => false,
+				],
+			],
 			'log_sleep' => [
 				'read_only'   => false,
 				'enabled'     => true,
@@ -236,6 +386,142 @@ class AiToolService {
 					'required'             => [ 'hours_sleep' ],
 					'additionalProperties' => false,
 				],
+			],
+			'log_cardio' => [
+				'read_only'   => false,
+				'enabled'     => true,
+				'description' => 'Log a completed cardio activity when the user clearly asks Johnny to record it. Use the user’s wording to choose the activity type and intensity. Do not merely describe the entry or claim it was logged without calling this tool.',
+				'parameters'  => [
+					'type'                 => 'object',
+					'properties'           => [
+						'cardio_type'       => [ 'type' => 'string', 'description' => 'Activity such as walking, running, cycling, swimming, rowing, stairmaster, HIIT, or other.' ],
+						'duration_minutes'  => [ 'type' => 'integer', 'minimum' => 1, 'maximum' => 1440 ],
+						'intensity'         => [ 'type' => 'string', 'enum' => [ 'light', 'moderate', 'hard' ] ],
+						'distance'          => [ 'type' => 'number', 'minimum' => 0, 'description' => 'Optional distance using the value supplied by the user.' ],
+						'estimated_calories'=> [ 'type' => 'integer', 'minimum' => 0 ],
+						'notes'              => [ 'type' => 'string' ],
+						'date'               => [ 'type' => 'string', 'description' => 'Date in YYYY-MM-DD format when known. Omit to use today.' ],
+					],
+					'required'             => [ 'cardio_type', 'duration_minutes', 'intensity' ],
+					'additionalProperties' => false,
+				],
+			],
+			'log_rest_day' => [
+				'read_only'   => false,
+				'enabled'     => true,
+				'description' => 'Record today as a completed rest day when the user clearly says they are taking, logging, or confirming a rest day. This changes today’s training record, so do not use it for general recovery questions or hypothetical discussion.',
+				'parameters'  => [ 'type' => 'object', 'properties' => $empty_object, 'additionalProperties' => false ],
+			],
+			'approve_workout' => [
+				'read_only' => false, 'enabled' => true,
+				'description' => 'Persistently approve and lock the currently queued or active workout for today after the user explicitly approves it.',
+				'parameters' => [ 'type' => 'object', 'properties' => $empty_object, 'additionalProperties' => false ],
+			],
+			'search_exercises' => [
+				'read_only' => true, 'enabled' => true,
+				'description' => 'Search the accessible exercise library before recommending, adding, or replacing exercises when exact available options matter.',
+				'parameters' => [ 'type' => 'object', 'properties' => [
+					'query' => [ 'type' => 'string' ], 'muscle' => [ 'type' => 'string' ], 'equipment' => [ 'type' => 'string' ],
+					'own_only' => [ 'type' => 'boolean' ], 'limit' => [ 'type' => 'integer', 'minimum' => 1, 'maximum' => 50 ],
+				], 'additionalProperties' => false ],
+			],
+			'modify_workout' => [
+				'read_only' => false, 'enabled' => true,
+				'description' => 'Modify the queued workout card. Use replace for an atomic one-for-one exercise replacement, remove, add, reorder with the complete ordered exercise-name list, or structure to change standard/circuit rounds and rest. A failed replacement leaves the original workout unchanged.',
+				'parameters' => [ 'type' => 'object', 'properties' => [
+					'action' => [ 'type' => 'string', 'enum' => [ 'replace', 'remove', 'add', 'reorder', 'structure' ] ],
+					'exercise_name' => [ 'type' => 'string' ],
+					'replacement_exercise_name' => [ 'type' => 'string' ],
+					'exercise_order' => [ 'type' => 'array', 'items' => [ 'type' => 'string' ] ],
+					'workout_structure' => [ 'type' => 'string', 'enum' => [ 'standard', 'circuit' ] ],
+					'rounds' => [ 'type' => 'integer', 'minimum' => 1, 'maximum' => 20 ],
+					'rest_between_exercises_seconds' => [ 'type' => 'integer', 'minimum' => 0, 'maximum' => 900 ],
+					'rest_between_rounds_seconds' => [ 'type' => 'integer', 'minimum' => 0, 'maximum' => 1800 ],
+				], 'required' => [ 'action' ], 'additionalProperties' => false ],
+			],
+			'start_workout' => [
+				'read_only' => false, 'enabled' => true,
+				'description' => 'Activate the approved queued workout when the user explicitly asks to begin or start it.',
+				'parameters' => [ 'type' => 'object', 'properties' => [ 'readiness_score' => [ 'type' => 'integer', 'minimum' => 1, 'maximum' => 10 ] ], 'additionalProperties' => false ],
+			],
+			'manage_workout_set' => [
+				'read_only' => false, 'enabled' => true,
+				'description' => 'Create, correct, or delete a logged workout set. Resolve the active session and exercise from live workout data; require a set id for update/delete.',
+				'parameters' => [ 'type' => 'object', 'properties' => [
+					'action' => [ 'type' => 'string', 'enum' => [ 'create', 'update', 'delete' ] ], 'set_id' => [ 'type' => 'integer', 'minimum' => 1 ],
+					'session_exercise_id' => [ 'type' => 'integer', 'minimum' => 1 ], 'exercise_name' => [ 'type' => 'string' ],
+					'set_number' => [ 'type' => 'integer', 'minimum' => 1 ], 'weight' => [ 'type' => 'number', 'minimum' => 0 ],
+					'reps' => [ 'type' => 'integer', 'minimum' => 0 ], 'duration_seconds' => [ 'type' => 'integer', 'minimum' => 0, 'maximum' => 3600 ],
+					'circuit_round' => [ 'type' => 'integer', 'minimum' => 1, 'maximum' => 20 ], 'rir' => [ 'type' => 'number', 'minimum' => 0, 'maximum' => 10 ],
+					'rpe' => [ 'type' => 'number', 'minimum' => 0, 'maximum' => 10 ], 'pain_flag' => [ 'type' => 'boolean' ], 'notes' => [ 'type' => 'string' ],
+				], 'required' => [ 'action' ], 'additionalProperties' => false ],
+			],
+			'complete_workout' => [
+				'read_only' => false, 'enabled' => true,
+				'description' => 'Complete the active workout only when the user explicitly says the session is finished.',
+				'parameters' => [ 'type' => 'object', 'properties' => $empty_object, 'additionalProperties' => false ],
+			],
+			'log_body_measurement' => [
+				'read_only' => false, 'enabled' => true,
+				'description' => 'Log a weight/body measurement entry. Weight is required; waist, body fat, resting heart rate, notes, and date are optional.',
+				'parameters' => [ 'type' => 'object', 'properties' => [
+					'weight_lb' => [ 'type' => 'number', 'minimum' => 1 ], 'waist_in' => [ 'type' => 'number', 'minimum' => 1 ],
+					'body_fat_pct' => [ 'type' => 'number', 'minimum' => 1, 'maximum' => 100 ], 'resting_hr' => [ 'type' => 'integer', 'minimum' => 1, 'maximum' => 250 ],
+					'notes' => [ 'type' => 'string' ], 'date' => [ 'type' => 'string' ],
+				], 'required' => [ 'weight_lb' ], 'additionalProperties' => false ],
+			],
+			'manage_health_log' => [
+				'read_only' => false, 'enabled' => true,
+				'description' => 'Correct or delete an existing weight, sleep, steps, or cardio log by id. Only use delete after explicit confirmation.',
+				'parameters' => [ 'type' => 'object', 'properties' => [
+					'log_type' => [ 'type' => 'string', 'enum' => [ 'weight', 'sleep', 'steps', 'cardio' ] ], 'action' => [ 'type' => 'string', 'enum' => [ 'update', 'delete' ] ],
+					'id' => [ 'type' => 'integer', 'minimum' => 1 ], 'date' => [ 'type' => 'string' ], 'weight_lb' => [ 'type' => 'number' ],
+					'waist_in' => [ 'type' => 'number' ], 'body_fat_pct' => [ 'type' => 'number' ], 'resting_hr' => [ 'type' => 'integer' ],
+					'hours_sleep' => [ 'type' => 'number' ], 'sleep_quality' => [ 'type' => 'string' ], 'steps' => [ 'type' => 'integer' ],
+					'cardio_type' => [ 'type' => 'string' ], 'duration_minutes' => [ 'type' => 'integer' ], 'intensity' => [ 'type' => 'string' ],
+					'estimated_calories' => [ 'type' => 'integer' ], 'notes' => [ 'type' => 'string' ],
+				], 'required' => [ 'log_type', 'action', 'id' ], 'additionalProperties' => false ],
+			],
+			'log_water' => [
+				'read_only' => false, 'enabled' => true,
+				'description' => 'Set today’s total glasses of water when the user asks Johnny to record hydration.',
+				'parameters' => [ 'type' => 'object', 'properties' => [ 'glasses' => [ 'type' => 'integer', 'minimum' => 0, 'maximum' => 8 ], 'date' => [ 'type' => 'string' ] ], 'required' => [ 'glasses' ], 'additionalProperties' => false ],
+			],
+			'manage_meal' => [
+				'read_only' => false, 'enabled' => true,
+				'description' => 'Correct or delete an existing logged meal by id. Updates replace its item list; deletion requires explicit confirmation.',
+				'parameters' => [ 'type' => 'object', 'properties' => [
+					'action' => [ 'type' => 'string', 'enum' => [ 'update', 'delete' ] ], 'id' => [ 'type' => 'integer', 'minimum' => 1 ],
+					'meal_type' => [ 'type' => 'string' ], 'meal_datetime' => [ 'type' => 'string' ], 'items' => [ 'type' => 'array', 'items' => [ 'type' => 'object' ] ],
+				], 'required' => [ 'action', 'id' ], 'additionalProperties' => false ],
+			],
+			'manage_saved_meal' => [
+				'read_only' => false, 'enabled' => true,
+				'description' => 'Create, update, delete, or log a reusable saved meal. Delete requires explicit confirmation.',
+				'parameters' => [ 'type' => 'object', 'properties' => [
+					'action' => [ 'type' => 'string', 'enum' => [ 'create', 'update', 'delete', 'log' ] ], 'id' => [ 'type' => 'integer', 'minimum' => 1 ],
+					'name' => [ 'type' => 'string' ], 'meal_type' => [ 'type' => 'string' ], 'meal_datetime' => [ 'type' => 'string' ],
+					'items' => [ 'type' => 'array', 'items' => [ 'type' => 'object' ] ],
+				], 'required' => [ 'action' ], 'additionalProperties' => false ],
+			],
+			'update_goals' => [
+				'read_only' => false, 'enabled' => true,
+				'description' => 'Update user fitness targets after explicit instruction: goal type/rate, calories, macros, steps, sleep, or target weight.',
+				'parameters' => [ 'type' => 'object', 'properties' => [
+					'goal_type' => [ 'type' => 'string' ], 'goal_rate' => [ 'type' => 'string' ], 'target_weight_lb' => [ 'type' => 'number' ],
+					'target_calories' => [ 'type' => 'integer' ], 'target_protein_g' => [ 'type' => 'integer' ], 'target_carbs_g' => [ 'type' => 'integer' ],
+					'target_fat_g' => [ 'type' => 'integer' ], 'target_steps' => [ 'type' => 'integer' ], 'target_sleep_hours' => [ 'type' => 'number' ],
+				], 'additionalProperties' => false ],
+			],
+			'update_profile' => [
+				'read_only' => false, 'enabled' => true,
+				'description' => 'Update user profile/settings fields only after explicit instruction.',
+				'parameters' => [ 'type' => 'object', 'properties' => [
+					'first_name' => [ 'type' => 'string' ], 'last_name' => [ 'type' => 'string' ], 'date_of_birth' => [ 'type' => 'string' ],
+					'sex' => [ 'type' => 'string' ], 'height_cm' => [ 'type' => 'number' ], 'training_experience' => [ 'type' => 'string' ],
+					'activity_level' => [ 'type' => 'string' ], 'available_time_default' => [ 'type' => 'string' ], 'phone' => [ 'type' => 'string' ],
+					'timezone' => [ 'type' => 'string' ], 'units' => [ 'type' => 'string' ],
+				], 'additionalProperties' => false ],
 			],
 			'add_pantry_items' => [
 				'read_only'   => false,
@@ -339,6 +625,16 @@ class AiToolService {
 					'additionalProperties' => false,
 				],
 			],
+			'clear_conversation' => [
+				'read_only'   => false,
+				'enabled'     => true,
+				'description' => 'Permanently clear the current Johnny chat history when the user explicitly asks to clear, delete, or reset this chat or conversation.',
+				'parameters'  => [
+					'type'                 => 'object',
+					'properties'           => new \stdClass(),
+					'additionalProperties' => false,
+				],
+			],
 			'clear_sms_reminders' => [
 				'read_only'   => false,
 				'enabled'     => true,
@@ -379,27 +675,95 @@ class AiToolService {
 		return $tools;
 	}
 
-	public static function build_tool_action_fallback_reply( array $action_results, array $used_tools = [] ): string {
-		if ( ! empty( $action_results[0]['summary'] ) ) {
-			return sanitize_text_field( (string) $action_results[0]['summary'] );
+	public static function get_required_chat_tool( array $tool_registry, string $mode = 'general', array $context_overrides = [], string $user_message = '' ): string {
+		$request_context = self::derive_tool_request_context( $mode, $context_overrides, $user_message );
+		$tool_name = self::explicit_image_generation_requested( $user_message ) ? 'generate_image' : '';
+		if ( '' === $tool_name && self::weight_history_requested( $user_message ) ) {
+			$tool_name = 'get_weight_history';
+		}
+		if ( '' === $tool_name && self::conversation_clear_requested( $user_message ) ) {
+			$tool_name = 'clear_conversation';
+		}
+		if ( '' === $tool_name ) {
+			return '';
+		}
+
+		$tool = $tool_registry[ $tool_name ] ?? null;
+		if ( ! is_array( $tool ) || empty( $tool['enabled'] ) || ! self::tool_allowed_for_request( $tool_name, $request_context ) ) {
+			return '';
+		}
+
+		return $tool_name;
+	}
+
+	private static function weight_history_requested( string $user_message ): bool {
+		$message = strtolower( trim( $user_message ) );
+		if ( '' === $message || ! self::message_contains_any( $message, [ 'weight', 'weigh-in', 'weigh in', 'bodyweight', 'body weight' ] ) ) {
+			return false;
+		}
+
+		return self::message_contains_any( $message, [ 'progress', 'trend', 'history', 'loss', 'lost', 'change', 'changing', 'chart', 'graph', 'over time', 'looking like' ] );
+	}
+
+	private static function conversation_clear_requested( string $user_message ): bool {
+		$message = strtolower( trim( $user_message ) );
+		if ( '' === $message || ! self::message_contains_any( $message, [ 'chat', 'conversation', 'thread', 'chat history', 'conversation history' ] ) ) {
+			return false;
+		}
+
+		return self::message_contains_any( $message, [ 'clear', 'delete', 'erase', 'reset', 'remove', 'start over' ] );
+	}
+
+	public static function build_tool_action_fallback_reply( array $action_results, array $used_tools = [], array $tool_errors = [] ): string {
+		$mutation_tools = [ 'approve_workout', 'modify_workout', 'start_workout', 'swap_workout_exercise', 'manage_workout_set', 'complete_workout', 'create_custom_workout', 'save_workout_to_library', 'load_saved_workout' ];
+		$recovered_pending_replacement = false;
+		foreach ( $action_results as $action_result ) {
+			if ( ! empty( $action_result['completed_pending_replacement'] ) ) { $recovered_pending_replacement = true; break; }
+		}
+		foreach ( array_reverse( $tool_errors ) as $tool_error ) {
+			$tool_name = sanitize_key( (string) ( $tool_error['tool_name'] ?? '' ) );
+			if ( in_array( $tool_name, $mutation_tools, true ) && ! ( $recovered_pending_replacement && 'modify_workout' === $tool_name ) ) {
+				$error = sanitize_text_field( (string) ( $tool_error['error'] ?? 'The requested change could not be completed.' ) );
+				return 'I couldn’t complete that change: ' . $error;
+			}
+		}
+
+		$preferred_result = [];
+		foreach ( array_reverse( $action_results ) as $action_result ) {
+			$tool_name = sanitize_key( (string) ( $action_result['action'] ?? $action_result['tool_name'] ?? '' ) );
+			if ( ! empty( $action_result['summary'] ) && ( empty( $preferred_result ) || in_array( $tool_name, $mutation_tools, true ) ) ) {
+				$preferred_result = $action_result;
+				if ( in_array( $tool_name, $mutation_tools, true ) ) break;
+			}
+		}
+		if ( ! empty( $preferred_result['summary'] ) ) {
+			$summary = sanitize_text_field( (string) $preferred_result['summary'] );
+			return (string) preg_replace( '/^Johnny\s+/i', 'I ', $summary );
 		}
 
 		if ( ! empty( $action_results ) ) {
-			$action_name = sanitize_key( (string) ( $action_results[0]['action'] ?? $action_results[0]['tool_name'] ?? '' ) );
+			$last_result = end( $action_results );
+			$action_name = sanitize_key( (string) ( $last_result['action'] ?? $last_result['tool_name'] ?? '' ) );
 			return match ( $action_name ) {
-				'create_custom_workout'    => 'Johnny queued a custom workout for you on the workout page.',
-				'create_personal_exercise' => 'Johnny added that exercise to your custom exercise library.',
-				'create_training_plan'     => 'Johnny created a new training plan.',
-				'set_training_schedule'    => 'Johnny updated your weekly training schedule.',
-				'clear_follow_ups'        => 'Johnny cleared the requested follow-ups.',
-				'clear_sms_reminders'     => 'Johnny canceled the requested SMS reminders.',
-				'swap_workout_exercise'    => 'Johnny updated the current workout.',
-				default                    => 'Johnny completed that action.',
+				'create_custom_workout'    => 'I built that workout and queued it for your review.',
+				'create_personal_exercise' => 'I added that exercise to your custom library.',
+				'save_workout_to_library' => 'I saved that workout to My Workouts.',
+				'load_saved_workout'       => 'I loaded that workout and have it ready for you.',
+				'create_visualization'     => 'I turned your data into a visual summary.',
+				'present_choices'          => 'Choose what you want to do next.',
+				'generate_image'            => 'I made that image for you.',
+				'create_training_plan'     => 'I built your new training plan.',
+				'set_training_schedule'    => 'I updated your weekly training schedule.',
+				'clear_follow_ups'        => 'I cleared those follow-ups.',
+				'clear_conversation'      => 'Chat cleared.',
+				'clear_sms_reminders'     => 'I canceled those text reminders.',
+				'swap_workout_exercise'    => 'I updated the current workout.',
+				default                    => 'I checked that, but I haven’t made a change yet.',
 			};
 		}
 
 		if ( ! empty( $used_tools ) ) {
-			return 'Johnny attempted that action, but needs a more specific request to finish it cleanly.';
+			return 'I checked the current workout and exercise library, but I haven’t changed the workout yet.';
 		}
 
 		return '';
@@ -421,7 +785,7 @@ class AiToolService {
 		$message            = strtolower( trim( $user_message ) );
 		$current_screen     = sanitize_key( (string) ( $context_overrides['current_screen'] ?? '' ) );
 		$workout_keywords   = [
-			'workout', 'training', 'exercise', 'session', 'split', 'schedule', 'training schedule', 'workout schedule', 'weekly schedule', 'week split', 'weekly split', 'push day', 'pull day', 'leg day', 'upper body', 'lower body', 'bench', 'squat', 'deadlift', 'swap exercise', 'replace exercise',
+			'workout', 'workouts', 'circuit', 'full-body', 'full body', 'saved workout', 'workout library', 'my workouts', 'training', 'exercise', 'session', 'split', 'schedule', 'training schedule', 'workout schedule', 'weekly schedule', 'week split', 'weekly split', 'push day', 'pull day', 'leg day', 'upper body', 'lower body', 'bench', 'squat', 'deadlift', 'swap exercise', 'replace exercise',
 		];
 		$nutrition_keywords = [
 			'meal', 'meals', 'breakfast', 'lunch', 'dinner', 'snack', 'shake', 'protein', 'calorie', 'macro', 'macros', 'recipe', 'recipes', 'pantry', 'grocery', 'food', 'eat', 'eating',
@@ -438,7 +802,11 @@ class AiToolService {
 
 	private static function tool_allowed_for_request( string $tool_name, array $request_context ): bool {
 		return match ( $tool_name ) {
-			'create_training_plan', 'set_training_schedule', 'create_custom_workout', 'create_personal_exercise', 'swap_workout_exercise' => ! empty( $request_context['workout_mutation_allowed'] ),
+			// Keep creation and saving available through short contextual follow-ups
+			// such as "save it in my library" and "try again". The model still
+			// receives the explicit-user-request constraint in each tool description.
+			'create_custom_workout', 'save_workout_to_library', 'load_saved_workout' => true,
+			'create_training_plan', 'set_training_schedule', 'create_personal_exercise', 'swap_workout_exercise' => ! empty( $request_context['workout_mutation_allowed'] ),
 			default => true,
 		};
 	}
@@ -455,5 +823,23 @@ class AiToolService {
 		}
 
 		return false;
+	}
+
+	private static function explicit_image_generation_requested( string $user_message ): bool {
+		$message = strtolower( trim( $user_message ) );
+		if ( '' === $message || self::message_contains_any( $message, [ "don't generate", 'do not generate', "don't create", 'do not create', 'without generating' ] ) ) {
+			return false;
+		}
+		if ( self::message_contains_any( $message, [ 'what kind of image', 'what kinds of image', 'what type of image', 'what types of image', 'how does image generation', 'tell me about image generation' ] ) ) {
+			return false;
+		}
+
+		$creation_language = [ 'generate', 'create', 'make', 'draw', 'illustrate', 'design', 'render', 'paint' ];
+		$image_language = [ 'image', 'picture', 'photo', 'illustration', 'poster', 'artwork', 'graphic', 'portrait', 'share card', 'wallpaper' ];
+		$data_visual_language = [ 'chart', 'graph', 'data infographic', 'progress infographic' ];
+
+		return self::message_contains_any( $message, $creation_language )
+			&& self::message_contains_any( $message, $image_language )
+			&& ! self::message_contains_any( $message, $data_visual_language );
 	}
 }

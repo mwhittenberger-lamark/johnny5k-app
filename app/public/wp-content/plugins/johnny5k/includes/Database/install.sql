@@ -365,6 +365,18 @@ CREATE TABLE IF NOT EXISTS `wp_fit_user_training_day_exercises` (
   KEY `exercise_id` (`exercise_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS `wp_fit_saved_workouts` (
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `user_id` bigint(20) unsigned NOT NULL,
+  `name` varchar(150) NOT NULL,
+  `workout_structure` enum('standard','circuit') NOT NULL DEFAULT 'standard',
+  `workout_json` longtext NOT NULL,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `user_updated` (`user_id`,`updated_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS `wp_fit_workout_sessions` (
   `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
   `user_id` bigint(20) unsigned NOT NULL,
@@ -380,6 +392,11 @@ CREATE TABLE IF NOT EXISTS `wp_fit_workout_sessions` (
   `completed` tinyint(1) NOT NULL DEFAULT 0,
   `skip_requested` tinyint(1) NOT NULL DEFAULT 0,
   `is_optional_session` tinyint(1) NOT NULL DEFAULT 0,
+  `workout_structure` enum('standard','circuit') NOT NULL DEFAULT 'standard',
+  `rounds_total` smallint(5) unsigned NOT NULL DEFAULT 1,
+  `rest_between_exercises_seconds` int(10) unsigned DEFAULT NULL,
+  `rest_between_rounds_seconds` int(10) unsigned DEFAULT NULL,
+  `custom_title` varchar(150) DEFAULT NULL,
   `ai_summary` text DEFAULT NULL,
   `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -396,6 +413,9 @@ CREATE TABLE IF NOT EXISTS `wp_fit_workout_session_exercises` (
   `planned_rep_min` int(11) NOT NULL DEFAULT 8,
   `planned_rep_max` int(11) NOT NULL DEFAULT 12,
   `planned_sets` int(11) NOT NULL DEFAULT 3,
+  `target_type` enum('reps','duration') NOT NULL DEFAULT 'reps',
+  `planned_duration_seconds` int(10) unsigned DEFAULT NULL,
+  `reps_per_side` tinyint(1) NOT NULL DEFAULT 0,
   `sort_order` int(11) NOT NULL DEFAULT 1,
   `was_swapped` tinyint(1) NOT NULL DEFAULT 0,
   `original_exercise_id` bigint(20) unsigned DEFAULT NULL,
@@ -412,6 +432,8 @@ CREATE TABLE IF NOT EXISTS `wp_fit_workout_sets` (
   `set_number` int(11) NOT NULL DEFAULT 1,
   `weight` decimal(6,2) NOT NULL DEFAULT 0.00,
   `reps` int(11) NOT NULL DEFAULT 0,
+  `duration_seconds` int(10) unsigned DEFAULT NULL,
+  `circuit_round` smallint(5) unsigned DEFAULT NULL,
   `rir` decimal(3,1) DEFAULT NULL,
   `rpe` decimal(3,1) DEFAULT NULL,
   `completed` tinyint(1) NOT NULL DEFAULT 0,

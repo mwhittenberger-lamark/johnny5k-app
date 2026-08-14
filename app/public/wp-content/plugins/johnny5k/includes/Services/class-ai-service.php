@@ -18,7 +18,7 @@ use Johnny5k\Support\TrainingDayTypes;
  */
 class AiService {
 
-	private const DEFAULT_MODEL    = 'gpt-4o-mini';
+	private const DEFAULT_MODEL    = 'gpt-5.6-sol';
 	private const IRONQUEST_MODEL  = 'gpt-5.2';
 	private const RESPONSES_ENDPOINT = 'https://api.openai.com/v1/responses';
 	private const AUDIO_SPEECH_ENDPOINT = 'https://api.openai.com/v1/audio/speech';
@@ -53,7 +53,7 @@ class AiService {
 	 * @param  string $thread_key  Unique identifier for this conversation thread.
 	 * @param  string $user_message
 	 * @param  array<string,mixed> $chat_options
-	 * @return array{reply:string, tokens_in:int, tokens_out:int, sources:array<int,array{url:string,title:string}>, used_web_search:bool, model:string, used_tools:array<int,string>, action_results:array<int,array<string,mixed>>}|WP_Error
+	 * @return array{reply:string, tokens_in:int, tokens_out:int, sources:array<int,array{url:string,title:string}>, used_web_search:bool, model:string, used_tools:array<int,string>, action_results:array<int,array<string,mixed>>, tool_errors:array<int,array{tool_name:string,error:string}>}|WP_Error
 	 */
 	public static function chat( int $user_id, string $thread_key, string $user_message, string $mode = 'general', array $context_overrides = [], array $chat_options = [] ) {
 		global $wpdb;
@@ -128,16 +128,34 @@ class AiService {
 
 		// ── Call OpenAI ───────────────────────────────────────────────────────
 		$enable_web_search = self::should_enable_web_search( $user_message );
+		$required_chat_tool = self::get_required_chat_tool( $mode, $context_overrides, $user_message );
 		$result            = self::call_openai(
 			$messages,
 			self::DEFAULT_MODEL,
 			[
 				'web_search'    => $enable_web_search,
 				'function_tools'=> self::get_chat_function_tools( $mode, $context_overrides, $user_message ),
+				'required_function_tool' => $required_chat_tool,
 				'tool_executor' => static fn( string $tool_name, array $arguments = [] ) => self::execute_chat_tool( $user_id, $tool_name, $arguments, $user_message ),
 			]
 		);
-		if ( is_wp_error( $result ) ) return $result;
+		if ( is_wp_error( $result ) ) {
+			InternalDiagnosticsLogger::record_johnny_chat_result(
+				$user_id,
+				$thread_key,
+				$user_message,
+				[
+					'reply'       => '',
+					'used_tools'  => [],
+					'tool_errors' => [[
+						'tool_name' => 'openai_chat',
+						'error'     => $result->get_error_message(),
+					]],
+					'model'       => self::DEFAULT_MODEL,
+				]
+			);
+			return $result;
+		}
 
 		$raw_reply  = $result['reply'];
 		$tokens_in  = $result['tokens_in'];
@@ -147,7 +165,17 @@ class AiService {
 		$parsed_reply = self::parse_structured_chat_reply( $raw_reply );
 		$reply        = trim( (string) $parsed_reply['reply'] );
 		if ( '' === $reply ) {
-			$reply = self::build_tool_action_fallback_reply( $result['action_results'] ?? [], $result['used_tools'] ?? [] );
+			$reply = self::build_tool_action_fallback_reply( $result['action_results'] ?? [], $result['used_tools'] ?? [], $result['tool_errors'] ?? [] );
+		}
+		$reply = self::normalize_required_tool_reply(
+			$required_chat_tool,
+			$reply,
+			$result['action_results'] ?? [],
+			$result['tool_errors'] ?? []
+		);
+		$mutation_error_reply = AiToolService::build_tool_action_fallback_reply( [], [], $result['tool_errors'] ?? [] );
+		if ( str_starts_with( $mutation_error_reply, 'I couldn’t complete that change:' ) ) {
+			$reply = $mutation_error_reply;
 		}
 		$actions      = self::enrich_structured_actions( $parsed_reply['actions'] );
 		$why          = $parsed_reply['why'];
@@ -155,12 +183,26 @@ class AiService {
 		$confidence   = $parsed_reply['confidence'];
 		$queued_follow_ups = self::store_queued_follow_ups( $user_id, $actions );
 
+		InternalDiagnosticsLogger::record_johnny_chat_result(
+			$user_id,
+			$thread_key,
+			$user_message,
+			[
+				'reply'          => $reply,
+				'used_tools'     => $result['used_tools'] ?? [],
+				'action_results' => $result['action_results'] ?? [],
+				'tool_errors'    => $result['tool_errors'] ?? [],
+				'model'          => $result['model'] ?? self::DEFAULT_MODEL,
+			]
+		);
+
 		// ── Persist assistant reply (plain text only) ─────────────────────────
 		$assistant_metadata = array_filter([
 			'actions'           => $actions,
 			'sources'           => $result['sources'],
 			'used_tools'        => $result['used_tools'],
 			'action_results'    => $result['action_results'] ?? [],
+			'tool_errors'       => $result['tool_errors'] ?? [],
 			'queued_follow_ups' => $queued_follow_ups,
 			'why'               => $why,
 			'context_used'      => $context_used,
@@ -182,9 +224,14 @@ class AiService {
 			$assistant_row['tool_payload_json'] = wp_json_encode( $assistant_metadata );
 		}
 		$wpdb->insert( $p . 'fit_ai_messages', $assistant_row );
+		$conversation_cleared = in_array( 'clear_conversation', $result['used_tools'], true );
+		if ( $conversation_cleared ) {
+			$wpdb->delete( $p . 'fit_ai_messages', [ 'thread_id' => $thread_id ] );
+			$wpdb->update( $p . 'fit_ai_threads', [ 'summary_text' => null ], [ 'id' => $thread_id ] );
+		}
 
 		// ── Refresh thread summary every 5 assistant turns ────────────────────
-		if ( $history_settings['refresh_thread_summary'] ) {
+		if ( ! $conversation_cleared && $history_settings['refresh_thread_summary'] ) {
 			self::maybe_refresh_thread_summary( $thread_id, $user_id );
 		}
 
@@ -212,6 +259,7 @@ class AiService {
 			'model'           => $result['model'],
 			'used_tools'      => $result['used_tools'],
 			'action_results'  => $result['action_results'] ?? [],
+			'tool_errors'     => $result['tool_errors'] ?? [],
 			'queued_follow_ups' => $queued_follow_ups,
 			'why'             => $why,
 			'context_used'    => $context_used,
@@ -355,6 +403,76 @@ class AiService {
 			'system_prompt'   => $system_prompt,
 			'context'         => self::get_user_context( $user_id, $context_overrides ),
 		];
+	}
+
+	public static function find_exercise_demo( int $user_id, string $exercise_name, array $context = [] ) {
+		$exercise_name = sanitize_text_field( $exercise_name );
+		if ( '' === $exercise_name ) return new \WP_Error( 'missing_exercise_name', 'An exercise name is required.' );
+
+		$cache_key = 'jf_exercise_demo_v2_' . md5( strtolower( $exercise_name ) . '|' . strtolower( (string) ( $context['equipment'] ?? '' ) ) );
+		$cached = get_transient( $cache_key );
+		if ( is_array( $cached ) && ! empty( $cached['video_id'] ) && ! empty( $cached['description'] ) ) return $cached;
+
+		$messages = [
+			[
+				'role' => 'system',
+				'content' => 'You are Johnny, a concise strength coach. Search the web for one reputable YouTube technique tutorial that directly demonstrates the requested exercise. Return JSON only with description, video_url, and video_title. The video_url must be a direct youtube.com/watch?v= or youtu.be URL for a real result you found, never a search URL. The description must be two short sentences in first-person coaching voice: setup first, then the most important execution cue. Do not claim medical or injury-prevention guarantees.',
+			],
+			[
+				'role' => 'user',
+				'content' => sprintf(
+					'Exercise: %s. Equipment: %s. Primary muscle: %s.',
+					$exercise_name,
+					sanitize_text_field( (string) ( $context['equipment'] ?? 'unspecified' ) ),
+					sanitize_text_field( (string) ( $context['primary_muscle'] ?? 'unspecified' ) )
+				),
+			],
+		];
+		$result = self::call_openai( $messages, 'gpt-4o-mini', [ 'web_search' => true ] );
+		if ( is_wp_error( $result ) ) return $result;
+		$parsed = self::decode_json_reply( (string) ( $result['reply'] ?? '' ) );
+		$video_url = esc_url_raw( (string) ( $parsed['video_url'] ?? '' ) );
+		$video_id = self::youtube_video_id( $video_url );
+		if ( '' === $video_id ) {
+			foreach ( (array) ( $result['sources'] ?? [] ) as $source ) {
+				$source_url = esc_url_raw( (string) ( $source['url'] ?? '' ) );
+				$source_id = self::youtube_video_id( $source_url );
+				if ( '' !== $source_id ) { $video_id = $source_id; $video_url = $source_url; break; }
+			}
+		}
+		if ( '' === $video_id ) return new \WP_Error( 'exercise_demo_not_found', 'I could not verify a playable YouTube tutorial for that exercise.' );
+		$description = sanitize_textarea_field( (string) ( $parsed['description'] ?? '' ) );
+		if ( '' === $description ) {
+			$description_result = self::call_openai( [
+				[ 'role' => 'system', 'content' => 'You are Johnny, a concise strength coach. Write exactly two short sentences in first person. Sentence one explains the specific setup for the named exercise. Sentence two gives its most important execution cue. Do not use generic phrases such as “I’ll show you,” do not mention watching a video, and do not make medical guarantees.' ],
+				[ 'role' => 'user', 'content' => sprintf( 'Exercise: %s. Equipment: %s. Primary muscle: %s.', $exercise_name, sanitize_text_field( (string) ( $context['equipment'] ?? 'unspecified' ) ), sanitize_text_field( (string) ( $context['primary_muscle'] ?? 'unspecified' ) ) ) ],
+			], 'gpt-4o-mini' );
+			if ( ! is_wp_error( $description_result ) ) {
+				$description = sanitize_textarea_field( trim( (string) ( $description_result['reply'] ?? '' ) ) );
+				CostTracker::log_openai( $user_id, 'gpt-4o-mini', '/v1/responses', (int) ( $description_result['tokens_in'] ?? 0 ), (int) ( $description_result['tokens_out'] ?? 0 ), [ 'context' => 'exercise_demo_description' ] );
+			}
+		}
+		if ( '' === $description ) {
+			$description = sprintf( 'I set up %s with a stable starting position before the first repetition. Keep the movement controlled and match the demonstrated range of motion.', $exercise_name );
+		}
+
+		$payload = [
+			'exercise_name' => $exercise_name,
+			'description'   => $description,
+			'video_id'      => $video_id,
+			'video_url'     => $video_url,
+			'embed_url'     => '',
+			'embed_verified'=> false,
+			'video_title'   => sanitize_text_field( (string) ( $parsed['video_title'] ?? $exercise_name . ' technique tutorial' ) ),
+		];
+		set_transient( $cache_key, $payload, 30 * DAY_IN_SECONDS );
+		CostTracker::log_openai( $user_id, 'gpt-4o-mini', '/v1/responses', (int) ( $result['tokens_in'] ?? 0 ), (int) ( $result['tokens_out'] ?? 0 ), [ 'context' => 'exercise_demo', 'used_web_search' => 1 ] );
+		return $payload;
+	}
+
+	private static function youtube_video_id( string $url ): string {
+		if ( ! preg_match( '~(?:youtu\.be/|youtube(?:-nocookie)?\.com/(?:embed/|shorts/|watch\?(?:[^#]*&)?v=))([A-Za-z0-9_-]{11})~i', $url, $matches ) ) return '';
+		return sanitize_text_field( (string) $matches[1] );
 	}
 
 	public static function ironquest_model(): string {
@@ -2714,6 +2832,10 @@ PROMPT;
 		return AiToolService::get_chat_function_tools( self::tool_registry(), $mode, $context_overrides, $user_message );
 	}
 
+	private static function get_required_chat_tool( string $mode = 'general', array $context_overrides = [], string $user_message = '' ): string {
+		return AiToolService::get_required_chat_tool( self::tool_registry(), $mode, $context_overrides, $user_message );
+	}
+
 	private static function message_contains_any( string $message, array $needles ): bool {
 		if ( '' === $message ) {
 			return false;
@@ -2789,7 +2911,7 @@ PROMPT;
 			return $arguments;
 		}
 
-		if ( in_array( $tool_name, [ 'log_steps', 'log_sleep', 'get_recent_meals' ], true ) ) {
+		if ( in_array( $tool_name, [ 'log_steps', 'log_sleep', 'log_cardio', 'get_recent_meals' ], true ) ) {
 			$arguments['date'] = $relative_date;
 		}
 
@@ -3026,6 +3148,7 @@ PROMPT;
 				$name = sanitize_text_field( trim( (string) ( $matches[1] ?? '' ), " \t\n\r\0\x0B\"'“”" ) );
 			}
 		}
+
 		if ( '' === $name ) {
 			if ( preg_match( '/(?:add|save|create)\s+(.+?)\s*$/i', trim( $user_message ), $matches ) ) {
 				$name = sanitize_text_field( trim( (string) ( $matches[1] ?? '' ), " \t\n\r\0\x0B\"'“”" ) );
@@ -3148,6 +3271,15 @@ PROMPT;
 			return $arguments;
 		}
 
+		if ( ! isset( $arguments['workout_structure'] ) && self::message_contains_any( $message, [ 'circuit', 'rounds', 'repeat' ] ) ) {
+			$arguments['workout_structure'] = 'circuit';
+		}
+		if ( 'circuit' === sanitize_key( (string) ( $arguments['workout_structure'] ?? '' ) ) && empty( $arguments['rounds'] ) ) {
+			if ( preg_match( '/\b(?:repeat(?:ed)?\s+|for\s+)?(\d+)\s*(?:times?|rounds?)\b/i', $message, $round_matches ) ) {
+				$arguments['rounds'] = max( 1, min( 20, (int) $round_matches[1] ) );
+			}
+		}
+
 		$day_type = self::normalise_custom_workout_day_type( (string) ( $arguments['day_type'] ?? '' ) );
 		if ( '' === $day_type ) {
 			$day_type = self::infer_custom_workout_day_type_from_message( $message );
@@ -3164,8 +3296,16 @@ PROMPT;
 			}
 		}
 
+		$structured_exercises = is_array( $arguments['exercises'] ?? null ) ? array_values( $arguments['exercises'] ) : [];
+		if ( empty( $structured_exercises ) ) {
+			$structured_exercises = self::infer_custom_workout_exercises_from_message( $user_message );
+			if ( ! empty( $structured_exercises ) ) {
+				$arguments['exercises'] = $structured_exercises;
+			}
+		}
+
 		$exercise_names = array_values( array_filter( array_map( 'sanitize_text_field', (array) ( $arguments['exercise_names'] ?? [] ) ) ) );
-		if ( empty( $exercise_names ) ) {
+		if ( empty( $structured_exercises ) && empty( $exercise_names ) ) {
 			$targets = self::infer_custom_workout_targets_from_message( $message, $day_type );
 			$exercise_names = self::select_custom_workout_exercise_names( $user_id, $day_type ?: TrainingDayTypes::custom_workout_fallback(), $targets );
 			if ( ! empty( $exercise_names ) ) {
@@ -3224,6 +3364,12 @@ PROMPT;
 		if ( preg_match( '/["“](.+?)["”]/u', $user_message, $matches ) ) {
 			return sanitize_text_field( trim( (string) $matches[1] ) );
 		}
+		if ( preg_match( '/\b(?:called|named)\s+(.+?)(?=\s*[.!?](?:\s|$)|\s+(?:that|which)\s+is\b)/i', $user_message, $matches ) ) {
+			$name = sanitize_text_field( trim( (string) ( $matches[1] ?? '' ) ) );
+			if ( '' !== $name ) {
+				return $name;
+			}
+		}
 
 		return match ( $day_type ) {
 			'push'            => 'Push Builder',
@@ -3237,6 +3383,65 @@ PROMPT;
 			'rest'            => 'Recovery Day',
 			default           => 'Custom Arms Workout',
 		};
+	}
+
+	private static function infer_custom_workout_exercises_from_message( string $user_message ): array {
+		$message = preg_replace( '/\s+/', ' ', trim( $user_message ) );
+		if ( ! is_string( $message ) || '' === $message ) {
+			return [];
+		}
+
+		$matches = [];
+		$pattern = '/\b(?:(?<minutes>(?:a|an|one|two|three|four|five|\d+))\s+minutes?|(?<seconds>\d+)\s+seconds?|(?<reps>\d+)\s+(?!rounds?\b))\s*(?:of\s+)?(?<name>[a-z][a-z\- ]*?)(?=\s*(?:,|\.|;|\b(?:followed by|and then|then|next station|final station|for each arm|per arm|each arm|do \d+ rounds?)\b|$))/i';
+		if ( ! preg_match_all( $pattern, $message, $matches, PREG_SET_ORDER ) ) {
+			return [];
+		}
+
+		$exercises = [];
+		foreach ( $matches as $match ) {
+			$name = self::normalise_requested_exercise_name( (string) ( $match['name'] ?? '' ) );
+			if ( '' === $name || self::message_contains_any( strtolower( $name ), [ 'round of the circuit', 'rounds of the circuit' ] ) ) {
+				continue;
+			}
+
+			$minutes = self::custom_workout_number_word( (string) ( $match['minutes'] ?? '' ) );
+			$seconds = (int) ( $match['seconds'] ?? 0 );
+			$reps = (int) ( $match['reps'] ?? 0 );
+			$is_duration = $minutes > 0 || $seconds > 0;
+			$item = [
+				'exercise_name' => $name,
+				'target_type' => $is_duration ? 'duration' : 'reps',
+			];
+			if ( $is_duration ) {
+				$item['target_duration_seconds'] = $seconds > 0 ? $seconds : $minutes * 60;
+			} else {
+				$item['target_reps'] = max( 1, $reps );
+				$item['reps_per_side'] = self::message_contains_any( strtolower( $name ), [ 'single-arm', 'single arm', 'one-arm', 'one arm' ] );
+			}
+			$exercises[] = $item;
+		}
+
+		return $exercises;
+	}
+
+	private static function normalise_requested_exercise_name( string $name ): string {
+		$name = strtolower( trim( preg_replace( '/\b(?:a|an|the)\b/i', ' ', $name ) ?? $name, " \t\n\r\0\x0B-'\"" ) );
+		$name = preg_replace( '/\s+/', ' ', $name ) ?: '';
+		$aliases = [
+			'pushup' => 'Push-up', 'pushups' => 'Push-up', 'push up' => 'Push-up', 'push ups' => 'Push-up',
+			'incline dumbbell press' => 'Incline Dumbbell Press', 'incline dumbell press' => 'Incline Dumbbell Press',
+			'bent over row' => 'Bent-over Row', 'bent over rows' => 'Bent-over Row',
+			'single arm row' => 'Single-arm Dumbbell Row', 'single arm rows' => 'Single-arm Dumbbell Row',
+			'squats' => 'Bodyweight Squat', 'bodyweight squats' => 'Bodyweight Squat',
+			'planks' => 'Plank', 'plank' => 'Plank',
+		];
+		return sanitize_text_field( $aliases[ $name ] ?? ucwords( $name ) );
+	}
+
+	private static function custom_workout_number_word( string $value ): int {
+		$value = strtolower( trim( $value ) );
+		if ( is_numeric( $value ) ) return (int) $value;
+		return [ 'a' => 1, 'an' => 1, 'one' => 1, 'two' => 2, 'three' => 3, 'four' => 4, 'five' => 5 ][ $value ] ?? 0;
 	}
 
 	private static function infer_custom_workout_targets_from_message( string $message, string $day_type ): array {
@@ -3538,8 +3743,42 @@ PROMPT;
 		};
 	}
 
-	private static function build_tool_action_fallback_reply( array $action_results, array $used_tools = [] ): string {
-		return AiToolService::build_tool_action_fallback_reply( $action_results, $used_tools );
+	private static function build_tool_action_fallback_reply( array $action_results, array $used_tools = [], array $tool_errors = [] ): string {
+		return AiToolService::build_tool_action_fallback_reply( $action_results, $used_tools, $tool_errors );
+	}
+
+	/**
+	 * A model-written success sentence is not proof that a required side effect completed.
+	 * For image requests, only a saved image ID can produce a success reply.
+	 */
+	private static function normalize_required_tool_reply( string $required_tool, string $reply, array $action_results, array $tool_errors = [] ): string {
+		if ( 'generate_image' !== $required_tool ) {
+			return $reply;
+		}
+
+		foreach ( $action_results as $result ) {
+			$action = sanitize_key( (string) ( $result['action'] ?? $result['tool_name'] ?? '' ) );
+			$image_id = sanitize_text_field( (string) ( $result['image_id'] ?? $result['generated_image_id'] ?? '' ) );
+			if ( 'generate_image' !== $action || '' === $image_id ) {
+				continue;
+			}
+
+			$title = sanitize_text_field( (string) ( $result['title'] ?? 'your image' ) );
+			return sprintf( 'I generated %s for you.', $title ?: 'your image' );
+		}
+
+		foreach ( $tool_errors as $tool_error ) {
+			if ( 'generate_image' !== sanitize_key( (string) ( $tool_error['tool_name'] ?? '' ) ) ) {
+				continue;
+			}
+
+			$error = sanitize_text_field( (string) ( $tool_error['error'] ?? '' ) );
+			if ( '' !== $error ) {
+				return 'I couldn\'t generate that image. ' . $error;
+			}
+		}
+
+		return 'I couldn\'t generate that image because the image service did not return a saved image. Please try again.';
 	}
 
 	private static function extract_relative_tool_date_from_message( int $user_id, string $tool_name, string $user_message ): ?string {
@@ -3884,6 +4123,8 @@ PROMPT;
 				'session'      => self::normalise_array_value( $data['session'] ?? [] ),
 				'exercises'    => array_map( [ __CLASS__, 'normalise_array_value' ], is_array( $data['exercises'] ?? null ) ? $data['exercises'] : [] ),
 				'session_mode' => (string) ( $data['session_mode'] ?? 'normal' ),
+				'custom_workout_draft' => self::normalise_array_value( $data['custom_workout_draft'] ?? [] ),
+				'workout_approval' => self::normalise_array_value( $data['workout_approval'] ?? [] ),
 			];
 		}
 
@@ -4223,7 +4464,7 @@ PROMPT;
 	 * @param  array  $messages  OpenAI messages array.
 	 * @param  string $model
 	 * @param  array<string,mixed> $options
-	 * @return array{reply:string, tokens_in:int, tokens_out:int, sources:array<int,array{url:string,title:string}>, used_web_search:bool, model:string, used_tools:array<int,string>, action_results:array<int,array<string,mixed>>}|WP_Error
+	 * @return array{reply:string, tokens_in:int, tokens_out:int, sources:array<int,array{url:string,title:string}>, used_web_search:bool, model:string, used_tools:array<int,string>, action_results:array<int,array<string,mixed>>, tool_errors:array<int,array{tool_name:string,error:string}>}|WP_Error
 	 */
 	private static function call_openai( array $messages, string $model = self::DEFAULT_MODEL, array $options = [] ) {
 		$api_key = get_option( 'jf_openai_api_key', '' );
@@ -4237,10 +4478,19 @@ PROMPT;
 		$used_web_search = false;
 		$used_tools      = [];
 		$action_results  = [];
+		$tool_errors     = [];
 		$tokens_in       = 0;
 		$tokens_out      = 0;
 		$function_tools  = array_values( $options['function_tools'] ?? [] );
 		$tool_executor   = $options['tool_executor'] ?? null;
+		$required_function_tool = sanitize_key( (string) ( $options['required_function_tool'] ?? '' ) );
+		$available_function_tools = array_values( array_filter( array_map(
+			static fn( array $tool ): string => sanitize_key( (string) ( $tool['name'] ?? '' ) ),
+			$function_tools
+		) ) );
+		if ( ! in_array( $required_function_tool, $available_function_tools, true ) ) {
+			$required_function_tool = '';
+		}
 		$previous_response_id = '';
 
 		for ( $iteration = 0; $iteration < 4; $iteration++ ) {
@@ -4262,7 +4512,9 @@ PROMPT;
 			}
 			if ( $tools ) {
 				$payload['tools']       = $tools;
-				$payload['tool_choice'] = 'auto';
+				$payload['tool_choice'] = 0 === $iteration && '' !== $required_function_tool
+					? [ 'type' => 'function', 'name' => $required_function_tool ]
+					: 'auto';
 			}
 
 			$response = wp_remote_post(
@@ -4345,6 +4597,11 @@ PROMPT;
 				$used_tools[] = $tool_name;
 				if ( is_array( $tool_result ) && empty( $tool_result['error'] ) && ! empty( $tool_result['action'] ) ) {
 					$action_results[] = array_merge( [ 'tool_name' => $tool_name ], $tool_result );
+				} elseif ( is_array( $tool_result ) && ! empty( $tool_result['error'] ) ) {
+					$tool_errors[] = [
+						'tool_name' => sanitize_key( $tool_name ),
+						'error'     => sanitize_text_field( (string) $tool_result['error'] ),
+					];
 				}
 				$next_input[] = [
 					'type'    => 'function_call_output',
@@ -4365,6 +4622,7 @@ PROMPT;
 			'model'           => $model,
 			'used_tools'      => array_values( array_unique( array_filter( $used_tools ) ) ),
 			'action_results'  => $action_results,
+			'tool_errors'     => $tool_errors,
 		];
 	}
 

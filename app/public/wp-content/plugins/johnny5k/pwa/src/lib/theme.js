@@ -5,25 +5,25 @@ export const DEFAULT_IRONQUEST_COLOR_SCHEME = 'ironquest-codex'
 export const DEFAULT_COLOR_SCHEMES = [
   {
     id: 'classic',
-    label: 'Classic Launch',
-    description: 'The current Johnny5k palette.',
+    label: 'Modern Skyscraper',
+    description: 'Steel-blue glass at dusk with amber window light, coral warnings, and mint success states.',
     colors: {
-      bg: '#E6F3FD',
-      bg2: '#FFFFFF',
-      bg3: '#CCE6F8',
-      text: '#0F1F55',
-      textMuted: '#5878A0',
-      text2: '#0F1F55',
-      textMuted2: '#5878A0',
-      text3: '#0F1F55',
-      textMuted3: '#5878A0',
-      border: '#A8D4F0',
-      accent: '#FF5530',
-      accent2: '#00BCDE',
-      accent3: '#FF38A0',
-      danger: '#FF2E50',
-      success: '#22C47E',
-      yellow: '#FFD000',
+      bg: '#0A0E14',
+      bg2: '#111922',
+      bg3: '#16212B',
+      text: '#EAF1F6',
+      textMuted: '#7C8E9C',
+      text2: '#EAF1F6',
+      textMuted2: '#7C8E9C',
+      text3: '#EAF1F6',
+      textMuted3: '#7C8E9C',
+      border: '#253244',
+      accent: '#E8B84A',
+      accent2: '#4FC3E0',
+      accent3: '#4FC3E0',
+      danger: '#D9724A',
+      success: '#5FD9A0',
+      yellow: '#E8B84A',
     },
   },
   {
@@ -337,6 +337,47 @@ export function applyColorScheme(value, options = {}) {
     root.style.setProperty('--danger', scheme.colors.danger)
     root.style.setProperty('--success', scheme.colors.success)
     root.style.setProperty('--yellow', scheme.colors.yellow)
+
+    root.style.setProperty('--field', scheme.colors.bg)
+    root.style.setProperty('--field-2', scheme.colors.bg2)
+    root.style.setProperty('--surface', scheme.colors.bg3)
+    root.style.setProperty('--chalk', scheme.colors.text)
+    root.style.setProperty('--text-soft', scheme.colors.text2)
+    root.style.setProperty('--mist', scheme.colors.textMuted)
+    root.style.setProperty('--whistle', scheme.colors.accent)
+    root.style.setProperty('--rust', scheme.colors.danger)
+    root.style.setProperty('--signal', scheme.colors.accent2)
+    root.style.setProperty('--good', scheme.colors.success)
+    root.style.setProperty('--ink', '#14181A')
+    if (scheme.id === 'classic') {
+      root.style.setProperty('--whistle-dim', '#6B5326')
+      root.style.setProperty('--rust-dim', '#4A2A1C')
+      root.style.setProperty('--surface-2', '#10161D')
+      root.style.setProperty('--surface-alt', '#1A232C')
+      root.style.setProperty('--surface-3', '#16202A')
+      root.style.setProperty('--track', '#1C2733')
+      root.style.setProperty('--border-soft', '#1C2934')
+      root.style.setProperty('--deep', '#05080C')
+      root.style.setProperty('--glass', 'rgba(17, 25, 34, 0.5)')
+      root.style.setProperty('--glass-strong', 'rgba(17, 25, 34, 0.74)')
+      root.style.setProperty('--glass-border', 'rgba(190, 215, 235, 0.12)')
+      root.style.setProperty('--glass-user', 'rgba(232, 184, 74, 0.14)')
+      root.style.setProperty('--glass-user-border', 'rgba(232, 184, 74, 0.28)')
+    } else {
+      root.style.setProperty('--whistle-dim', `color-mix(in srgb, ${scheme.colors.accent} 42%, black)`)
+      root.style.setProperty('--rust-dim', `color-mix(in srgb, ${scheme.colors.danger} 38%, black)`)
+      root.style.setProperty('--surface-2', `color-mix(in srgb, ${scheme.colors.bg} 84%, ${scheme.colors.bg2})`)
+      root.style.setProperty('--surface-alt', `color-mix(in srgb, ${scheme.colors.bg2} 80%, ${scheme.colors.border})`)
+      root.style.setProperty('--surface-3', `color-mix(in srgb, ${scheme.colors.bg2} 88%, ${scheme.colors.bg})`)
+      root.style.setProperty('--track', `color-mix(in srgb, ${scheme.colors.border} 65%, ${scheme.colors.bg})`)
+      root.style.setProperty('--border-soft', `color-mix(in srgb, ${scheme.colors.border} 65%, ${scheme.colors.bg})`)
+      root.style.setProperty('--deep', `color-mix(in srgb, ${scheme.colors.bg} 82%, black)`)
+      root.style.setProperty('--glass', `color-mix(in srgb, ${scheme.colors.bg2} 50%, transparent)`)
+      root.style.setProperty('--glass-strong', `color-mix(in srgb, ${scheme.colors.bg2} 74%, transparent)`)
+      root.style.setProperty('--glass-border', `color-mix(in srgb, ${scheme.colors.text} 12%, transparent)`)
+      root.style.setProperty('--glass-user', `color-mix(in srgb, ${scheme.colors.accent} 14%, transparent)`)
+      root.style.setProperty('--glass-user-border', `color-mix(in srgb, ${scheme.colors.accent} 28%, transparent)`)
+    }
     root.dataset.colorScheme = scheme.id
     root.dataset.themeMode = themeMode
     root.style.colorScheme = themeMode

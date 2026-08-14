@@ -1,10 +1,10 @@
 .btn-primary {
-  background: linear-gradient(135deg, #FF5530 0%, #FF38A0 100%);
+  background: linear-gradient(180deg, #F3DE7A 0%, var(--accent) 100%);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: var(--space-2);
-  color: #fff;
+  color: var(--bg);
   border: none;
   border-radius: 50px;
   min-height: var(--button-h);
@@ -16,8 +16,8 @@
   letter-spacing: 0.03em;
   transition: opacity .2s, box-shadow .2s;
   width: 100%;
-  box-shadow: 0 6px 20px rgba(255, 85, 48, 0.35);
-  font-family: 'Exo 2', system-ui, sans-serif;
+  box-shadow: 0 8px 24px rgba(232, 203, 76, 0.24);
+  font-family: var(--font-ui);
   white-space: normal;
   text-align: center;
   overflow-wrap: anywhere;
@@ -25,7 +25,7 @@
 
 .btn-primary:hover {
   opacity: 0.92;
-  box-shadow: 0 8px 28px rgba(255, 85, 48, 0.45);
+  box-shadow: 0 10px 30px rgba(232, 203, 76, 0.32);
 }
 
 .btn-primary:disabled {

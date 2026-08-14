@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from 'react'
 import { ironquestApi } from '../../../api/modules/ironquest'
+import { workoutApi } from '../../../api/modules/workout'
 import IronQuestConsequenceLedger from '../../../components/ironquest/IronQuestConsequenceLedger'
 import IronQuestRecentMissionUpdate from '../../../components/ironquest/IronQuestRecentMissionUpdate'
 import ErrorState from '../../../components/ui/ErrorState'
@@ -10,6 +11,7 @@ import PlanOverviewSwapDrawer from '../../../components/workout/PlanOverviewSwap
 import WorkoutSessionConfirmModal from './WorkoutSessionConfirmModal'
 import WorkoutCustomizeDrawer from './WorkoutCustomizeDrawer'
 import WorkoutPrebuiltLibraryDrawer from './WorkoutPrebuiltLibraryDrawer'
+import WorkoutSavedLibraryDrawer from './WorkoutSavedLibraryDrawer'
 import { useIronQuestWorldArt } from '../../../hooks/useIronQuestWorldArt'
 import { formatDayType, formatPreviewSetRepLabel, getReadinessRepDelta } from '../workoutScreenUtils'
 import { getTavernConsequenceEntries, getTavernJohnnyLine, getTavernMissionPreview, getTavernResolution } from '../../../lib/ironquestTavern'
@@ -117,6 +119,7 @@ export default function WorkoutLaunchpad({
   offlineStatus,
   coachingSummary,
   onOpenWorkoutSupport,
+  onAskJohnny,
   onPrebuiltQueued,
   planning,
   tavernDay,
@@ -131,9 +134,15 @@ export default function WorkoutLaunchpad({
   const [addOnsExpanded, setAddOnsExpanded] = useState(false)
   const [customizeOpen, setCustomizeOpen] = useState(false)
   const [prebuiltOpen, setPrebuiltOpen] = useState(false)
+  const [savedLibraryOpen, setSavedLibraryOpen] = useState(false)
+  const [savingWorkout, setSavingWorkout] = useState(false)
+  const [saveWorkoutNotice, setSaveWorkoutNotice] = useState('')
+  const [saveWorkoutError, setSaveWorkoutError] = useState('')
   const [generatingTavernArt, setGeneratingTavernArt] = useState(false)
   const [tavernArtNotice, setTavernArtNotice] = useState('')
   const [tavernArtError, setTavernArtError] = useState('')
+  const [savingStructure, setSavingStructure] = useState(false)
+  const [structureError, setStructureError] = useState('')
   const isMaintenanceMode = readinessScore <= 3
   const readinessRepDelta = getReadinessRepDelta(readinessScore)
   const absQuickPick = planning.absAddOnSuggestions[0] ?? null
@@ -141,14 +150,18 @@ export default function WorkoutLaunchpad({
   const hasResumedSession = Boolean(resumedSession?.session?.id)
   const confirmBusy = sessionController.exiting || sessionController.restarting
   const timeTierMeta = getTimeTierMeta(timeTier)
-  const workoutTypeLabel = getDisplayWorkoutType(planning)
+  const workoutStructure = planning.previewSession?.workout_structure || customWorkoutDraft?.workout_structure || 'standard'
+  const circuitRounds = Number(planning.previewSession?.rounds || customWorkoutDraft?.rounds || 1)
+  const workoutTypeLabel = workoutStructure === 'circuit' ? `${circuitRounds}-round circuit` : getDisplayWorkoutType(planning)
   const heroMetaLabel = `${timeTierMeta.label} • ${workoutTypeLabel}`
   const previewCount = planning.adjustedPreviewExercises.length
   const previewSummary = planning.isRestSelection
     ? 'Recovery day • no workout build'
     : planning.isCardioSelection
       ? `${timeTierMeta.label} cardio block`
-      : `${previewCount} exercise${previewCount === 1 ? '' : 's'} • ~${timeTierMeta.minutes} min`
+      : workoutStructure === 'circuit'
+        ? `${previewCount} stations • ${circuitRounds} rounds`
+        : `${previewCount} exercise${previewCount === 1 ? '' : 's'} • ~${timeTierMeta.minutes} min`
   const previewContext = planning.isRestSelection
     ? 'Today is set as a rest day unless you switch back to cardio or a lifting split.'
     : planning.isCardioSelection
@@ -269,6 +282,26 @@ export default function WorkoutLaunchpad({
     setPrebuiltOpen(false)
   }
 
+  async function updateCustomWorkoutStructure(nextStructure, nextRounds = circuitRounds) {
+    if (!customWorkoutDraft?.id || savingStructure) return
+    setSavingStructure(true)
+    setStructureError('')
+    try {
+      const normalizedStructure = nextStructure === 'circuit' ? 'circuit' : 'standard'
+      const response = await workoutApi.saveCustomDraft({
+        ...customWorkoutDraft,
+        workout_structure: normalizedStructure,
+        rounds: normalizedStructure === 'circuit' ? Math.max(1, Math.min(20, Number(nextRounds || 1))) : 1,
+        exercises: customWorkoutDraft.exercises,
+      })
+      await onPrebuiltQueued(response?.custom_workout_draft || customWorkoutDraft)
+    } catch (updateError) {
+      setStructureError(updateError?.message || 'Could not update the workout structure.')
+    } finally {
+      setSavingStructure(false)
+    }
+  }
+
   function handleOpenAddFromCustomize() {
     setCustomizeOpen(false)
     planning.openAddDrawer()
@@ -298,6 +331,21 @@ export default function WorkoutLaunchpad({
     }
   }, [tavernDay, tavernState?.location_slug])
 
+  async function handleSaveWorkout() {
+    if (!customWorkoutDraft || savingWorkout) return
+    setSavingWorkout(true)
+    setSaveWorkoutNotice('')
+    setSaveWorkoutError('')
+    try {
+      await workoutApi.saveSavedWorkout(customWorkoutDraft)
+      setSaveWorkoutNotice('Saved to My Workouts.')
+    } catch (saveError) {
+      setSaveWorkoutError(saveError?.message || 'Could not save this workout yet.')
+    } finally {
+      setSavingWorkout(false)
+    }
+  }
+
   return (
     <div className="screen workout-start workout-launchpad">
       <div className="dash-card workout-start-card workout-launchpad-primary-card support-icon-anchor">
@@ -310,6 +358,21 @@ export default function WorkoutLaunchpad({
             ? 'Johnny built this around what you asked for and where you are today.'
             : 'Johnny built this off your readiness and recent work.'}
         </p>
+        <div className="settings-actions">
+          <button type="button" className="btn-secondary" onClick={onAskJohnny}>
+            Build with Johnny
+          </button>
+          <button type="button" className="btn-outline" onClick={() => setSavedLibraryOpen(true)}>
+            My Workouts
+          </button>
+          {customWorkoutDraft ? (
+            <button type="button" className="btn-outline" onClick={() => void handleSaveWorkout()} disabled={savingWorkout}>
+              {savingWorkout ? 'Saving...' : 'Save to My Workouts'}
+            </button>
+          ) : null}
+        </div>
+        {saveWorkoutNotice ? <p className="settings-success">{saveWorkoutNotice}</p> : null}
+        {saveWorkoutError ? <p className="settings-error">{saveWorkoutError}</p> : null}
         <div className="workout-launchpad-focus-card">
           <span className="workout-launchpad-focus-label">Johnny&apos;s Focus</span>
           <p>{focusCopy}</p>
@@ -537,6 +600,31 @@ export default function WorkoutLaunchpad({
                         : `Johnny queued a ${formatDayType(planning.normalizedCustomWorkoutDayType)} workout for you.`}
                     </small>
                     {customWorkoutDraft?.coach_note ? <small>{customWorkoutDraft.coach_note}</small> : null}
+                    {workoutStructure === 'circuit' ? (
+                      <small>
+                        {circuitRounds} rounds
+                        {customWorkoutDraft?.rest_between_exercises_seconds != null ? ` · ${customWorkoutDraft.rest_between_exercises_seconds}s between stations` : ''}
+                        {customWorkoutDraft?.rest_between_rounds_seconds != null ? ` · ${customWorkoutDraft.rest_between_rounds_seconds}s between rounds` : ''}
+                      </small>
+                    ) : null}
+                    {customWorkoutDraft?.interpretation_notes?.length ? (
+                      <ul className="workout-builder-interpretation-list">
+                        {customWorkoutDraft.interpretation_notes.map((note, index) => <li key={`${note}-${index}`}>{note}</li>)}
+                      </ul>
+                    ) : null}
+                    <div className="workout-builder-structure-controls" role="group" aria-label="Workout structure">
+                      <button type="button" className={workoutStructure === 'standard' ? 'btn-primary small' : 'btn-outline small'} onClick={() => void updateCustomWorkoutStructure('standard')} disabled={savingStructure}>Standard</button>
+                      <button type="button" className={workoutStructure === 'circuit' ? 'btn-primary small' : 'btn-outline small'} onClick={() => void updateCustomWorkoutStructure('circuit', Math.max(2, circuitRounds))} disabled={savingStructure}>Circuit</button>
+                      {workoutStructure === 'circuit' ? (
+                        <label className="workout-builder-rounds-field">
+                          <span>Rounds</span>
+                          <select value={circuitRounds} onChange={event => void updateCustomWorkoutStructure('circuit', event.target.value)} disabled={savingStructure}>
+                            {Array.from({ length: 20 }, (_, index) => index + 1).map(round => <option key={round} value={round}>{round}</option>)}
+                          </select>
+                        </label>
+                      ) : null}
+                    </div>
+                    {structureError ? <small className="error">{structureError}</small> : null}
                     <div className="settings-actions">
                       <button type="button" className="btn-outline small" onClick={planning.handleUseScheduledSplit}>
                         Use scheduled split instead
@@ -808,6 +896,12 @@ export default function WorkoutLaunchpad({
         onClose={handleClosePrebuiltLibrary}
         onQueued={onPrebuiltQueued}
         timeTier={timeTier}
+        customWorkoutDraft={customWorkoutDraft}
+      />
+      <WorkoutSavedLibraryDrawer
+        open={savedLibraryOpen}
+        onClose={() => setSavedLibraryOpen(false)}
+        onQueued={onPrebuiltQueued}
         customWorkoutDraft={customWorkoutDraft}
       />
       <WorkoutSessionConfirmModal

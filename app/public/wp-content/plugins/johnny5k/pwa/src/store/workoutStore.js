@@ -12,6 +12,7 @@ export const useWorkoutStore = create(persist((set, get) => ({
   session: null,        // { session, exercises: [{ ...ex, sets: [] }] }
   sessionId: null,
   customWorkoutDraft: null,
+  workoutApproval: null,
   offlineSessionSnapshot: false,
   loading: false,
   bootstrapped: false,
@@ -198,6 +199,7 @@ export const useWorkoutStore = create(persist((set, get) => ({
                 session: persistCachedSession(full),
                 sessionId: full.session.id,
                 customWorkoutDraft: null,
+                workoutApproval: full?.workout_approval ?? null,
                 offlineSessionSnapshot: false,
                 loading: false,
                 bootstrapped: true,
@@ -227,6 +229,7 @@ export const useWorkoutStore = create(persist((set, get) => ({
             session: null,
             sessionId: null,
             customWorkoutDraft: current?.custom_workout_draft ?? null,
+            workoutApproval: current?.workout_approval ?? null,
             timeTier: resolveWorkoutTimeTier(current?.custom_workout_draft?.time_tier, get().timeTier),
             offlineSessionSnapshot: false,
             loading: false,
@@ -243,6 +246,7 @@ export const useWorkoutStore = create(persist((set, get) => ({
           session: persistCachedSession(current),
           sessionId: current.session.id,
           customWorkoutDraft: null,
+          workoutApproval: current?.workout_approval ?? null,
           offlineSessionSnapshot: false,
           loading: false,
           bootstrapped: true,
@@ -258,6 +262,7 @@ export const useWorkoutStore = create(persist((set, get) => ({
         session: null,
         sessionId: null,
         customWorkoutDraft: current?.custom_workout_draft ?? null,
+        workoutApproval: current?.workout_approval ?? null,
         timeTier: resolveWorkoutTimeTier(current?.custom_workout_draft?.time_tier, get().timeTier),
         offlineSessionSnapshot: false,
         loading: false,
@@ -528,6 +533,8 @@ export const useWorkoutStore = create(persist((set, get) => ({
             setNumber: payload.set_number,
             weight: payload.weight,
             reps: payload.reps,
+            durationSeconds: payload.duration_seconds,
+            circuitRound: payload.circuit_round,
             rir: payload.rir,
             rpe: payload.rpe,
             completed: payload.completed,
@@ -635,6 +642,8 @@ export const useWorkoutStore = create(persist((set, get) => ({
         set_number: undoToast.payload.setNumber,
         weight: undoToast.payload.weight,
         reps: undoToast.payload.reps,
+        duration_seconds: undoToast.payload.durationSeconds,
+        circuit_round: undoToast.payload.circuitRound,
         rir: undoToast.payload.rir,
         rpe: undoToast.payload.rpe,
         completed: undoToast.payload.completed,
@@ -648,6 +657,8 @@ export const useWorkoutStore = create(persist((set, get) => ({
           set_number: undoToast.payload.setNumber,
           weight: undoToast.payload.weight,
           reps: undoToast.payload.reps,
+          duration_seconds: undoToast.payload.durationSeconds,
+          circuit_round: undoToast.payload.circuitRound,
           rir: undoToast.payload.rir,
           rpe: undoToast.payload.rpe,
           completed: undoToast.payload.completed,
@@ -670,6 +681,9 @@ export const useWorkoutStore = create(persist((set, get) => ({
         planned_rep_min: undoToast.payload.planned_rep_min,
         planned_rep_max: undoToast.payload.planned_rep_max,
         planned_sets: undoToast.payload.planned_sets,
+        target_type: undoToast.payload.target_type,
+        planned_duration_seconds: undoToast.payload.planned_duration_seconds,
+        reps_per_side: undoToast.payload.reps_per_side,
         sort_order: undoToast.payload.sort_order,
         was_swapped: undoToast.payload.was_swapped,
         original_exercise_id: undoToast.payload.original_exercise_id,
@@ -999,6 +1013,8 @@ function buildOptimisticSet(sessionExerciseId, setData, setId, options = {}) {
     set_number: setNumber,
     weight: Number(setData?.weight || 0),
     reps: Number(setData?.reps || 0),
+    duration_seconds: setData?.duration_seconds == null ? null : Number(setData.duration_seconds),
+    circuit_round: setData?.circuit_round == null ? null : Number(setData.circuit_round),
     rir: setData?.rir ?? null,
     rpe: setData?.rpe ?? null,
     completed: Number(setData?.completed ?? 1) ? 1 : 0,
@@ -1093,6 +1109,8 @@ function mapSetPatch(setPatch) {
   const patch = {}
   if (setPatch?.weight !== undefined) patch.weight = Number(setPatch.weight || 0)
   if (setPatch?.reps !== undefined) patch.reps = Number(setPatch.reps || 0)
+  if (setPatch?.duration_seconds !== undefined) patch.duration_seconds = setPatch.duration_seconds == null ? null : Number(setPatch.duration_seconds)
+  if (setPatch?.circuit_round !== undefined) patch.circuit_round = setPatch.circuit_round == null ? null : Number(setPatch.circuit_round)
   if (setPatch?.rir !== undefined) patch.rir = setPatch.rir
   if (setPatch?.rpe !== undefined) patch.rpe = setPatch.rpe
   if (setPatch?.completed !== undefined) patch.completed = Number(setPatch.completed) ? 1 : 0
@@ -1119,6 +1137,8 @@ function normalizeSetRequestPayload(sessionExerciseId, setData, fallbackSetNumbe
     set_number: Number(setData?.set_number || fallbackSetNumber || 1),
     weight: Number(setData?.weight || 0),
     reps: Number(setData?.reps || 0),
+    ...(setData?.duration_seconds !== undefined ? { duration_seconds: setData.duration_seconds == null ? null : Number(setData.duration_seconds) } : {}),
+    ...(setData?.circuit_round !== undefined ? { circuit_round: setData.circuit_round == null ? null : Number(setData.circuit_round) } : {}),
     ...(setData?.rir !== undefined ? { rir: setData.rir === '' ? null : setData.rir } : {}),
     ...(setData?.rpe !== undefined ? { rpe: setData.rpe === '' ? null : setData.rpe } : {}),
     ...(setData?.completed !== undefined ? { completed: Number(setData.completed) ? 1 : 0 } : {}),

@@ -35,20 +35,43 @@ class AiToolHandlerService {
 			'get_recipe_catalog'         => self::tool_recipe_catalog( $user_id, $arguments ),
 			'get_recipe_cookbook'        => self::tool_recipe_cookbook( $user_id, $arguments ),
 			'get_recovery_snapshot'      => self::tool_recovery_snapshot( $user_id ),
+			'get_weight_history'         => self::tool_weight_history( $user_id ),
 			'get_current_workout'        => self::tool_current_workout( $user_id, $deps ),
+			'get_saved_workouts'         => self::tool_saved_workouts( $arguments, $deps ),
+			'present_choices'            => self::tool_present_choices( $arguments ),
+			'create_visualization'       => self::tool_create_visualization( $arguments ),
+			'generate_image'              => JohnnyGeneratedImageService::generate( $user_id, $arguments ),
 			'log_steps'                  => self::tool_log_steps( $user_id, $arguments, $deps ),
 			'log_food_from_description'  => self::tool_log_food_from_description( $user_id, $arguments, $deps ),
 			'create_training_plan'       => self::tool_create_training_plan( $user_id, $arguments ),
 			'set_training_schedule'      => self::tool_set_training_schedule( $user_id, $arguments, $deps ),
 			'create_custom_workout'      => self::tool_create_custom_workout( $user_id, $arguments ),
-			'create_personal_exercise'   => self::tool_create_personal_exercise( $user_id, $arguments ),
+			'create_personal_exercise'   => self::tool_create_personal_exercise( $user_id, $arguments, $deps ),
+			'save_workout_to_library'   => self::tool_save_workout_to_library( $user_id, $arguments, $deps ),
+			'load_saved_workout'         => self::tool_load_saved_workout( $user_id, $arguments ),
 			'log_sleep'                  => self::tool_log_sleep( $user_id, $arguments, $deps ),
+			'log_cardio'                 => self::tool_log_cardio( $user_id, $arguments, $deps ),
+			'log_rest_day'               => self::tool_log_rest_day( $user_id, $deps ),
+			'approve_workout'             => self::tool_approve_workout( $user_id, $deps ),
+			'search_exercises'            => self::tool_search_exercises( $arguments, $deps ),
+			'modify_workout'              => self::tool_modify_workout( $user_id, $arguments, $deps ),
+			'start_workout'               => self::tool_start_workout( $user_id, $arguments, $deps ),
+			'manage_workout_set'          => self::tool_manage_workout_set( $arguments, $deps ),
+			'complete_workout'            => self::tool_complete_workout( $deps ),
+			'log_body_measurement'        => self::tool_log_body_measurement( $arguments, $deps ),
+			'manage_health_log'           => self::tool_manage_health_log( $arguments, $deps ),
+			'log_water'                   => self::tool_log_water( $arguments, $deps ),
+			'manage_meal'                 => self::tool_manage_meal( $arguments, $deps ),
+			'manage_saved_meal'           => self::tool_manage_saved_meal( $arguments, $deps ),
+			'update_goals'                => self::tool_update_goals( $user_id, $arguments, $deps ),
+			'update_profile'              => self::tool_update_profile( $arguments, $deps ),
 			'add_pantry_items'           => self::tool_add_pantry_items( $user_id, $arguments, $deps ),
 			'add_grocery_gap_items'      => self::tool_add_grocery_gap_items( $user_id, $arguments, $deps ),
 			'add_recipe_to_cookbook'     => self::tool_add_recipe_to_cookbook( $user_id, $arguments ),
 			'swap_workout_exercise'      => self::tool_swap_workout_exercise( $user_id, $arguments, $deps ),
 			'schedule_sms_reminder'      => self::tool_schedule_sms_reminder( $user_id, $arguments, $deps ),
 			'clear_follow_ups'          => self::tool_clear_follow_ups( $user_id, $arguments, $deps ),
+			'clear_conversation'        => self::tool_clear_conversation(),
 			'clear_sms_reminders'       => self::tool_clear_sms_reminders( $user_id, $arguments, $deps ),
 			default                      => [ 'error' => 'Tool not available.' ],
 		};
@@ -65,6 +88,14 @@ class AiToolHandlerService {
 		}
 
 		return $callable( ...$args );
+	}
+
+	private static function tool_clear_conversation(): array {
+		return [
+			'ok'      => true,
+			'action'  => 'clear_conversation',
+			'summary' => 'Chat cleared.',
+		];
 	}
 
 	private static function nutrition_log_meal( array $deps, \WP_REST_Request $request ): \WP_REST_Response {
@@ -91,6 +122,71 @@ class AiToolHandlerService {
 		return NutritionController::add_pantry_items_bulk( $request );
 	}
 
+	private static function body_log_cardio( array $deps, \WP_REST_Request $request ): \WP_REST_Response {
+		$callable = $deps['body_log_cardio'] ?? null;
+		if ( is_callable( $callable ) ) {
+			$response = $callable( $request );
+			if ( $response instanceof \WP_REST_Response ) {
+				return $response;
+			}
+		}
+
+		return BodyMetricsController::log_cardio( $request );
+	}
+
+	private static function workout_start( array $deps, \WP_REST_Request $request ): \WP_REST_Response {
+		$callable = $deps['workout_start'] ?? null;
+		if ( is_callable( $callable ) ) {
+			$response = $callable( $request );
+			if ( $response instanceof \WP_REST_Response ) {
+				return $response;
+			}
+		}
+
+		return WorkoutController::start( $request );
+	}
+
+	private static function workout_complete( array $deps, \WP_REST_Request $request ): \WP_REST_Response {
+		$callable = $deps['workout_complete'] ?? null;
+		if ( is_callable( $callable ) ) {
+			$response = $callable( $request );
+			if ( $response instanceof \WP_REST_Response ) {
+				return $response;
+			}
+		}
+
+		return WorkoutController::complete_session( $request );
+	}
+
+	private static function daily_snapshot( int $user_id, array $deps ): array {
+		$callable = $deps['daily_snapshot'] ?? null;
+		if ( is_callable( $callable ) ) {
+			$snapshot = $callable( $user_id );
+			return is_array( $snapshot ) ? $snapshot : [];
+		}
+
+		return DashboardController::get_daily_snapshot_data( $user_id );
+	}
+
+	private static function today( int $user_id, array $deps ): string {
+		$callable = $deps['today'] ?? null;
+		return is_callable( $callable ) ? (string) $callable( $user_id ) : UserTime::today( $user_id );
+	}
+
+	private static function rest_call( array $deps, string $key, callable $fallback, \WP_REST_Request $request ): \WP_REST_Response {
+		$callable = $deps[ $key ] ?? null;
+		$response = is_callable( $callable ) ? $callable( $request ) : $fallback( $request );
+		return $response instanceof \WP_REST_Response ? $response : new \WP_REST_Response( [ 'message' => 'Invalid service response.' ], 500 );
+	}
+
+	private static function rest_result( \WP_REST_Response $response, string $action, string $failure ): array {
+		$data = $response->get_data();
+		if ( (int) $response->get_status() >= 400 ) {
+			return [ 'error' => (string) ( is_array( $data ) ? ( $data['message'] ?? $failure ) : $failure ) ];
+		}
+		return [ 'ok' => true, 'action' => $action, 'data' => $data ];
+	}
+
 	private static function onboarding_update_training_schedule( array $deps, \WP_REST_Request $request ): \WP_REST_Response {
 		$callable = $deps['onboarding_update_training_schedule'] ?? null;
 		if ( is_callable( $callable ) ) {
@@ -109,6 +205,110 @@ class AiToolHandlerService {
 	private static function tool_profile_summary( int $user_id, array $deps ): array {
 		$result = self::dep( $deps, 'profile_summary', $user_id );
 		return is_array( $result ) ? $result : [];
+	}
+
+	private static function tool_create_visualization( array $arguments ): array {
+		$type = sanitize_key( (string) ( $arguments['type'] ?? '' ) );
+		if ( ! in_array( $type, [ 'line', 'bar', 'progress', 'comparison', 'infographic' ], true ) ) {
+			return [ 'error' => 'Choose a supported visualization type.' ];
+		}
+
+		$title = sanitize_text_field( (string) ( $arguments['title'] ?? '' ) );
+		$raw_items = is_array( $arguments['items'] ?? null ) ? array_slice( $arguments['items'], 0, 12 ) : [];
+		$items = [];
+		foreach ( $raw_items as $raw_item ) {
+			if ( ! is_array( $raw_item ) ) {
+				continue;
+			}
+			$label = sanitize_text_field( (string) ( $raw_item['label'] ?? '' ) );
+			if ( '' === $label ) {
+				continue;
+			}
+			$item = [
+				'label'  => $label,
+				'detail' => sanitize_text_field( (string) ( $raw_item['detail'] ?? '' ) ),
+			];
+			if ( isset( $raw_item['value'] ) && is_numeric( $raw_item['value'] ) ) {
+				$item['value'] = round( (float) $raw_item['value'], 2 );
+			}
+			if ( isset( $raw_item['secondary_value'] ) && is_numeric( $raw_item['secondary_value'] ) ) {
+				$item['secondary_value'] = round( (float) $raw_item['secondary_value'], 2 );
+			}
+			$items[] = $item;
+		}
+
+		if ( '' === $title || empty( $items ) ) {
+			return [ 'error' => 'A visualization needs a title and at least one labeled item.' ];
+		}
+
+		$result = [
+			'action'       => 'create_visualization',
+			'type'         => $type,
+			'title'        => $title,
+			'subtitle'     => sanitize_text_field( (string) ( $arguments['subtitle'] ?? '' ) ),
+			'unit'         => sanitize_text_field( (string) ( $arguments['unit'] ?? '' ) ),
+			'source_label' => sanitize_text_field( (string) ( $arguments['source_label'] ?? '' ) ),
+			'items'        => $items,
+			'summary'      => sprintf( 'Created %s.', $title ),
+		];
+
+		if ( isset( $arguments['target'] ) && is_numeric( $arguments['target'] ) ) {
+			$result['target'] = round( (float) $arguments['target'], 2 );
+		}
+
+		return $result;
+	}
+
+	private static function tool_present_choices( array $arguments ): array {
+		$allowed_routes = [ '/dashboard', '/workout', '/workout/library', '/nutrition', '/body', '/settings' ];
+		$raw_choices = is_array( $arguments['choices'] ?? null ) ? array_slice( $arguments['choices'], 0, 4 ) : [];
+		$choices = [];
+
+		foreach ( $raw_choices as $raw_choice ) {
+			if ( ! is_array( $raw_choice ) ) {
+				continue;
+			}
+
+			$label = substr( sanitize_text_field( (string) ( $raw_choice['label'] ?? '' ) ), 0, 48 );
+			$type = sanitize_key( (string) ( $raw_choice['type'] ?? 'reply' ) );
+			$emphasis = 'primary' === sanitize_key( (string) ( $raw_choice['emphasis'] ?? '' ) ) ? 'primary' : 'secondary';
+			if ( '' === $label || ! in_array( $type, [ 'reply', 'navigate' ], true ) ) {
+				continue;
+			}
+
+			$choice = [
+				'label'    => $label,
+				'type'     => $type,
+				'emphasis' => $emphasis,
+			];
+			if ( 'reply' === $type ) {
+				$response = substr( sanitize_textarea_field( (string) ( $raw_choice['response'] ?? '' ) ), 0, 500 );
+				if ( '' === $response ) {
+					continue;
+				}
+				$choice['response'] = $response;
+			} else {
+				$route = '/' . ltrim( sanitize_text_field( (string) ( $raw_choice['route'] ?? '' ) ), '/' );
+				if ( ! in_array( $route, $allowed_routes, true ) ) {
+					continue;
+				}
+				$choice['route'] = $route;
+			}
+
+			$choices[] = $choice;
+		}
+
+		if ( count( $choices ) < 2 ) {
+			return [ 'error' => 'A decision rail needs at least two valid choices.' ];
+		}
+
+		return [
+			'action'  => 'present_choices',
+			'prompt'  => substr( sanitize_text_field( (string) ( $arguments['prompt'] ?? '' ) ), 0, 120 ),
+			'style'   => 'actions' === sanitize_key( (string) ( $arguments['style'] ?? '' ) ) ? 'actions' : 'chips',
+			'choices' => $choices,
+			'summary' => 'Presented the next choices.',
+		];
 	}
 
 	private static function tool_daily_targets( int $user_id ): array {
@@ -396,6 +596,107 @@ class AiToolHandlerService {
 		];
 	}
 
+	private static function tool_weight_history( int $user_id ): array {
+		global $wpdb;
+		$p = $wpdb->prefix;
+		$profile = $wpdb->get_row( $wpdb->prepare(
+			"SELECT starting_weight_lb FROM {$p}fit_user_profiles WHERE user_id = %d LIMIT 1",
+			$user_id
+		) );
+		$goal = $wpdb->get_row( $wpdb->prepare(
+			"SELECT goal_type, target_weight_lb FROM {$p}fit_user_goals WHERE user_id = %d AND active = 1 ORDER BY created_at DESC LIMIT 1",
+			$user_id
+		) );
+		$rows = $wpdb->get_results( $wpdb->prepare(
+			"SELECT id, metric_date, weight_lb, waist_in, body_fat_pct, resting_hr, notes
+			 FROM {$p}fit_body_metrics
+			 WHERE user_id = %d
+			 ORDER BY metric_date ASC, id ASC",
+			$user_id
+		) );
+
+		$measurements = array_map( static function( object $row ): array {
+			return [
+				'id'           => (int) ( $row->id ?? 0 ),
+				'metric_date'  => sanitize_text_field( (string) ( $row->metric_date ?? '' ) ),
+				'weight_lb'    => isset( $row->weight_lb ) ? round( (float) $row->weight_lb, 2 ) : null,
+				'waist_in'     => isset( $row->waist_in ) ? round( (float) $row->waist_in, 2 ) : null,
+				'body_fat_pct' => isset( $row->body_fat_pct ) ? round( (float) $row->body_fat_pct, 2 ) : null,
+				'resting_hr'   => isset( $row->resting_hr ) ? (int) $row->resting_hr : null,
+				'notes'        => sanitize_text_field( (string) ( $row->notes ?? '' ) ),
+			];
+		}, is_array( $rows ) ? $rows : [] );
+		$measurements = array_values( array_filter( $measurements, static fn( array $row ): bool => '' !== $row['metric_date'] ) );
+		$weight_measurements = array_values( array_filter( $measurements, static fn( array $row ): bool => null !== $row['weight_lb'] ) );
+
+		$first = $weight_measurements[0] ?? [];
+		$latest = ! empty( $weight_measurements ) ? $weight_measurements[ count( $weight_measurements ) - 1 ] : [];
+		$profile_start = isset( $profile->starting_weight_lb ) ? (float) $profile->starting_weight_lb : 0.0;
+		$baseline_weight = $profile_start > 0 ? $profile_start : (float) ( $first['weight_lb'] ?? 0 );
+		$latest_weight = (float) ( $latest['weight_lb'] ?? 0 );
+		$target_weight = isset( $goal->target_weight_lb ) ? (float) $goal->target_weight_lb : 0.0;
+		$total_change = $baseline_weight > 0 && $latest_weight > 0 ? round( $latest_weight - $baseline_weight, 2 ) : null;
+		$remaining_to_goal = $target_weight > 0 && $latest_weight > 0 ? round( $latest_weight - $target_weight, 2 ) : null;
+		$first_timestamp = ! empty( $first['metric_date'] ) ? strtotime( (string) $first['metric_date'] ) : false;
+		$latest_timestamp = ! empty( $latest['metric_date'] ) ? strtotime( (string) $latest['metric_date'] ) : false;
+		$days_spanned = false !== $first_timestamp && false !== $latest_timestamp ? max( 0, (int) floor( ( $latest_timestamp - $first_timestamp ) / DAY_IN_SECONDS ) ) : 0;
+		$goal_distance = $baseline_weight > 0 && $target_weight > 0 ? abs( $baseline_weight - $target_weight ) : 0.0;
+		$progress_distance = $target_weight < $baseline_weight ? $baseline_weight - $latest_weight : $latest_weight - $baseline_weight;
+		$goal_progress = $goal_distance > 0 && $latest_weight > 0 ? round( max( 0, min( 100, ( $progress_distance / $goal_distance ) * 100 ) ), 1 ) : null;
+		$weekly_change = null !== $total_change && $days_spanned > 0 ? round( ( $total_change / $days_spanned ) * 7, 2 ) : null;
+
+		$result = [
+			'measurement_count'        => count( $measurements ),
+			'weight_measurement_count' => count( $weight_measurements ),
+			'measurements'             => $measurements,
+			'goal_type'                => sanitize_key( (string) ( $goal->goal_type ?? '' ) ),
+			'starting_weight_lb'       => $baseline_weight > 0 ? round( $baseline_weight, 2 ) : null,
+			'target_weight_lb'         => $target_weight > 0 ? round( $target_weight, 2 ) : null,
+			'latest_weight_lb'         => $latest_weight > 0 ? round( $latest_weight, 2 ) : null,
+			'latest_metric_date'       => sanitize_text_field( (string) ( $latest['metric_date'] ?? '' ) ),
+			'total_change_lb'          => $total_change,
+			'weight_lost_lb'           => null !== $total_change ? max( 0, round( -$total_change, 2 ) ) : null,
+			'average_weekly_change_lb' => $weekly_change,
+			'remaining_to_goal_lb'     => $remaining_to_goal,
+			'goal_progress_pct'        => $goal_progress,
+			'days_spanned'             => $days_spanned,
+		];
+
+		if ( count( $weight_measurements ) >= 2 ) {
+			$chart_measurements = self::sample_weight_chart_measurements( $weight_measurements, 12 );
+			$result = array_merge( $result, [
+				'action'       => 'create_visualization',
+				'type'         => 'line',
+				'title'        => 'Weight Progress',
+				'subtitle'     => sprintf( '%d weigh-ins across %d days', count( $weight_measurements ), $days_spanned ),
+				'unit'         => 'lb',
+				'source_label' => 'Body check-ins',
+				'items'        => array_map( static fn( array $row ): array => [
+					'label' => (string) $row['metric_date'],
+					'value' => (float) $row['weight_lb'],
+				], $chart_measurements ),
+				'summary'      => 'Created a weight progress chart from the complete weight history.',
+			] );
+		}
+
+		return $result;
+	}
+
+	private static function sample_weight_chart_measurements( array $measurements, int $maximum ): array {
+		$count = count( $measurements );
+		if ( $count <= $maximum ) {
+			return array_values( $measurements );
+		}
+
+		$sampled = [];
+		for ( $position = 0; $position < $maximum; $position++ ) {
+			$index = (int) round( $position * ( $count - 1 ) / ( $maximum - 1 ) );
+			$sampled[ $index ] = $measurements[ $index ];
+		}
+
+		return array_values( $sampled );
+	}
+
 	/**
 	 * @param array<string,callable> $deps
 	 */
@@ -407,11 +708,14 @@ class AiToolHandlerService {
 
 		$active_session    = is_array( $workout['session'] ?? null ) ? $workout['session'] : [];
 		$active_exercises  = is_array( $workout['exercises'] ?? null ) ? $workout['exercises'] : [];
-		$today_payload     = self::dep( $deps, 'latest_workout_session_for_date', $user_id, UserTime::today( $user_id ) );
+		$queued_workout    = is_array( $workout['custom_workout_draft'] ?? null ) ? $workout['custom_workout_draft'] : [];
+		$workout_approval  = is_array( $workout['workout_approval'] ?? null ) ? $workout['workout_approval'] : [];
+		$today_payload     = self::dep( $deps, 'latest_workout_session_for_date', $user_id, self::today( $user_id, $deps ) );
 		$today_session     = is_array( $today_payload['session'] ?? null ) ? $today_payload['session'] : $active_session;
 		$today_exercises   = is_array( $today_payload['exercises'] ?? null ) ? $today_payload['exercises'] : $active_exercises;
 		$last_completed    = self::dep( $deps, 'latest_completed_workout_session', $user_id );
-		$snapshot          = DashboardController::get_daily_snapshot_data( $user_id );
+		$daily_snapshot    = $deps['daily_snapshot'] ?? null;
+		$snapshot          = is_callable( $daily_snapshot ) ? $daily_snapshot( $user_id ) : DashboardController::get_daily_snapshot_data( $user_id );
 		$training_status   = is_array( $snapshot['training_status'] ?? null ) ? $snapshot['training_status'] : [];
 		$today_norm        = self::dep( $deps, 'normalise_tool_session_summary', $today_session );
 		$last_completed_norm = self::dep( $deps, 'normalise_tool_session_summary', is_array( $last_completed['session'] ?? null ) ? $last_completed['session'] : [] );
@@ -423,6 +727,10 @@ class AiToolHandlerService {
 			'session_mode'              => (string) ( $workout['session_mode'] ?? 'normal' ),
 			'exercises'                 => $active_exercises,
 			'has_active_session'        => ! empty( $active_session['id'] ),
+			'queued_workout'            => $queued_workout,
+			'has_queued_workout'        => ! empty( $queued_workout['id'] ),
+			'workout_approval'          => $workout_approval,
+			'queued_workout_is_approved' => ! empty( $queued_workout['id'] ) && (string) ( $workout_approval['workout_id'] ?? '' ) === (string) $queued_workout['id'],
 			'completed_today'           => ! empty( $today_session['completed'] ),
 			'today_status'              => (string) ( $training_status['status'] ?? ( ! empty( $active_session['id'] ) ? 'active' : ( ! empty( $today_session['completed'] ) ? 'completed' : ( ! empty( $today_session['id'] ) ? 'scheduled' : 'none' ) ) ) ),
 			'scheduled_day_type'        => (string) ( $training_status['scheduled_day_type'] ?? '' ),
@@ -777,18 +1085,55 @@ class AiToolHandlerService {
 	private static function tool_create_custom_workout( int $user_id, array $arguments = [] ): array {
 		$name           = sanitize_text_field( (string) ( $arguments['name'] ?? '' ) );
 		$exercise_names = array_values( array_filter( array_map( 'sanitize_text_field', (array) ( $arguments['exercise_names'] ?? [] ) ) ) );
+		$exercises      = is_array( $arguments['exercises'] ?? null ) ? array_values( $arguments['exercises'] ) : [];
 		$time_tier      = self::normalize_time_tier( (string) ( $arguments['time_tier'] ?? '' ) );
 
 		if ( '' === $name ) {
 			return [ 'error' => 'A custom workout name is required.' ];
 		}
-		if ( empty( $exercise_names ) ) {
+		if ( empty( $exercises ) && empty( $exercise_names ) ) {
 			return [ 'error' => 'At least one exercise name is required to build a custom workout.' ];
 		}
+		if ( empty( $exercises ) ) {
+			$exercises = array_map( static fn( string $exercise_name ): array => [
+				'exercise_name' => $exercise_name,
+				'target_type' => 'reps',
+			], $exercise_names );
+		}
+
+		$created_exercise_names = [];
+		foreach ( $exercises as &$exercise ) {
+			$exercise = is_array( $exercise ) ? $exercise : (array) $exercise;
+			$exercise_name = sanitize_text_field( (string) ( $exercise['exercise_name'] ?? '' ) );
+			if ( '' === $exercise_name ) {
+				continue;
+			}
+			$existing = ExerciseLibraryService::find_accessible_exercise_by_name( $user_id, $exercise_name );
+			if ( $existing ) {
+				$exercise['exercise_id'] = (int) $existing->id;
+				continue;
+			}
+
+			$metadata = self::infer_custom_exercise_metadata( $exercise_name, (string) ( $arguments['day_type'] ?? '' ) );
+			$created = ExerciseLibraryService::create_personal_exercise( $user_id, array_merge( $metadata, [
+				'name' => $exercise_name,
+				'default_rep_min' => max( 1, (int) ( $exercise['target_reps'] ?? $exercise['target_rep_min'] ?? 8 ) ),
+				'default_rep_max' => max( 1, (int) ( $exercise['target_reps'] ?? $exercise['target_rep_max'] ?? 12 ) ),
+				'default_sets' => max( 1, (int) ( $exercise['sets'] ?? 1 ) ),
+			] ) );
+			if ( is_wp_error( $created ) ) {
+				return [ 'error' => sprintf( 'Could not resolve or create %s: %s', $exercise_name, $created->get_error_message() ) ];
+			}
+			$exercise['exercise_id'] = (int) ( $created['id'] ?? 0 );
+			if ( ! empty( $created['created'] ) ) {
+				$created_exercise_names[] = $exercise_name;
+			}
+		}
+		unset( $exercise );
 
 		$request = new \WP_REST_Request( 'POST', '/fit/v1/workout/custom-draft' );
 		$day_type = sanitize_text_field( (string) ( $arguments['day_type'] ?? TrainingDayTypes::custom_workout_fallback() ) );
-		if ( 'rest' === sanitize_key( $day_type ) && ! empty( $exercise_names ) ) {
+		if ( 'rest' === sanitize_key( $day_type ) && ! empty( $exercises ) ) {
 			$day_type = TrainingDayTypes::custom_workout_fallback();
 		}
 		$request->set_param( 'name', $name );
@@ -797,9 +1142,19 @@ class AiToolHandlerService {
 			$request->set_param( 'time_tier', $time_tier );
 		}
 		$request->set_param( 'coach_note', sanitize_textarea_field( (string) ( $arguments['coach_note'] ?? '' ) ) );
-		$request->set_param( 'exercises', array_map( static function( string $exercise_name ): array {
-			return [ 'exercise_name' => $exercise_name ];
-		}, $exercise_names ) );
+		$request->set_param( 'workout_structure', 'circuit' === sanitize_key( (string) ( $arguments['workout_structure'] ?? '' ) ) ? 'circuit' : 'standard' );
+		$request->set_param( 'rounds', max( 1, min( 20, (int) ( $arguments['rounds'] ?? 1 ) ) ) );
+		foreach ( [ 'rest_between_exercises_seconds', 'rest_between_rounds_seconds', 'interpretation_notes' ] as $field ) {
+			if ( array_key_exists( $field, $arguments ) ) {
+				$request->set_param( $field, $arguments[ $field ] );
+			}
+		}
+		if ( ! empty( $created_exercise_names ) ) {
+			$notes = array_values( array_filter( array_map( 'sanitize_text_field', (array) ( $arguments['interpretation_notes'] ?? [] ) ) ) );
+			$notes[] = 'Added missing exercises to your personal library: ' . implode( ', ', $created_exercise_names ) . '.';
+			$request->set_param( 'interpretation_notes', $notes );
+		}
+		$request->set_param( 'exercises', $exercises );
 
 		$response = WorkoutController::save_custom_draft( $request );
 		$data     = $response->get_data();
@@ -820,10 +1175,79 @@ class AiToolHandlerService {
 			'name'              => (string) ( $draft['name'] ?? $name ),
 			'day_type'          => $day_type,
 			'time_tier'         => sanitize_key( (string) ( $draft['time_tier'] ?? '' ) ),
+			'workout_structure' => sanitize_key( (string) ( $draft['workout_structure'] ?? 'standard' ) ),
+			'rounds'            => (int) ( $draft['rounds'] ?? 1 ),
 			'exercise_count'    => $exercise_count,
 			'exercise_names'    => array_values( array_filter( array_map( static fn( array $item ): string => sanitize_text_field( (string) ( $item['exercise_name'] ?? '' ) ), is_array( $draft['exercises'] ?? null ) ? $draft['exercises'] : [] ) ) ),
 			'coach_note'        => sanitize_textarea_field( (string) ( $draft['coach_note'] ?? '' ) ),
 			'summary'           => sprintf( 'Queued %s as a custom %s workout with %d exercises on the workout page.', (string) ( $draft['name'] ?? $name ), str_replace( '_', ' ', $day_type ), $exercise_count ),
+		];
+	}
+
+	private static function infer_custom_exercise_metadata( string $name, string $day_type ): array {
+		$key = strtolower( $name );
+		$primary_muscle = 'full_body';
+		$movement_pattern = 'other';
+		$equipment = 'bodyweight';
+		$slot_type = 'accessory';
+
+		if ( str_contains( $key, 'tricep' ) || str_contains( $key, 'pushdown' ) || str_contains( $key, 'pressdown' ) ) {
+			$primary_muscle = 'triceps';
+			$movement_pattern = 'elbow_extension';
+		} elseif ( str_contains( $key, 'shoulder press' ) || str_contains( $key, 'overhead press' ) ) {
+			$primary_muscle = 'shoulders';
+			$movement_pattern = 'vertical_push';
+			$slot_type = 'main';
+		} elseif ( str_contains( $key, 'lateral raise' ) || str_contains( $key, 'front raise' ) ) {
+			$primary_muscle = 'shoulders';
+			$movement_pattern = 'shoulder_abduction';
+		} elseif ( str_contains( $key, 'chest fly' ) || str_contains( $key, 'chest flye' ) || str_contains( $key, 'pec deck' ) ) {
+			$primary_muscle = 'chest';
+			$movement_pattern = 'horizontal_adduction';
+		} elseif ( str_contains( $key, 'push-up' ) || str_contains( $key, 'pushup' ) || str_contains( $key, 'bench press' ) || str_contains( $key, 'chest press' ) ) {
+			$primary_muscle = 'chest';
+			$movement_pattern = 'horizontal_push';
+			$slot_type = 'main';
+		} elseif ( str_contains( $key, 'row' ) ) {
+			$primary_muscle = 'back';
+			$movement_pattern = 'pull';
+			$slot_type = 'main';
+		} elseif ( str_contains( $key, 'pulldown' ) || str_contains( $key, 'pull-up' ) || str_contains( $key, 'pullup' ) ) {
+			$primary_muscle = 'back';
+			$movement_pattern = 'vertical_pull';
+			$slot_type = 'main';
+		} elseif ( str_contains( $key, 'squat' ) || str_contains( $key, 'lunge' ) || str_contains( $key, 'leg press' ) ) {
+			$primary_muscle = 'quads';
+			$movement_pattern = 'squat';
+			$slot_type = 'main';
+		} elseif ( str_contains( $key, 'deadlift' ) || str_contains( $key, 'romanian' ) || preg_match( '/\brdl\b/', $key ) ) {
+			$primary_muscle = 'hamstrings';
+			$movement_pattern = 'hinge';
+			$slot_type = 'main';
+		} elseif ( str_contains( $key, 'curl' ) ) {
+			$primary_muscle = 'biceps';
+			$movement_pattern = 'elbow_flexion';
+		} elseif ( str_contains( $key, 'plank' ) || str_contains( $key, 'crunch' ) || str_contains( $key, 'core' ) ) {
+			$primary_muscle = 'core';
+			$movement_pattern = 'core';
+			$slot_type = 'abs';
+		}
+		if ( str_contains( $key, 'machine' ) || str_contains( $key, 'pec deck' ) ) $equipment = 'machine';
+		elseif ( str_contains( $key, 'dumbbell' ) ) $equipment = 'dumbbell';
+		elseif ( str_contains( $key, 'barbell' ) ) $equipment = 'barbell';
+		elseif ( str_contains( $key, 'cable' ) ) $equipment = 'cable';
+		elseif ( str_contains( $key, 'kettlebell' ) ) $equipment = 'kettlebell';
+		elseif ( str_contains( $key, 'band' ) ) $equipment = 'band';
+
+		$normalized_day_type = TrainingDayTypes::normalize( $day_type ) ?? TrainingDayTypes::custom_workout_fallback();
+		return [
+			'description' => 'Personal exercise created automatically from a custom workout request.',
+			'primary_muscle' => $primary_muscle,
+			'movement_pattern' => $movement_pattern,
+			'equipment' => $equipment,
+			'difficulty' => 'beginner',
+			'day_types' => array_values( array_unique( [ $normalized_day_type, 'full_body' ] ) ),
+			'slot_types' => [ $slot_type ],
 		];
 	}
 
@@ -836,7 +1260,7 @@ class AiToolHandlerService {
 		return in_array( $time_tier, [ 'short', 'medium', 'full' ], true ) ? $time_tier : '';
 	}
 
-	private static function tool_create_personal_exercise( int $user_id, array $arguments = [] ): array {
+	private static function tool_create_personal_exercise( int $user_id, array $arguments = [], array $deps = [] ): array {
 		$name = sanitize_text_field( (string) ( $arguments['name'] ?? '' ) );
 		if ( '' === $name ) {
 			return [ 'error' => 'An exercise name is required to add something to the custom exercise library.' ];
@@ -856,7 +1280,7 @@ class AiToolHandlerService {
 		$request->set_param( 'slot_types', array_values( array_filter( array_map( 'sanitize_key', (array) ( $arguments['slot_types'] ?? [] ) ) ) ) );
 		$request->set_param( 'coaching_cues', array_values( array_filter( array_map( 'sanitize_text_field', (array) ( $arguments['coaching_cues'] ?? [] ) ) ) ) );
 
-		$response = TrainingController::save_personal_exercise( $request );
+		$response = self::rest_call( $deps, 'training_save_personal_exercise', [ TrainingController::class, 'save_personal_exercise' ], $request );
 		$data     = $response->get_data();
 		$status   = (int) $response->get_status();
 
@@ -866,7 +1290,7 @@ class AiToolHandlerService {
 
 		$created = ! empty( $data['created'] );
 
-		return [
+		$result = [
 			'ok'             => true,
 			'action'         => 'create_personal_exercise',
 			'exercise_id'    => (int) ( $data['id'] ?? 0 ),
@@ -878,6 +1302,159 @@ class AiToolHandlerService {
 			'summary'        => $created
 				? sprintf( 'Saved %s to your custom exercise library.', $name )
 				: sprintf( '%s was already in your custom exercise library, so Johnny kept the existing version.', $name ),
+		];
+
+		$pending = self::load_pending_workout_replacement( $user_id, $deps );
+		if ( is_array( $pending ) && self::exercise_name_matches( $name, (string) ( $pending['replacement_exercise_name'] ?? '' ) ) ) {
+			$retry = self::tool_modify_workout( $user_id, [
+				'action'                    => 'replace',
+				'exercise_name'             => (string) ( $pending['exercise_name'] ?? '' ),
+				'replacement_exercise_name' => (string) ( $pending['replacement_exercise_name'] ?? $name ),
+				'expected_draft_id'          => (string) ( $pending['draft_id'] ?? '' ),
+			], $deps );
+			if ( ! empty( $retry['ok'] ) ) {
+				self::clear_pending_workout_replacement( $user_id, $deps );
+				$result['completed_pending_replacement'] = true;
+				$result['workout_update'] = $retry;
+				$result['summary'] = (string) ( $retry['summary'] ?? sprintf( 'Created %s and completed the pending workout replacement.', $name ) );
+			} else {
+				$result['pending_replacement_error'] = (string) ( $retry['error'] ?? 'The pending workout replacement could not be completed.' );
+				$result['summary'] .= ' The pending workout replacement still needs to be completed.';
+			}
+		}
+
+		return $result;
+	}
+
+	private static function tool_save_workout_to_library( int $user_id, array $arguments, array $deps ): array {
+		$current_request = new \WP_REST_Request( 'GET', '/fit/v1/workout/current' );
+		$current_loader = $deps['workout_current'] ?? null;
+		$current_response = is_callable( $current_loader ) ? $current_loader( $current_request ) : WorkoutController::get_current_session( $current_request );
+		if ( ! $current_response instanceof \WP_REST_Response ) return [ 'error' => 'Could not read the current workout.' ];
+		$current = $current_response->get_data();
+		$draft = is_array( $current['custom_workout_draft'] ?? null ) ? $current['custom_workout_draft'] : [];
+		if ( empty( $draft ) ) {
+			$session = is_array( $current['session'] ?? null ) ? $current['session'] : [];
+			$session_exercises = is_array( $current['exercises'] ?? null ) ? $current['exercises'] : [];
+			if ( empty( $session['id'] ) || empty( $session_exercises ) ) {
+				return [ 'error' => 'There is no queued or active workout to save.' ];
+			}
+			$draft = [
+				'id' => 'session_' . (int) $session['id'],
+				'name' => (string) ( $session['custom_title'] ?? $session['name'] ?? 'Saved Workout' ),
+				'day_type' => (string) ( $session['actual_day_type'] ?? $session['planned_day_type'] ?? 'full_body' ),
+				'time_tier' => (string) ( $session['time_tier'] ?? 'medium' ),
+				'workout_structure' => (string) ( $session['workout_structure'] ?? 'standard' ),
+				'rounds' => (int) ( $session['rounds_total'] ?? $session['rounds'] ?? 1 ),
+				'exercises' => array_map( static fn( array $exercise ): array => [
+					'exercise_id' => (int) ( $exercise['exercise_id'] ?? 0 ),
+					'exercise_name' => (string) ( $exercise['exercise_name'] ?? $exercise['name'] ?? '' ),
+					'target_type' => (string) ( $exercise['target_type'] ?? $exercise['planned_target_type'] ?? 'reps' ),
+					'target_reps' => (int) ( $exercise['target_reps'] ?? $exercise['planned_reps'] ?? $exercise['rep_min'] ?? 0 ),
+					'rep_min' => (int) ( $exercise['rep_min'] ?? $exercise['planned_rep_min'] ?? $exercise['target_reps'] ?? 8 ),
+					'rep_max' => (int) ( $exercise['rep_max'] ?? $exercise['planned_rep_max'] ?? $exercise['target_reps'] ?? 12 ),
+					'sets' => (int) ( $exercise['planned_sets'] ?? $exercise['sets'] ?? 3 ),
+					'target_duration_seconds' => (int) ( $exercise['target_duration_seconds'] ?? $exercise['planned_duration_seconds'] ?? $exercise['duration_seconds'] ?? 0 ),
+					'reps_per_side' => ! empty( $exercise['reps_per_side'] ),
+				], $session_exercises ),
+			];
+		}
+		$name = sanitize_text_field( (string) ( $arguments['name'] ?? '' ) );
+		if ( '' !== $name ) $draft['name'] = $name;
+		$request = new \WP_REST_Request( 'POST', '/fit/v1/workout/saved-library' );
+		foreach ( $draft as $key => $value ) $request->set_param( $key, $value );
+		$saver = $deps['workout_save_saved'] ?? null;
+		$response = is_callable( $saver ) ? $saver( $request ) : WorkoutController::save_saved_workout( $request );
+		if ( ! $response instanceof \WP_REST_Response ) return [ 'error' => 'Could not save that workout.' ];
+		$data = $response->get_data();
+		if ( $response->get_status() >= 400 ) return [ 'error' => (string) ( $data['message'] ?? 'Could not save that workout.' ) ];
+		$workout = is_array( $data['workout'] ?? null ) ? $data['workout'] : [];
+		return [
+			'ok' => true,
+			'action' => 'save_workout_to_library',
+			'saved_workout_id' => (int) ( $workout['id'] ?? 0 ),
+			'name' => (string) ( $workout['name'] ?? $draft['name'] ?? 'Workout' ),
+			'summary' => sprintf( 'Saved %s to My Workouts.', (string) ( $workout['name'] ?? $draft['name'] ?? 'that workout' ) ),
+		];
+	}
+
+	private static function tool_saved_workouts( array $arguments, array $deps ): array {
+		$request = new \WP_REST_Request( 'GET', '/fit/v1/workout/saved-library' );
+		$loader = $deps['workout_saved_library'] ?? null;
+		$response = is_callable( $loader ) ? $loader( $request ) : WorkoutController::get_saved_workout_library( $request );
+		if ( ! $response instanceof \WP_REST_Response ) return [ 'error' => 'Could not read My Workouts.' ];
+		$data = $response->get_data();
+		if ( $response->get_status() >= 400 ) return [ 'error' => (string) ( $data['message'] ?? 'Could not read My Workouts.' ) ];
+
+		$query = strtolower( trim( sanitize_text_field( (string) ( $arguments['query'] ?? '' ) ) ) );
+		$limit = max( 1, min( 100, (int) ( $arguments['limit'] ?? 25 ) ) );
+		$library = is_array( $data ) ? $data : [];
+		if ( '' !== $query ) {
+			$library = array_values( array_filter( $library, static function( array $workout ) use ( $query ): bool {
+				$exercise_names = array_map( static fn( array $exercise ): string => (string) ( $exercise['exercise_name'] ?? $exercise['name'] ?? '' ), (array) ( $workout['exercises'] ?? [] ) );
+				$haystack = strtolower( implode( ' ', array_merge( [ (string) ( $workout['name'] ?? '' ), (string) ( $workout['day_type'] ?? '' ) ], $exercise_names ) ) );
+				return str_contains( $haystack, $query );
+			} ) );
+		}
+
+		$total = count( $library );
+		$items = array_map( static function( array $workout ): array {
+			return [
+				'id'                => (int) ( $workout['id'] ?? 0 ),
+				'name'              => sanitize_text_field( (string) ( $workout['name'] ?? 'Workout' ) ),
+				'workout_structure' => sanitize_key( (string) ( $workout['workout_structure'] ?? 'standard' ) ),
+				'rounds'            => max( 1, (int) ( $workout['rounds'] ?? 1 ) ),
+				'day_type'          => sanitize_key( (string) ( $workout['day_type'] ?? '' ) ),
+				'time_tier'         => sanitize_key( (string) ( $workout['time_tier'] ?? '' ) ),
+				'exercise_count'    => (int) ( $workout['exercise_count'] ?? count( (array) ( $workout['exercises'] ?? [] ) ) ),
+				'exercises'         => array_values( array_map( static fn( array $exercise ): array => [
+					'name' => sanitize_text_field( (string) ( $exercise['exercise_name'] ?? $exercise['name'] ?? 'Exercise' ) ),
+					'target_type' => sanitize_key( (string) ( $exercise['target_type'] ?? '' ) ),
+					'reps' => (int) ( $exercise['target_reps'] ?? $exercise['reps'] ?? 0 ),
+					'duration_seconds' => (int) ( $exercise['target_duration_seconds'] ?? $exercise['duration_seconds'] ?? 0 ),
+				], (array) ( $workout['exercises'] ?? [] ) ) ),
+				'updated_at'        => sanitize_text_field( (string) ( $workout['updated_at'] ?? '' ) ),
+			];
+		}, array_slice( $library, 0, $limit ) );
+
+		return [
+			'ok' => true,
+			'action' => 'get_saved_workouts',
+			'count' => count( $items ),
+			'total_matches' => $total,
+			'workouts' => $items,
+			'summary' => $total ? sprintf( 'Found %d workout%s in My Workouts.', $total, 1 === $total ? '' : 's' ) : 'No matching workouts were found in My Workouts.',
+		];
+	}
+
+	private static function tool_load_saved_workout( int $user_id, array $arguments = [] ): array {
+		$library_response = WorkoutController::get_saved_workout_library( new \WP_REST_Request( 'GET', '/fit/v1/workout/saved-library' ) );
+		$library = $library_response->get_data();
+		$library = is_array( $library ) ? $library : [];
+		$id = max( 0, (int) ( $arguments['id'] ?? 0 ) );
+		$name = strtolower( trim( sanitize_text_field( (string) ( $arguments['name'] ?? '' ) ) ) );
+		$match = null;
+		foreach ( $library as $workout ) {
+			if ( $id > 0 && (int) ( $workout['id'] ?? 0 ) === $id ) { $match = $workout; break; }
+			if ( '' !== $name && strtolower( (string) ( $workout['name'] ?? '' ) ) === $name ) { $match = $workout; break; }
+		}
+		if ( ! $match && '' !== $name ) {
+			foreach ( $library as $workout ) {
+				if ( str_contains( strtolower( (string) ( $workout['name'] ?? '' ) ), $name ) ) { $match = $workout; break; }
+			}
+		}
+		if ( ! $match ) return [ 'error' => 'Could not find that workout in My Workouts.' ];
+		$request = new \WP_REST_Request( 'POST', '/fit/v1/workout/saved-library/' . (int) $match['id'] . '/queue' );
+		$request->set_param( 'id', (int) $match['id'] );
+		$response = WorkoutController::queue_saved_workout( $request );
+		$data = $response->get_data();
+		if ( $response->get_status() >= 400 ) return [ 'error' => (string) ( $data['message'] ?? 'Could not load that workout.' ) ];
+		return [
+			'ok' => true,
+			'action' => 'load_saved_workout',
+			'saved_workout_id' => (int) $match['id'],
+			'name' => (string) $match['name'],
+			'summary' => sprintf( 'Loaded %s from My Workouts. Review it on the Workout screen.', (string) $match['name'] ),
 		];
 	}
 
@@ -933,6 +1510,382 @@ class AiToolHandlerService {
 			'coach_note'         => $coach_note,
 			'summary'            => sprintf( 'Logged %.1f hours of sleep for %s. %s', $logged_sleep, $date_display, $coach_note ),
 		];
+	}
+
+	/**
+	 * @param array<string,callable> $deps
+	 */
+	private static function tool_log_cardio( int $user_id, array $arguments, array $deps ): array {
+		$duration = (int) ( $arguments['duration_minutes'] ?? 0 );
+		if ( $duration <= 0 || $duration > 1440 ) {
+			return [ 'error' => 'A cardio duration between 1 and 1440 minutes is required.' ];
+		}
+
+		$type = sanitize_text_field( (string) ( $arguments['cardio_type'] ?? 'other' ) ) ?: 'other';
+		$intensity = sanitize_key( (string) ( $arguments['intensity'] ?? 'moderate' ) );
+		if ( ! in_array( $intensity, [ 'light', 'moderate', 'hard' ], true ) ) {
+			$intensity = 'moderate';
+		}
+
+		$request = new \WP_REST_Request( 'POST', '/fit/v1/body/cardio' );
+		$request->set_param( 'cardio_type', $type );
+		$request->set_param( 'duration_minutes', $duration );
+		$request->set_param( 'intensity', $intensity );
+
+		$date = (string) self::dep( $deps, 'normalise_tool_date', $user_id, (string) ( $arguments['date'] ?? '' ) );
+		if ( '' !== $date ) {
+			$request->set_param( 'date', $date );
+		}
+		foreach ( [ 'distance', 'estimated_calories', 'notes' ] as $field ) {
+			if ( array_key_exists( $field, $arguments ) ) {
+				$request->set_param( $field, $arguments[ $field ] );
+			}
+		}
+
+		$response = self::body_log_cardio( $deps, $request );
+		$data     = $response->get_data();
+		$status   = (int) $response->get_status();
+		if ( $status >= 400 ) {
+			return [ 'error' => (string) ( $data['message'] ?? 'Could not log cardio.' ) ];
+		}
+
+		$date_logged  = $date ?: UserTime::today( $user_id );
+		$date_display = (string) self::dep( $deps, 'format_tool_display_date', $user_id, $date_logged );
+
+		return [
+			'ok'                 => true,
+			'action'             => 'log_cardio',
+			'id'                 => (int) ( $data['id'] ?? 0 ),
+			'date'               => $date_logged,
+			'date_display'       => $date_display,
+			'cardio_type'        => $type,
+			'duration_minutes'   => $duration,
+			'intensity'          => $intensity,
+			'distance'           => isset( $arguments['distance'] ) ? (float) $arguments['distance'] : null,
+			'estimated_calories' => isset( $arguments['estimated_calories'] ) ? (int) $arguments['estimated_calories'] : null,
+			'notes'              => sanitize_text_field( (string) ( $arguments['notes'] ?? '' ) ),
+			'summary'            => sprintf( 'Logged %d minutes of %s %s for %s.', $duration, $intensity, $type, $date_display ),
+		];
+	}
+
+	/**
+	 * @param array<string,callable> $deps
+	 */
+	private static function tool_log_rest_day( int $user_id, array $deps ): array {
+		$snapshot        = self::daily_snapshot( $user_id, $deps );
+		$training_status = is_array( $snapshot['training_status'] ?? null ) ? $snapshot['training_status'] : [];
+		if ( ! empty( $training_status['recorded'] ) ) {
+			$recorded_type = sanitize_key( (string) ( $training_status['recorded_type'] ?? '' ) );
+			if ( 'rest' === $recorded_type ) {
+				return [
+					'ok'              => true,
+					'action'          => 'log_rest_day',
+					'already_recorded'=> true,
+					'date'            => UserTime::today( $user_id ),
+					'summary'         => 'Today is already recorded as a rest day.',
+				];
+			}
+
+			return [ 'error' => sprintf( 'Today already has %s training recorded, so Johnny did not replace it with a rest day.', str_replace( '_', ' ', $recorded_type ?: 'completed' ) ) ];
+		}
+
+		$start_request = new \WP_REST_Request( 'POST', '/fit/v1/workout/start' );
+		$start_request->set_param( 'day_type', 'rest' );
+		$start_request->set_param( 'time_tier', 'short' );
+		$start_response = self::workout_start( $deps, $start_request );
+		$start_data     = $start_response->get_data();
+		if ( (int) $start_response->get_status() >= 400 ) {
+			return [ 'error' => (string) ( $start_data['message'] ?? 'Could not start the rest-day record.' ) ];
+		}
+
+		$session = is_array( $start_data['session'] ?? null ) ? $start_data['session'] : [];
+		$session_id = (int) ( $start_data['session_id'] ?? $session['id'] ?? 0 );
+		if ( $session_id <= 0 ) {
+			return [ 'error' => 'Could not create the rest-day record.' ];
+		}
+
+		$complete_request = new \WP_REST_Request( 'POST', '/fit/v1/workout/' . $session_id . '/complete' );
+		$complete_request->set_param( 'id', $session_id );
+		$complete_request->set_param( 'actual_day_type', 'rest' );
+		$complete_response = self::workout_complete( $deps, $complete_request );
+		$complete_data     = $complete_response->get_data();
+		if ( (int) $complete_response->get_status() >= 400 ) {
+			return [ 'error' => (string) ( $complete_data['message'] ?? 'Could not complete the rest-day record.' ) ];
+		}
+
+		return [
+			'ok'         => true,
+			'action'     => 'log_rest_day',
+			'session_id' => $session_id,
+			'date'       => UserTime::today( $user_id ),
+			'summary'    => 'Logged today as a rest day.',
+		];
+	}
+
+	private static function current_workout_response( array $deps ): \WP_REST_Response {
+		$request = new \WP_REST_Request( 'GET', '/fit/v1/workout/current' );
+		return self::rest_call( $deps, 'workout_current', [ WorkoutController::class, 'get_current_session' ], $request );
+	}
+
+	private static function tool_approve_workout( int $user_id, array $deps ): array {
+		$data = self::current_workout_response( $deps )->get_data();
+		$session = is_array( $data['session'] ?? null ) ? $data['session'] : [];
+		$draft = is_array( $data['custom_workout_draft'] ?? null ) ? $data['custom_workout_draft'] : [];
+		$workout_id = (string) ( $draft['id'] ?? $session['id'] ?? '' );
+		if ( '' === $workout_id ) return [ 'error' => 'There is no queued workout to approve.' ];
+		$approval = [ 'date' => self::today( $user_id, $deps ), 'workout_id' => $workout_id, 'approved_at' => current_time( 'mysql', true ) ];
+		$save = $deps['save_workout_approval'] ?? null;
+		if ( is_callable( $save ) ) $save( $user_id, $approval ); else update_user_meta( $user_id, 'jf_workout_approval', $approval );
+		return [ 'ok' => true, 'action' => 'approve_workout', 'approval' => $approval, 'summary' => 'Approved and locked in today’s workout.' ];
+	}
+
+	private static function tool_search_exercises( array $arguments, array $deps ): array {
+		$request = new \WP_REST_Request( 'GET', '/fit/v1/training/exercises' );
+		foreach ( [ 'query' => 'q', 'muscle' => 'muscle', 'equipment' => 'equipment', 'own_only' => 'own_only', 'limit' => 'limit' ] as $from => $to ) {
+			if ( array_key_exists( $from, $arguments ) ) $request->set_param( $to, $arguments[ $from ] );
+		}
+		$response = self::rest_call( $deps, 'training_get_exercises', [ TrainingController::class, 'get_exercises' ], $request );
+		$result = self::rest_result( $response, 'search_exercises', 'Could not search exercises.' );
+		if ( ! empty( $result['ok'] ) ) {
+			$result['exercises'] = array_slice( is_array( $result['data'] ) ? $result['data'] : [], 0, 50 );
+			$result['count'] = count( $result['exercises'] ); unset( $result['data'] );
+		}
+		return $result;
+	}
+
+	private static function exercise_aliases( string $name ): array {
+		$key = strtolower( trim( $name ) );
+		$groups = [
+			[ 'dumbbell bench press', 'dumbbell chest press' ],
+			[ 'barbell bench press', 'bench press' ],
+			[ 'machine chest fly', 'machine chest flye', 'pec deck', 'pec deck fly' ],
+			[ 'cable triceps pushdown', 'cable tricep pushdown', 'triceps pressdown', 'cable pressdown' ],
+			[ 'overhead cable triceps extension', 'overhead triceps extension', 'cable overhead triceps extension' ],
+		];
+		foreach ( $groups as $group ) {
+			if ( in_array( $key, $group, true ) ) return array_values( array_unique( array_merge( [ $name ], $group ) ) );
+		}
+		return [ $name ];
+	}
+
+	private static function resolve_workout_exercise( int $user_id, string $name, array $deps ) {
+		$resolver = $deps['find_accessible_exercise_by_name'] ?? null;
+		foreach ( self::exercise_aliases( $name ) as $candidate ) {
+			$exercise = is_callable( $resolver ) ? $resolver( $user_id, $candidate ) : ExerciseLibraryService::find_accessible_exercise_by_name( $user_id, $candidate );
+			if ( $exercise ) return $exercise;
+		}
+		return null;
+	}
+
+	private static function exercise_name_matches( string $actual, string $requested ): bool {
+		$actual = strtolower( trim( $actual ) );
+		return in_array( $actual, array_map( static fn( string $name ): string => strtolower( trim( $name ) ), self::exercise_aliases( $requested ) ), true );
+	}
+
+	private static function load_pending_workout_replacement( int $user_id, array $deps ): array {
+		$loader = $deps['load_pending_workout_replacement'] ?? null;
+		$value = is_callable( $loader ) ? $loader( $user_id ) : get_user_meta( $user_id, 'jf_pending_workout_replacement', true );
+		return is_array( $value ) ? $value : [];
+	}
+
+	private static function save_pending_workout_replacement( int $user_id, array $value, array $deps ): void {
+		$saver = $deps['save_pending_workout_replacement'] ?? null;
+		if ( is_callable( $saver ) ) $saver( $user_id, $value );
+		else update_user_meta( $user_id, 'jf_pending_workout_replacement', $value );
+	}
+
+	private static function clear_pending_workout_replacement( int $user_id, array $deps ): void {
+		$clearer = $deps['clear_pending_workout_replacement'] ?? null;
+		if ( is_callable( $clearer ) ) $clearer( $user_id );
+		else delete_user_meta( $user_id, 'jf_pending_workout_replacement' );
+	}
+
+	private static function tool_modify_workout( int $user_id, array $arguments, array $deps ): array {
+		$current = self::current_workout_response( $deps )->get_data();
+		$draft = is_array( $current['custom_workout_draft'] ?? null ) ? $current['custom_workout_draft'] : [];
+		if ( empty( $draft['id'] ) ) return [ 'error' => 'A queued workout draft is required before it can be modified.' ];
+		$expected_draft_id = sanitize_text_field( (string) ( $arguments['expected_draft_id'] ?? '' ) );
+		if ( '' !== $expected_draft_id && $expected_draft_id !== (string) $draft['id'] ) {
+			return [ 'error' => 'The queued workout changed after the replacement was requested, so I did not apply the pending edit.' ];
+		}
+		$exercises = is_array( $draft['exercises'] ?? null ) ? array_values( $draft['exercises'] ) : [];
+		$original_exercises = $exercises;
+		$action = sanitize_key( (string) ( $arguments['action'] ?? '' ) );
+		$requested_name = sanitize_text_field( (string) ( $arguments['exercise_name'] ?? '' ) );
+		$name = strtolower( trim( $requested_name ) );
+		if ( 'remove' === $action ) {
+			$exercises = array_values( array_filter( $exercises, static fn( array $e ): bool => ! self::exercise_name_matches( (string) ( $e['exercise_name'] ?? '' ), $requested_name ) ) );
+			if ( count( $exercises ) === count( $original_exercises ) ) return [ 'error' => sprintf( '%s is not in the queued workout, so I left the workout unchanged.', $requested_name ?: 'That exercise' ) ];
+			if ( empty( $exercises ) ) return [ 'error' => 'A workout must keep at least one exercise.' ];
+		} elseif ( 'add' === $action ) {
+			if ( '' === $name ) return [ 'error' => 'An exercise name is required.' ];
+			$resolved = self::resolve_workout_exercise( $user_id, $requested_name, $deps );
+			if ( ! $resolved ) return [ 'error' => sprintf( 'I could not find %s in your exercise library, so I left the workout unchanged. Ask me to create it first if you want it added.', $requested_name ) ];
+			$exercises[] = [ 'exercise_id' => (int) $resolved->id, 'exercise_name' => (string) $resolved->name, 'target_type' => 'reps' ];
+		} elseif ( 'replace' === $action ) {
+			$replacement_name = sanitize_text_field( (string) ( $arguments['replacement_exercise_name'] ?? '' ) );
+			if ( '' === $requested_name || '' === $replacement_name ) return [ 'error' => 'Both the current and replacement exercise names are required.' ];
+			$replace_index = null;
+			foreach ( $exercises as $index => $exercise ) {
+				if ( self::exercise_name_matches( (string) ( $exercise['exercise_name'] ?? '' ), $requested_name ) ) { $replace_index = $index; break; }
+			}
+			if ( null === $replace_index ) return [ 'error' => sprintf( '%s is not in the queued workout, so I left the workout unchanged.', $requested_name ) ];
+			$resolved = self::resolve_workout_exercise( $user_id, $replacement_name, $deps );
+			if ( ! $resolved ) {
+				self::save_pending_workout_replacement( $user_id, [
+					'draft_id'                    => (string) $draft['id'],
+					'exercise_name'                => $requested_name,
+					'replacement_exercise_name'    => $replacement_name,
+					'requested_at'                 => current_time( 'mysql', true ),
+				], $deps );
+				return [ 'error' => sprintf( 'I could not find %s in your exercise library, so I left %s in place. Ask me to create it first if you want to use it.', $replacement_name, $requested_name ) ];
+			}
+			$replacement = $exercises[ $replace_index ];
+			$replacement['exercise_id'] = (int) $resolved->id;
+			$replacement['exercise_name'] = (string) $resolved->name;
+			foreach ( [ 'primary_muscle', 'movement_pattern', 'equipment', 'difficulty' ] as $field ) if ( isset( $resolved->{$field} ) ) $replacement[ $field ] = (string) $resolved->{$field};
+			$exercises[ $replace_index ] = $replacement;
+		} elseif ( 'reorder' === $action ) {
+			$order = array_map( static fn( $v ): string => strtolower( trim( (string) $v ) ), (array) ( $arguments['exercise_order'] ?? [] ) );
+			if ( count( $order ) !== count( $exercises ) ) return [ 'error' => 'The complete exercise order is required.' ];
+			$indexed = []; foreach ( $exercises as $exercise ) $indexed[ strtolower( (string) ( $exercise['exercise_name'] ?? '' ) ) ] = $exercise;
+			$ordered = []; foreach ( $order as $key ) { if ( ! isset( $indexed[ $key ] ) ) return [ 'error' => 'The requested order contains an unknown exercise.' ]; $ordered[] = $indexed[ $key ]; }
+			$exercises = $ordered;
+		} elseif ( 'structure' === $action ) {
+			$draft['workout_structure'] = 'circuit' === sanitize_key( (string) ( $arguments['workout_structure'] ?? '' ) ) ? 'circuit' : 'standard';
+			$draft['rounds'] = 'circuit' === $draft['workout_structure'] ? max( 1, min( 20, (int) ( $arguments['rounds'] ?? $draft['rounds'] ?? 3 ) ) ) : 1;
+			foreach ( [ 'rest_between_exercises_seconds', 'rest_between_rounds_seconds' ] as $field ) if ( isset( $arguments[ $field ] ) ) $draft[ $field ] = (int) $arguments[ $field ];
+		} else return [ 'error' => 'Choose a supported workout modification.' ];
+		if ( 'replace' === $action && count( $exercises ) !== count( $original_exercises ) ) return [ 'error' => 'The replacement failed validation, so I left the original workout unchanged.' ];
+		foreach ( $exercises as $exercise ) if ( '' === trim( (string) ( $exercise['exercise_name'] ?? '' ) ) ) return [ 'error' => 'The workout failed validation because an exercise name was blank, so I left it unchanged.' ];
+		$draft['exercises'] = $exercises;
+		$request = new \WP_REST_Request( 'POST', '/fit/v1/workout/custom-draft' ); foreach ( $draft as $key => $value ) $request->set_param( $key, $value );
+		$result = self::rest_result( self::rest_call( $deps, 'workout_save_custom_draft', [ WorkoutController::class, 'save_custom_draft' ], $request ), 'modify_workout', 'Could not modify the workout.' );
+		if ( ! empty( $result['ok'] ) ) {
+			$result['summary'] = 'Updated the queued workout card.';
+			if ( 'replace' === $action ) $result['summary'] = sprintf( 'Replaced %s with %s in the queued workout and kept the exercise count at %d.', $requested_name, (string) $exercises[ $replace_index ]['exercise_name'], count( $exercises ) );
+			if ( 'replace' === $action ) self::clear_pending_workout_replacement( $user_id, $deps );
+		}
+		return $result;
+	}
+
+	private static function tool_start_workout( int $user_id, array $arguments, array $deps ): array {
+		$current = self::current_workout_response( $deps )->get_data();
+		$draft = is_array( $current['custom_workout_draft'] ?? null ) ? $current['custom_workout_draft'] : [];
+		$session = is_array( $current['session'] ?? null ) ? $current['session'] : [];
+		$workout_id = (string) ( $draft['id'] ?? $session['id'] ?? '' );
+		$load_approval = $deps['load_workout_approval'] ?? null;
+		$approval = is_callable( $load_approval ) ? $load_approval( $user_id ) : get_user_meta( $user_id, 'jf_workout_approval', true );
+		if ( ! is_array( $approval ) || (string) ( $approval['date'] ?? '' ) !== self::today( $user_id, $deps ) || (string) ( $approval['workout_id'] ?? '' ) !== $workout_id ) {
+			return [ 'error' => 'Approve today’s workout before activating it.' ];
+		}
+		$request = new \WP_REST_Request( 'POST', '/fit/v1/workout/start' );
+		if ( ! empty( $draft['id'] ) ) $request->set_param( 'custom_workout_draft_id', $draft['id'] );
+		if ( isset( $arguments['readiness_score'] ) ) $request->set_param( 'readiness_score', (int) $arguments['readiness_score'] );
+		$result = self::rest_result( self::rest_call( $deps, 'workout_start', [ WorkoutController::class, 'start' ], $request ), 'start_workout', 'Could not start the workout.' );
+		if ( ! empty( $result['ok'] ) ) $result['summary'] = 'Activated today’s workout.';
+		return $result;
+	}
+
+	private static function active_workout_data( array $deps ): array {
+		$data = self::current_workout_response( $deps )->get_data();
+		return is_array( $data ) ? $data : [];
+	}
+
+	private static function tool_manage_workout_set( array $arguments, array $deps ): array {
+		$current = self::active_workout_data( $deps ); $session_id = (int) ( $current['session']['id'] ?? 0 );
+		if ( $session_id <= 0 ) return [ 'error' => 'An active workout is required.' ];
+		$action = sanitize_key( (string) ( $arguments['action'] ?? '' ) ); $set_id = (int) ( $arguments['set_id'] ?? 0 );
+		$method = 'create' === $action ? 'log_set' : ( 'update' === $action ? 'update_set' : ( 'delete' === $action ? 'delete_set' : '' ) );
+		if ( '' === $method || ( 'create' !== $action && $set_id <= 0 ) ) return [ 'error' => 'A valid set action and set id are required.' ];
+		$session_exercise_id = (int) ( $arguments['session_exercise_id'] ?? 0 );
+		if ( $session_exercise_id <= 0 && ! empty( $arguments['exercise_name'] ) ) foreach ( (array) ( $current['exercises'] ?? [] ) as $exercise ) if ( 0 === strcasecmp( (string) ( $exercise['exercise_name'] ?? '' ), (string) $arguments['exercise_name'] ) ) $session_exercise_id = (int) ( $exercise['id'] ?? $exercise['session_exercise_id'] ?? 0 );
+		if ( 'create' === $action && $session_exercise_id <= 0 ) return [ 'error' => 'The workout exercise could not be resolved.' ];
+		$request = new \WP_REST_Request( 'create' === $action ? 'POST' : ( 'update' === $action ? 'PUT' : 'DELETE' ), '/fit/v1/workout/' . $session_id . '/set' );
+		$request->set_param( 'id', $session_id ); if ( $set_id > 0 ) $request->set_param( 'set_id', $set_id ); if ( $session_exercise_id > 0 ) $request->set_param( 'session_exercise_id', $session_exercise_id );
+		foreach ( [ 'set_number', 'weight', 'reps', 'duration_seconds', 'circuit_round', 'rir', 'rpe', 'pain_flag', 'notes' ] as $field ) if ( array_key_exists( $field, $arguments ) ) $request->set_param( $field, $arguments[ $field ] );
+		$result = self::rest_result( self::rest_call( $deps, 'workout_' . $method, [ WorkoutController::class, $method ], $request ), 'manage_workout_set', 'Could not update the workout set.' );
+		if ( ! empty( $result['ok'] ) ) { $result['set_action'] = $action; $result['summary'] = ucfirst( $action ) . 'd the workout set.'; }
+		return $result;
+	}
+
+	private static function tool_complete_workout( array $deps ): array {
+		$current = self::active_workout_data( $deps ); $session_id = (int) ( $current['session']['id'] ?? 0 );
+		if ( $session_id <= 0 ) return [ 'error' => 'There is no active workout to complete.' ];
+		$request = new \WP_REST_Request( 'POST', '/fit/v1/workout/' . $session_id . '/complete' ); $request->set_param( 'id', $session_id );
+		$result = self::rest_result( self::rest_call( $deps, 'workout_complete', [ WorkoutController::class, 'complete_session' ], $request ), 'complete_workout', 'Could not complete the workout.' );
+		if ( ! empty( $result['ok'] ) ) $result['summary'] = 'Completed today’s workout.';
+		return $result;
+	}
+
+	private static function tool_log_body_measurement( array $arguments, array $deps ): array {
+		$request = new \WP_REST_Request( 'POST', '/fit/v1/body/weight' );
+		foreach ( [ 'weight_lb', 'waist_in', 'body_fat_pct', 'resting_hr', 'notes', 'date' ] as $field ) if ( array_key_exists( $field, $arguments ) ) $request->set_param( $field, $arguments[ $field ] );
+		$result = self::rest_result( self::rest_call( $deps, 'body_log_weight', [ BodyMetricsController::class, 'log_weight' ], $request ), 'log_body_measurement', 'Could not log the body measurement.' );
+		if ( ! empty( $result['ok'] ) ) $result['summary'] = 'Logged the body measurement.';
+		return $result;
+	}
+
+	private static function tool_manage_health_log( array $arguments, array $deps ): array {
+		$type = sanitize_key( (string) ( $arguments['log_type'] ?? '' ) ); $action = sanitize_key( (string) ( $arguments['action'] ?? '' ) ); $id = (int) ( $arguments['id'] ?? 0 );
+		$methods = [
+			'weight' => [ 'update' => 'update_weight', 'delete' => 'delete_weight' ], 'sleep' => [ 'update' => 'update_sleep', 'delete' => 'delete_sleep' ],
+			'steps' => [ 'update' => 'update_steps', 'delete' => 'delete_steps' ], 'cardio' => [ 'update' => 'update_cardio', 'delete' => 'delete_cardio' ],
+		];
+		$method = $methods[ $type ][ $action ] ?? ''; if ( '' === $method || $id <= 0 ) return [ 'error' => 'A valid health log type, action, and id are required.' ];
+		$request = new \WP_REST_Request( 'delete' === $action ? 'DELETE' : 'PUT', '/fit/v1/body/' . $type . '/' . $id ); $request->set_param( 'id', $id );
+		foreach ( [ 'date', 'weight_lb', 'waist_in', 'body_fat_pct', 'resting_hr', 'hours_sleep', 'sleep_quality', 'steps', 'cardio_type', 'duration_minutes', 'intensity', 'estimated_calories', 'notes' ] as $field ) if ( array_key_exists( $field, $arguments ) ) $request->set_param( $field, $arguments[ $field ] );
+		$result = self::rest_result( self::rest_call( $deps, 'body_' . $method, [ BodyMetricsController::class, $method ], $request ), 'manage_health_log', 'Could not change the health log.' );
+		if ( ! empty( $result['ok'] ) ) { $result['log_type'] = $type; $result['log_action'] = $action; $result['summary'] = ucfirst( $action ) . 'd the ' . $type . ' log.'; }
+		return $result;
+	}
+
+	private static function tool_log_water( array $arguments, array $deps ): array {
+		$request = new \WP_REST_Request( 'POST', '/fit/v1/nutrition/water' ); $request->set_param( 'glasses', (int) ( $arguments['glasses'] ?? 0 ) );
+		if ( isset( $arguments['date'] ) ) $request->set_param( 'date', $arguments['date'] );
+		$result = self::rest_result( self::rest_call( $deps, 'nutrition_save_water', [ NutritionController::class, 'save_water_intake' ], $request ), 'log_water', 'Could not log water.' );
+		if ( ! empty( $result['ok'] ) ) $result['summary'] = sprintf( 'Set water intake to %d glasses.', (int) $arguments['glasses'] );
+		return $result;
+	}
+
+	private static function tool_manage_meal( array $arguments, array $deps ): array {
+		$action = sanitize_key( (string) ( $arguments['action'] ?? '' ) ); $id = (int) ( $arguments['id'] ?? 0 );
+		$method = 'update' === $action ? 'update_meal' : ( 'delete' === $action ? 'delete_meal' : '' ); if ( '' === $method || $id <= 0 ) return [ 'error' => 'A valid meal action and id are required.' ];
+		$request = new \WP_REST_Request( 'delete' === $action ? 'DELETE' : 'PUT', '/fit/v1/nutrition/meal/' . $id ); $request->set_param( 'id', $id );
+		foreach ( [ 'meal_type', 'meal_datetime', 'items' ] as $field ) if ( array_key_exists( $field, $arguments ) ) $request->set_param( $field, $arguments[ $field ] );
+		$result = self::rest_result( self::rest_call( $deps, 'nutrition_' . $method, [ NutritionController::class, $method ], $request ), 'manage_meal', 'Could not change the meal.' );
+		if ( ! empty( $result['ok'] ) ) { $result['meal_action'] = $action; $result['summary'] = ucfirst( $action ) . 'd the meal.'; }
+		return $result;
+	}
+
+	private static function tool_manage_saved_meal( array $arguments, array $deps ): array {
+		$action = sanitize_key( (string) ( $arguments['action'] ?? '' ) ); $id = (int) ( $arguments['id'] ?? 0 );
+		$methods = [ 'create' => 'create_saved_meal', 'update' => 'update_saved_meal', 'delete' => 'delete_saved_meal', 'log' => 'log_saved_meal' ]; $method = $methods[ $action ] ?? '';
+		if ( '' === $method || ( 'create' !== $action && $id <= 0 ) ) return [ 'error' => 'A valid saved-meal action and id are required.' ];
+		$request = new \WP_REST_Request( 'delete' === $action ? 'DELETE' : ( 'update' === $action ? 'PUT' : 'POST' ), '/fit/v1/nutrition/saved-meals' ); if ( $id > 0 ) $request->set_param( 'id', $id );
+		foreach ( [ 'name', 'meal_type', 'meal_datetime', 'items' ] as $field ) if ( array_key_exists( $field, $arguments ) ) $request->set_param( $field, $arguments[ $field ] );
+		$result = self::rest_result( self::rest_call( $deps, 'nutrition_' . $method, [ NutritionController::class, $method ], $request ), 'manage_saved_meal', 'Could not change the saved meal.' );
+		if ( ! empty( $result['ok'] ) ) { $result['saved_meal_action'] = $action; $result['summary'] = ucfirst( $action ) . 'd the saved meal.'; }
+		return $result;
+	}
+
+	private static function tool_update_goals( int $user_id, array $arguments, array $deps ): array {
+		$allowed = [ 'goal_type', 'goal_rate', 'target_weight_lb', 'target_calories', 'target_protein_g', 'target_carbs_g', 'target_fat_g', 'target_steps', 'target_sleep_hours' ];
+		$values = array_intersect_key( $arguments, array_flip( $allowed ) ); if ( empty( $values ) ) return [ 'error' => 'At least one supported goal field is required.' ];
+		$callable = $deps['update_goals'] ?? null;
+		if ( is_callable( $callable ) ) $ok = (bool) $callable( $user_id, $values ); else {
+			global $wpdb; $table = $wpdb->prefix . 'fit_user_goals'; $goal_id = (int) $wpdb->get_var( $wpdb->prepare( "SELECT id FROM {$table} WHERE user_id = %d AND active = 1", $user_id ) );
+			$ok = $goal_id > 0 && false !== $wpdb->update( $table, $values, [ 'id' => $goal_id, 'user_id' => $user_id ] );
+		}
+		return $ok ? [ 'ok' => true, 'action' => 'update_goals', 'updated_fields' => array_keys( $values ), 'summary' => 'Updated the requested fitness goals.' ] : [ 'error' => 'Could not update the active goals.' ];
+	}
+
+	private static function tool_update_profile( array $arguments, array $deps ): array {
+		if ( empty( $arguments ) ) return [ 'error' => 'At least one profile field is required.' ];
+		$request = new \WP_REST_Request( 'POST', '/fit/v1/onboarding/profile' ); foreach ( $arguments as $key => $value ) $request->set_param( $key, $value );
+		$result = self::rest_result( self::rest_call( $deps, 'onboarding_save_profile', [ OnboardingController::class, 'save_profile' ], $request ), 'update_profile', 'Could not update the profile.' );
+		if ( ! empty( $result['ok'] ) ) { $result['updated_fields'] = array_keys( $arguments ); $result['summary'] = 'Updated the requested profile settings.'; }
+		return $result;
 	}
 
 	/**

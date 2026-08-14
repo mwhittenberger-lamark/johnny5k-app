@@ -25,6 +25,8 @@ const ACTION_TOOLS = new Set([
   'set_training_schedule',
   'create_custom_workout',
   'create_personal_exercise',
+  'save_workout_to_library',
+  'load_saved_workout',
   'add_pantry_items',
   'add_grocery_gap_items',
   'add_recipe_to_cookbook',
@@ -47,6 +49,8 @@ const ACTION_DESTINATIONS = {
   set_training_schedule: { path: '/workout', state: { johnnyActionNotice: 'Johnny updated your weekly split and rebuilt the active training schedule.' }, label: 'Open workout' },
   create_custom_workout: { path: '/workout', state: { johnnyActionNotice: 'Johnny queued a custom workout for you on the Workout screen.' }, label: 'Open workout' },
   create_personal_exercise: { path: '/workout/library', state: { johnnyActionNotice: 'Johnny added an exercise to your custom exercise library.' }, label: 'Open library' },
+  save_workout_to_library: { path: '/workout', state: { johnnyActionNotice: 'Johnny saved that workout to My Workouts.' }, label: 'Open My Workouts' },
+  load_saved_workout: { path: '/workout', state: { johnnyActionNotice: 'Johnny loaded a saved workout for review.' }, label: 'Open workout' },
   swap_workout_exercise: { path: '/workout', label: 'Open workout' },
   clear_follow_ups: { path: '/settings', state: { johnnyActionNotice: 'Johnny cleared the requested follow-ups.' }, label: 'Open settings' },
   clear_sms_reminders: { path: '/settings', state: { johnnyActionNotice: 'Johnny canceled the requested SMS reminders.' }, label: 'Open settings' },
@@ -79,6 +83,7 @@ export default function JohnnyAssistantDrawer() {
   const { isOpen, closeDrawer, consumeStarterPayload } = useJohnnyAssistantStore()
   const { invalidate, loadSnapshot } = useDashboardStore()
   const workoutSession = useWorkoutStore(state => state.session)
+  const bootstrapWorkoutSession = useWorkoutStore(state => state.bootstrapSession)
   const reloadWorkoutSession = useWorkoutStore(state => state.reloadSession)
   const exitWorkoutSession = useWorkoutStore(state => state.exitSession)
   const [messages, setMessages] = useState([])
@@ -311,7 +316,17 @@ export default function JohnnyAssistantDrawer() {
 
         invalidate()
         loadSnapshot(true)
-        if (actionTools.includes('swap_workout_exercise')) {
+        if (actionTools.includes('create_custom_workout') || actionTools.includes('load_saved_workout')) {
+          await bootstrapWorkoutSession().catch(error => {
+            reportClientDiagnostic({
+              source: 'johnny_drawer_workout_draft_refresh',
+              message: 'Workout draft refresh failed after Johnny action.',
+              error,
+              context: { action_tools: actionTools },
+            })
+            setStatusMessage('Johnny created the workout, but the Workout screen needs a refresh to show it.')
+          })
+        } else if (actionTools.includes('swap_workout_exercise')) {
           reloadWorkoutSession().catch(error => {
             reportClientDiagnostic({
               source: 'johnny_drawer_workout_refresh',
@@ -924,6 +939,10 @@ function formatToolLabel(toolName) {
       return 'Custom workout ready'
     case 'create_personal_exercise':
       return 'Exercise saved'
+    case 'save_workout_to_library':
+      return 'Workout saved'
+    case 'load_saved_workout':
+      return 'Saved workout loaded'
     case 'swap_workout_exercise':
       return 'Workout updated'
     case 'schedule_sms_reminder':
@@ -1478,6 +1497,10 @@ function buildActionTitle(result) {
       return result.name || 'Custom workout ready'
     case 'create_personal_exercise':
       return result.name || 'Exercise saved'
+    case 'save_workout_to_library':
+      return result.name || 'Workout saved to My Workouts'
+    case 'load_saved_workout':
+      return result.name || 'Saved workout loaded'
     case 'swap_workout_exercise':
       return result.new_exercise || 'Workout swap complete'
     case 'schedule_sms_reminder':
@@ -1523,6 +1546,10 @@ function buildFallbackSummary(result) {
       return result.summary || 'Johnny updated your weekly training schedule.'
     case 'create_personal_exercise':
       return result.summary || 'Johnny saved that exercise to your custom exercise library.'
+    case 'save_workout_to_library':
+      return result.summary || 'Johnny saved that workout to My Workouts.'
+    case 'load_saved_workout':
+      return result.summary || 'Johnny loaded that workout from My Workouts.'
     default:
       return `${formatToolLabel(actionName)}.`
   }

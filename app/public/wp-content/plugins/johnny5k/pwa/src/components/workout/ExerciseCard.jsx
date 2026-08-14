@@ -57,7 +57,8 @@ function ExerciseCard({
   const [saveMessage, setSaveMessage] = useState('')
   const [showDemoImage, setShowDemoImage] = useState(false)
 
-  const activeSetSignature = (exercise?.sets ?? []).map(set => `${set.id}:${set.weight}:${set.reps}:${set.rir ?? ''}:${set.completed}`).join('|')
+  const isTimedTarget = exercise?.target_type === 'duration'
+  const activeSetSignature = (exercise?.sets ?? []).map(set => `${set.id}:${set.weight}:${set.reps}:${set.duration_seconds ?? ''}:${set.rir ?? ''}:${set.completed}`).join('|')
   const coachingCues = parseCoachingCues(exercise?.coaching_cues ?? exercise?.coaching_cues_json)
   const secondaryMuscles = parseStringList(exercise?.secondary_muscles ?? exercise?.secondary_muscles_json)
   const librarySlots = parseStringList(exercise?.slot_types ?? exercise?.slot_types_json)
@@ -126,6 +127,7 @@ function ExerciseCard({
         set_number: (exercise.sets?.length ?? 0) + 1,
         weight: parseFloat(draft.weight) || 0,
         reps: parseInt(draft.reps, 10) || 0,
+        duration_seconds: isTimedTarget ? (parseInt(draft.duration_seconds, 10) || Number(exercise.planned_duration_seconds || 0)) : undefined,
         rir: draft.rir !== '' ? parseFloat(draft.rir) : undefined,
         completed: true,
       }, {
@@ -160,6 +162,7 @@ function ExerciseCard({
       await onUpdateSet(set.id, {
         weight: parseFloat(draft.weight) || 0,
         reps: parseInt(draft.reps, 10) || 0,
+        duration_seconds: isTimedTarget ? (parseInt(draft.duration_seconds, 10) || 0) : undefined,
         rir: draft.rir !== '' ? parseFloat(draft.rir) : null,
         completed: nextCompleted,
       }, {
@@ -340,7 +343,11 @@ function ExerciseCard({
           <p className="exercise-card-flow-kicker">Exercise {currentExerciseIndex + 1} of {totalExercises || currentExerciseIndex + 1}</p>
           <div className="exercise-card-header-meta">
             <span className="exercise-card-tag subtle">{humanizeToken(exercise.slot_type || librarySlots[0] || 'accessory')} slot</span>
-            <span className="dashboard-chip subtle">{exercise.planned_sets} x {exercise.planned_rep_min}-{exercise.planned_rep_max}</span>
+            <span className="dashboard-chip subtle">
+              {isTimedTarget
+                ? `${exercise.planned_sets} x ${formatDurationTarget(exercise.planned_duration_seconds)}`
+                : `${exercise.planned_sets} x ${exercise.planned_rep_min}-${exercise.planned_rep_max}${exercise.reps_per_side ? ' per side' : ''}`}
+            </span>
             {exercise.equipment ? <span className="exercise-card-tag subtle">{humanizeToken(exercise.equipment)}</span> : null}
             {exercise.is_bonus_fill ? <span className="exercise-card-tag bonus-fill">Full bonus {humanizeToken(exercise.slot_type || 'accessory')}</span> : null}
             {exercise.was_swapped && exercise.original_exercise_name ? (
@@ -456,21 +463,16 @@ function ExerciseCard({
                     value={draft.weight ?? ''}
                     onChange={event => handleSetDraftChange(rowKey, 'weight', event.target.value)}
                   />
-                  <input
-                    type="number"
-                    min="1"
-                    max="30"
-                    inputMode="numeric"
-                    aria-label={`Set ${index + 1} reps`}
-                    placeholder="Reps"
-                    value={draft.reps ?? ''}
-                    onChange={event => handleSetDraftChange(rowKey, 'reps', event.target.value)}
-                  />
+                  {isTimedTarget ? (
+                    <input type="number" min="5" max="3600" inputMode="numeric" aria-label={`Set ${index + 1} duration in seconds`} placeholder="Seconds" value={draft.duration_seconds ?? ''} onChange={event => handleSetDraftChange(rowKey, 'duration_seconds', event.target.value)} />
+                  ) : (
+                    <input type="number" min="1" max="500" inputMode="numeric" aria-label={`Set ${index + 1} reps${exercise.reps_per_side ? ' per side' : ''}`} placeholder={exercise.reps_per_side ? 'Reps / side' : 'Reps'} value={draft.reps ?? ''} onChange={event => handleSetDraftChange(rowKey, 'reps', event.target.value)} />
+                  )}
                   <button
                     type="button"
                     className={`exercise-set-complete ${isCompleted ? 'completed' : ''}`}
                     onClick={() => handleCommitSet(set)}
-                    disabled={savingRowKey === rowKey || !draft.reps}
+                    disabled={savingRowKey === rowKey || !(isTimedTarget ? draft.duration_seconds : draft.reps)}
                     aria-label={isCompleted && !isDirty ? `Reopen set ${index + 1}` : `Complete set ${index + 1}`}
                   >
                     {savingRowKey === rowKey ? '...' : isCompleted && !isDirty ? 'Reopen' : 'Complete'}
@@ -513,21 +515,16 @@ function ExerciseCard({
                 value={setDrafts[nextRowKey]?.weight ?? ''}
                 onChange={event => handleSetDraftChange(nextRowKey, 'weight', event.target.value)}
               />
-              <input
-                type="number"
-                min="1"
-                max="30"
-                inputMode="numeric"
-                aria-label="Next set reps"
-                placeholder="Reps"
-                value={setDrafts[nextRowKey]?.reps ?? ''}
-                onChange={event => handleSetDraftChange(nextRowKey, 'reps', event.target.value)}
-              />
+              {isTimedTarget ? (
+                <input type="number" min="5" max="3600" inputMode="numeric" aria-label="Next set duration in seconds" placeholder="Seconds" value={setDrafts[nextRowKey]?.duration_seconds ?? ''} onChange={event => handleSetDraftChange(nextRowKey, 'duration_seconds', event.target.value)} />
+              ) : (
+                <input type="number" min="1" max="500" inputMode="numeric" aria-label={`Next set reps${exercise.reps_per_side ? ' per side' : ''}`} placeholder={exercise.reps_per_side ? 'Reps / side' : 'Reps'} value={setDrafts[nextRowKey]?.reps ?? ''} onChange={event => handleSetDraftChange(nextRowKey, 'reps', event.target.value)} />
+              )}
               <button
                 type="button"
                 className="exercise-set-complete"
                 onClick={handleCreateSet}
-                disabled={savingRowKey === nextRowKey || !setDrafts[nextRowKey]?.reps}
+                disabled={savingRowKey === nextRowKey || !(isTimedTarget ? setDrafts[nextRowKey]?.duration_seconds : setDrafts[nextRowKey]?.reps)}
                 aria-label="Add set"
               >
                 {savingRowKey === nextRowKey ? '...' : 'Add set'}
@@ -910,6 +907,7 @@ function buildSetDrafts(exercise) {
     drafts[String(set.id)] = {
       weight: set.weight != null ? String(set.weight) : '',
       reps: set.reps != null ? String(set.reps) : '',
+      duration_seconds: set.duration_seconds != null ? String(set.duration_seconds) : '',
       rir: set.rir != null ? String(set.rir) : '',
     }
   }
@@ -921,6 +919,7 @@ function buildSetDrafts(exercise) {
   drafts[getNewRowKey(exercise)] = {
     weight: carryWeight != null ? String(carryWeight) : '',
     reps: '',
+    duration_seconds: exercise.target_type === 'duration' ? String(exercise.planned_duration_seconds || '') : '',
     rir: '',
   }
 
@@ -933,6 +932,7 @@ function buildNextDraftFromValues(values, exercise) {
   return {
     weight: values?.weight != null && values.weight !== '' ? String(values.weight) : '',
     reps: targetReps > 0 ? String(targetReps) : '',
+    duration_seconds: exercise?.target_type === 'duration' ? String(exercise.planned_duration_seconds || values?.duration_seconds || '') : '',
     rir: values?.rir != null && values.rir !== '' ? String(values.rir) : '',
   }
 }
@@ -944,7 +944,14 @@ function getNewRowKey(exercise) {
 function isSetDirty(set, draft) {
   return String(set.weight ?? '') !== String(draft.weight ?? '')
     || String(set.reps ?? '') !== String(draft.reps ?? '')
+    || String(set.duration_seconds ?? '') !== String(draft.duration_seconds ?? '')
     || String(set.rir ?? '') !== String(draft.rir ?? '')
+}
+
+function formatDurationTarget(seconds) {
+  const value = Math.max(0, Number(seconds || 0))
+  if (value >= 60 && value % 60 === 0) return `${value / 60} min`
+  return `${value} sec`
 }
 
 function getSetSyncStatusLabel(set) {
