@@ -4,6 +4,7 @@ import { flushOfflineWriteQueue, subscribeOfflineWriteQueue } from '../../api/cl
 import { analyticsApi } from '../../api/modules/analytics'
 import { authApi } from '../../api/modules/auth'
 import { onboardingApi } from '../../api/modules/onboarding'
+import { dashboardApi } from '../../api/modules/dashboard'
 import { getAppImageUrl } from '../../lib/appImages'
 import { reportClientDiagnostic } from '../../lib/clientDiagnostics'
 import { createDailyCheckInAnswers, getDailyCheckInDateKey, getNextDailyCheckInBoundary, isDailyCheckInWindowOpen, normalizeDailyCheckInEntry } from '../../lib/dailyCheckIn'
@@ -19,6 +20,8 @@ import {
 import { useAuthStore } from '../../store/authStore'
 import { useJohnnyAssistantStore } from '../../store/johnnyAssistantStore'
 import DailyCheckInModal from '../checkin/DailyCheckInModal'
+import DailyBriefingView from '../checkin/DailyBriefingView'
+import AnnouncementTicker from './AnnouncementTicker'
 import AppIcon from '../ui/AppIcon'
 import AppDialog from '../ui/AppDialog'
 
@@ -29,7 +32,7 @@ const tabs = [
   { to: '/dashboard', icon: 'home', label: 'Home', note: 'Today and next move' },
   { to: '/workout', icon: 'workout', label: 'Workout', note: 'Training and session flow' },
   { to: '/nutrition', icon: 'nutrition', label: 'Nutrition', note: 'Meals, pantry, planning' },
-  { to: '/body', icon: 'progress', label: 'Progress', note: 'Sleep, steps, photos' },
+  { to: '/body', state: { focusTab: 'diary' }, icon: 'progress', label: 'Progress Diary', note: 'Daily history, trends, and photos' },
   { to: '/settings', icon: 'profile', label: 'Profile', note: 'Targets and account' },
 ]
 
@@ -53,6 +56,7 @@ export default function AppShell({ children }) {
   const [loggingOut, setLoggingOut] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [dailyCheckInOpen, setDailyCheckInOpen] = useState(false)
+  const [dailyBriefingOpen, setDailyBriefingOpen] = useState(false)
   const [dailyCheckInDayKey, setDailyCheckInDayKey] = useState('')
   const [dailyCheckInAnswers, setDailyCheckInAnswers] = useState(() => createDailyCheckInAnswers())
   const [dailyCheckInRefreshKey, setDailyCheckInRefreshKey] = useState(0)
@@ -63,6 +67,7 @@ export default function AppShell({ children }) {
   const [pendingOfflineWrites, setPendingOfflineWrites] = useState(0)
   const [offlineQueueSyncing, setOfflineQueueSyncing] = useState(false)
   const [swUpdateReady, setSwUpdateReady] = useState(false)
+  const [tickerMessages, setTickerMessages] = useState([])
   const menuButtonRef = useRef(null)
   const mobileNavRef = useRef(null)
   const firstMobileLinkRef = useRef(null)
@@ -106,6 +111,16 @@ export default function AppShell({ children }) {
   useEffect(() => {
     setMenuOpen(false)
   }, [location.pathname])
+
+  useEffect(() => {
+    let active = true
+    dashboardApi.ticker()
+      .then(data => {
+        if (active) setTickerMessages(Array.isArray(data?.messages) ? data.messages : [])
+      })
+      .catch(() => {})
+    return () => { active = false }
+  }, [])
 
   const closeMobileMenu = useCallback(() => {
     setMenuOpen(false)
@@ -189,46 +204,6 @@ export default function AppShell({ children }) {
   }), [])
 
   useEffect(() => {
-    const search = new URLSearchParams(location.search)
-    const coachDelivery = search.get('coach_delivery')
-    const followUpId = search.get('follow_up_id')
-    const triggerType = search.get('trigger_type')
-    const coachSource = search.get('coach_source')
-    const coachPrompt = search.get('coach_prompt')
-
-    if (!coachDelivery && !coachPrompt) {
-      return
-    }
-
-    if (coachDelivery || followUpId || triggerType || coachSource) {
-      analyticsApi.event('coach_delivery_opened', {
-        screen: location.pathname.replace(/^\//, '') || 'dashboard',
-        context: coachDelivery || 'coach_delivery',
-        metadata: {
-          follow_up_id: followUpId || '',
-          trigger_type: triggerType || '',
-          coach_source: coachSource || '',
-          path: location.pathname,
-        },
-      }).catch(() => {})
-    }
-
-    const mappedPrompt = buildCoachPromptFromQuery(coachPrompt, triggerType)
-    if (mappedPrompt) {
-      openDrawer(mappedPrompt)
-    }
-
-    search.delete('coach_delivery')
-    search.delete('follow_up_id')
-    search.delete('trigger_type')
-    search.delete('coach_source')
-    search.delete('coach_prompt')
-    const nextSearch = search.toString()
-    const nextUrl = `${location.pathname}${nextSearch ? `?${nextSearch}` : ''}${location.hash || ''}`
-    window.history.replaceState(window.history.state, '', nextUrl)
-  }, [location.hash, location.pathname, location.search, openDrawer])
-
-  useEffect(() => {
     if (typeof window === 'undefined') {
       return undefined
     }
@@ -281,6 +256,35 @@ export default function AppShell({ children }) {
   }, [persistDailyCheckInEntry])
 
   useEffect(() => {
+    const search = new URLSearchParams(location.search)
+    const coachDelivery = search.get('coach_delivery')
+    const followUpId = search.get('follow_up_id')
+    const triggerType = search.get('trigger_type')
+    const coachSource = search.get('coach_source')
+    const coachPrompt = search.get('coach_prompt')
+    const openDailyCheckIn = search.get('open_daily_checkin') === '1'
+
+    if (!coachDelivery && !coachPrompt && !openDailyCheckIn) return
+
+    if (coachDelivery || followUpId || triggerType || coachSource) {
+      analyticsApi.event('coach_delivery_opened', {
+        screen: location.pathname.replace(/^\//, '') || 'dashboard',
+        context: coachDelivery || 'coach_delivery',
+        metadata: { follow_up_id: followUpId || '', trigger_type: triggerType || '', coach_source: coachSource || '', path: location.pathname },
+      }).catch(() => {})
+    }
+
+    const mappedPrompt = buildCoachPromptFromQuery(coachPrompt, triggerType)
+    if (mappedPrompt) openDrawer(mappedPrompt)
+    if (openDailyCheckIn) openDailyCheckInModal()
+
+    ;['coach_delivery', 'follow_up_id', 'trigger_type', 'coach_source', 'coach_prompt', 'open_daily_checkin'].forEach(key => search.delete(key))
+    const nextSearch = search.toString()
+    const nextUrl = `${location.pathname}${nextSearch ? `?${nextSearch}` : ''}${location.hash || ''}`
+    window.history.replaceState(window.history.state, '', nextUrl)
+  }, [location.hash, location.pathname, location.search, openDailyCheckInModal, openDrawer])
+
+  useEffect(() => {
     if (typeof window === 'undefined' || dailyCheckInOpen) {
       return
     }
@@ -320,6 +324,21 @@ export default function AppShell({ children }) {
     })
     setDailyCheckInOpen(false)
   }, [persistDailyCheckInEntry])
+
+  const handleStartDailyBriefing = useCallback(() => {
+    const currentEntry = normalizeDailyCheckInEntry(dailyCheckInStateRef.current)
+    void persistDailyCheckInEntry({
+      ...currentEntry,
+      updated_at: currentEntry.updated_at || new Date().toISOString(),
+    })
+    setDailyCheckInOpen(false)
+    setDailyBriefingOpen(true)
+  }, [persistDailyCheckInEntry])
+
+  const handlePlanBriefingWorkout = useCallback(({ answers, scheduleName }) => {
+    setDailyBriefingOpen(false)
+    openDrawer(`Help me plan today's workout. My check-in is: energy ${answers?.energy || 'not provided'}, body ${answers?.body || 'not provided'}, and stress/focus ${answers?.head || 'not provided'}. Today's schedule suggests ${scheduleName}. Propose the best workout for us to review together. Do not treat it as approved; show me the workout and ask for my approval before locking it in.`)
+  }, [openDrawer])
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -563,13 +582,16 @@ export default function AppShell({ children }) {
             </span>
             <span className="app-shell-brand-copy">
               <strong>{isIronQuestExperience ? 'Johnny5k: IronQuest' : 'Johnny5k'}</strong>
-              <small>{isIronQuestExperience ? 'Real training. Epic stakes.' : 'Your AI Health Coach'}</small>
+              <small>
+                <i aria-hidden="true" />
+                {isIronQuestExperience ? 'Quest system · active' : 'Johnny · ready'}
+              </small>
             </span>
           </NavLink>
 
           <nav className="app-shell-desktop-nav" aria-label="Primary">
             {shellTabs.map(tab => (
-              <NavLink key={tab.to} to={tab.to} className={({ isActive }) => `app-shell-desktop-link ${isActive ? 'active' : ''}`}>
+              <NavLink key={`${tab.to}:${tab.label}`} to={tab.to} state={tab.state} className={({ isActive }) => `app-shell-desktop-link ${isActive ? 'active' : ''}`}>
                 <AppIcon name={tab.icon} />
                 <span>{tab.label}</span>
               </NavLink>
@@ -605,6 +627,7 @@ export default function AppShell({ children }) {
             </button>
           </div>
         </div>
+        {location.pathname !== '/workout/live' ? <AnnouncementTicker messages={tickerMessages} /> : null}
       </header>
 
       {menuOpen ? (
@@ -634,7 +657,7 @@ export default function AppShell({ children }) {
 
               <nav className="app-shell-mobile-nav-grid" aria-label="Primary">
                 {shellTabs.map((tab, index) => (
-                  <NavLink key={tab.to} to={tab.to} ref={index === 0 ? firstMobileLinkRef : undefined} className={({ isActive }) => `app-shell-mobile-link ${isActive ? 'active' : ''}`}>
+                  <NavLink key={`${tab.to}:${tab.label}`} to={tab.to} state={tab.state} ref={index === 0 ? firstMobileLinkRef : undefined} className={({ isActive }) => `app-shell-mobile-link ${isActive ? 'active' : ''}`}>
                     <span className="app-shell-mobile-link-icon">
                       <AppIcon name={tab.icon} />
                     </span>
@@ -680,6 +703,14 @@ export default function AppShell({ children }) {
           closeButtonRef={dailyCheckInCloseRef}
           onAnswer={handleDailyCheckInAnswer}
           onClose={handleCloseDailyCheckIn}
+          onStartBriefing={handleStartDailyBriefing}
+        />
+      ) : null}
+      {dailyBriefingOpen ? (
+        <DailyBriefingView
+          answers={dailyCheckInAnswers}
+          onClose={() => setDailyBriefingOpen(false)}
+          onPlanWorkout={handlePlanBriefingWorkout}
         />
       ) : null}
       {installHelpOpen ? <InstallHelpModal onClose={() => setInstallHelpOpen(false)} /> : null}
@@ -755,6 +786,24 @@ function buildCoachPromptFromQuery(coachPrompt, triggerType) {
   }
   if (normalizedPrompt === 'workout_intent' || normalizedTrigger === 'workout_accountability') {
     return 'It is my workout day. Help me decide whether I should train today, shorten it, or recover based on my current board.'
+  }
+  if (normalizedPrompt === 'proactive_chart') {
+    return 'Review my current logged data and show me the most useful chart or visualization for the suggestion you noticed.'
+  }
+  if (normalizedPrompt === 'proactive_link') {
+    return 'Give me the helpful resource you identified and include a trustworthy direct source link.'
+  }
+  if (normalizedPrompt === 'proactive_meal_idea') {
+    return 'Use what remains in today’s calorie and protein targets and give me one specific meal idea.'
+  }
+  if (normalizedPrompt === 'proactive_story') {
+    return 'Tell me the short, grounded inspirational story that fits where I am today.'
+  }
+  if (normalizedPrompt === 'proactive_image') {
+    return 'Create and share a personalized image of yourself, Johnny, that fits the useful moment you noticed. Use your official likeness reference and make it fun and encouraging.'
+  }
+  if (normalizedPrompt === 'proactive_text' || normalizedTrigger === 'contextual_suggestion') {
+    return 'Review what I have logged today and explain the useful next step you noticed.'
   }
 
   return ''

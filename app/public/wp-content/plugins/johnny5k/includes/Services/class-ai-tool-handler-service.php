@@ -32,6 +32,7 @@ class AiToolHandlerService {
 			'get_today_nutrition'        => self::tool_today_nutrition( $user_id, $deps ),
 			'get_recent_meals'           => self::tool_recent_meals( $user_id, $arguments, $deps ),
 			'get_pantry_snapshot'        => self::tool_pantry_snapshot( $user_id, $arguments ),
+			'get_grocery_gap'            => self::tool_grocery_gap( $user_id, $deps ),
 			'get_recipe_catalog'         => self::tool_recipe_catalog( $user_id, $arguments ),
 			'get_recipe_cookbook'        => self::tool_recipe_cookbook( $user_id, $arguments ),
 			'get_recovery_snapshot'      => self::tool_recovery_snapshot( $user_id ),
@@ -40,15 +41,21 @@ class AiToolHandlerService {
 			'get_saved_workouts'         => self::tool_saved_workouts( $arguments, $deps ),
 			'present_choices'            => self::tool_present_choices( $arguments ),
 			'create_visualization'       => self::tool_create_visualization( $arguments ),
+			'set_ambient_color'          => self::tool_set_ambient_color( $arguments ),
+			'activate_fire_mode'         => self::tool_activate_fire_mode(),
+			'trigger_confetti_burst'     => self::tool_trigger_confetti_burst(),
+			'search_gif'                 => self::tool_search_gif( $arguments ),
 			'generate_image'              => JohnnyGeneratedImageService::generate( $user_id, $arguments ),
 			'log_steps'                  => self::tool_log_steps( $user_id, $arguments, $deps ),
 			'log_food_from_description'  => self::tool_log_food_from_description( $user_id, $arguments, $deps ),
+			'create_food_tile'            => self::tool_create_food_tile( $user_id, $arguments, $deps ),
 			'create_training_plan'       => self::tool_create_training_plan( $user_id, $arguments ),
 			'set_training_schedule'      => self::tool_set_training_schedule( $user_id, $arguments, $deps ),
 			'create_custom_workout'      => self::tool_create_custom_workout( $user_id, $arguments ),
 			'create_personal_exercise'   => self::tool_create_personal_exercise( $user_id, $arguments, $deps ),
 			'save_workout_to_library'   => self::tool_save_workout_to_library( $user_id, $arguments, $deps ),
 			'load_saved_workout'         => self::tool_load_saved_workout( $user_id, $arguments ),
+			'remove_saved_workout'       => self::tool_remove_saved_workout( $user_id, $arguments, $deps ),
 			'log_sleep'                  => self::tool_log_sleep( $user_id, $arguments, $deps ),
 			'log_cardio'                 => self::tool_log_cardio( $user_id, $arguments, $deps ),
 			'log_rest_day'               => self::tool_log_rest_day( $user_id, $deps ),
@@ -57,6 +64,8 @@ class AiToolHandlerService {
 			'modify_workout'              => self::tool_modify_workout( $user_id, $arguments, $deps ),
 			'start_workout'               => self::tool_start_workout( $user_id, $arguments, $deps ),
 			'manage_workout_set'          => self::tool_manage_workout_set( $arguments, $deps ),
+			'cancel_workout'              => self::tool_cancel_workout( $user_id, $deps ),
+			'restart_workout_timer'       => self::tool_restart_workout_timer( $deps ),
 			'complete_workout'            => self::tool_complete_workout( $deps ),
 			'log_body_measurement'        => self::tool_log_body_measurement( $arguments, $deps ),
 			'manage_health_log'           => self::tool_manage_health_log( $arguments, $deps ),
@@ -66,7 +75,10 @@ class AiToolHandlerService {
 			'update_goals'                => self::tool_update_goals( $user_id, $arguments, $deps ),
 			'update_profile'              => self::tool_update_profile( $arguments, $deps ),
 			'add_pantry_items'           => self::tool_add_pantry_items( $user_id, $arguments, $deps ),
+			'remove_pantry_items'        => self::tool_remove_pantry_items( $user_id, $arguments ),
 			'add_grocery_gap_items'      => self::tool_add_grocery_gap_items( $user_id, $arguments, $deps ),
+			'add_recipe_ingredients_to_grocery_list' => self::tool_add_recipe_ingredients_to_grocery_list( $user_id, $arguments, $deps ),
+			'remove_grocery_gap_items'   => self::tool_remove_grocery_gap_items( $user_id, $arguments ),
 			'add_recipe_to_cookbook'     => self::tool_add_recipe_to_cookbook( $user_id, $arguments ),
 			'swap_workout_exercise'      => self::tool_swap_workout_exercise( $user_id, $arguments, $deps ),
 			'schedule_sms_reminder'      => self::tool_schedule_sms_reminder( $user_id, $arguments, $deps ),
@@ -95,6 +107,99 @@ class AiToolHandlerService {
 			'ok'      => true,
 			'action'  => 'clear_conversation',
 			'summary' => 'Chat cleared.',
+		];
+	}
+
+	private static function tool_set_ambient_color( array $arguments ): array {
+		$allowed = [ 'default', 'green', 'violet', 'rose', 'amber', 'dance' ];
+		$color   = sanitize_key( (string) ( $arguments['color'] ?? 'default' ) );
+		if ( ! in_array( $color, $allowed, true ) ) {
+			$color = 'default';
+		}
+
+		$summary = match ( $color ) {
+			'default' => 'Back to the default look.',
+			'dance'   => 'Kicking off a little celebration light show.',
+			default   => "Switched the vibe to {$color}.",
+		};
+
+		return [
+			'ok'      => true,
+			'action'  => 'set_ambient_color',
+			'color'   => $color,
+			'summary' => $summary,
+		];
+	}
+
+	private static function tool_trigger_confetti_burst(): array {
+		return [
+			'ok'      => true,
+			'action'  => 'trigger_confetti_burst',
+			'summary' => 'Confetti time!',
+		];
+	}
+
+	private static function tool_activate_fire_mode(): array {
+		return [
+			'ok'      => true,
+			'action'  => 'activate_fire_mode',
+			'summary' => 'Lighting it up!',
+		];
+	}
+
+	private static function tool_search_gif( array $arguments ): array {
+		$query = trim( sanitize_text_field( (string) ( $arguments['query'] ?? '' ) ) );
+		if ( '' === $query ) {
+			return [ 'error' => 'A search query is required.' ];
+		}
+
+		$api_key = trim( (string) get_option( 'jf_giphy_api_key', '' ) );
+		if ( '' === $api_key ) {
+			return [ 'error' => 'GIF search is not configured yet.' ];
+		}
+
+		$endpoint = add_query_arg(
+			[
+				'api_key' => $api_key,
+				'q'       => $query,
+				'limit'   => 1,
+				'rating'  => 'g',
+				'lang'    => 'en',
+			],
+			'https://api.giphy.com/v1/gifs/search'
+		);
+
+		$response = wp_remote_get( $endpoint, [ 'timeout' => 8 ] );
+		if ( is_wp_error( $response ) ) {
+			return [ 'error' => 'Could not reach GIPHY: ' . $response->get_error_message() ];
+		}
+
+		$code = (int) wp_remote_retrieve_response_code( $response );
+		$body = json_decode( (string) wp_remote_retrieve_body( $response ), true );
+		if ( 200 !== $code || ! is_array( $body ) ) {
+			return [ 'error' => 'GIPHY search failed.' ];
+		}
+
+		$result = $body['data'][0] ?? null;
+		if ( ! is_array( $result ) ) {
+			return [ 'error' => 'No GIF found for that search.' ];
+		}
+
+		$images      = is_array( $result['images'] ?? null ) ? $result['images'] : [];
+		$gif_url     = (string) ( $images['original']['url'] ?? '' );
+		$preview_url = (string) ( $images['fixed_height_small']['url'] ?? $images['downsized']['url'] ?? $gif_url );
+		if ( '' === $gif_url ) {
+			return [ 'error' => 'That GIF result had no playable format.' ];
+		}
+
+		return [
+			'action'      => 'search_gif',
+			'query'       => $query,
+			'gif_url'     => esc_url_raw( $gif_url ),
+			'preview_url' => esc_url_raw( $preview_url ),
+			'page_url'    => esc_url_raw( (string) ( $result['url'] ?? '' ) ),
+			'title'       => sanitize_text_field( (string) ( $result['title'] ?? $query ) ),
+			'summary'     => 'Found a GIF for that.',
 		];
 	}
 
@@ -874,6 +979,44 @@ class AiToolHandlerService {
 		];
 	}
 
+	private static function tool_create_food_tile( int $user_id, array $arguments, array $deps ): array {
+		$food_text = trim( sanitize_textarea_field( (string) ( $arguments['food_text'] ?? '' ) ) );
+		if ( '' === $food_text ) return [ 'error' => 'Describe the food tile to create.' ];
+
+		$analysis = self::dep( $deps, 'analyse_food_text', $user_id, $food_text );
+		if ( is_wp_error( $analysis ) ) return [ 'error' => $analysis->get_error_message() ];
+		$analysis = is_array( $analysis ) ? $analysis : [];
+		$value = static fn( string $key, string $analysis_key, mixed $fallback = 0 ): mixed => array_key_exists( $key, $arguments ) ? $arguments[ $key ] : ( $analysis[ $analysis_key ] ?? $fallback );
+		$name = sanitize_text_field( (string) $value( 'name', 'food_name', 'Food tile' ) );
+		$serving = sanitize_text_field( (string) $value( 'serving_size', 'serving_size', '1 serving' ) );
+
+		$request = new \WP_REST_Request( 'POST', '/fit/v1/nutrition/saved-foods' );
+		$request->set_param( 'canonical_name', $name ?: 'Food tile' );
+		$request->set_param( 'brand', sanitize_text_field( (string) ( $arguments['brand'] ?? $analysis['brand'] ?? '' ) ) );
+		$request->set_param( 'serving_size', $serving ?: '1 serving' );
+		$request->set_param( 'calories', max( 0, (int) $value( 'calories', 'calories' ) ) );
+		foreach ( [ 'protein_g', 'carbs_g', 'fat_g', 'fiber_g', 'sugar_g', 'sodium_mg' ] as $field ) {
+			$request->set_param( $field, max( 0, (float) $value( $field, $field ) ) );
+		}
+		$request->set_param( 'micros', (array) ( $analysis['micros'] ?? [] ) );
+		$request->set_param( 'source', 'ai_tile' );
+		if ( ! empty( $arguments['category'] ) ) {
+			$request->set_param( 'category', sanitize_key( (string) $arguments['category'] ) );
+		}
+
+		$result = self::rest_result( self::rest_call( $deps, 'nutrition_create_saved_food', [ NutritionController::class, 'create_saved_food' ], $request ), 'create_food_tile', 'Could not create that food tile.' );
+		if ( empty( $result['ok'] ) ) return $result;
+		$result['tile_id'] = (int) ( $result['data']['id'] ?? 0 );
+		$result['name'] = $name;
+		$result['serving_size'] = $serving;
+		$result['calories'] = (int) $request->get_param( 'calories' );
+		$result['protein_g'] = (float) $request->get_param( 'protein_g' );
+		$result['carbs_g'] = (float) $request->get_param( 'carbs_g' );
+		$result['fat_g'] = (float) $request->get_param( 'fat_g' );
+		$result['summary'] = sprintf( 'Created a reusable %s tile: %s, %d calories, %sg protein, %sg carbs, and %sg fat.', $name, $serving, $result['calories'], $result['protein_g'], $result['carbs_g'], $result['fat_g'] );
+		return $result;
+	}
+
 	private static function tool_create_training_plan( int $user_id, array $arguments = [] ): array {
 		$request = new \WP_REST_Request( 'POST', '/fit/v1/training/plan' );
 		$name    = sanitize_text_field( (string) ( $arguments['name'] ?? 'Johnny5k Plan' ) );
@@ -1458,6 +1601,41 @@ class AiToolHandlerService {
 		];
 	}
 
+	private static function tool_remove_saved_workout( int $user_id, array $arguments, array $deps ): array {
+		$request = new \WP_REST_Request( 'GET', '/fit/v1/workout/saved-library' );
+		$loader = $deps['workout_saved_library'] ?? null;
+		$library_response = is_callable( $loader ) ? $loader( $request ) : WorkoutController::get_saved_workout_library( $request );
+		if ( ! $library_response instanceof \WP_REST_Response ) return [ 'error' => 'Could not read My Workouts.' ];
+		$library = $library_response->get_data();
+		$library = is_array( $library ) ? $library : [];
+		$id = max( 0, (int) ( $arguments['id'] ?? 0 ) );
+		$name = strtolower( trim( sanitize_text_field( (string) ( $arguments['name'] ?? '' ) ) ) );
+		$matches = array_values( array_filter( $library, static function( array $workout ) use ( $id, $name ): bool {
+			if ( $id > 0 ) return (int) ( $workout['id'] ?? 0 ) === $id;
+			return '' !== $name && strtolower( (string) ( $workout['name'] ?? '' ) ) === $name;
+		} ) );
+		if ( 1 !== count( $matches ) ) {
+			return [ 'error' => $matches ? 'More than one saved workout has that name. Use its saved workout ID.' : 'Could not find that exact workout in My Workouts.' ];
+		}
+
+		$match = $matches[0];
+		$delete_request = new \WP_REST_Request( 'DELETE', '/fit/v1/workout/saved-library/' . (int) $match['id'] );
+		$delete_request->set_param( 'id', (int) $match['id'] );
+		$deleter = $deps['workout_delete_saved'] ?? null;
+		$response = is_callable( $deleter ) ? $deleter( $delete_request ) : WorkoutController::delete_saved_workout( $delete_request );
+		if ( ! $response instanceof \WP_REST_Response ) return [ 'error' => 'Could not remove that workout.' ];
+		$data = $response->get_data();
+		if ( $response->get_status() >= 400 ) return [ 'error' => (string) ( $data['message'] ?? 'Could not remove that workout.' ) ];
+
+		return [
+			'ok' => true,
+			'action' => 'remove_saved_workout',
+			'saved_workout_id' => (int) $match['id'],
+			'name' => (string) $match['name'],
+			'summary' => sprintf( 'Removed %s from My Workouts.', (string) $match['name'] ),
+		];
+	}
+
 	/**
 	 * @param array<string,callable> $deps
 	 */
@@ -1677,6 +1855,23 @@ class AiToolHandlerService {
 		return null;
 	}
 
+	private static function resolve_or_create_workout_exercise( int $user_id, string $name, string $day_type, array $deps ) {
+		$resolved = self::resolve_workout_exercise( $user_id, $name, $deps );
+		if ( $resolved ) return $resolved;
+		// Tests and integrations may intentionally provide a closed resolver. Only
+		// auto-create through that boundary when they also provide a creator.
+		if ( isset( $deps['find_accessible_exercise_by_name'] ) && ! isset( $deps['create_personal_exercise'] ) ) return null;
+
+		$metadata = self::infer_custom_exercise_metadata( $name, $day_type );
+		$creator = $deps['create_personal_exercise'] ?? null;
+		$created = is_callable( $creator )
+			? $creator( $user_id, array_merge( $metadata, [ 'name' => $name ] ) )
+			: ExerciseLibraryService::create_personal_exercise( $user_id, array_merge( $metadata, [ 'name' => $name ] ) );
+		if ( is_wp_error( $created ) || empty( $created['id'] ) ) return null;
+
+		return (object) array_merge( $metadata, [ 'id' => (int) $created['id'], 'name' => $name ] );
+	}
+
 	private static function exercise_name_matches( string $actual, string $requested ): bool {
 		$actual = strtolower( trim( $actual ) );
 		return in_array( $actual, array_map( static fn( string $name ): string => strtolower( trim( $name ) ), self::exercise_aliases( $requested ) ), true );
@@ -1719,8 +1914,8 @@ class AiToolHandlerService {
 			if ( empty( $exercises ) ) return [ 'error' => 'A workout must keep at least one exercise.' ];
 		} elseif ( 'add' === $action ) {
 			if ( '' === $name ) return [ 'error' => 'An exercise name is required.' ];
-			$resolved = self::resolve_workout_exercise( $user_id, $requested_name, $deps );
-			if ( ! $resolved ) return [ 'error' => sprintf( 'I could not find %s in your exercise library, so I left the workout unchanged. Ask me to create it first if you want it added.', $requested_name ) ];
+			$resolved = self::resolve_or_create_workout_exercise( $user_id, $requested_name, (string) ( $draft['day_type'] ?? '' ), $deps );
+			if ( ! $resolved ) return [ 'error' => sprintf( 'I could not create or add %s, so I left the workout unchanged.', $requested_name ) ];
 			$exercises[] = [ 'exercise_id' => (int) $resolved->id, 'exercise_name' => (string) $resolved->name, 'target_type' => 'reps' ];
 		} elseif ( 'replace' === $action ) {
 			$replacement_name = sanitize_text_field( (string) ( $arguments['replacement_exercise_name'] ?? '' ) );
@@ -1730,7 +1925,7 @@ class AiToolHandlerService {
 				if ( self::exercise_name_matches( (string) ( $exercise['exercise_name'] ?? '' ), $requested_name ) ) { $replace_index = $index; break; }
 			}
 			if ( null === $replace_index ) return [ 'error' => sprintf( '%s is not in the queued workout, so I left the workout unchanged.', $requested_name ) ];
-			$resolved = self::resolve_workout_exercise( $user_id, $replacement_name, $deps );
+			$resolved = self::resolve_or_create_workout_exercise( $user_id, $replacement_name, (string) ( $draft['day_type'] ?? '' ), $deps );
 			if ( ! $resolved ) {
 				self::save_pending_workout_replacement( $user_id, [
 					'draft_id'                    => (string) $draft['id'],
@@ -1738,7 +1933,7 @@ class AiToolHandlerService {
 					'replacement_exercise_name'    => $replacement_name,
 					'requested_at'                 => current_time( 'mysql', true ),
 				], $deps );
-				return [ 'error' => sprintf( 'I could not find %s in your exercise library, so I left %s in place. Ask me to create it first if you want to use it.', $replacement_name, $requested_name ) ];
+				return [ 'error' => sprintf( 'I could not create or add %s, so I left %s in place.', $replacement_name, $requested_name ) ];
 			}
 			$replacement = $exercises[ $replace_index ];
 			$replacement['exercise_id'] = (int) $resolved->id;
@@ -1792,6 +1987,10 @@ class AiToolHandlerService {
 		return is_array( $data ) ? $data : [];
 	}
 
+	private static function array_value( mixed $value ): array {
+		return is_array( $value ) ? $value : ( is_object( $value ) ? get_object_vars( $value ) : [] );
+	}
+
 	private static function tool_manage_workout_set( array $arguments, array $deps ): array {
 		$current = self::active_workout_data( $deps ); $session_id = (int) ( $current['session']['id'] ?? 0 );
 		if ( $session_id <= 0 ) return [ 'error' => 'An active workout is required.' ];
@@ -1810,11 +2009,40 @@ class AiToolHandlerService {
 	}
 
 	private static function tool_complete_workout( array $deps ): array {
-		$current = self::active_workout_data( $deps ); $session_id = (int) ( $current['session']['id'] ?? 0 );
+		$current = self::active_workout_data( $deps ); $session = self::array_value( $current['session'] ?? [] ); $session_id = (int) ( $session['id'] ?? 0 );
 		if ( $session_id <= 0 ) return [ 'error' => 'There is no active workout to complete.' ];
 		$request = new \WP_REST_Request( 'POST', '/fit/v1/workout/' . $session_id . '/complete' ); $request->set_param( 'id', $session_id );
 		$result = self::rest_result( self::rest_call( $deps, 'workout_complete', [ WorkoutController::class, 'complete_session' ], $request ), 'complete_workout', 'Could not complete the workout.' );
 		if ( ! empty( $result['ok'] ) ) $result['summary'] = 'Completed today’s workout.';
+		return $result;
+	}
+
+	private static function tool_cancel_workout( int $user_id, array $deps ): array {
+		$current = self::active_workout_data( $deps );
+		$session = self::array_value( $current['session'] ?? [] );
+		$session_id = (int) ( $session['id'] ?? 0 );
+		if ( $session_id > 0 ) {
+			$request = new \WP_REST_Request( 'POST', '/fit/v1/workout/' . $session_id . '/discard' );
+			$request->set_param( 'id', $session_id );
+			$result = self::rest_result( self::rest_call( $deps, 'workout_discard', [ WorkoutController::class, 'discard_session' ], $request ), 'cancel_workout', 'Could not cancel the active workout.' );
+			if ( ! empty( $result['ok'] ) ) $result['summary'] = 'Canceled the active workout. You can start over with a new one.';
+			return $result;
+		}
+
+		$draft = self::array_value( $current['custom_workout_draft'] ?? [] );
+		if ( '' === trim( (string) ( $draft['id'] ?? '' ) ) ) return [ 'error' => 'There is no queued or active workout to cancel.' ];
+		$request = new \WP_REST_Request( 'DELETE', '/fit/v1/workout/custom-draft' );
+		$result = self::rest_result( self::rest_call( $deps, 'workout_clear_custom_draft', [ WorkoutController::class, 'delete_custom_draft' ], $request ), 'cancel_workout', 'Could not clear the queued workout.' );
+		if ( ! empty( $result['ok'] ) ) $result['summary'] = 'Cleared the queued workout. You can build a new one.';
+		return $result;
+	}
+
+	private static function tool_restart_workout_timer( array $deps ): array {
+		$current = self::active_workout_data( $deps ); $session = self::array_value( $current['session'] ?? [] ); $session_id = (int) ( $session['id'] ?? 0 );
+		if ( $session_id <= 0 ) return [ 'error' => 'There is no active workout timer to restart.' ];
+		$request = new \WP_REST_Request( 'POST', '/fit/v1/workout/' . $session_id . '/reset-timer' ); $request->set_param( 'id', $session_id );
+		$result = self::rest_result( self::rest_call( $deps, 'workout_reset_timer', [ WorkoutController::class, 'reset_session_timer' ], $request ), 'restart_workout_timer', 'Could not restart the workout timer.' );
+		if ( ! empty( $result['ok'] ) ) $result['summary'] = 'Restarted the active workout timer.';
 		return $result;
 	}
 
@@ -1959,6 +2187,129 @@ class AiToolHandlerService {
 			'coach_note'    => 'Those items are now queued in grocery gap so the next shopping pass is easier to execute.',
 			'summary'       => (string) self::dep( $deps, 'build_bulk_action_summary', 'grocery gap', $item_names, $data ),
 		];
+	}
+
+	private static function tool_grocery_gap( int $user_id, array $deps ): array {
+		if ( is_callable( $deps['get_grocery_gap'] ?? null ) ) {
+			$gap = (array) $deps['get_grocery_gap']( $user_id );
+		} else {
+			$request  = new \WP_REST_Request( 'GET', '/fit/v1/nutrition/grocery-gap' );
+			$response = NutritionRecipeController::get_grocery_gap( $request );
+			$gap      = (array) $response->get_data();
+		}
+
+		$manual  = is_array( $gap['manual_items'] ?? null ) ? $gap['manual_items'] : [];
+		$missing = is_array( $gap['missing_items'] ?? null ) ? $gap['missing_items'] : [];
+		$count   = count( $manual ) + count( $missing );
+
+		return [
+			'ok'          => true,
+			'action'      => 'show_grocery_gap',
+			'grocery_gap' => $gap,
+			'item_count'  => $count,
+			'summary'     => $count
+				? sprintf( 'Your grocery gap currently has %d item%s.', $count, 1 === $count ? '' : 's' )
+				: 'Your grocery gap is clear right now.',
+		];
+	}
+
+	private static function tool_remove_pantry_items( int $user_id, array $arguments ): array {
+		global $wpdb;
+		$names = self::tool_item_names( $arguments );
+		if ( empty( $names ) ) {
+			return [ 'error' => 'At least one pantry item name is required.' ];
+		}
+
+		$table = $wpdb->prefix . 'fit_pantry_items';
+		$deleted_names = [];
+		foreach ( $names as $name ) {
+			$rows = $wpdb->get_results( $wpdb->prepare(
+				"SELECT id, item_name FROM {$table} WHERE user_id = %d AND LOWER(item_name) = LOWER(%s)",
+				$user_id,
+				$name
+			), ARRAY_A );
+			foreach ( is_array( $rows ) ? $rows : [] as $row ) {
+				if ( false !== $wpdb->delete( $table, [ 'id' => (int) $row['id'], 'user_id' => $user_id ] ) ) {
+					$deleted_names[] = sanitize_text_field( (string) $row['item_name'] );
+				}
+			}
+		}
+
+		return [
+			'ok' => true,
+			'action' => 'remove_pantry_items',
+			'deleted_count' => count( $deleted_names ),
+			'item_names' => array_values( array_unique( $deleted_names ) ),
+			'summary' => $deleted_names ? 'Removed the requested items from the pantry.' : 'No matching pantry items were found.',
+		];
+	}
+
+	private static function tool_add_recipe_ingredients_to_grocery_list( int $user_id, array $arguments, array $deps ): array {
+		$cookbook = self::load_recipe_cookbook_items();
+		$catalog = self::load_recipe_catalog_items();
+		$recipes = array_merge(
+			is_array( $cookbook['recipes'] ?? null ) ? $cookbook['recipes'] : [],
+			is_array( $catalog['recipes'] ?? null ) ? $catalog['recipes'] : []
+		);
+		$recipe = self::find_recipe_tool_match( $recipes, $arguments );
+		if ( empty( $recipe['recipe_name'] ) ) {
+			return [ 'error' => 'Johnny could not match that recipe in the recipe catalog or cookbook.' ];
+		}
+
+		$ingredients = is_array( $recipe['missing_ingredients'] ?? null ) && ! empty( $recipe['missing_ingredients'] )
+			? $recipe['missing_ingredients']
+			: ( is_array( $recipe['ingredients'] ?? null ) ? $recipe['ingredients'] : [] );
+		$on_hand = array_map( 'strtolower', is_array( $recipe['on_hand_ingredients'] ?? null ) ? $recipe['on_hand_ingredients'] : [] );
+		$ingredients = array_values( array_filter( self::sanitize_string_list( $ingredients ), static function( string $ingredient ) use ( $on_hand ): bool {
+			return ! in_array( strtolower( $ingredient ), $on_hand, true );
+		} ) );
+		if ( empty( $ingredients ) ) {
+			return [ 'ok' => true, 'action' => 'add_recipe_ingredients_to_grocery_list', 'recipe_name' => $recipe['recipe_name'], 'item_names' => [], 'summary' => 'All ingredients for that recipe are already in the pantry.' ];
+		}
+
+		$result = self::tool_add_grocery_gap_items( $user_id, [
+			'items' => array_map( static fn( string $ingredient ): array => [ 'item_name' => $ingredient, 'notes' => 'For ' . $recipe['recipe_name'] ], $ingredients ),
+		], $deps );
+		if ( empty( $result['error'] ) ) {
+			$result['action'] = 'add_recipe_ingredients_to_grocery_list';
+			$result['recipe_name'] = $recipe['recipe_name'];
+			$result['summary'] = sprintf( 'Added %d missing ingredient%s for %s to the shopping list.', count( $ingredients ), 1 === count( $ingredients ) ? '' : 's', $recipe['recipe_name'] );
+		}
+		return $result;
+	}
+
+	private static function tool_remove_grocery_gap_items( int $user_id, array $arguments ): array {
+		$names = self::tool_item_names( $arguments );
+		if ( empty( $names ) ) {
+			return [ 'error' => 'At least one shopping-list item name is required.' ];
+		}
+
+		$request = new \WP_REST_Request( 'DELETE', '/fit/v1/nutrition/grocery-gap/items' );
+		$request->set_param( 'items', array_map( static fn( string $name ): array => [ 'item_name' => $name ], $names ) );
+		$response = NutritionRecipeController::delete_grocery_gap_items( $request );
+		$data = $response->get_data();
+		if ( (int) $response->get_status() >= 400 ) {
+			return [ 'error' => (string) ( $data['message'] ?? 'Could not update the shopping list.' ) ];
+		}
+
+		return [
+			'ok' => true,
+			'action' => 'remove_grocery_gap_items',
+			'deleted_count' => (int) ( $data['deleted_count'] ?? 0 ),
+			'item_names' => $names,
+			'summary' => 'Removed the requested items from the shopping list.',
+		];
+	}
+
+	private static function tool_item_names( array $arguments ): array {
+		$items = is_array( $arguments['items'] ?? null ) ? $arguments['items'] : [];
+		if ( ! empty( $arguments['item_name'] ) ) {
+			$items[] = [ 'item_name' => $arguments['item_name'] ];
+		}
+		$names = array_map( static function( $item ): string {
+			return sanitize_text_field( (string) ( is_array( $item ) ? ( $item['item_name'] ?? '' ) : $item ) );
+		}, $items );
+		return array_values( array_unique( array_filter( $names ) ) );
 	}
 
 	/**

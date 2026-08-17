@@ -22,6 +22,7 @@ class CronBootstrap {
 	private const WEEKLY_CALORIE_ADJUST = 'jf_weekly_calorie_adjust';
 	private const EVALUATE_AWARDS = 'jf_evaluate_awards';
 	private const PROCESS_COACH_DELIVERIES = 'jf_process_coach_deliveries';
+	private const SEND_CONTEXTUAL_PUSH_SUGGESTIONS = 'jf_send_contextual_push_suggestions';
 
 	private static bool $waiting_for_action_scheduler_init = false;
 
@@ -33,6 +34,7 @@ class CronBootstrap {
 		add_action( self::WEEKLY_CALORIE_ADJUST, [ __CLASS__, 'run_weekly_calorie_adjust' ] );
 		add_action( self::EVALUATE_AWARDS, [ __CLASS__, 'run_award_evaluation' ] );
 		add_action( self::PROCESS_COACH_DELIVERIES, [ __CLASS__, 'run_coach_deliveries' ] );
+		add_action( self::SEND_CONTEXTUAL_PUSH_SUGGESTIONS, [ __CLASS__, 'run_contextual_push_suggestions' ] );
 
 		add_action( 'action_scheduler_before_execute', [ __CLASS__, 'handle_action_start' ], 10, 2 );
 		add_action( 'action_scheduler_after_execute', [ __CLASS__, 'handle_action_success' ], 10, 3 );
@@ -72,6 +74,12 @@ class CronBootstrap {
 				'first_run' => time() + 300,
 				'retryable' => true,
 			],
+			self::SEND_CONTEXTUAL_PUSH_SUGGESTIONS => [
+				'label' => 'Contextual Johnny push suggestions',
+				'interval' => 2 * HOUR_IN_SECONDS,
+				'first_run' => time() + 600,
+				'retryable' => true,
+			],
 		];
 	}
 
@@ -80,6 +88,12 @@ class CronBootstrap {
 			$schedules['weekly'] = [
 				'interval' => WEEK_IN_SECONDS,
 				'display'  => 'Once Weekly',
+			];
+		}
+		if ( ! isset( $schedules['johnny_two_hours'] ) ) {
+			$schedules['johnny_two_hours'] = [
+				'interval' => 2 * HOUR_IN_SECONDS,
+				'display'  => 'Every Two Hours',
 			];
 		}
 
@@ -203,6 +217,10 @@ class CronBootstrap {
 		PushService::cleanup_stale_active_subscriptions();
 	}
 
+	public static function run_contextual_push_suggestions(): void {
+		CoachDeliveryService::process_contextual_push_suggestions_all_users();
+	}
+
 	private static function all_hooks(): array {
 		return [
 			self::DAILY_SMS_REMINDERS,
@@ -210,6 +228,7 @@ class CronBootstrap {
 			self::WEEKLY_CALORIE_ADJUST,
 			self::EVALUATE_AWARDS,
 			self::PROCESS_COACH_DELIVERIES,
+			self::SEND_CONTEXTUAL_PUSH_SUGGESTIONS,
 		];
 	}
 
@@ -275,6 +294,10 @@ class CronBootstrap {
 
 		if ( ! wp_next_scheduled( self::PROCESS_COACH_DELIVERIES ) ) {
 			wp_schedule_event( time() + 300, 'hourly', self::PROCESS_COACH_DELIVERIES );
+		}
+
+		if ( ! wp_next_scheduled( self::SEND_CONTEXTUAL_PUSH_SUGGESTIONS ) ) {
+			wp_schedule_event( time() + 600, 'johnny_two_hours', self::SEND_CONTEXTUAL_PUSH_SUGGESTIONS );
 		}
 	}
 

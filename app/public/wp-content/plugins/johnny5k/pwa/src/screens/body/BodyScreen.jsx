@@ -1,10 +1,14 @@
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { bodyApi } from '../../api/modules/body'
+import { dashboardApi } from '../../api/modules/dashboard'
 import { ironquestApi } from '../../api/modules/ironquest'
+import { nutritionApi } from '../../api/modules/nutrition'
 import { onboardingApi } from '../../api/modules/onboarding'
 import { workoutApi } from '../../api/modules/workout'
 import ClearableInput from '../../components/ui/ClearableInput'
+import AppDialog from '../../components/ui/AppDialog'
+import AppIcon from '../../components/ui/AppIcon'
 import SupportIconButton from '../../components/ui/SupportIconButton'
 import { getAccessibleScrollBehavior } from '../../lib/accessibility'
 import { formatUsChartDate, formatUsShortDate } from '../../lib/dateFormat'
@@ -16,10 +20,19 @@ import { scrollAppToTop } from '../../lib/scrollAppToTop'
 import { buildThirtyDayPrediction } from '../../lib/thirtyDayPrediction'
 import { DAY_TYPE_OPTIONS } from '../../lib/trainingDayTypes'
 import { confirmGlobalAction, showGlobalToast } from '../../lib/uiFeedback'
+import { buildProgressDiaryDateKeys, buildProgressDiaryDays, formatProgressDiaryMealItem, formatProgressDiaryMealType } from './progressDiaryModel'
 import { useDashboardStore } from '../../store/dashboardStore'
 import { useJohnnyAssistantStore } from '../../store/johnnyAssistantStore'
 
 const EXERCISE_CALORIE_MULTIPLIER = 0.6
+const BODY_TABS = [
+  ['diary', 'Diary'],
+  ['weight', 'Weight'],
+  ['sleep', 'Sleep'],
+  ['steps', 'Steps'],
+  ['workouts', 'Workouts'],
+  ['cardio', 'Cardio'],
+]
 
 async function syncIronQuestDailyProgress(payload) {
   try {
@@ -39,6 +52,11 @@ export default function BodyScreen() {
   const [stepLogs, setStepLogs] = useState([])
   const [cardioLogs, setCardioLogs] = useState([])
   const [workoutLogs, setWorkoutLogs] = useState([])
+  const [diaryMealsByDate, setDiaryMealsByDate] = useState({})
+  const [diaryWorkoutDetails, setDiaryWorkoutDetails] = useState({})
+  const [diaryPhotos, setDiaryPhotos] = useState([])
+  const [diaryLoading, setDiaryLoading] = useState(false)
+  const [diaryError, setDiaryError] = useState('')
   const [metrics, setMetrics]   = useState({ weight: [], sleep: [], steps: [], cardio: [] })
   const [weightInput, setWt]    = useState('')
   const [weightDate, setWeightDate] = useState(todayInputValue())
@@ -72,6 +90,7 @@ export default function BodyScreen() {
 
   function handleOpenBodySupport() {
     const promptsByTab = {
+      diary: 'Show me how to read my diary here, including meals, workouts, photos, and daily trends.',
       weight: 'Show me where to log weight here and how to review the trend without overthinking it.',
       sleep: 'Show me how to log sleep here and where to review recovery.',
       steps: 'Show me how to log steps here and how to use this screen when movement is behind.',
@@ -89,11 +108,11 @@ export default function BodyScreen() {
 
   const refreshBodyData = useCallback(async () => {
     const [weightsResult, sleepResult, stepsResult, cardioResult, workoutsResult, metricsResult] = await Promise.allSettled([
-      bodyApi.getWeight(14),
-      bodyApi.getSleep(7),
-      bodyApi.getSteps(10),
-      bodyApi.getCardio(10),
-      workoutApi.getHistory(3, 10),
+      bodyApi.getWeight(21),
+      bodyApi.getSleep(14),
+      bodyApi.getSteps(14),
+      bodyApi.getCardio(14),
+      workoutApi.getHistory(14, 14),
       bodyApi.getMetrics(30),
     ])
 
@@ -154,7 +173,8 @@ export default function BodyScreen() {
   }, [])
 
   useEffect(() => {
-    const focusTab = String(location.state?.focusTab || '').trim()
+    const queryFocus = new URLSearchParams(location.search).get('focus')
+    const focusTab = String(location.state?.focusTab || queryFocus || '').trim()
     if (!focusTab) {
       return
     }
@@ -166,7 +186,7 @@ export default function BodyScreen() {
         key: `${location.key}:${focusTab}`,
       })
     })
-  }, [location.key, location.state?.focusTab])
+  }, [location.key, location.search, location.state?.focusTab])
 
   useEffect(() => {
     const notice = location.state?.johnnyActionNotice
@@ -461,10 +481,108 @@ export default function BodyScreen() {
     item => item.date
   )
   const weightSpark = getWeightSparkStyle(weights)
+  const diaryDateKeys = useMemo(() => buildProgressDiaryDateKeys({
+    weights,
+    sleepLogs,
+    stepLogs,
+    cardioLogs,
+    workoutLogs,
+    limit: 7,
+  }), [cardioLogs, sleepLogs, stepLogs, weights, workoutLogs])
+  const diarySignature = diaryDateKeys.join('|')
+  const diaryWorkoutSignature = workoutLogs.map(entry => String(entry?.id || '')).join('|')
+  const diaryDays = useMemo(() => buildProgressDiaryDays({
+    dateKeys: diaryDateKeys,
+    weights,
+    sleepLogs,
+    stepLogs,
+    cardioLogs,
+    workoutSummaries: workoutLogs,
+    workoutDetailsById: diaryWorkoutDetails,
+    mealsByDate: diaryMealsByDate,
+    photos: diaryPhotos,
+  }), [cardioLogs, diaryDateKeys, diaryMealsByDate, diaryPhotos, diaryWorkoutDetails, sleepLogs, stepLogs, weights, workoutLogs])
+
+  async function updateDiaryMeal(meal, items) {
+    if (!meal?.id) return
+    if (!items.length) {
+      await nutritionApi.deleteMeal(meal.id)
+    } else {
+      await nutritionApi.updateMeal(meal.id, {
+        meal_datetime: meal.meal_datetime,
+        meal_type: meal.meal_type,
+        source: meal.source,
+        items,
+      })
+    }
+    const dateKey = String(meal.meal_datetime || '').slice(0, 10)
+    setDiaryMealsByDate(current => ({
+      ...current,
+      [dateKey]: items.length
+        ? (current[dateKey] || []).map(entry => entry.id === meal.id ? { ...entry, items } : entry)
+        : (current[dateKey] || []).filter(entry => entry.id !== meal.id),
+    }))
+    showGlobalToast({ title: items.length ? 'Food updated' : 'Food deleted', message: 'Your Progress Diary is up to date.', tone: 'success' })
+  }
 
   function setRange(chart, days) {
     setChartRange(current => ({ ...current, [chart]: days }))
   }
+
+  useEffect(() => {
+    let cancelled = false
+
+    if (!diaryDateKeys.length) {
+      setDiaryMealsByDate({})
+      setDiaryWorkoutDetails({})
+      setDiaryPhotos([])
+      setDiaryError('')
+      setDiaryLoading(false)
+      return undefined
+    }
+
+    async function loadDiaryData() {
+      setDiaryLoading(true)
+      setDiaryError('')
+
+      try {
+        const relevantWorkouts = workoutLogs.filter(entry => diaryDateKeys.includes(String(entry?.session_date || '').slice(0, 10)))
+        const [mealResults, photoResult, workoutDetails] = await Promise.all([
+          Promise.all(diaryDateKeys.map(async dateKey => [dateKey, await nutritionApi.getMeals(dateKey).catch(() => [])])),
+          dashboardApi.photosList().catch(() => ({ photos: [] })),
+          Promise.all(relevantWorkouts.map(async summary => {
+            try {
+              return [summary.id, await workoutApi.get(summary.id)]
+            } catch {
+              return [summary.id, null]
+            }
+          })),
+        ])
+
+        if (cancelled) {
+          return
+        }
+
+        setDiaryMealsByDate(Object.fromEntries(mealResults))
+        setDiaryPhotos(Array.isArray(photoResult?.photos) ? photoResult.photos : [])
+        setDiaryWorkoutDetails(Object.fromEntries(workoutDetails))
+      } catch (err) {
+        if (!cancelled) {
+          setDiaryError(err?.message || 'Could not load the progress diary right now.')
+        }
+      } finally {
+        if (!cancelled) {
+          setDiaryLoading(false)
+        }
+      }
+    }
+
+    void loadDiaryData()
+
+    return () => {
+      cancelled = true
+    }
+  }, [diarySignature, diaryWorkoutSignature, diaryDateKeys, workoutLogs])
 
   const scrollToForm = useCallback((ref) => {
     requestAnimationFrame(() => {
@@ -582,7 +700,8 @@ export default function BodyScreen() {
   }, [pendingRouteFocus, scrollToForm, tab])
 
   return (
-    <div className="screen body-screen">
+    <div className={`screen body-screen${tab === 'diary' ? ' progress-observatory' : ''}`}>
+      {tab !== 'diary' ? <>
       <header className="screen-header body-screen-header support-icon-anchor">
         <SupportIconButton label="Get help with progress tracking" onClick={handleOpenBodySupport} />
         <div>
@@ -647,20 +766,36 @@ export default function BodyScreen() {
           </button>
         </div>
       </section>
+      </> : null}
 
-      <div className="tab-bar">
-        {[
-          ['weight', 'Weight'],
-          ['sleep', 'Sleep'],
-          ['steps', 'Steps'],
-          ['workouts', 'Workouts'],
-          ['cardio', 'Cardio'],
-        ].map(([key, label]) => (
+      {tab !== 'diary' ? <div className="tab-bar">
+        {BODY_TABS.map(([key, label]) => (
           <button key={key} className={`tab-btn ${tab === key ? 'active' : ''}`} onClick={() => setTab(key)}>
             {label}
           </button>
         ))}
-      </div>
+      </div> : null}
+
+      {tab === 'diary' && (
+        <DiaryTab
+          avgSleep={avgSleep}
+          days={diaryDays}
+          error={diaryError}
+          latestWeight={latestWeight}
+          loading={diaryLoading}
+          stepPct={stepPct}
+          stepSeries={stepSeries}
+          sleepSeries={sleepSeries}
+          weightSeries={weightSeries}
+          tabs={BODY_TABS}
+          onSelectTab={setTab}
+          onOpenActivityLog={() => navigate('/activity-log')}
+          onOpenPhotos={() => navigate('/progress-photos')}
+          onOpenSupport={handleOpenBodySupport}
+          onBackToJohnny={() => navigate('/dashboard')}
+          onUpdateMeal={updateDiaryMeal}
+        />
+      )}
 
       {tab === 'weight' && (
         <div className="body-tab">
@@ -744,7 +879,7 @@ export default function BodyScreen() {
             <SparklineCard
               values={sleepSeries}
               stroke="var(--accent2)"
-              fill="rgba(0, 188, 222, 0.12)"
+              fill="var(--progress-sleep-fill)"
               referenceValue={sleepTarget}
               referenceLabel={`${sleepTarget}h goal`}
               emptyLabel="No sleep trend yet"
@@ -818,7 +953,7 @@ export default function BodyScreen() {
             <SparklineCard
               values={stepSeries}
               stroke="var(--accent3)"
-              fill="rgba(255, 56, 160, 0.12)"
+              fill="var(--progress-movement-fill)"
               referenceValue={stepTarget}
               referenceLabel={`${Number(stepTarget).toLocaleString()} goal`}
               emptyLabel="No step trend yet"
@@ -924,6 +1059,416 @@ export default function BodyScreen() {
     )}
     </div>
   )
+}
+
+function DiaryTab({ days, loading, error, latestWeight, avgSleep, stepPct, weightSeries, sleepSeries, stepSeries, tabs, onSelectTab, onOpenActivityLog, onOpenPhotos, onOpenSupport, onBackToJohnny, onUpdateMeal }) {
+  const mealCount = days.reduce((sum, day) => sum + day.meals.length, 0)
+
+  return (
+    <div className="body-tab progress-diary-tab progress-observatory-shell">
+      <div className="progress-observatory-ambient" aria-hidden="true">
+        <span className="progress-observatory-glow glow-one" />
+        <span className="progress-observatory-glow glow-two" />
+      </div>
+
+      <header className="progress-observatory-header support-icon-anchor">
+        <div className="progress-observatory-title">
+          <button type="button" className="progress-observatory-back" onClick={onBackToJohnny}>
+            <span aria-hidden="true">←</span>
+            Back to Johnny
+          </button>
+          <span className="progress-observatory-kicker">Progress observatory</span>
+          <h1>Progress Diary</h1>
+          <p>Your body, recovery, fuel, and training—assembled by day.</p>
+        </div>
+        <div className="progress-observatory-actions">
+          <button type="button" className="progress-observatory-icon-button" onClick={onOpenSupport} aria-label="Get help with progress tracking">?</button>
+          <button type="button" className="progress-observatory-action" onClick={onOpenPhotos}>Photos</button>
+          <button type="button" className="progress-observatory-action primary" onClick={onOpenActivityLog}>Activity log</button>
+        </div>
+
+        <div className="progress-observatory-vitals" aria-label="Current progress snapshot">
+          <div><span>Current weight</span><strong>{latestWeight !== '—' ? `${latestWeight} lb` : '—'}</strong></div>
+          <div><span>Average sleep</span><strong>{avgSleep ? `${avgSleep.toFixed(1)} h` : '—'}</strong></div>
+          <div><span>Movement pace</span><strong>{stepPct}%</strong></div>
+          <div><span>Diary signal</span><strong>{days.length ? `${days.length} days` : 'Waiting'}</strong></div>
+        </div>
+      </header>
+
+      <nav className="progress-observatory-tabs" aria-label="Progress views">
+        {tabs.map(([key, label]) => (
+          <button key={key} type="button" className={key === 'diary' ? 'active' : ''} onClick={() => onSelectTab(key)}>
+            {label}
+          </button>
+        ))}
+      </nav>
+
+      <main className="progress-observatory-scroll">
+        <NutritionDiaryLedger days={days} loading={loading} onUpdateMeal={onUpdateMeal} />
+
+        <section className="progress-observatory-trends" aria-labelledby="progress-signals-title">
+          <div className="progress-observatory-section-heading">
+            <div>
+              <span className="progress-observatory-kicker">Live signals</span>
+              <h2 id="progress-signals-title">The shape of your recent days</h2>
+            </div>
+            <span>{mealCount} meals across {days.length} diary days</span>
+          </div>
+          <div className="progress-diary-chart-grid">
+            <article className="progress-observatory-signal">
+              <header><span>01</span><div><h3>Weight</h3><p>Recent weigh-ins</p></div></header>
+              <SparklineCard values={weightSeries} stroke="var(--accent)" fill="var(--progress-weight-fill)" emptyLabel="No weight trend yet" tickLabels={buildTickLabels(weightSeries)} />
+            </article>
+            <article className="progress-observatory-signal">
+              <header><span>02</span><div><h3>Sleep</h3><p>Recent recovery</p></div></header>
+              <SparklineCard values={sleepSeries} stroke="var(--accent2)" fill="var(--progress-sleep-fill)" emptyLabel="No sleep trend yet" tickLabels={buildTickLabels(sleepSeries)} />
+            </article>
+            <article className="progress-observatory-signal">
+              <header><span>03</span><div><h3>Movement</h3><p>Recent daily pace</p></div></header>
+              <SparklineCard values={stepSeries} stroke="var(--success)" fill="var(--progress-movement-fill)" emptyLabel="No movement trend yet" tickLabels={buildTickLabels(stepSeries)} />
+            </article>
+          </div>
+        </section>
+
+        {loading ? (
+          <section className="progress-observatory-state" role="status">
+            <span className="progress-observatory-loader" aria-hidden="true" />
+            <div><h2>Assembling your diary</h2><p>Connecting meals, workouts, body logs, and photo history.</p></div>
+          </section>
+        ) : null}
+
+        {error ? (
+          <section className="progress-observatory-state error" role="alert">
+            <div><h2>The diary signal dropped</h2><p>{error}</p></div>
+          </section>
+        ) : null}
+
+        {!loading && !error && !days.length ? (
+          <section className="progress-observatory-state empty">
+            <span className="progress-observatory-state-index">00</span>
+            <div><h2>Your first floor is waiting</h2><p>Log a meal, training session, night of sleep, weigh-in, or progress photo. Johnny will assemble it here automatically.</p></div>
+            <button type="button" className="progress-observatory-action primary" onClick={onOpenActivityLog}>Log activity</button>
+          </section>
+        ) : null}
+
+        {!loading && !error && days.length ? (
+          <section className="progress-observatory-diary" aria-labelledby="diary-timeline-title">
+            <aside className="progress-observatory-date-rail">
+              <span className="progress-observatory-kicker">Timeline</span>
+              <h2 id="diary-timeline-title">Recorded days</h2>
+              <nav aria-label="Diary dates">
+                {days.map((day, index) => (
+                  <a key={day.dateKey} href={`#progress-day-${day.dateKey}`} className={index === 0 ? 'active' : ''}>
+                    <span>{String(index + 1).padStart(2, '0')}</span>
+                    <strong>{day.dateLabel}</strong>
+                    <small>{day.loggedZones}/4 signals</small>
+                  </a>
+                ))}
+              </nav>
+            </aside>
+
+            <div className="progress-diary-day-list">
+              {days.map((day, index) => (
+                <article key={day.dateKey} id={`progress-day-${day.dateKey}`} className="progress-diary-day-card">
+                  <span className="progress-diary-floor-number" aria-hidden="true">{String(index + 1).padStart(2, '0')}</span>
+                  <header className="progress-diary-day-header">
+                    <div><span>{index === 0 ? 'Latest entry' : 'Recorded day'}</span><h3>{day.dateLabel}</h3><p>{day.headline}</p></div>
+                    <strong>{day.loggedZones}<small>/4 signals</small></strong>
+                  </header>
+
+                  <div className="progress-diary-day-topline">
+                    <span><small>Weight</small><strong>{day.weight ? `${day.weight.weight_lb} lb` : '—'}</strong></span>
+                    <span><small>Sleep</small><strong>{day.sleep ? `${day.sleep.hours_sleep} h` : '—'}</strong></span>
+                    <span><small>Steps</small><strong>{day.steps ? Number(day.steps.steps).toLocaleString() : '—'}</strong></span>
+                    <span><small>Fuel</small><strong>{day.mealCalories ? `${day.mealCalories} cal` : '—'}</strong></span>
+                  </div>
+
+                  <div className="progress-diary-accordion-list">
+                <details className="progress-diary-accordion" open={index === 0}>
+                  <summary>
+                    <span>Recovery</span>
+                    <span className="progress-diary-accordion-copy">Weight, sleep, steps, and cardio</span>
+                  </summary>
+                  <div className="progress-diary-accordion-body">
+                    <div className="progress-diary-row"><strong>Weight</strong><span>{day.weight ? `${day.weight.weight_lb} lb` : 'No weight logged'}</span></div>
+                    <div className="progress-diary-row"><strong>Sleep</strong><span>{day.sleep ? `${day.sleep.hours_sleep} h • ${day.sleep.sleep_quality || 'logged'}` : 'No sleep logged'}</span></div>
+                    <div className="progress-diary-row"><strong>Steps</strong><span>{day.steps ? `${Number(day.steps.steps).toLocaleString()} steps` : 'No steps logged'}</span></div>
+                    <div className="progress-diary-row"><strong>Cardio</strong><span>{day.cardio.length ? day.cardio.map(entry => `${formatProgressDiaryMealType(entry.cardio_type)} ${entry.duration_minutes} min`).join(' • ') : 'No cardio logged'}</span></div>
+                  </div>
+                </details>
+
+                <details className="progress-diary-accordion" open={index === 0}>
+                  <summary>
+                    <span>Nutrition</span>
+                    <span className="progress-diary-accordion-copy">{day.meals.length ? `${day.meals.length} meals • ${day.mealCalories} cal` : 'No meals logged'}</span>
+                  </summary>
+                  <div className="progress-diary-accordion-body">
+                    {day.meals.length ? day.meals.map(meal => (
+                      <div key={meal.id || `${day.dateKey}-${meal.meal_type}`} className="progress-diary-meal-block">
+                        <h4>{formatProgressDiaryMealType(meal.meal_type)}</h4>
+                        <p>{sumProgressDiaryMealCalories(meal)} cal</p>
+                        <ul className="progress-diary-bullet-list">
+                          {(Array.isArray(meal.items) ? meal.items : []).map((item, itemIndex) => (
+                            <li key={item.id || itemIndex}>{formatProgressDiaryMealItem(item)}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )) : <p className="progress-diary-empty">No meals logged for this day.</p>}
+                  </div>
+                </details>
+
+                <details className="progress-diary-accordion" open={index === 0}>
+                  <summary>
+                    <span>Training</span>
+                    <span className="progress-diary-accordion-copy">{day.workouts.length ? `${day.workouts.length} workouts` : day.cardio.length ? `${day.cardio.length} cardio entries` : 'No exercise logged'}</span>
+                  </summary>
+                  <div className="progress-diary-accordion-body">
+                    {day.workouts.length ? day.workouts.map(workout => (
+                      <div key={workout.id || workout.title} className="progress-diary-workout-block">
+                        <h4>{workout.title}</h4>
+                        <p>{[workout.durationLabel, workout.completedSetLabel].filter(Boolean).join(' • ')}</p>
+                        {workout.exercises.length ? (
+                          <ul className="progress-diary-bullet-list">
+                            {workout.exercises.map(exercise => (
+                              <li key={exercise.key}>{exercise.name}{exercise.setSummary ? ` • ${exercise.setSummary}` : ''}</li>
+                            ))}
+                          </ul>
+                        ) : <p className="progress-diary-empty">No logged working sets saved for this workout.</p>}
+                      </div>
+                    )) : <p className="progress-diary-empty">No workout recorded for this day.</p>}
+                  </div>
+                </details>
+
+                <details className="progress-diary-accordion" open={index === 0}>
+                  <summary>
+                    <span>Progress photos</span>
+                    <span className="progress-diary-accordion-copy">{day.photos.length ? `${day.photos.length} logged` : 'No photos logged'}</span>
+                  </summary>
+                  <div className="progress-diary-accordion-body">
+                    {day.photos.length ? (
+                      <ul className="progress-diary-bullet-list progress-diary-photo-list">
+                        {day.photos.map(photo => (
+                          <li key={photo.id || `${photo.angle}-${day.dateKey}`}>{formatProgressDiaryMealType(photo.angle)} angle captured</li>
+                        ))}
+                      </ul>
+                    ) : <p className="progress-diary-empty">No progress photos logged for this day.</p>}
+                  </div>
+                </details>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
+        ) : null}
+      </main>
+    </div>
+  )
+}
+
+function NutritionDiaryLedger({ days, loading, onUpdateMeal }) {
+  const nutritionDays = days.filter(day => day.meals.length)
+  const ledgerTotals = nutritionDays.reduce((totals, day) => addMacroTotals(totals, getProgressDiaryDayMacros(day)), emptyMacroTotals())
+
+  return (
+    <section className="progress-nutrition-ledger" aria-labelledby="progress-nutrition-title">
+      <div className="progress-observatory-section-heading">
+        <div>
+          <span className="progress-observatory-kicker">Fuel ledger</span>
+          <h2 id="progress-nutrition-title">What you ate</h2>
+        </div>
+        <span>{nutritionDays.length ? `${Math.round(ledgerTotals.calories).toLocaleString()} cal • ${Math.round(ledgerTotals.protein)}g protein` : 'Meals and macros by day'}</span>
+      </div>
+
+      {loading ? <div className="progress-nutrition-empty" role="status">Connecting your nutrition history…</div> : null}
+      {!loading && !nutritionDays.length ? <div className="progress-nutrition-empty">No meals are logged in these diary days yet.</div> : null}
+
+      {!loading && nutritionDays.length ? <div className="progress-nutrition-day-list">
+        {nutritionDays.map((day, dayIndex) => {
+          const dayTotals = getProgressDiaryDayMacros(day)
+          return (
+            <details className="progress-nutrition-day" key={day.dateKey} open={dayIndex === 0}>
+              <summary>
+                <span><small>{day.dateLabel}</small><strong>{day.meals.length} meal{day.meals.length === 1 ? '' : 's'} logged</strong></span>
+                <span className="progress-nutrition-day-summary">{Math.round(dayTotals.calories)} cal • P {Math.round(dayTotals.protein)}g • C {Math.round(dayTotals.carbs)}g • F {Math.round(dayTotals.fat)}g</span>
+              </summary>
+              <div className="progress-nutrition-day-body">
+                <div className="progress-nutrition-macro-grid" aria-label={`${day.dateLabel} nutrition totals`}>
+                  <MacroLedgerStat label="Calories" value={Math.round(dayTotals.calories).toLocaleString()} />
+                  <MacroLedgerStat label="Protein" value={`${Math.round(dayTotals.protein)}g`} />
+                  <MacroLedgerStat label="Carbs" value={`${Math.round(dayTotals.carbs)}g`} />
+                  <MacroLedgerStat label="Fat" value={`${Math.round(dayTotals.fat)}g`} />
+                </div>
+                <div className="progress-nutrition-meal-list">
+                  {day.meals.map((meal, mealIndex) => {
+                    const mealTotals = getProgressDiaryMealMacros(meal)
+                    const items = Array.isArray(meal?.items) ? meal.items : []
+                    return (
+                      <details className="progress-nutrition-meal" key={meal.id || `${day.dateKey}-${meal.meal_type}-${mealIndex}`} open={dayIndex === 0 && mealIndex === 0}>
+                        <summary>
+                          <span><strong>{formatProgressDiaryMealType(meal.meal_type)}</strong><small>{items.length} item{items.length === 1 ? '' : 's'}</small></span>
+                          <span>{Math.round(mealTotals.calories)} cal • {Math.round(mealTotals.protein)}g protein</span>
+                        </summary>
+                        <div className="progress-nutrition-food-list">
+                          {items.length ? items.map((item, itemIndex) => {
+                            const itemTotals = getProgressDiaryItemMacros(item)
+                            return <ProgressDiaryFoodRow
+                              item={item}
+                              itemIndex={itemIndex}
+                              itemTotals={itemTotals}
+                              key={item.id || `${meal.id || meal.meal_type}-${itemIndex}`}
+                              onDelete={() => onUpdateMeal(meal, items.filter((_, index) => index !== itemIndex))}
+                              onSave={nextItem => onUpdateMeal(meal, items.map((entry, index) => index === itemIndex ? nextItem : entry))}
+                            />
+                          }) : <p className="progress-diary-empty">No individual foods were saved for this meal.</p>}
+                        </div>
+                      </details>
+                    )
+                  })}
+                </div>
+              </div>
+            </details>
+          )
+        })}
+      </div> : null}
+    </section>
+  )
+}
+
+function ProgressDiaryFoodRow({ item, itemTotals, onSave, onDelete }) {
+  const [offset, setOffset] = useState(0)
+  const [editing, setEditing] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const dragRef = useRef(null)
+  const offsetRef = useRef(0)
+
+  function moveTo(value) {
+    offsetRef.current = value
+    setOffset(value)
+  }
+
+  function handlePointerDown(event) {
+    if (event.pointerType === 'mouse' && event.button !== 0) return
+    dragRef.current = { id: event.pointerId, x: event.clientX, y: event.clientY, horizontal: false }
+  }
+
+  function handlePointerMove(event) {
+    const drag = dragRef.current
+    if (!drag || drag.id !== event.pointerId) return
+    const x = event.clientX - drag.x
+    const y = event.clientY - drag.y
+    if (!drag.horizontal && Math.abs(x) < 8) return
+    if (!drag.horizontal && Math.abs(y) > Math.abs(x)) {
+      dragRef.current = null
+      return
+    }
+    drag.horizontal = true
+    event.currentTarget.setPointerCapture?.(event.pointerId)
+    moveTo(Math.max(-140, Math.min(112, x)))
+  }
+
+  function handlePointerEnd(event) {
+    const drag = dragRef.current
+    if (!drag || drag.id !== event.pointerId) return
+    dragRef.current = null
+    if (offsetRef.current < -72) {
+      moveTo(0)
+      setEditing(true)
+    } else if (offsetRef.current > 64) {
+      moveTo(96)
+    } else {
+      moveTo(0)
+    }
+  }
+
+  async function deleteItem() {
+    const confirmed = await confirmGlobalAction({
+      title: 'Delete this food?',
+      message: `${item.food_name || item.canonical_name || 'This food'} will be removed from the Progress Diary.`,
+      confirmLabel: 'Delete food',
+      cancelLabel: 'Keep food',
+      tone: 'danger',
+    })
+    if (!confirmed) {
+      moveTo(0)
+      return
+    }
+    setDeleting(true)
+    try { await onDelete() } finally { setDeleting(false) }
+  }
+
+  return <>
+    <div className="progress-diary-food-swipe">
+      <button type="button" className="progress-diary-food-delete" onClick={deleteItem} disabled={deleting}>
+        <AppIcon name="trash" />
+        <span>{deleting ? 'Deleting' : 'Delete'}</span>
+      </button>
+      <span className="progress-diary-food-edit-cue" aria-hidden="true">Edit</span>
+      <div
+        className="progress-nutrition-food-row progress-diary-food-content"
+        style={{ transform: `translate3d(${offset}px, 0, 0)` }}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerEnd}
+        onPointerCancel={handlePointerEnd}
+      >
+        <span><strong>{item.food_name || item.canonical_name || item.name || 'Food'}</strong><small>{formatProgressDiaryServing(item)}</small></span>
+        <span><strong>{Math.round(itemTotals.calories)} cal</strong><small>P {formatMacroNumber(itemTotals.protein)}g • C {formatMacroNumber(itemTotals.carbs)}g • F {formatMacroNumber(itemTotals.fat)}g</small></span>
+        <button type="button" className="progress-diary-food-edit-button" onClick={() => setEditing(true)}>Edit</button>
+      </div>
+    </div>
+    <ProgressDiaryFoodEditor item={item} open={editing} onClose={() => setEditing(false)} onSave={async nextItem => { await onSave(nextItem); setEditing(false) }} />
+  </>
+}
+
+function ProgressDiaryFoodEditor({ item, open, onClose, onSave }) {
+  const [draft, setDraft] = useState(() => buildProgressDiaryFoodDraft(item))
+  const [saving, setSaving] = useState(false)
+  useEffect(() => { if (open) setDraft(buildProgressDiaryFoodDraft(item)) }, [item, open])
+  const update = (key, value) => setDraft(current => ({ ...current, [key]: value }))
+
+  return <AppDialog ariaLabel="Edit Progress Diary food" className="progress-diary-food-editor" dismissible={!saving} onClose={onClose} open={open} overlayClassName="progress-diary-food-editor-shell" size="lg">
+    <form onSubmit={async event => {
+      event.preventDefault()
+      if (saving || !draft.food_name.trim()) return
+      setSaving(true)
+      try { await onSave(buildProgressDiaryFoodPayload(item, draft)) } finally { setSaving(false) }
+    }}>
+      <header>
+        <button type="button" className="btn-ghost small" onClick={onClose} disabled={saving}>Cancel</button>
+        <div><span>Progress Diary</span><h2>Edit food</h2></div>
+        <button type="submit" className="btn-primary small" disabled={saving || !draft.food_name.trim()}>{saving ? 'Saving…' : 'Save'}</button>
+      </header>
+      <div className="progress-diary-food-editor-scroll">
+        <p>Update this entry without leaving your diary.</p>
+        <label>Food name<ClearableInput value={draft.food_name} onChange={event => update('food_name', event.target.value)} required /></label>
+        <div className="progress-diary-food-editor-grid">
+          {[
+            ['serving_amount', 'Servings'], ['serving_unit', 'Serving unit'], ['calories', 'Calories'],
+            ['protein_g', 'Protein (g)'], ['carbs_g', 'Carbs (g)'], ['fat_g', 'Fat (g)'],
+            ['fiber_g', 'Fiber (g)'], ['sugar_g', 'Sugar (g)'], ['sodium_mg', 'Sodium (mg)'],
+          ].map(([key, label]) => <label key={key}>{label}<input type={key === 'serving_unit' ? 'text' : 'number'} min={key === 'serving_unit' ? undefined : '0'} step="0.01" inputMode={key === 'serving_unit' ? undefined : 'decimal'} value={draft[key]} onChange={event => update(key, event.target.value)} /></label>)}
+        </div>
+      </div>
+    </form>
+  </AppDialog>
+}
+
+function buildProgressDiaryFoodDraft(item) {
+  return {
+    food_name: String(item?.food_name || item?.canonical_name || item?.name || ''),
+    serving_amount: String(item?.serving_amount ?? 1), serving_unit: String(item?.serving_unit || 'serving'),
+    calories: String(item?.calories ?? 0), protein_g: String(item?.protein_g ?? 0), carbs_g: String(item?.carbs_g ?? 0), fat_g: String(item?.fat_g ?? 0),
+    fiber_g: String(item?.fiber_g ?? 0), sugar_g: String(item?.sugar_g ?? 0), sodium_mg: String(item?.sodium_mg ?? 0),
+  }
+}
+
+function buildProgressDiaryFoodPayload(item, draft) {
+  const number = key => Number(draft[key]) || 0
+  return { ...item, food_name: draft.food_name.trim(), serving_amount: number('serving_amount') || 1, serving_unit: draft.serving_unit.trim() || 'serving', calories: number('calories'), protein_g: number('protein_g'), carbs_g: number('carbs_g'), fat_g: number('fat_g'), fiber_g: number('fiber_g'), sugar_g: number('sugar_g'), sodium_mg: number('sodium_mg') }
+}
+
+function MacroLedgerStat({ label, value }) {
+  return <div><span>{label}</span><strong>{value}</strong></div>
 }
 
 function WorkoutHistoryTab({ workoutLogs, currentWeight, invalidate, onRefreshSnapshot, onRefreshBodyData, onFlash, focusRequestKey = '', onFocusHandled = null }) {
@@ -1307,8 +1852,8 @@ function CardioTab({ invalidate, cardioLogs, cardioSeries, cardioRange, currentW
         </div>
         <SparklineCard
           values={cardioSeries}
-          stroke="var(--yellow)"
-          fill="rgba(255, 208, 0, 0.18)"
+          stroke="var(--accent)"
+          fill="var(--progress-weight-fill)"
           emptyLabel="No cardio trend yet"
           tickLabels={buildTickLabels(cardioSeries)}
           tooltipFormatter={point => `${formatGraphDate(point.label)}: ${Math.round(point.value)} min cardio`}
@@ -1570,21 +2115,21 @@ function getWeightTrend(weights) {
 
 function getWeightSparkStyle(weights) {
   if (weights.length < 2) {
-    return { stroke: 'var(--accent)', fill: 'rgba(255, 85, 48, 0.12)' }
+    return { stroke: 'var(--accent)', fill: 'var(--progress-weight-fill)' }
   }
 
   const latest = Number(weights[0].weight_lb)
   const prior = Number(weights[1].weight_lb)
 
   if (latest > prior) {
-    return { stroke: 'var(--accent)', fill: 'rgba(255, 85, 48, 0.12)' }
+    return { stroke: 'var(--accent)', fill: 'var(--progress-weight-fill)' }
   }
 
   if (latest < prior) {
-    return { stroke: 'var(--success)', fill: 'rgba(34, 196, 126, 0.16)' }
+    return { stroke: 'var(--success)', fill: 'var(--progress-movement-fill)' }
   }
 
-  return { stroke: 'var(--accent2)', fill: 'rgba(0, 188, 222, 0.12)' }
+  return { stroke: 'var(--accent2)', fill: 'var(--progress-sleep-fill)' }
 }
 
 function formatDate(value) {
@@ -1689,6 +2234,61 @@ function formatSparkValue(value) {
 
 function formatSparkTooltip(point) {
   return `${formatDate(point.label)}: ${formatSparkValue(point.value)}`
+}
+
+function sumProgressDiaryMealCalories(meal) {
+  return (Array.isArray(meal?.items) ? meal.items : []).reduce((sum, item) => sum + Number(item?.calories || 0), 0)
+}
+
+function emptyMacroTotals() {
+  return { calories: 0, protein: 0, carbs: 0, fat: 0 }
+}
+
+function addMacroTotals(left, right) {
+  return {
+    calories: left.calories + right.calories,
+    protein: left.protein + right.protein,
+    carbs: left.carbs + right.carbs,
+    fat: left.fat + right.fat,
+  }
+}
+
+function getProgressDiaryItemMacros(item) {
+  return {
+    calories: Number(item?.calories || 0),
+    protein: Number(item?.protein_g || 0),
+    carbs: Number(item?.carbs_g || 0),
+    fat: Number(item?.fat_g || 0),
+  }
+}
+
+function getProgressDiaryMealMacros(meal) {
+  const items = Array.isArray(meal?.items) ? meal.items : []
+  if (items.length) {
+    return items.reduce((totals, item) => addMacroTotals(totals, getProgressDiaryItemMacros(item)), emptyMacroTotals())
+  }
+
+  return {
+    calories: Number(meal?.calories || meal?.total_calories || 0),
+    protein: Number(meal?.protein_g || meal?.total_protein_g || 0),
+    carbs: Number(meal?.carbs_g || meal?.total_carbs_g || 0),
+    fat: Number(meal?.fat_g || meal?.total_fat_g || 0),
+  }
+}
+
+function getProgressDiaryDayMacros(day) {
+  return day.meals.reduce((totals, meal) => addMacroTotals(totals, getProgressDiaryMealMacros(meal)), emptyMacroTotals())
+}
+
+function formatProgressDiaryServing(item) {
+  const amount = String(item?.serving_amount || item?.quantity || '').trim()
+  const unit = String(item?.serving_unit || '').trim()
+  return [amount, unit].filter(Boolean).join(' ') || 'Serving not specified'
+}
+
+function formatMacroNumber(value) {
+  const numeric = Number(value || 0)
+  return Number.isInteger(numeric) ? String(numeric) : numeric.toFixed(1).replace(/\.0$/, '')
 }
 
 function estimateCardioCalories({ cardioType, intensity, durationMinutes, weightLb }) {

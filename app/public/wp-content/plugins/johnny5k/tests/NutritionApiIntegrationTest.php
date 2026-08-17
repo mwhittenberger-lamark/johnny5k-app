@@ -337,6 +337,55 @@ class NutritionApiIntegrationTest extends ApiIntegrationTestCase {
 		$this->assertSame( 15, $data[0]['id'] );
 	}
 
+	public function test_beverage_search_preserves_distinct_serving_sizes(): void {
+		$db = $this->wpdb();
+		$GLOBALS['johnny5k_test_current_user_id'] = 7;
+		$drink = static function ( int $id, string $size, int $calories ): object {
+			return (object) [
+				'id' => $id, 'canonical_name' => 'Dr Pepper', 'brand' => 'Dr Pepper',
+				'serving_size' => $size, 'calories' => $calories, 'protein_g' => 0,
+				'carbs_g' => $calories / 4, 'fat_g' => 0, 'fiber_g' => 0,
+				'sugar_g' => $calories / 4, 'sodium_mg' => 55, 'micros_json' => '[]',
+				'is_beverage' => 1, 'match_type' => 'saved_food',
+			];
+		};
+		$db->expectGetResults( 'FROM wp_fit_foods', [ $drink( 21, '12 fl oz can', 150 ), $drink( 22, '20 fl oz bottle', 250 ) ] );
+		$db->expectGetResults( 'FROM wp_fit_meal_items mi', [] );
+
+		$req = new \WP_REST_Request( 'GET', '/fit/v1/nutrition/foods/search' );
+		$req->set_param( 'q', 'dr pepper' );
+		$req->set_param( 'beverage_only', true );
+		$data = TestAiMealController::search_foods( $req )->get_data();
+
+		$this->assertCount( 2, $data );
+		$this->assertSame( [ '12 fl oz can', '20 fl oz bottle' ], array_column( $data, 'serving_size' ) );
+	}
+
+	public function test_beverage_search_preserves_distinct_recent_serving_sizes(): void {
+		$db = $this->wpdb();
+		$GLOBALS['johnny5k_test_current_user_id'] = 7;
+		$db->expectGetResults( 'FROM wp_fit_foods', [] );
+		$recent = static function ( int $id, string $size, int $calories ): array {
+			return [
+				'id' => $id, 'food_id' => null, 'food_name' => 'Dr Pepper', 'serving_amount' => 1,
+				'serving_unit' => $size, 'calories' => $calories, 'protein_g' => 0,
+				'carbs_g' => $calories / 4, 'fat_g' => 0, 'fiber_g' => 0,
+				'sugar_g' => $calories / 4, 'sodium_mg' => 55, 'micros_json' => '[]',
+				'is_beverage' => 1, 'meal_id' => 30 + $id, 'meal_datetime' => '2026-08-15 12:00:00',
+				'source_json' => wp_json_encode( [ 'type' => 'manual', 'brand' => 'Dr Pepper' ] ),
+			];
+		};
+		$db->expectGetResults( 'FROM wp_fit_meal_items mi', [ $recent( 1, '12 fl oz can', 150 ), $recent( 2, '20 fl oz bottle', 250 ) ] );
+
+		$req = new \WP_REST_Request( 'GET', '/fit/v1/nutrition/foods/search' );
+		$req->set_param( 'q', 'dr pepper' );
+		$req->set_param( 'beverage_only', true );
+		$data = TestAiMealController::search_foods( $req )->get_data();
+
+		$this->assertCount( 2, $data );
+		$this->assertSame( [ '12 fl oz can', '20 fl oz bottle' ], array_column( $data, 'serving_size' ) );
+	}
+
 	public function test_meal_logging_with_malformed_items_returns_400(): void {
 		$GLOBALS['johnny5k_test_current_user_id'] = 7;
 

@@ -4,6 +4,7 @@ import { aiApi } from '../../api/modules/ai'
 import { ironquestApi } from '../../api/modules/ironquest'
 import { nutritionApi } from '../../api/modules/nutrition'
 import AppIcon from '../../components/ui/AppIcon'
+import AppDialog from '../../components/ui/AppDialog'
 import AppToast from '../../components/ui/AppToast'
 import CoachingSummaryPanel from '../../components/ui/CoachingSummaryPanel'
 import ClearableInput from '../../components/ui/ClearableInput'
@@ -12,6 +13,7 @@ import ErrorState from '../../components/ui/ErrorState'
 import Field from '../../components/ui/Field'
 import OfflineState from '../../components/ui/OfflineState'
 import SupportIconButton from '../../components/ui/SupportIconButton'
+import LabelScanPromptPanel from '../../components/nutrition/LabelScanPromptPanel'
 import { getAccessibleScrollBehavior } from '../../lib/accessibility'
 import { buildCoachingPromptOptions, buildCoachingSummary, runCoachingAction } from '../../lib/coachingSummary'
 import { trackCoachingPromptOpen } from '../../lib/coaching/coachingAnalytics'
@@ -71,6 +73,51 @@ const PANTRY_CATEGORY_CONFIG = [
   { key: 'snacks', label: 'Snacks', keywords: ['chips', 'cracker', 'bar', 'trail mix', 'popcorn', 'nuts', 'cookie'] },
   { key: 'drinks', label: 'Drinks', keywords: ['water', 'juice', 'coffee', 'tea', 'soda', 'drink', 'electrolyte'] },
 ]
+const SAVED_FOOD_CATEGORY_LABELS = { staples: 'Staples' }
+const SAVED_FOOD_MACRO_FILTERS = [
+  { key: 'protein', label: 'Protein' },
+  { key: 'carbs', label: 'Carbs' },
+  { key: 'fat', label: 'Fat' },
+]
+
+function getSavedFoodCategoryLabel(key) {
+  const normalised = String(key || '').trim()
+  if (!normalised) return ''
+  return SAVED_FOOD_CATEGORY_LABELS[normalised] || normalised.replace(/[_-]+/g, ' ').replace(/\b\w/g, letter => letter.toUpperCase())
+}
+
+function getSavedFoodCategoryOptions(savedFoods) {
+  const keys = new Set(['staples'])
+  ;(Array.isArray(savedFoods) ? savedFoods : []).forEach(food => {
+    if (food?.category) keys.add(food.category)
+  })
+  return Array.from(keys)
+    .map(key => ({ key, label: getSavedFoodCategoryLabel(key) }))
+    .sort((a, b) => a.label.localeCompare(b.label))
+}
+
+function getDominantMacro(food) {
+  const protein = Number(food?.protein_g) || 0
+  const carbs = Number(food?.carbs_g) || 0
+  const fat = Number(food?.fat_g) || 0
+  if (protein <= 0 && carbs <= 0 && fat <= 0) return ''
+  if (protein >= carbs && protein >= fat) return 'protein'
+  if (carbs >= protein && carbs >= fat) return 'carbs'
+  return 'fat'
+}
+
+function getDominantMacroLabel(food) {
+  const key = getDominantMacro(food)
+  return SAVED_FOOD_MACRO_FILTERS.find(macro => macro.key === key)?.label || ''
+}
+
+function filterSavedFoods(savedFoods, categoryFilter, macroFilter) {
+  return (Array.isArray(savedFoods) ? savedFoods : []).filter(food => {
+    if (categoryFilter !== 'all' && (food?.category || '') !== categoryFilter) return false
+    if (macroFilter !== 'all' && getDominantMacro(food) !== macroFilter) return false
+    return true
+  })
+}
 const PANTRY_SORT_OPTIONS = [
   { value: 'name', label: 'A-Z' },
   { value: 'updated', label: 'Recently updated' },
@@ -180,6 +227,8 @@ export default function NutritionScreen() {
     recipeFiltersOpen,
     recipeMealFilter,
     recipeSearchQuery,
+    savedFoodCategoryFilter,
+    savedFoodMacroFilter,
     setActiveView,
     setCheckedGapItems,
     setCollapsedPantryCategories,
@@ -193,6 +242,8 @@ export default function NutritionScreen() {
     setRecipeFiltersOpen,
     setRecipeMealFilter,
     setRecipeSearchQuery,
+    setSavedFoodCategoryFilter,
+    setSavedFoodMacroFilter,
     setShowMicros,
     showMicros,
   } = useNutritionPlanningViewState({
@@ -336,10 +387,15 @@ export default function NutritionScreen() {
   const mergedMeals = useMemo(() => mergeDailyMealsByType(meals), [meals])
   const orderedRecentFoods = useMemo(() => sortSavedFoodsAlphabetically(recentFoods), [recentFoods])
   const orderedSavedFoods = useMemo(() => sortSavedFoodsAlphabetically(savedFoods), [savedFoods])
+  const savedFoodCategoryOptions = useMemo(() => getSavedFoodCategoryOptions(savedFoods), [savedFoods])
+  const filteredSavedFoods = useMemo(
+    () => filterSavedFoods(orderedSavedFoods, savedFoodCategoryFilter, savedFoodMacroFilter),
+    [orderedSavedFoods, savedFoodCategoryFilter, savedFoodMacroFilter],
+  )
   const orderedSavedMeals = useMemo(() => sortSavedMealsAlphabetically(savedMeals), [savedMeals])
   const visibleMeals = useMemo(() => getVisibleItems(mergedMeals, expandedSections.meals, 4), [expandedSections.meals, mergedMeals])
   const visibleRecentFoods = useMemo(() => getVisibleItems(orderedRecentFoods, expandedSections.recentFoods, 4), [expandedSections.recentFoods, orderedRecentFoods])
-  const visibleSavedFoods = useMemo(() => getVisibleItems(orderedSavedFoods, expandedSections.savedFoods, 4), [expandedSections.savedFoods, orderedSavedFoods])
+  const visibleSavedFoods = useMemo(() => getVisibleItems(filteredSavedFoods, expandedSections.savedFoods, 4), [expandedSections.savedFoods, filteredSavedFoods])
   const visibleSavedMeals = useMemo(() => getVisibleItems(orderedSavedMeals, expandedSections.savedMeals, 4), [expandedSections.savedMeals, orderedSavedMeals])
   const pantryCategories = useMemo(() => groupPantryItemsByCategory(pantry), [pantry])
   const pantryCategoryOptions = useMemo(() => buildPantryCategoryOptions(pantry), [pantry])
@@ -610,10 +666,22 @@ export default function NutritionScreen() {
       clearStoredCookbookRecipes()
       return true
     } catch (err) {
-      showErrorToast(err, 'Could not save your cookbook.')
+      showErrorToast(err, 'Could not update your planning shelf.')
       return false
     }
   }, [showErrorToast])
+
+  useEffect(() => {
+    const handlePlanningShelfUpdate = event => {
+      const recipe = normaliseCookbookRecipe(event?.detail?.recipe || {})
+      if (!recipe.recipe_name) return
+      const key = getRecipeKey(recipe)
+      setCookbookRecipes(current => current.some(item => getRecipeKey(item) === key) ? current : [...current, recipe])
+      setSelectedRecipeKeys(current => current.includes(key) ? current : [...current, key])
+    }
+    window.addEventListener('johnny5k:planning-shelf-updated', handlePlanningShelfUpdate)
+    return () => window.removeEventListener('johnny5k:planning-shelf-updated', handlePlanningShelfUpdate)
+  }, [])
 
   useEffect(() => {
     if (cookbookRecipes.length) {
@@ -1335,6 +1403,7 @@ export default function NutritionScreen() {
     RecentFoodRow,
     RecipeIdeaCard,
     RECIPE_CARD_VISIBLE_LIMIT,
+    SAVED_FOOD_MACRO_FILTERS,
     SavedFoodForm,
     SavedFoodRow,
     SavedMealForm,
@@ -1344,6 +1413,7 @@ export default function NutritionScreen() {
   }
 
   const screen = {
+    navigate,
     activeToast,
     activeView,
     addMealFormAnchor: addMealFormRef,
@@ -1479,9 +1549,15 @@ export default function NutritionScreen() {
     recipesSectionAnchor: recipesSectionRef,
     refreshPlanning,
     runAction,
+    savedFoodCategoryFilter,
+    savedFoodCategoryOptions,
     savedFoodFormAnchor: savedFoodFormRef,
+    savedFoodMacroFilter,
     savedFoods,
     savedFoodsSectionAnchor: savedFoodsSectionRef,
+    filteredSavedFoods,
+    setSavedFoodCategoryFilter,
+    setSavedFoodMacroFilter,
     savedMealFormAnchor: savedMealFormRef,
     savedMeals,
     savedMealsSectionAnchor: savedMealsSectionRef,
@@ -1687,117 +1763,6 @@ function MealPhotoPromptPanel({ note, onChangeNote, onPickImage, onCancel, busy 
   )
 }
 
-function LabelScanPromptPanel({ anchorRef, busy, images, note, onChangeNote, onPickFront, onPickBack, onSubmit, onCancel }) {
-  const recognitionRef = useRef(null)
-  const [listening, setListening] = useState(false)
-  const supportsSpeechRecognition = typeof window !== 'undefined' && (window.SpeechRecognition || window.webkitSpeechRecognition)
-
-  useEffect(() => () => {
-    recognitionRef.current?.stop?.()
-    recognitionRef.current = null
-  }, [])
-
-  function toggleVoiceCapture() {
-    if (listening) {
-      recognitionRef.current?.stop?.()
-      return
-    }
-
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
-    if (!SpeechRecognition) {
-      return
-    }
-
-    const recognition = new SpeechRecognition()
-    recognition.lang = 'en-US'
-    recognition.interimResults = false
-    recognition.maxAlternatives = 1
-    recognition.onresult = (event) => {
-      const transcript = Array.from(event.results || [])
-        .map(result => result?.[0]?.transcript || '')
-        .join(' ')
-        .trim()
-
-      if (transcript) {
-        onChangeNote(note ? `${note.trim()} ${transcript}`.trim() : transcript)
-      }
-    }
-    recognition.onerror = () => {
-      setListening(false)
-      recognitionRef.current = null
-    }
-    recognition.onend = () => {
-      setListening(false)
-      recognitionRef.current = null
-    }
-
-    recognitionRef.current = recognition
-    setListening(true)
-    recognition.start()
-  }
-
-  return (
-    <div ref={anchorRef} className="dash-card nutrition-planning-card nutrition-meal-photo-panel label-scan-panel">
-      <div className="dashboard-card-head">
-        <span className="dashboard-chip nutrition">Label scan</span>
-        <span className="dashboard-chip subtle">Front + back + note</span>
-      </div>
-      <h3>Capture the package before Johnny estimates anything</h3>
-      <p className="settings-subtitle">Take the front photo for brand and product context, then the back photo for nutrition facts and ingredients. Add a typed or recorded note if the package needs explanation.</p>
-
-      <div className="label-scan-status-strip" aria-label="Label scan progress">
-        <div className={`label-scan-status-chip${images.front ? ' complete' : ''}`}>
-          <strong>1</strong>
-          <span>{images.front ? 'Front captured' : 'Front photo needed'}</span>
-        </div>
-        <div className={`label-scan-status-chip${images.back ? ' complete' : ''}`}>
-          <strong>2</strong>
-          <span>{images.back ? 'Back captured' : 'Nutrition panel needed'}</span>
-        </div>
-        <div className={`label-scan-status-chip${note.trim() ? ' complete' : ''}`}>
-          <strong>3</strong>
-          <span>{note.trim() ? 'Note included' : 'Optional note'}</span>
-        </div>
-      </div>
-
-      <div className="label-scan-capture-grid">
-        <button type="button" className={`label-scan-capture${images.front ? ' ready' : ''}`} onClick={onPickFront} disabled={busy}>
-          <strong>Front of package</strong>
-          <span>{images.front ? 'Front photo added. Tap to retake.' : 'Take or choose the front photo.'}</span>
-        </button>
-        <button type="button" className={`label-scan-capture${images.back ? ' ready' : ''}`} onClick={onPickBack} disabled={busy}>
-          <strong>Nutrition facts side</strong>
-          <span>{images.back ? 'Back photo added. Tap to retake.' : 'Take or choose the nutrition label photo.'}</span>
-        </button>
-      </div>
-
-      <div className="label-scan-preview-grid">
-        {images.front ? <img src={images.front} alt="Front package preview" className="label-scan-preview" /> : <div className="label-scan-preview empty">Front photo not added yet.</div>}
-        {images.back ? <img src={images.back} alt="Back package preview" className="label-scan-preview" /> : <div className="label-scan-preview empty">Back photo not added yet.</div>}
-      </div>
-
-      <FieldLabel label="Optional note" className="field-label-food-note">
-        <textarea
-          placeholder="Example: this is the family-size bag, or the back photo is the ingredients panel."
-          value={note}
-          onChange={event => onChangeNote(event.target.value)}
-        />
-      </FieldLabel>
-
-      <div className="nutrition-row-actions nutrition-row-actions-full-width">
-        <button type="button" className="btn-secondary" onClick={toggleVoiceCapture} disabled={busy || !supportsSpeechRecognition}>
-          {listening ? 'Stop recording' : 'Record note'}
-        </button>
-        <button type="button" className="btn-primary" onClick={onSubmit} disabled={busy || !images.front || !images.back}>
-          {busy ? 'Analyzing…' : 'Scan label'}
-        </button>
-        <button type="button" className="btn-secondary" onClick={onCancel} disabled={busy}>Cancel</button>
-      </div>
-      {!supportsSpeechRecognition ? <EmptyState className="nutrition-inline-state" message="Voice note capture is not supported in this browser, but typed notes still work." title="Voice capture unavailable" /> : null}
-    </div>
-  )
-}
-
 function FieldLabel({ label, children, className = '' }) {
   return (
     <Field label={label} className={`field-label${className ? ` ${className}` : ''}`}>
@@ -1938,37 +1903,196 @@ function MealCard({ meal, savedFoods, onSave, onDelete, onError }) {
           </div>
           <div className="meal-item-list">
             {(meal.items || []).map((item, index) => (
-              <section key={`${item.food_name || 'food'}-${index}`} className={`nutrition-meal-accordion meal-card-item-accordion${openItemIndex === index ? ' open' : ''}`}>
-                <button
-                  type="button"
-                  className="nutrition-meal-accordion-trigger meal-card-item-trigger"
-                  onClick={() => setOpenItemIndex(current => current === index ? null : index)}
-                  aria-expanded={openItemIndex === index}
-                >
-                  <div className="nutrition-meal-accordion-copy meal-card-item-copy">
-                    <span className="nutrition-meal-accordion-label">{meal?.meal_type === 'beverage' ? 'Drink' : 'Food'} {index + 1}</span>
-                    <strong className="meal-item-name">{item.food_name || 'Food item'}</strong>
-                    <p>{formatMealServing(item.serving_amount, item.serving_unit)} · {Math.round(Number(item.calories) || 0)} Calories · {formatMealMacroValue(item.protein_g)}g protein</p>
-                  </div>
-                  <span className="nutrition-meal-accordion-icon" aria-hidden="true">{openItemIndex === index ? '−' : '+'}</span>
-                </button>
-                {openItemIndex === index ? (
-                  <div className="nutrition-meal-accordion-body meal-card-item-body">
-                    <div className="meal-item-macros" aria-label={`${item.food_name || 'Food item'} macros`}>
-                      <span className="meal-item-macro meal-item-macro-protein">P {formatMealMacroValue(item.protein_g)}g</span>
-                      <span className="meal-item-macro meal-item-macro-carbs">C {formatMealMacroValue(item.carbs_g)}g</span>
-                      <span className="meal-item-macro meal-item-macro-fat">F {formatMealMacroValue(item.fat_g)}g</span>
-                    </div>
-                    {item.portion_description ? <p className="meal-card-item-note">{item.portion_description}</p> : null}
-                    {item.estimated_grams ? <p className="meal-card-item-note">Estimated weight: {Math.round(Number(item.estimated_grams) || 0)}g</p> : null}
-                  </div>
-                ) : null}
-              </section>
+              <SwipeableMealItem
+                key={`${item.food_name || 'food'}-${index}`}
+                index={index}
+                item={item}
+                itemLabel={meal?.meal_type === 'beverage' ? 'Drink' : 'Food'}
+                open={openItemIndex === index}
+                onToggle={() => setOpenItemIndex(current => current === index ? null : index)}
+                onSave={async nextItem => {
+                  const nextItems = meal.items.map((currentItem, itemIndex) => itemIndex === index ? nextItem : currentItem)
+                  await onSave({ meal_datetime: meal.meal_datetime, meal_type: meal.meal_type, items: nextItems })
+                }}
+                onDelete={async () => {
+                  const nextItems = meal.items.filter((_, itemIndex) => itemIndex !== index)
+                  await onSave({ meal_datetime: meal.meal_datetime, meal_type: meal.meal_type, items: nextItems })
+                }}
+              />
             ))}
           </div>
         </div>
       ) : null}
     </section>
+  )
+}
+
+function SwipeableMealItem({ index, item, itemLabel, open, onToggle, onSave, onDelete }) {
+  const [dragOffset, setDragOffset] = useState(0)
+  const [editing, setEditing] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const dragRef = useRef(null)
+  const suppressClickRef = useRef(false)
+
+  function handlePointerDown(event) {
+    if (event.pointerType === 'mouse' && event.button !== 0) return
+    dragRef.current = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, horizontal: false }
+    suppressClickRef.current = false
+  }
+
+  function handlePointerMove(event) {
+    const drag = dragRef.current
+    if (!drag || drag.pointerId !== event.pointerId) return
+    const deltaX = event.clientX - drag.startX
+    const deltaY = event.clientY - drag.startY
+    if (!drag.horizontal && Math.abs(deltaX) < 8) return
+    if (!drag.horizontal && Math.abs(deltaY) > Math.abs(deltaX)) {
+      dragRef.current = null
+      return
+    }
+    drag.horizontal = true
+    suppressClickRef.current = true
+    event.currentTarget.setPointerCapture?.(event.pointerId)
+    setDragOffset(Math.max(-140, Math.min(112, deltaX)))
+  }
+
+  function finishDrag(event) {
+    const drag = dragRef.current
+    if (!drag || drag.pointerId !== event.pointerId) return
+    dragRef.current = null
+    if (dragOffset <= -72) {
+      setDragOffset(0)
+      setEditing(true)
+    } else if (dragOffset >= 64) {
+      setDragOffset(96)
+    } else {
+      setDragOffset(0)
+    }
+  }
+
+  async function handleDelete() {
+    if (deleting) return
+    setDeleting(true)
+    try {
+      await onDelete()
+    } finally {
+      setDeleting(false)
+      setDragOffset(0)
+    }
+  }
+
+  return (
+    <>
+      <div className={`meal-item-swipe-shell${dragOffset > 0 ? ' delete-revealed' : ''}`}>
+        <div className="meal-item-swipe-edit-cue" aria-hidden="true"><span>Edit</span></div>
+        <button type="button" className="meal-item-swipe-delete" onClick={handleDelete} disabled={deleting}>
+          <AppIcon name="trash" />
+          <span>{deleting ? 'Deleting…' : 'Delete'}</span>
+        </button>
+        <section
+          className={`nutrition-meal-accordion meal-card-item-accordion meal-item-swipe-content${open ? ' open' : ''}`}
+          style={{ transform: `translate3d(${dragOffset}px, 0, 0)` }}
+        >
+          <button
+            type="button"
+            className="nutrition-meal-accordion-trigger meal-card-item-trigger"
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={finishDrag}
+            onPointerCancel={finishDrag}
+            onClick={() => {
+              if (suppressClickRef.current) {
+                suppressClickRef.current = false
+                return
+              }
+              onToggle()
+            }}
+            aria-expanded={open}
+          >
+            <div className="nutrition-meal-accordion-copy meal-card-item-copy">
+              <span className="nutrition-meal-accordion-label">{itemLabel} {index + 1}</span>
+              <strong className="meal-item-name">{item.food_name || 'Food item'}</strong>
+              <p>{formatMealServing(item.serving_amount, item.serving_unit)} · {Math.round(Number(item.calories) || 0)} Calories · {formatMealMacroValue(item.protein_g)}g protein</p>
+            </div>
+            <span className="nutrition-meal-accordion-icon" aria-hidden="true">{open ? '−' : '+'}</span>
+          </button>
+          {open ? (
+            <div className="nutrition-meal-accordion-body meal-card-item-body">
+              <div className="meal-item-macros" aria-label={`${item.food_name || 'Food item'} macros`}>
+                <span className="meal-item-macro meal-item-macro-protein">P {formatMealMacroValue(item.protein_g)}g</span>
+                <span className="meal-item-macro meal-item-macro-carbs">C {formatMealMacroValue(item.carbs_g)}g</span>
+                <span className="meal-item-macro meal-item-macro-fat">F {formatMealMacroValue(item.fat_g)}g</span>
+              </div>
+              {item.portion_description ? <p className="meal-card-item-note">{item.portion_description}</p> : null}
+              {item.estimated_grams ? <p className="meal-card-item-note">Estimated weight: {Math.round(Number(item.estimated_grams) || 0)}g</p> : null}
+              <div className="meal-item-inline-actions">
+                <button type="button" className="btn-secondary small" onClick={() => setEditing(true)}>Edit food</button>
+                <button type="button" className="btn-danger small" onClick={() => setDragOffset(96)}>Delete</button>
+              </div>
+            </div>
+          ) : null}
+        </section>
+      </div>
+      <MealItemEditor open={editing} item={item} onClose={() => setEditing(false)} onSave={async nextItem => {
+        await onSave(nextItem)
+        setEditing(false)
+      }} />
+    </>
+  )
+}
+
+function MealItemEditor({ open, item, onClose, onSave }) {
+  const [draft, setDraft] = useState(() => normaliseMealItems([item])[0])
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    if (open) setDraft(normaliseMealItems([item])[0])
+  }, [item, open])
+
+  function update(field, value) {
+    setDraft(current => recomputeMealDraftItem(current, { ...current, [field]: value }, field))
+  }
+
+  return (
+    <AppDialog ariaLabel="Edit food entry" className="nutrition-food-editor" dismissible={!saving} onClose={onClose} open={open} overlayClassName="nutrition-food-editor-shell" size="lg">
+      <form className="nutrition-food-editor-form" onSubmit={async event => {
+        event.preventDefault()
+        if (saving || !draft.food_name.trim()) return
+        setSaving(true)
+        try {
+          await onSave(buildMealItemPayload(draft))
+        } finally {
+          setSaving(false)
+        }
+      }}>
+        <header className="nutrition-food-editor-header">
+          <button type="button" className="btn-ghost small" onClick={onClose} disabled={saving}>Cancel</button>
+          <div><span>Progress diary</span><h2>Edit food</h2></div>
+          <button type="submit" className="btn-primary small" disabled={saving || !draft.food_name.trim()}>{saving ? 'Saving…' : 'Save'}</button>
+        </header>
+        <div className="nutrition-food-editor-scroll">
+          <p className="nutrition-food-editor-intro">Adjust the serving or nutrition values for this diary entry.</p>
+          <FieldLabel label="Food name" className="field-label-food-name"><ClearableInput autoFocus value={draft.food_name} onChange={event => update('food_name', event.target.value)} required /></FieldLabel>
+          <div className="macro-inputs nutrition-item-editor nutrition-item-editor-primary">
+            <FieldLabel label="Servings"><input type="number" min="0" step="0.01" inputMode="decimal" value={draft.serving_amount} onChange={event => update('serving_amount', event.target.value)} /></FieldLabel>
+            <FieldLabel label="Serving unit"><ClearableInput value={draft.serving_unit} onChange={event => update('serving_unit', event.target.value)} /></FieldLabel>
+            <FieldLabel label="Calories"><input type="number" min="0" value={draft.calories} onChange={event => update('calories', event.target.value)} /></FieldLabel>
+            <FieldLabel label="Protein"><input type="number" min="0" step="0.01" inputMode="decimal" value={draft.protein_g} onChange={event => update('protein_g', event.target.value)} /></FieldLabel>
+            <FieldLabel label="Carbs"><input type="number" min="0" step="0.01" inputMode="decimal" value={draft.carbs_g} onChange={event => update('carbs_g', event.target.value)} /></FieldLabel>
+            <FieldLabel label="Fat"><input type="number" min="0" step="0.01" inputMode="decimal" value={draft.fat_g} onChange={event => update('fat_g', event.target.value)} /></FieldLabel>
+          </div>
+          <div className="nutrition-food-editor-secondary">
+            <h3>More nutrition details</h3>
+            <div className="macro-inputs nutrition-item-editor nutrition-item-editor-secondary">
+              <FieldLabel label="Estimated grams"><input type="number" min="0" step="0.01" inputMode="decimal" value={draft.estimated_grams} onChange={event => update('estimated_grams', event.target.value)} /></FieldLabel>
+              <FieldLabel label="Fiber"><input type="number" min="0" step="0.01" inputMode="decimal" value={draft.fiber_g} onChange={event => update('fiber_g', event.target.value)} /></FieldLabel>
+              <FieldLabel label="Sugar"><input type="number" min="0" step="0.01" inputMode="decimal" value={draft.sugar_g} onChange={event => update('sugar_g', event.target.value)} /></FieldLabel>
+              <FieldLabel label="Sodium mg"><input type="number" min="0" step="0.01" inputMode="decimal" value={draft.sodium_mg} onChange={event => update('sodium_mg', event.target.value)} /></FieldLabel>
+            </div>
+          </div>
+        </div>
+      </form>
+    </AppDialog>
   )
 }
 
@@ -2322,6 +2446,12 @@ function SavedFoodForm({ initialValues = null, savedFoods = [], submitLabel = 'S
       <FieldLabel label="Brand">
         <ClearableInput placeholder="Optional brand" value={form.brand} onChange={event => update('brand', event.target.value)} />
       </FieldLabel>
+      <FieldLabel label="Category">
+        <select value={form.category || ''} onChange={event => update('category', event.target.value)}>
+          <option value="">No category</option>
+          <option value="staples">Staples</option>
+        </select>
+      </FieldLabel>
       <FieldLabel label="Serving size">
         <ClearableInput placeholder="1 bowl" value={form.serving_size} onChange={event => update('serving_size', event.target.value)} />
       </FieldLabel>
@@ -2495,6 +2625,12 @@ function SavedFoodRow({ food, onLog, onSave, onDelete, onError }) {
     <div ref={rowRef} className="nutrition-item-row saved-food-row">
       <div>
         <strong>{displayName}</strong>
+        {food.category || getDominantMacroLabel(food) ? (
+          <p className="saved-food-tags">
+            {food.category ? <span className="saved-food-tag">{getSavedFoodCategoryLabel(food.category)}</span> : null}
+            {getDominantMacroLabel(food) ? <span className="saved-food-tag saved-food-tag-macro">{getDominantMacroLabel(food)}</span> : null}
+          </p>
+        ) : null}
         <p>{food.brand && displayName !== food.brand ? `${food.brand} · ` : ''}{food.serving_size} · {Math.round(food.calories)} Calories · {Math.round(food.protein_g)}g protein</p>
         {food.micros?.length ? <p>{formatMicroList(food.micros, 3)}</p> : null}
       </div>
@@ -3222,7 +3358,7 @@ function BeverageBoard({ screen, showHeader = true, showShell = true }) {
           {loadingSuggestions ? <p className="settings-subtitle">Checking saved and recent beverage matches…</p> : null}
           {suggestions.length ? (
             <div className="nutrition-stack-list beverage-board-suggestions">
-              {suggestions.slice(0, 5).map(suggestion => (
+              {suggestions.map(suggestion => (
                 <button
                   key={`${suggestion.match_type}-${suggestion.id}-${suggestion.canonical_name}`}
                   type="button"
@@ -5676,6 +5812,7 @@ function buildSavedFoodFormState(food) {
     sodium_mg: food?.sodium_mg ?? '',
     micros: Array.isArray(food?.micros) ? food.micros.map(micro => ({ ...micro, amount: roundMicroAmount(micro?.amount) })) : [],
     source: food?.source || null,
+    category: food?.category || '',
   }
 }
 
@@ -6100,6 +6237,7 @@ function dedupeFoodSearchSuggestions(results) {
 function findFoodSuggestionMatchIndex(suggestions, candidate) {
   const name = normaliseFoodMatchText(candidate?.canonical_name || candidate?.food_name || '')
   const brand = normaliseFoodMatchText(candidate?.brand || '')
+  const servingSize = normaliseFoodMatchText(candidate?.serving_size || candidate?.serving_unit || '')
 
   if (!name) {
     return -1
@@ -6112,7 +6250,12 @@ function findFoodSuggestionMatchIndex(suggestions, candidate) {
     }
 
     const existingBrand = normaliseFoodMatchText(existing?.brand || '')
-    return !existingBrand || !brand || existingBrand === brand
+    if (existingBrand && brand && existingBrand !== brand) {
+      return false
+    }
+
+    const existingServingSize = normaliseFoodMatchText(existing?.serving_size || existing?.serving_unit || '')
+    return !existingServingSize || !servingSize || existingServingSize === servingSize
   })
 }
 

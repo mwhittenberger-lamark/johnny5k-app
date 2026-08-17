@@ -55,6 +55,12 @@ class AiToolService {
 					'additionalProperties' => false,
 				],
 			],
+			'get_grocery_gap' => [
+				'read_only'   => true,
+				'enabled'     => true,
+				'description' => 'Get and display the user’s current grocery gap or shopping list, including pantry staples and manually added or recipe-planning items. Use whenever the user asks what is on their grocery list, shopping list, or grocery gap.',
+				'parameters'  => [ 'type' => 'object', 'properties' => $empty_object, 'additionalProperties' => false ],
+			],
 			'get_recipe_catalog' => [
 				'read_only'   => true,
 				'enabled'     => true,
@@ -191,18 +197,66 @@ class AiToolService {
 					'additionalProperties' => false,
 				],
 			],
+			'set_ambient_color' => [
+				'read_only'   => true,
+				'enabled'     => true,
+				'description' => 'Change the home screen’s ambient accent color and mood lighting. Use when the user explicitly asks to change the color, vibe, or theme, or proactively for a genuinely fitting moment (a celebration, a fresh start, a recovery day) — do not change it without a real reason, and never more than once in a short exchange. "default" always restores the original teal look; use it when the user asks to undo, reset, or go back to normal. "dance" plays a brief animated light show cycling through all the colors before settling back to default on its own — reserve it for a truly big, rare moment (a major PR, a milestone, finishing a program), not routine wins.',
+				'parameters'  => [
+					'type'                 => 'object',
+					'properties'           => [
+						'color' => [ 'type' => 'string', 'enum' => [ 'default', 'green', 'violet', 'rose', 'amber', 'dance' ], 'description' => '"default" is the original teal and always available as a reset. "dance" is a brief celebratory animation reserved for a truly big, rare moment.' ],
+					],
+					'required'             => [ 'color' ],
+					'additionalProperties' => false,
+				],
+			],
+			'trigger_confetti_burst' => [
+				'read_only'   => true,
+				'enabled'     => true,
+				'description' => 'Trigger a brief confetti burst overlay across the app. This is the mid-tier celebration—bigger and more fun than a simple ambient color change, but lighter than color dance or fire mode. Good for a notable but not huge win: hitting a target, a solid streak, finishing a tough set. Clears itself automatically—never call anything to turn it off. Never more than once per reply.',
+				'parameters'  => [
+					'type'                 => 'object',
+					'properties'           => new \stdClass(),
+					'additionalProperties' => false,
+				],
+			],
+			'activate_fire_mode' => [
+				'read_only'   => true,
+				'enabled'     => true,
+				'description' => 'Trigger a brief full-screen animated fire effect across the whole app as a big hype moment. It plays for a few seconds and clears itself automatically—never call anything to turn it off. Reserve it for a genuinely major, rare achievement (a huge PR, a big milestone, finishing a hard program) — never for routine praise, and never more than once in a short exchange.',
+				'parameters'  => [
+					'type'                 => 'object',
+					'properties'           => new \stdClass(),
+					'additionalProperties' => false,
+				],
+			],
+			'search_gif' => [
+				'read_only'   => true,
+				'enabled'     => true,
+				'description' => 'Search GIPHY and share one safe-for-work reaction GIF in the conversation. Use only for a genuinely celebratory, funny, or encouraging moment—a real win, a streak, a joke that lands—never for factual, medical, safety, or data questions, and never more than once per reply. Keep the query short and universal, e.g. "high five", "you got this", "monday motivation".',
+				'parameters'  => [
+					'type'                 => 'object',
+					'properties'           => [
+						'query' => [ 'type' => 'string', 'description' => 'Short, safe-for-work search phrase describing the reaction or moment.' ],
+					],
+					'required'             => [ 'query' ],
+					'additionalProperties' => false,
+				],
+			],
 			'generate_image' => [
 				'read_only'   => false,
 				'enabled'     => true,
-				'description' => 'Generate and privately save one image for the current user with OpenAI. Use only when the user explicitly asks Johnny to create, generate, illustrate, draw, or make an image, poster, artwork, meal concept, or shareable graphic. Do not use this for numeric charts or factual infographics; use create_visualization instead. Johnny allows up to 2 OpenAI-generated images per user per day.',
+				'description' => 'Generate and privately save one image for the current user with OpenAI. Set use_user_likeness true only when the user explicitly asks for an image of themselves; this uses their private uploaded headshot. Set use_johnny_likeness true when the user asks for an image of Johnny; this uses Johnny’s official uploaded reference. Never set both likeness modes. Do not imply a likeness was used unless the tool confirms it.',
 				'parameters'  => [
 					'type'                 => 'object',
 					'properties'           => [
 						'prompt' => [ 'type' => 'string', 'description' => 'A detailed visual description grounded in the user request.' ],
 						'title' => [ 'type' => 'string', 'description' => 'Short display title.' ],
 						'alt_text' => [ 'type' => 'string', 'description' => 'Concise accessible description of the intended image.' ],
-						'category' => [ 'type' => 'string', 'enum' => [ 'exercise_illustration', 'workout_poster', 'meal_concept', 'motivation', 'share_card', 'other' ] ],
+						'category' => [ 'type' => 'string', 'enum' => [ 'exercise_illustration', 'workout_poster', 'meal_concept', 'motivation', 'share_card', 'johnny_moment', 'other' ] ],
 						'aspect_ratio' => [ 'type' => 'string', 'enum' => [ '1:1', '4:3', '3:4', '16:9', '9:16' ] ],
+						'use_user_likeness' => [ 'type' => 'boolean', 'description' => 'Use the current user’s private uploaded headshot as a likeness reference.' ],
+						'use_johnny_likeness' => [ 'type' => 'boolean', 'description' => 'Use Johnny’s official uploaded character image as the likeness reference.' ],
 					],
 					'required'             => [ 'prompt', 'title', 'alt_text', 'category' ],
 					'additionalProperties' => false,
@@ -279,7 +333,7 @@ class AiToolService {
 			'create_custom_workout' => [
 				'read_only'   => false,
 				'enabled'     => true,
-				'description' => 'Use this whenever the user wants Johnny to produce, assemble, choose, design, recommend, or otherwise give them a concrete workout to perform—not only when they use a specific phrase. This creates the reviewable standard or circuit workout draft that the app renders as an editable card. Never provide a requested workout prescription only as prose. Preserve exercise order and exact rep, duration, per-side, sets, rounds, and rest instructions. Use circuit when the intended structure repeats a sequence. Convert minutes to seconds and disclose consequential assumptions in interpretation_notes.',
+				'description' => 'Use this whenever the user wants Johnny to produce, assemble, choose, design, recommend, or otherwise give them a concrete workout to perform—not only when they use a specific phrase. This is an atomic workout builder: pass every requested exercise directly, including exercises that may not exist yet. The tool resolves existing library entries, automatically creates any missing exercises in the user’s personal library, and adds all of them to the reviewable workout draft in one operation. Never ask the user to create missing exercises first, never claim custom exercises cannot be added, and never split a workout request into separate create_personal_exercise calls. Never provide a requested workout prescription only as prose. Preserve exercise order and exact rep, duration, per-side, sets, rounds, and rest instructions. Use circuit when the intended structure repeats a sequence. Convert minutes to seconds and disclose consequential assumptions in interpretation_notes.',
 				'parameters'  => [
 					'type'                 => 'object',
 					'properties'           => [
@@ -372,6 +426,32 @@ class AiToolService {
 					'additionalProperties' => false,
 				],
 			],
+			'remove_saved_workout' => [
+				'read_only'   => false,
+				'enabled'     => true,
+				'description' => 'Permanently remove one workout from the user’s My Workouts library by saved ID or name. Use only when the user explicitly asks to remove or delete a saved/library workout. If the workout is unclear, call get_saved_workouts first instead of guessing.',
+				'parameters'  => [
+					'type' => 'object',
+					'properties' => [
+						'id' => [ 'type' => 'integer', 'minimum' => 1 ],
+						'name' => [ 'type' => 'string' ],
+					],
+					'additionalProperties' => false,
+				],
+			],
+			'create_food_tile' => [
+				'read_only' => false, 'enabled' => true,
+				'description' => 'Create a reusable food tile for the planning dashboard and saved-food library when the user explicitly asks Johnny to make, create, or save a tile. Analyze food_text to estimate the serving and nutrition; explicit nutrition fields override estimates. Set category to "staples" for a basic, clean, minimally processed whole food (e.g. eggs, chicken breast, ground turkey, brown rice, plain oats) when the user is building out that kind of everyday library; omit it otherwise. Do not log the tile as eaten.',
+				'parameters' => [ 'type' => 'object', 'properties' => [
+					'food_text' => [ 'type' => 'string', 'description' => 'Food and portion description used to build the tile.' ],
+					'name' => [ 'type' => 'string' ], 'brand' => [ 'type' => 'string' ], 'serving_size' => [ 'type' => 'string' ],
+					'calories' => [ 'type' => 'integer', 'minimum' => 0 ], 'protein_g' => [ 'type' => 'number', 'minimum' => 0 ],
+					'carbs_g' => [ 'type' => 'number', 'minimum' => 0 ], 'fat_g' => [ 'type' => 'number', 'minimum' => 0 ],
+					'fiber_g' => [ 'type' => 'number', 'minimum' => 0 ], 'sugar_g' => [ 'type' => 'number', 'minimum' => 0 ],
+					'sodium_mg' => [ 'type' => 'number', 'minimum' => 0 ],
+					'category' => [ 'type' => 'string', 'description' => 'Optional library category, e.g. "staples" for a basic clean whole food.' ],
+				], 'required' => [ 'food_text' ], 'additionalProperties' => false ],
+			],
 			'log_sleep' => [
 				'read_only'   => false,
 				'enabled'     => true,
@@ -427,7 +507,7 @@ class AiToolService {
 			],
 			'modify_workout' => [
 				'read_only' => false, 'enabled' => true,
-				'description' => 'Modify the queued workout card. Use replace for an atomic one-for-one exercise replacement, remove, add, reorder with the complete ordered exercise-name list, or structure to change standard/circuit rounds and rest. A failed replacement leaves the original workout unchanged.',
+				'description' => 'Modify the queued workout card. Use replace for an atomic one-for-one exercise replacement, remove, add, reorder with the complete ordered exercise-name list, or structure to change standard/circuit rounds and rest. Add and replace automatically create a missing exercise in the user’s personal library; never ask the user to create it first. A failed replacement leaves the original workout unchanged.',
 				'parameters' => [ 'type' => 'object', 'properties' => [
 					'action' => [ 'type' => 'string', 'enum' => [ 'replace', 'remove', 'add', 'reorder', 'structure' ] ],
 					'exercise_name' => [ 'type' => 'string' ],
@@ -459,6 +539,16 @@ class AiToolService {
 			'complete_workout' => [
 				'read_only' => false, 'enabled' => true,
 				'description' => 'Complete the active workout only when the user explicitly says the session is finished.',
+				'parameters' => [ 'type' => 'object', 'properties' => $empty_object, 'additionalProperties' => false ],
+			],
+			'cancel_workout' => [
+				'read_only' => false, 'enabled' => true,
+				'description' => 'Cancel or clear the current queued or active workout when the user explicitly asks to cancel, discard, clear, or start over. Never use complete_workout for this intent.',
+				'parameters' => [ 'type' => 'object', 'properties' => $empty_object, 'additionalProperties' => false ],
+			],
+			'restart_workout_timer' => [
+				'read_only' => false, 'enabled' => true,
+				'description' => 'Reset the active workout clock to zero while preserving the active session, exercises, and logged sets. Use only when the user asks to restart the timer or clock.',
 				'parameters' => [ 'type' => 'object', 'properties' => $empty_object, 'additionalProperties' => false ],
 			],
 			'log_body_measurement' => [
@@ -551,10 +641,16 @@ class AiToolService {
 					'additionalProperties' => false,
 				],
 			],
+			'remove_pantry_items' => [
+				'read_only'   => false,
+				'enabled'     => true,
+				'description' => 'Remove one or more named items from the user pantry when the user explicitly asks Johnny to remove them.',
+				'parameters'  => self::named_item_list_parameters(),
+			],
 			'add_grocery_gap_items' => [
 				'read_only'   => false,
 				'enabled'     => true,
-				'description' => 'Add one or more items to the grocery gap list when the user asks Johnny to add shopping items.',
+				'description' => 'Add one or more items to the user shopping list. Also use this for ingredients from a recipe Johnny just created or the user requested; first compare with the pantry snapshot and add only ingredients that are missing.',
 				'parameters'  => [
 					'type'                 => 'object',
 					'properties'           => [
@@ -578,6 +674,25 @@ class AiToolService {
 					],
 					'additionalProperties' => false,
 				],
+			],
+			'add_recipe_ingredients_to_grocery_list' => [
+				'read_only'   => false,
+				'enabled'     => true,
+				'description' => 'Add the missing ingredients for a named recipe selected from the recipe catalog or cookbook to the user shopping list. This compares the recipe with pantry inventory and avoids adding on-hand ingredients.',
+				'parameters'  => [
+					'type'                 => 'object',
+					'properties'           => [
+						'recipe_name' => [ 'type' => 'string' ],
+						'recipe_key'  => [ 'type' => 'string' ],
+					],
+					'additionalProperties' => false,
+				],
+			],
+			'remove_grocery_gap_items' => [
+				'read_only'   => false,
+				'enabled'     => true,
+				'description' => 'Remove one or more named items from the user shopping list when the user explicitly asks Johnny to remove them.',
+				'parameters'  => self::named_item_list_parameters(),
 			],
 			'swap_workout_exercise' => [
 				'read_only'   => false,
@@ -684,6 +799,9 @@ class AiToolService {
 		if ( '' === $tool_name && self::conversation_clear_requested( $user_message ) ) {
 			$tool_name = 'clear_conversation';
 		}
+		if ( '' === $tool_name && self::concrete_workout_creation_requested( $user_message ) ) {
+			$tool_name = 'create_custom_workout';
+		}
 		if ( '' === $tool_name ) {
 			return '';
 		}
@@ -714,8 +832,23 @@ class AiToolService {
 		return self::message_contains_any( $message, [ 'clear', 'delete', 'erase', 'reset', 'remove', 'start over' ] );
 	}
 
+	private static function concrete_workout_creation_requested( string $user_message ): bool {
+		$message = strtolower( trim( $user_message ) );
+		if ( '' === $message || self::message_contains_any( $message, [ 'how do i', 'how can i', 'can you create workouts', 'are you able', 'do not create', "don't create", 'not yet' ] ) ) {
+			return false;
+		}
+
+		$workout_context = self::message_contains_any( $message, [ 'workout', 'training session', 'gym session', 'circuit' ] );
+		$creation_intent = self::message_contains_any( $message, [ 'create', 'build', 'make', 'put together', 'assemble', 'plan', 'give me', 'set up', 'use these', 'add these' ] );
+		return $workout_context && $creation_intent;
+	}
+
+	private static function pick_fallback_phrase( array $phrases ): string {
+		return $phrases[ array_rand( $phrases ) ];
+	}
+
 	public static function build_tool_action_fallback_reply( array $action_results, array $used_tools = [], array $tool_errors = [] ): string {
-		$mutation_tools = [ 'approve_workout', 'modify_workout', 'start_workout', 'swap_workout_exercise', 'manage_workout_set', 'complete_workout', 'create_custom_workout', 'save_workout_to_library', 'load_saved_workout' ];
+		$mutation_tools = [ 'approve_workout', 'modify_workout', 'start_workout', 'swap_workout_exercise', 'manage_workout_set', 'cancel_workout', 'restart_workout_timer', 'complete_workout', 'create_custom_workout', 'save_workout_to_library', 'load_saved_workout', 'remove_saved_workout', 'create_food_tile' ];
 		$recovered_pending_replacement = false;
 		foreach ( $action_results as $action_result ) {
 			if ( ! empty( $action_result['completed_pending_replacement'] ) ) { $recovered_pending_replacement = true; break; }
@@ -749,13 +882,19 @@ class AiToolService {
 				'create_personal_exercise' => 'I added that exercise to your custom library.',
 				'save_workout_to_library' => 'I saved that workout to My Workouts.',
 				'load_saved_workout'       => 'I loaded that workout and have it ready for you.',
+				'remove_saved_workout'     => 'I removed that workout from My Workouts.',
+				'create_food_tile'          => 'I created that food tile and added it to your planning shelf.',
 				'create_visualization'     => 'I turned your data into a visual summary.',
+				'set_ambient_color'        => self::pick_fallback_phrase( [ 'Vibe updated.', 'New look, same coach.', 'Mood shifted.' ] ),
+				'activate_fire_mode'        => self::pick_fallback_phrase( [ 'Lighting it up!', 'Fire mode, let’s go.', 'Turning up the heat.' ] ),
+				'trigger_confetti_burst'    => self::pick_fallback_phrase( [ 'Confetti time!', 'Let’s celebrate that.', 'Confetti earned.' ] ),
+				'search_gif'                => self::pick_fallback_phrase( [ 'Found a GIF for that.', 'Here’s one for the moment.', 'Got a GIF for that.' ] ),
 				'present_choices'          => 'Choose what you want to do next.',
 				'generate_image'            => 'I made that image for you.',
 				'create_training_plan'     => 'I built your new training plan.',
 				'set_training_schedule'    => 'I updated your weekly training schedule.',
 				'clear_follow_ups'        => 'I cleared those follow-ups.',
-				'clear_conversation'      => 'Chat cleared.',
+				'clear_conversation'      => self::pick_fallback_phrase( [ 'Chat cleared.', 'Clean slate.', 'Thread cleared.' ] ),
 				'clear_sms_reminders'     => 'I canceled those text reminders.',
 				'swap_workout_exercise'    => 'I updated the current workout.',
 				default                    => 'I checked that, but I haven’t made a change yet.',
@@ -779,6 +918,25 @@ class AiToolService {
 		}
 
 		return $executor( $user_id, $tool_name, $arguments );
+	}
+
+	private static function named_item_list_parameters(): array {
+		return [
+			'type'                 => 'object',
+			'properties'           => [
+				'item_name' => [ 'type' => 'string' ],
+				'items'     => [
+					'type'  => 'array',
+					'items' => [
+						'type'                 => 'object',
+						'properties'           => [ 'item_name' => [ 'type' => 'string' ] ],
+						'required'             => [ 'item_name' ],
+						'additionalProperties' => false,
+					],
+				],
+			],
+			'additionalProperties' => false,
+		];
 	}
 
 	private static function derive_tool_request_context( string $mode, array $context_overrides, string $user_message ): array {
@@ -805,7 +963,7 @@ class AiToolService {
 			// Keep creation and saving available through short contextual follow-ups
 			// such as "save it in my library" and "try again". The model still
 			// receives the explicit-user-request constraint in each tool description.
-			'create_custom_workout', 'save_workout_to_library', 'load_saved_workout' => true,
+			'create_custom_workout', 'save_workout_to_library', 'load_saved_workout', 'remove_saved_workout' => true,
 			'create_training_plan', 'set_training_schedule', 'create_personal_exercise', 'swap_workout_exercise' => ! empty( $request_context['workout_mutation_allowed'] ),
 			default => true,
 		};

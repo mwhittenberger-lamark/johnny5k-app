@@ -4,6 +4,7 @@ namespace Johnny5k\REST;
 defined( 'ABSPATH' ) || exit;
 
 use Johnny5k\Services\AiService;
+use Johnny5k\Services\AnnouncementTickerService;
 use Johnny5k\Services\UserTime;
 use Johnny5k\Support\PrivateMediaService;
 
@@ -31,6 +32,12 @@ class DashboardController {
 		register_rest_route( $ns, '/dashboard/coaching-context', [
 			'methods'             => 'GET',
 			'callback'            => [ __CLASS__, 'get_coaching_context' ],
+			'permission_callback' => $auth,
+		] );
+
+		register_rest_route( $ns, '/dashboard/ticker', [
+			'methods'             => 'GET',
+			'callback'            => [ __CLASS__, 'get_ticker_messages' ],
 			'permission_callback' => $auth,
 		] );
 
@@ -131,6 +138,10 @@ class DashboardController {
 		$user_id = get_current_user_id();
 
 		return new \WP_REST_Response( static::get_coaching_context_data( $user_id ) );
+	}
+
+	public static function get_ticker_messages( \WP_REST_Request $req ): \WP_REST_Response {
+		return new \WP_REST_Response( [ 'messages' => AnnouncementTickerService::get_active() ] );
 	}
 
 	public static function get_johnny_review( \WP_REST_Request $req ): \WP_REST_Response {
@@ -373,7 +384,62 @@ class DashboardController {
 			'follow_up_overview' => $follow_up_overview,
 			'pending_follow_ups' => array_slice( $pending_follow_ups, 0, 4 ),
 			'delivery_diagnostics' => $delivery_diagnostics,
+			'week_attendance'  => self::build_week_attendance_data( $user_id, $today ),
 		];
+	}
+
+	private static function build_week_attendance_data( int $user_id, string $today ): array {
+		global $wpdb;
+		$p = $wpdb->prefix;
+		$timezone = UserTime::timezone( $user_id );
+		$today_dt = \DateTimeImmutable::createFromFormat( 'Y-m-d H:i:s', $today . ' 12:00:00', $timezone );
+		$weekday_order = (int) $today_dt->format( 'N' );
+		$monday = $today_dt->modify( '-' . ( $weekday_order - 1 ) . ' days' );
+
+		$days = [];
+		for ( $i = 0; $i < 7; $i++ ) {
+			$date_dt = $monday->modify( "+{$i} days" );
+			$date = $date_dt->format( 'Y-m-d' );
+			$is_today = ( $date === $today );
+			$is_future = $date > $today;
+
+			$plan_day = self::get_plan_day_for_date( $user_id, $date );
+			$day_type = $plan_day->day_type ?? 'rest';
+
+			$status = 'upcoming';
+			if ( ! $is_future ) {
+				if ( 'rest' === $day_type ) {
+					$status = 'done';
+				} else {
+					$completed = (int) $wpdb->get_var( $wpdb->prepare(
+						"SELECT COUNT(*) FROM {$p}fit_workout_sessions WHERE user_id = %d AND session_date = %s AND completed = 1",
+						$user_id,
+						$date
+					) );
+					if ( ! $completed && 'cardio' === $day_type ) {
+						$completed = (int) $wpdb->get_var( $wpdb->prepare(
+							"SELECT COUNT(*) FROM {$p}fit_cardio_logs WHERE user_id = %d AND cardio_date = %s",
+							$user_id,
+							$date
+						) );
+					}
+					$status = $completed > 0 ? 'done' : 'missed';
+				}
+			}
+
+			if ( $is_today ) {
+				$status = 'today';
+			}
+
+			$days[] = [
+				'date'          => $date,
+				'weekday_label' => strtoupper( self::weekday_label_for_date( $user_id, $date ) ),
+				'day_type'      => $day_type,
+				'status'        => $status,
+			];
+		}
+
+		return $days;
 	}
 
 	private static function build_internal_request( array $params = [] ): \WP_REST_Request {

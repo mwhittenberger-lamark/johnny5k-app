@@ -31,6 +31,44 @@
   --glass-user:   rgba(232, 184, 74, 0.14);
   --glass-user-border: rgba(232, 184, 74, 0.28);
 
+  /* Theme-ready legacy surface contract. Legacy screens consume these instead
+     of assuming a dark navy palette, so future schemes only need core colors. */
+  --legacy-page-bg: radial-gradient(circle at 50% 0%, #141d26 0%, #060a0f 70%);
+  --legacy-panel-bg: linear-gradient(145deg, rgba(17, 25, 34, 0.78), rgba(8, 12, 17, 0.92));
+  --legacy-panel-raised-bg: linear-gradient(145deg, var(--glass-strong), rgba(8, 12, 17, 0.94));
+  --legacy-feature-bg:
+    radial-gradient(circle at 92% 0, rgba(232, 184, 74, 0.1), transparent 30%),
+    linear-gradient(145deg, rgba(17, 25, 34, 0.94), rgba(8, 12, 17, 0.96));
+  --legacy-inset-bg: rgba(5, 8, 12, 0.34);
+  --legacy-control-bg: rgba(17, 25, 34, 0.56);
+  --legacy-grid-line: rgba(190, 220, 240, 0.045);
+  --legacy-overlay-bg: rgba(5, 8, 12, 0.78);
+  --legacy-panel-border: var(--glass-border);
+  --legacy-panel-shadow: var(--glass-shadow);
+  --on-accent: var(--ink);
+
+  /* Progress / Body surfaces. Keep chart chrome and metric cards readable in
+     every scheme without baking light-mode whites into legacy components. */
+  --progress-metric-weight-bg:
+    linear-gradient(145deg, color-mix(in srgb, var(--accent) 14%, var(--surface-card-alt)), var(--surface-card));
+  --progress-metric-sleep-bg:
+    linear-gradient(145deg, color-mix(in srgb, var(--accent2) 14%, var(--surface-card-alt)), var(--surface-card));
+  --progress-metric-movement-bg:
+    linear-gradient(145deg, color-mix(in srgb, var(--success) 12%, var(--surface-card-alt)), var(--surface-card));
+  --progress-chart-bg:
+    radial-gradient(circle at top left, color-mix(in srgb, var(--accent2) 8%, transparent), transparent 46%),
+    var(--legacy-inset-bg);
+  --progress-chart-border: var(--legacy-panel-border);
+  --progress-range-bg: var(--legacy-inset-bg);
+  --progress-range-border: var(--legacy-panel-border);
+  --progress-chart-guide: color-mix(in srgb, var(--text-muted) 42%, transparent);
+  --progress-empty-bg: color-mix(in srgb, var(--bg2) 76%, transparent);
+  --progress-tab-active-bg: var(--accent);
+  --progress-tab-active-text: var(--on-accent);
+  --progress-weight-fill: color-mix(in srgb, var(--accent) 12%, transparent);
+  --progress-sleep-fill: color-mix(in srgb, var(--accent2) 12%, transparent);
+  --progress-movement-fill: color-mix(in srgb, var(--success) 12%, transparent);
+
   /* Compatibility aliases used by existing production components. */
   --bg:          var(--field);
   --bg2:         var(--field-2);
@@ -111,7 +149,7 @@
   --glass-shadow: inset 0 1px 0 rgba(210, 230, 245, 0.09), 0 8px 24px rgba(0, 0, 0, 0.25);
   --surface-hero:
     radial-gradient(circle at 88% 14%, rgba(232, 184, 74, 0.14), transparent 26%),
-    radial-gradient(circle at 14% 22%, rgba(79, 195, 224, 0.12), transparent 34%),
+    radial-gradient(circle at 14% 22%, rgba(232, 184, 74, 0.12), transparent 34%),
     linear-gradient(145deg, rgba(22, 33, 43, 0.96), rgba(17, 25, 34, 0.98) 58%, rgba(10, 14, 20, 0.98));
   --surface-workout-header: color-mix(in srgb, var(--bg) 92%, white 8%);
   --surface-drawer: linear-gradient(180deg, var(--field-2) 0%, var(--field) 100%);
@@ -150,8 +188,12 @@
   --shell-connectivity-offline-border: rgba(176, 95, 44, 0.28);
   --shell-notice-copy-color: color-mix(in srgb, var(--text) 78%, transparent);
   --shell-notice-action-color: color-mix(in srgb, var(--accent2) 62%, var(--text) 38%);
-  --shell-push-action-color: color-mix(in srgb, var(--accent) 68%, var(--text) 32%);
-  --shell-push-dismiss-color: color-mix(in srgb, var(--text) 70%, var(--accent) 30%);
+  --shell-push-action-color: color-mix(in srgb, var(--accent) 72%, var(--ink) 28%);
+  --shell-push-dismiss-color: color-mix(in srgb, var(--ink) 70%, var(--accent) 30%);
+  --shell-push-notice-text: var(--ink);
+  --shell-push-notice-copy-color: color-mix(in srgb, var(--ink) 78%, transparent);
+  --shell-connectivity-text: var(--ink);
+  --shell-connectivity-copy-color: color-mix(in srgb, var(--ink) 78%, transparent);
   /* Reserved above every app overlay; toast portals attach directly to body. */
   --z-toast: 10000;
   --toast-text: var(--text);
@@ -289,6 +331,7 @@
   --shell-modal-option-active-bg: linear-gradient(135deg, color-mix(in srgb, var(--accent2) 16%, transparent), color-mix(in srgb, var(--yellow) 16%, transparent));
   --shell-modal-option-active-border: color-mix(in srgb, var(--accent2) 60%, var(--border) 40%);
   --shell-modal-option-active-shadow: 0 10px 22px rgba(0, 188, 222, 0.16);
+  --shell-modal-text: var(--ink);
   --loading-screen-bg: linear-gradient(180deg, color-mix(in srgb, var(--bg2) 96%, white 4%), color-mix(in srgb, var(--accent2) 4%, var(--bg2) 96%));
   --loading-screen-border: color-mix(in srgb, var(--text) 8%, transparent);
   --loading-screen-shadow: 0 28px 60px rgba(8, 21, 51, 0.12);
@@ -414,6 +457,28 @@
   -webkit-font-smoothing: antialiased;
 }
 
+/* Non-default and future themes derive the legacy bridge from their own core
+   palette. The classic scheme above intentionally preserves today's colors. */
+:root:not([data-color-scheme='classic']) {
+  --legacy-page-bg:
+    radial-gradient(circle at 88% 4%, color-mix(in srgb, var(--accent2) 14%, transparent), transparent 28%),
+    radial-gradient(circle at 6% 92%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 30%),
+    linear-gradient(180deg, var(--bg), color-mix(in srgb, var(--bg) 82%, var(--bg2) 18%));
+  --legacy-panel-bg:
+    linear-gradient(145deg, color-mix(in srgb, var(--bg2) 86%, transparent), color-mix(in srgb, var(--bg) 94%, transparent));
+  --legacy-panel-raised-bg:
+    linear-gradient(145deg, color-mix(in srgb, var(--bg2) 92%, transparent), color-mix(in srgb, var(--bg) 94%, transparent));
+  --legacy-feature-bg:
+    radial-gradient(circle at 92% 0, color-mix(in srgb, var(--accent) 10%, transparent), transparent 30%),
+    linear-gradient(145deg, color-mix(in srgb, var(--bg2) 94%, var(--bg3) 6%), color-mix(in srgb, var(--bg) 92%, var(--bg2) 8%));
+  --legacy-inset-bg: color-mix(in srgb, var(--bg) 82%, var(--bg2) 18%);
+  --legacy-control-bg: color-mix(in srgb, var(--bg2) 88%, var(--bg) 12%);
+  --legacy-grid-line: color-mix(in srgb, var(--text) 7%, transparent);
+  --legacy-overlay-bg: color-mix(in srgb, var(--bg) 76%, transparent);
+  --legacy-panel-border: color-mix(in srgb, var(--border) 76%, var(--text) 24%);
+  --legacy-panel-shadow: 0 18px 44px color-mix(in srgb, black 28%, transparent), inset 0 1px color-mix(in srgb, var(--text) 7%, transparent);
+}
+
 :root[data-experience-mode='ironquest'] {
   --font-body: 'Spectral', Georgia, serif;
   --font-display: 'Cinzel', Georgia, serif;
@@ -485,6 +550,10 @@
   --shell-notice-action-color: var(--hero-title-color);
   --shell-push-action-color: var(--hero-title-color);
   --shell-push-dismiss-color: var(--hero-title-color);
+  --shell-push-notice-text: var(--text);
+  --shell-push-notice-copy-color: var(--text-muted);
+  --shell-connectivity-text: var(--text);
+  --shell-connectivity-copy-color: var(--text-muted);
   --toast-text: var(--hero-title-color);
   --toast-copy: var(--text-muted);
   --toast-border: color-mix(in srgb, var(--border) 58%, transparent);
@@ -603,6 +672,7 @@
   --shell-modal-option-active-bg: linear-gradient(135deg, color-mix(in srgb, var(--accent2) 16%, transparent), color-mix(in srgb, var(--yellow) 16%, transparent));
   --shell-modal-option-active-border: color-mix(in srgb, var(--accent2) 60%, var(--border) 40%);
   --shell-modal-option-active-shadow: 0 10px 22px rgba(3, 5, 12, 0.16);
+  --shell-modal-text: var(--text);
   --loading-screen-shadow: 0 28px 60px rgba(3, 5, 12, 0.22);
   --loading-card-shadow: 0 18px 32px rgba(3, 5, 12, 0.14);
   --workout-menu-shadow: 0 20px 40px rgba(3, 5, 12, 0.22);

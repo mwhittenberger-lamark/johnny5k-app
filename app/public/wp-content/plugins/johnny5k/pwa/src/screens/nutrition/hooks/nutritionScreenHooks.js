@@ -81,6 +81,8 @@ export function useNutritionPlanningViewState({
   const [pantrySearchQuery, setPantrySearchQuery] = useState('')
   const [pantryCategoryFilter, setPantryCategoryFilter] = useState('all')
   const [pantrySortMode, setPantrySortMode] = useState('name')
+  const [savedFoodCategoryFilter, setSavedFoodCategoryFilter] = useState('all')
+  const [savedFoodMacroFilter, setSavedFoodMacroFilter] = useState('all')
   const [collapsedPantryCategories, setCollapsedPantryCategories] = useState({})
   const [expandedSections, setExpandedSections] = useState({
     meals: false,
@@ -133,7 +135,11 @@ export function useNutritionPlanningViewState({
     setRecipeFiltersOpen,
     setRecipeMealFilter,
     setRecipeSearchQuery,
+    setSavedFoodCategoryFilter,
+    setSavedFoodMacroFilter,
     setShowMicros,
+    savedFoodCategoryFilter,
+    savedFoodMacroFilter,
     showMicros,
   }
 }

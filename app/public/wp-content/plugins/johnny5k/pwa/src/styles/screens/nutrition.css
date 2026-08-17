@@ -428,6 +428,100 @@
   font-size: 0.82rem;
   line-height: 1.45;
 }
+.meal-item-swipe-shell {
+  position: relative;
+  border-radius: 16px;
+  background: linear-gradient(90deg, #d82f4f, #f14b67);
+  overflow: hidden;
+  touch-action: pan-y;
+}
+.meal-item-swipe-content {
+  position: relative;
+  z-index: 2;
+  min-height: 100%;
+  background: rgba(255, 255, 255, 0.96);
+  will-change: transform;
+  transition: transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 180ms ease;
+}
+.meal-item-swipe-content:active { transition: none; }
+.meal-item-swipe-shell.delete-revealed .meal-item-swipe-content { box-shadow: -8px 0 22px rgba(8, 21, 51, 0.16); }
+.meal-item-swipe-delete,
+.meal-item-swipe-edit-cue {
+  position: absolute;
+  inset-block: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 96px;
+  border: 0;
+  color: #fff;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.meal-item-swipe-delete { left: 0; background: transparent; cursor: pointer; }
+.meal-item-swipe-delete .app-icon { width: 19px; height: 19px; }
+.meal-item-swipe-delete:focus-visible { outline: 3px solid #fff; outline-offset: -4px; }
+.meal-item-swipe-delete:disabled { opacity: 0.7; cursor: wait; }
+.meal-item-swipe-edit-cue { right: 0; background: linear-gradient(90deg, #078aa4, #00aeca); }
+.meal-item-inline-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); padding-top: var(--space-1); }
+.meal-item-inline-actions .btn-danger { width: auto; }
+.nutrition-food-editor-shell { z-index: 100; padding: 0; align-items: stretch; }
+.ui-dialog.nutrition-food-editor {
+  width: 100vw;
+  height: 100dvh;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: #f4f9fc;
+  overflow: hidden;
+}
+.nutrition-food-editor .ui-dialog-body { height: 100%; padding: 0; }
+.nutrition-food-editor-form { display: grid; grid-template-rows: auto minmax(0, 1fr); height: 100%; }
+.nutrition-food-editor-header {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: minmax(72px, 1fr) auto minmax(72px, 1fr);
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 72px;
+  padding: max(var(--space-2), env(safe-area-inset-top)) max(var(--space-4), env(safe-area-inset-right)) var(--space-2) max(var(--space-4), env(safe-area-inset-left));
+  border-bottom: 1px solid rgba(8, 21, 51, 0.1);
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: blur(16px);
+}
+.nutrition-food-editor-header > div { text-align: center; }
+.nutrition-food-editor-header span { display: block; color: #087f94; font-size: 0.68rem; font-weight: 900; letter-spacing: 0.1em; text-transform: uppercase; }
+.nutrition-food-editor-header h2 { margin: 2px 0 0; color: #081533; font-size: 1.2rem; }
+.nutrition-food-editor-header > :last-child { justify-self: end; }
+.nutrition-food-editor-header > :first-child { justify-self: start; }
+.nutrition-food-editor-scroll {
+  width: min(100%, 760px);
+  margin-inline: auto;
+  padding: clamp(22px, 4vw, 44px) clamp(18px, 4vw, 44px) calc(40px + env(safe-area-inset-bottom));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.nutrition-food-editor-intro { margin: 0 0 var(--space-4); color: var(--text-muted); font-weight: 650; }
+.nutrition-food-editor-scroll > .field-label { display: block; margin-bottom: var(--space-4); }
+.nutrition-food-editor-scroll input { width: 100%; }
+.nutrition-food-editor-secondary { margin-top: var(--space-5); padding-top: var(--space-4); border-top: 1px solid rgba(8, 21, 51, 0.1); }
+.nutrition-food-editor-secondary h3 { margin: 0 0 var(--space-3); }
+@media (max-width: 520px) {
+  .nutrition-food-editor-header { grid-template-columns: 68px 1fr 68px; padding-inline: 10px; }
+  .nutrition-food-editor-header .btn-primary,
+  .nutrition-food-editor-header .btn-ghost { padding-inline: 10px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .meal-item-swipe-content { transition: none; }
+}
 
 .ai-result-card { background: var(--bg2); border: 2px solid var(--accent2); border-radius: var(--radius); box-shadow: 0 4px 20px rgba(0, 188, 222, 0.15); padding: var(--space-3-5); margin-bottom: var(--space-3); }
 .ai-result-card h3 { margin: 0 0 var(--space-2); }
@@ -1108,6 +1202,48 @@
 }
 .saved-food-row {
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(247, 250, 252, 0.94));
+}
+.saved-food-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin: 2px 0 4px;
+}
+.saved-food-tag {
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(15, 31, 85, 0.14);
+  background: rgba(15, 31, 85, 0.06);
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+.saved-food-tag-macro {
+  border-color: rgba(0, 188, 222, 0.28);
+  background: rgba(0, 188, 222, 0.1);
+  color: #0b7285;
+}
+.nutrition-saved-food-filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.nutrition-saved-food-filter-chips .onboarding-chip {
+  width: auto;
+  min-height: 34px;
+  padding: 6px 14px;
+  border: 1px solid rgba(15, 31, 85, 0.12);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.78);
+  font-size: 0.82rem;
+  font-weight: 700;
+  box-shadow: none;
+}
+.nutrition-saved-food-filter-chips .onboarding-chip.active {
+  border-color: rgba(0, 188, 222, 0.55);
+  background: linear-gradient(160deg, rgba(0, 188, 222, 0.2), rgba(255, 255, 255, 0.9));
 }
 .nutrition-item-row strong,
 .nutrition-recipe-card strong {
@@ -2007,6 +2143,124 @@ label.field-label.nutrition-saved-food-field {
 .nutrition-gap-check-item.checked .nutrition-gap-check-badge {
   background: rgba(21, 29, 38, 0.08);
   color: var(--text-muted);
+}
+
+/* Grocery gap — dark glass ledger aligned with the current Johnny color system. */
+.nutrition-section-shell-plan .nutrition-planning-grid:has(.nutrition-gap-checklist) {
+  --gap-gold: var(--whistle, #e8b84a);
+  --gap-ink: var(--ink, #0b0f13);
+  --gap-text: var(--chalk, #f4f2ea);
+  --gap-muted: var(--mist, #98a59e);
+}
+.nutrition-section-shell-plan .nutrition-planning-grid:has(.nutrition-gap-checklist) .nutrition-plan-accordion-card {
+  overflow: hidden;
+  border-color: rgba(232, 184, 74, 0.22);
+  background:
+    radial-gradient(circle at 92% 0, rgba(232, 184, 74, 0.15), transparent 31%),
+    linear-gradient(145deg, rgba(24, 34, 29, 0.97), rgba(9, 15, 12, 0.98));
+  color: var(--gap-text);
+  box-shadow: 0 22px 48px rgba(3, 8, 6, 0.3), inset 0 1px rgba(255, 255, 255, 0.045);
+  backdrop-filter: blur(18px) saturate(145%);
+}
+.nutrition-section-shell-plan .nutrition-planning-grid:has(.nutrition-gap-checklist) .nutrition-plan-accordion-head {
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+.nutrition-section-shell-plan .nutrition-planning-grid:has(.nutrition-gap-checklist) .nutrition-plan-accordion-trigger h3,
+.nutrition-section-shell-plan .nutrition-planning-grid:has(.nutrition-gap-checklist) .nutrition-gap-check-copy strong,
+.nutrition-section-shell-plan .nutrition-planning-grid:has(.nutrition-gap-checklist) .nutrition-item-row strong {
+  color: var(--gap-text);
+}
+.nutrition-section-shell-plan .nutrition-planning-grid:has(.nutrition-gap-checklist) .nutrition-plan-accordion-trigger p,
+.nutrition-section-shell-plan .nutrition-planning-grid:has(.nutrition-gap-checklist) .nutrition-gap-check-note,
+.nutrition-section-shell-plan .nutrition-planning-grid:has(.nutrition-gap-checklist) .nutrition-item-row p,
+.nutrition-section-shell-plan .nutrition-planning-grid:has(.nutrition-gap-checklist) .nutrition-list-note {
+  color: var(--gap-muted);
+}
+.nutrition-section-shell-plan .nutrition-planning-grid:has(.nutrition-gap-checklist) .dashboard-chip.awards {
+  border-color: rgba(232, 184, 74, 0.4);
+  background: rgba(232, 184, 74, 0.1);
+  color: #f1d477;
+}
+.nutrition-section-shell-plan .nutrition-planning-grid:has(.nutrition-gap-checklist) .dashboard-chip.subtle {
+  border-color: rgba(190, 211, 198, 0.12);
+  background: rgba(190, 211, 198, 0.06);
+  color: #a9b6ae;
+}
+.nutrition-section-shell-plan .nutrition-planning-grid:has(.nutrition-gap-checklist) .nutrition-plan-accordion-icon {
+  border-color: rgba(232, 184, 74, 0.3);
+  background: rgba(232, 184, 74, 0.08);
+  color: #f1d477;
+}
+.nutrition-section-shell-plan .nutrition-planning-grid:has(.nutrition-gap-checklist) .nutrition-gap-bulk-bar {
+  border-color: rgba(190, 211, 198, 0.1);
+  background: rgba(255, 255, 255, 0.035);
+}
+.nutrition-section-shell-plan .nutrition-planning-grid:has(.nutrition-gap-checklist) .nutrition-gap-check-item {
+  border-color: rgba(190, 211, 198, 0.12);
+  background: linear-gradient(180deg, rgba(29, 40, 34, 0.9), rgba(20, 29, 24, 0.86));
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.035);
+}
+.nutrition-section-shell-plan .nutrition-planning-grid:has(.nutrition-gap-checklist) .nutrition-gap-check-item:hover {
+  border-color: rgba(232, 184, 74, 0.26);
+  background: linear-gradient(180deg, rgba(35, 47, 40, 0.94), rgba(23, 33, 27, 0.9));
+}
+.nutrition-section-shell-plan .nutrition-planning-grid:has(.nutrition-gap-checklist) .nutrition-gap-check-item input {
+  accent-color: var(--gap-gold);
+}
+.nutrition-section-shell-plan .nutrition-planning-grid:has(.nutrition-gap-checklist) .nutrition-gap-check-badge {
+  border: 1px solid rgba(232, 184, 74, 0.18);
+  background: rgba(232, 184, 74, 0.09);
+  color: #f1d477;
+}
+.nutrition-section-shell-plan .nutrition-planning-grid:has(.nutrition-gap-checklist) .nutrition-gap-check-item.checked {
+  border-color: rgba(103, 156, 122, 0.24);
+  background: rgba(83, 125, 98, 0.09);
+}
+.nutrition-section-shell-plan .nutrition-planning-grid:has(.nutrition-gap-checklist) .nutrition-gap-check-item.checked .nutrition-gap-check-copy strong,
+.nutrition-section-shell-plan .nutrition-planning-grid:has(.nutrition-gap-checklist) .nutrition-gap-check-item.checked .nutrition-gap-check-note {
+  color: #748178;
+}
+.nutrition-section-shell-plan .nutrition-planning-grid:has(.nutrition-gap-checklist) .nutrition-gap-check-item.checked .nutrition-gap-check-badge {
+  border-color: rgba(103, 156, 122, 0.16);
+  background: rgba(103, 156, 122, 0.08);
+  color: #83958a;
+}
+.nutrition-section-shell-plan .nutrition-planning-grid:has(.nutrition-gap-checklist) .btn-primary {
+  border-color: #f0d078;
+  background: linear-gradient(180deg, #f0d078, var(--gap-gold));
+  color: var(--gap-ink);
+  box-shadow: 0 8px 20px rgba(232, 184, 74, 0.14);
+}
+.nutrition-section-shell-plan .nutrition-planning-grid:has(.nutrition-gap-checklist) .btn-secondary,
+.nutrition-section-shell-plan .nutrition-planning-grid:has(.nutrition-gap-checklist) .btn-ghost {
+  border-color: rgba(190, 211, 198, 0.16);
+  background: rgba(255, 255, 255, 0.035);
+  color: #dce3de;
+}
+.nutrition-section-shell-plan .nutrition-planning-grid:has(.nutrition-gap-checklist) .btn-secondary:hover,
+.nutrition-section-shell-plan .nutrition-planning-grid:has(.nutrition-gap-checklist) .btn-ghost:hover {
+  border-color: rgba(232, 184, 74, 0.35);
+  background: rgba(232, 184, 74, 0.08);
+  color: #f1d477;
+}
+.nutrition-section-shell-plan .nutrition-planning-grid:has(.nutrition-gap-checklist) .btn-primary:disabled,
+.nutrition-section-shell-plan .nutrition-planning-grid:has(.nutrition-gap-checklist) .btn-secondary:disabled,
+.nutrition-section-shell-plan .nutrition-planning-grid:has(.nutrition-gap-checklist) .btn-ghost:disabled {
+  opacity: 0.38;
+}
+.nutrition-section-shell-plan .nutrition-planning-grid:has(.nutrition-gap-checklist) input:not([type='checkbox']),
+.nutrition-section-shell-plan .nutrition-planning-grid:has(.nutrition-gap-checklist) textarea,
+.nutrition-section-shell-plan .nutrition-planning-grid:has(.nutrition-gap-checklist) select {
+  border-color: rgba(190, 211, 198, 0.16);
+  background: rgba(7, 12, 9, 0.72);
+  color: var(--gap-text);
+}
+.nutrition-section-shell-plan .nutrition-planning-grid:has(.nutrition-gap-checklist) input:focus,
+.nutrition-section-shell-plan .nutrition-planning-grid:has(.nutrition-gap-checklist) textarea:focus,
+.nutrition-section-shell-plan .nutrition-planning-grid:has(.nutrition-gap-checklist) select:focus {
+  border-color: var(--gap-gold);
+  outline-color: rgba(232, 184, 74, 0.26);
 }
 .nutrition-delete-button .app-icon {
   width: 18px;

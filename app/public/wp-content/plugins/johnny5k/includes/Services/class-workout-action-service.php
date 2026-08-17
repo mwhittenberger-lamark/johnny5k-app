@@ -11,7 +11,7 @@ defined( 'ABSPATH' ) || exit;
  * - quick_add_exercise / undo_quick_add_exercise
  * - remove_session_exercise / restore_session_exercise
  * - delete_set / restore_set
- * - skip_session / restart_session / discard_session / complete_session
+ * - skip_session / restart_session / reset_session_timer / discard_session / complete_session
  * - log_set / update_set
  */
 class WorkoutActionService {
@@ -30,6 +30,7 @@ class WorkoutActionService {
 			'restore_set' => self::execute_restore_set( $command ),
 			'skip_session' => self::execute_skip_session( $command ),
 			'restart_session' => self::execute_restart_session( $command ),
+			'reset_session_timer' => self::execute_reset_session_timer( $command ),
 			'discard_session' => self::execute_discard_session( $command ),
 			'complete_session' => self::execute_complete_session( $command ),
 			'log_set' => self::execute_log_set( $command ),
@@ -491,6 +492,27 @@ class WorkoutActionService {
 		self::delete_active_sessions_for_date( $user_id, (string) $session->session_date );
 
 		return [ 'restarted' => true ];
+	}
+
+	private static function execute_reset_session_timer( array $command ) {
+		global $wpdb;
+		$p = $wpdb->prefix;
+		$user_id = (int) ( $command['user_id'] ?? 0 );
+		$session_id = (int) ( $command['session_id'] ?? 0 );
+		$session = self::session_for_user( $user_id, $session_id );
+		if ( ! $session ) return new \WP_Error( 'workout_session_not_found', 'Session not found.', [ 'status' => 404 ] );
+		if ( (int) $session->completed ) return new \WP_Error( 'workout_session_completed', 'Completed session timers cannot be restarted.', [ 'status' => 400 ] );
+
+		$started_at = current_time( 'mysql', true );
+		$updated = $wpdb->update(
+			"{$p}fit_workout_sessions",
+			[ 'started_at' => $started_at ],
+			[ 'id' => $session_id, 'user_id' => $user_id ],
+			[ '%s' ],
+			[ '%d', '%d' ]
+		);
+		if ( false === $updated ) return new \WP_Error( 'workout_timer_restart_failed', 'The workout timer could not be restarted.', [ 'status' => 500 ] );
+		return [ 'timer_restarted' => true, 'session_id' => $session_id, 'started_at' => $started_at ];
 	}
 
 	private static function execute_discard_session( array $command ) {

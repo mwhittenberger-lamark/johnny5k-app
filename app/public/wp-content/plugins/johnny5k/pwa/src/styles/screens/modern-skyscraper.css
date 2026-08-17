@@ -211,3 +211,39 @@
 .demo-live-demo { background: var(--deep); }
 .demo-live-demo iframe { background: var(--deep); }
 .demo-live-demo p { color: var(--text-soft); }
+
+/* Nutrition planning: final cascade correction for the grocery-gap experience. */
+.nutrition-screen.upgraded-nutrition-screen {
+  color: var(--chalk);
+  background:
+    radial-gradient(circle at 88% 4%, rgba(232, 184, 74, 0.09), transparent 25%),
+    radial-gradient(circle at 8% 28%, rgba(72, 115, 91, 0.09), transparent 28%),
+    linear-gradient(180deg, var(--field, #111922), var(--deep, #080c11));
+}
+.nutrition-screen .nutrition-section-shell-plan .dashboard-chip.workout {
+  border-color: rgba(181, 202, 188, 0.16);
+  background: rgba(181, 202, 188, 0.07);
+  color: #b9c7bd;
+}
+.nutrition-screen .nutrition-section-shell-plan .dashboard-chip.awards {
+  border-color: rgba(232, 184, 74, 0.34);
+  background: rgba(232, 184, 74, 0.1);
+  color: #f1d477;
+}
+.nutrition-section-shell-plan .nutrition-planning-grid:has(.nutrition-gap-checklist) .nutrition-plan-accordion-card {
+  border-color: rgba(232, 184, 74, 0.24);
+  background:
+    radial-gradient(circle at 92% 0, rgba(232, 184, 74, 0.13), transparent 32%),
+    linear-gradient(145deg, rgba(22, 33, 27, 0.98), rgba(8, 14, 11, 0.99));
+  box-shadow: 0 22px 48px rgba(0, 0, 0, 0.38), inset 0 1px rgba(214, 230, 220, 0.05);
+}
+.nutrition-section-shell-plan .nutrition-planning-grid:has(.nutrition-gap-checklist) .nutrition-gap-detail-row {
+  border-color: rgba(181, 202, 188, 0.11);
+  background: rgba(18, 28, 22, 0.78);
+  box-shadow: inset 3px 0 rgba(232, 184, 74, 0.28);
+}
+.nutrition-section-shell-plan .nutrition-planning-grid:has(.nutrition-gap-checklist) .nutrition-inline-state {
+  border-color: rgba(181, 202, 188, 0.12);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--chalk);
+}

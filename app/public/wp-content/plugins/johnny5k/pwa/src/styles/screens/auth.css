@@ -6,7 +6,10 @@
   align-items: center;
   justify-content: center;
   padding: 24px;
-  background: linear-gradient(160deg, #ddf0ff 0%, #c8e8ff 45%, #d8f8ee 100%);
+  background:
+    radial-gradient(circle at 82% 8%, color-mix(in srgb, var(--accent) 16%, transparent), transparent 42%),
+    radial-gradient(circle at 10% 95%, color-mix(in srgb, var(--accent2) 10%, transparent), transparent 45%),
+    linear-gradient(160deg, var(--bg) 0%, var(--bg2) 55%, var(--deep) 100%);
 }
 
 .auth-screen h1 {

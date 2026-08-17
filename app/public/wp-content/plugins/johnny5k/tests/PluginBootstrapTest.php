@@ -70,7 +70,8 @@ class PluginBootstrapTest extends ServiceTestCase {
 		$this->assertHookCount( 'actions', 'jf_weekly_calorie_adjust', 1 );
 		$this->assertHookCount( 'actions', 'jf_evaluate_awards', 1 );
 		$this->assertHookCount( 'actions', 'jf_process_coach_deliveries', 1 );
-		$this->assertSame( 4, count( $GLOBALS['johnny5k_test_action_scheduler_actions'] ) );
+		$this->assertHookCount( 'actions', 'jf_send_contextual_push_suggestions', 1 );
+		$this->assertSame( 5, count( $GLOBALS['johnny5k_test_action_scheduler_actions'] ) );
 	}
 
 	public function test_plugin_lifecycle_activate_updates_options_invokes_schema_and_schedules_events(): void {
@@ -84,6 +85,7 @@ class PluginBootstrapTest extends ServiceTestCase {
 		$this->assertActionScheduled( 'jf_weekly_calorie_adjust' );
 		$this->assertActionScheduled( 'jf_evaluate_awards' );
 		$this->assertActionScheduled( 'jf_process_coach_deliveries' );
+		$this->assertActionScheduled( 'jf_send_contextual_push_suggestions' );
 	}
 
 	public function test_plugin_lifecycle_deactivate_clears_plugin_cron_hooks(): void {
@@ -92,6 +94,7 @@ class PluginBootstrapTest extends ServiceTestCase {
 		\wp_schedule_event( 1000, 'weekly', 'jf_weekly_calorie_adjust' );
 		\wp_schedule_event( 1000, 'twicedaily', 'jf_evaluate_awards' );
 		\wp_schedule_event( 1000, 'hourly', 'jf_process_coach_deliveries' );
+		\wp_schedule_event( 1000, 'johnny_two_hours', 'jf_send_contextual_push_suggestions' );
 		\wp_schedule_event( 1000, 'hourly', 'other_hook' );
 
 		PluginLifecycle::deactivate();

@@ -22,9 +22,10 @@ class AiService {
 	private const IRONQUEST_MODEL  = 'gpt-5.2';
 	private const RESPONSES_ENDPOINT = 'https://api.openai.com/v1/responses';
 	private const AUDIO_SPEECH_ENDPOINT = 'https://api.openai.com/v1/audio/speech';
+	private const AUDIO_TRANSCRIPTIONS_ENDPOINT = 'https://api.openai.com/v1/audio/transcriptions';
 	private const DEFAULT_CHAT_HISTORY_LIMIT = 18;
 	private const SHORT_CHAT_HISTORY_LIMIT = 2;
-	private const SUPPORTED_ACTION_SCREENS = [ 'nutrition', 'saved_meals', 'recipes', 'grocery_gap', 'pantry', 'steps', 'sleep', 'weight', 'workouts', 'cardio', 'workout', 'body', 'dashboard', 'settings' ];
+	private const SUPPORTED_ACTION_SCREENS = [ 'nutrition', 'saved_meals', 'recipes', 'grocery_gap', 'shopping_list', 'pantry', 'steps', 'sleep', 'weight', 'workouts', 'cardio', 'workout', 'body', 'dashboard', 'settings' ];
 	private const SUPPORTED_WORKFLOWS = [ 'fix_macros', 'plan_next_meal', 'close_grocery_gap', 'review_recovery', 'build_tomorrow_plan' ];
 	private const MAX_TOOL_MEAL_ROWS = 12;
 	private const MAX_TOOL_PANTRY_ROWS = 24;
@@ -4441,6 +4442,48 @@ PROMPT;
 			'model' => $model,
 			'voice' => $voice,
 		];
+	}
+
+	/**
+	 * @return array{text:string,model:string}|WP_Error
+	 */
+	public static function transcribe_audio( int $user_id, string $audio, string $mime_type = 'audio/webm' ) {
+		$api_key = get_option( 'jf_openai_api_key', '' );
+		if ( ! $api_key ) return new \WP_Error( 'no_api_key', 'OpenAI API key not configured.' );
+		if ( '' === $audio ) return new \WP_Error( 'invalid_audio', 'A voice recording is required.' );
+		if ( strlen( $audio ) > 15 * MB_IN_BYTES ) return new \WP_Error( 'audio_too_large', 'Voice recordings must be smaller than 15 MB.' );
+
+		$allowed_types = [ 'audio/webm', 'audio/mp4', 'audio/mpeg', 'audio/wav', 'audio/ogg' ];
+		$mime_type = strtolower( trim( explode( ';', $mime_type )[0] ) );
+		if ( ! in_array( $mime_type, $allowed_types, true ) ) $mime_type = 'audio/webm';
+		$extensions = [ 'audio/webm' => 'webm', 'audio/mp4' => 'm4a', 'audio/mpeg' => 'mp3', 'audio/wav' => 'wav', 'audio/ogg' => 'ogg' ];
+		$model = 'gpt-4o-mini-transcribe';
+		$boundary = '----Johnny5k' . wp_generate_password( 24, false, false );
+		$eol = "\r\n";
+		$body = '--' . $boundary . $eol
+			. 'Content-Disposition: form-data; name="model"' . $eol . $eol . $model . $eol
+			. '--' . $boundary . $eol
+			. 'Content-Disposition: form-data; name="file"; filename="johnny-voice.' . $extensions[ $mime_type ] . '"' . $eol
+			. 'Content-Type: ' . $mime_type . $eol . $eol
+			. $audio . $eol
+			. '--' . $boundary . '--' . $eol;
+
+		$response = wp_remote_post( self::AUDIO_TRANSCRIPTIONS_ENDPOINT, [
+			'headers' => [ 'Authorization' => 'Bearer ' . $api_key, 'Content-Type' => 'multipart/form-data; boundary=' . $boundary ],
+			'body' => $body,
+			'timeout' => 90,
+		] );
+		if ( is_wp_error( $response ) ) return new \WP_Error( 'openai_http_error', $response->get_error_message() );
+		$http = wp_remote_retrieve_response_code( $response );
+		$decoded = json_decode( (string) wp_remote_retrieve_body( $response ), true );
+		if ( 200 !== $http ) {
+			$message = is_array( $decoded ) ? (string) ( $decoded['error']['message'] ?? '' ) : '';
+			return new \WP_Error( 'openai_api_error', '' !== $message ? $message : 'Voice transcription failed.' );
+		}
+		$text = sanitize_textarea_field( (string) ( $decoded['text'] ?? '' ) );
+		if ( '' === trim( $text ) ) return new \WP_Error( 'empty_transcript', 'I could not hear any speech in that recording.' );
+		CostTracker::log_openai( $user_id, $model, '/v1/audio/transcriptions', 0, 0, [ 'context' => 'speech_transcription' ] );
+		return [ 'text' => $text, 'model' => $model ];
 	}
 
 	private static function speech_format_to_mime_type( string $format ): string {

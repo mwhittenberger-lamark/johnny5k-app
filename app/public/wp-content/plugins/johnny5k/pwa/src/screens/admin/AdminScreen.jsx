@@ -160,10 +160,6 @@ function reorderItems(items, fromIndex, toIndex) {
   return next
 }
 
-function optionLabel(options, value, fallback = 'Unknown') {
-  return options.find(([optionValue]) => optionValue === value)?.[1] || fallback
-}
-
 function listMissionStoryTemplates(mission, slot) {
   const templates = Array.isArray(mission?.beat_templates) ? mission.beat_templates : []
   return templates.filter(template => String(template?.slot || '') === String(slot || ''))
@@ -236,7 +232,7 @@ export default function AdminScreen() {
   }
 
   return (
-    <div>
+    <div className="screen admin-screen">
       {!isAdmin ? (
         <div className="admin-tab admin-qa-notice">
           <p className="dashboard-eyebrow">Limited access</p>

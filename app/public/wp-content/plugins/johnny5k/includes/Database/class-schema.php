@@ -24,6 +24,7 @@ class Schema {
 
 		self::ensure_api_cost_log_service_values();
 		self::ensure_training_day_type_values();
+		self::ensure_food_source_values();
 		Seeder::sync_training_day_type_catalog();
 	}
 
@@ -453,7 +454,8 @@ class Schema {
   sodium_mg decimal(8,2) DEFAULT NULL,
   micros_json longtext DEFAULT NULL,
   is_beverage tinyint(1) NOT NULL DEFAULT 0,
-  source enum('manual','label','ai_photo','recipe','system','usda_ai_text','usda_ai_photo') NOT NULL DEFAULT 'manual',
+  category varchar(50) DEFAULT NULL,
+  source enum('manual','label','ai_photo','recipe','system','usda_ai_text','usda_ai_photo','ai_tile') NOT NULL DEFAULT 'manual',
   label_json longtext DEFAULT NULL,
   source_json longtext DEFAULT NULL,
   active tinyint(1) NOT NULL DEFAULT 1,
@@ -884,6 +886,15 @@ class Schema {
 		$table = $wpdb->prefix . 'fit_api_cost_logs';
 		$wpdb->query(
 			"ALTER TABLE `{$table}` MODIFY `service` enum('openai','clicksend','gemini') NOT NULL DEFAULT 'openai'"
+		);
+	}
+
+	private static function ensure_food_source_values(): void {
+		global $wpdb;
+
+		$table = $wpdb->prefix . 'fit_foods';
+		$wpdb->query(
+			"ALTER TABLE `{$table}` MODIFY `source` enum('manual','label','ai_photo','recipe','system','usda_ai_text','usda_ai_photo','ai_tile') NOT NULL DEFAULT 'manual'"
 		);
 	}
 

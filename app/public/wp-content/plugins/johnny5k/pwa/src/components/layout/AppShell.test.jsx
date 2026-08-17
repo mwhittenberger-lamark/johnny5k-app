@@ -28,6 +28,10 @@ const johnnyState = vi.hoisted(() => ({
   openDrawer: vi.fn(),
 }))
 
+const dashboardApiMock = vi.hoisted(() => ({
+  ticker: vi.fn(async () => ({ messages: [] })),
+}))
+
 vi.mock('../../api/client', () => ({
   flushOfflineWriteQueue: vi.fn(async () => ({ count: 0, syncing: false })),
   subscribeOfflineWriteQueue: vi.fn(() => () => {}),
@@ -43,6 +47,10 @@ vi.mock('../../api/modules/auth', () => ({
   authApi: {
     logout: vi.fn(() => Promise.resolve()),
   },
+}))
+
+vi.mock('../../api/modules/dashboard', () => ({
+  dashboardApi: dashboardApiMock,
 }))
 
 vi.mock('../../api/modules/onboarding', () => ({
@@ -120,6 +128,8 @@ describe('AppShell', () => {
     authState.setPreferenceMeta.mockReset()
     johnnyState.isOpen = false
     johnnyState.openDrawer.mockReset()
+    dashboardApiMock.ticker.mockReset()
+    dashboardApiMock.ticker.mockResolvedValue({ messages: [] })
 
     window.matchMedia = vi.fn().mockImplementation(() => ({
       matches: false,
@@ -169,6 +179,7 @@ describe('AppShell', () => {
     expect(dialog?.getAttribute('aria-modal')).toBe('true')
     expect(document.activeElement).toBe(links[0])
     expect(links[0]?.textContent).toContain('Home')
+    expect(dialog?.textContent).toContain('Progress Diary')
 
     await pressKey('Escape')
 
@@ -211,7 +222,7 @@ describe('AppShell', () => {
 
     const dialog = document.querySelector('[role="dialog"][aria-label="Daily check-in"]')
     expect(dialog).toBeTruthy()
-    expect(dialog?.textContent).toContain('Start the day on purpose')
+    expect(dialog?.textContent).toContain('How are you arriving today?')
     expect(authState.setDailyCheckInEntry).toHaveBeenCalled()
     expect(authState.setPreferenceMeta).toHaveBeenCalled()
   })
@@ -238,5 +249,42 @@ describe('AppShell', () => {
     expect(mobileNavText).not.toContain('Admin')
     expect(desktopNavText).toContain('Admin')
     expect(mobileNavText).toContain('Ask Johnny')
+  })
+
+  it('shows active Johnny Wire messages from the backend', async () => {
+    dashboardApiMock.ticker.mockResolvedValue({
+      messages: [{ id: 'wire_1', label: 'Coach note', message: 'Make the next choice count.', url: '/nutrition' }],
+    })
+
+    await renderComponent(
+      <MemoryRouter initialEntries={['/dashboard']}>
+        <AppShell><div>Screen content</div></AppShell>
+      </MemoryRouter>,
+    )
+
+    await act(async () => { await Promise.resolve() })
+    const ticker = document.querySelector('[aria-label="Johnny Wire announcements"]')
+    expect(ticker).toBeTruthy()
+    expect(ticker?.textContent).toContain('Make the next choice count.')
+    expect(ticker?.querySelector('a')?.getAttribute('href')).toBe('/nutrition')
+  })
+
+  it('shows Progress Diary in both desktop and mobile navigation', async () => {
+    await renderComponent(
+      <MemoryRouter initialEntries={['/dashboard']}>
+        <AppShell>
+          <div>Screen content</div>
+        </AppShell>
+      </MemoryRouter>,
+    )
+
+    expect(document.querySelector('.app-shell-desktop-nav')?.textContent).toContain('Progress Diary')
+
+    const menuButton = Array.from(document.querySelectorAll('button')).find(button => button.getAttribute('aria-label') === 'Open navigation menu')
+    await click(menuButton)
+    await flushFocusTimer()
+
+    expect(document.getElementById('app-shell-mobile-nav')?.textContent).toContain('Progress Diary')
+    expect(document.getElementById('app-shell-mobile-nav')?.textContent).toContain('Daily history, trends, and photos')
   })
 })

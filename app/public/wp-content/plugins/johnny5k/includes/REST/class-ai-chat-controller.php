@@ -7,6 +7,8 @@ use Johnny5k\Services\AiService;
 use Johnny5k\Services\UserTime;
 
 class AiChatController extends RestController {
+	private const PROACTIVE_SUGGESTION_SCREENS = [ 'nutrition', 'saved_meals', 'recipes', 'grocery_gap', 'pantry', 'steps', 'sleep', 'weight', 'workouts', 'cardio', 'workout', 'body', 'activity_log', 'settings' ];
+	private const PROACTIVE_SUGGESTION_PRESENTATIONS = [ 'text', 'chart', 'link', 'story', 'meal_idea', 'image', 'none' ];
 
 	public static function register_routes(): void {
 		$ns   = JF_REST_NAMESPACE;
@@ -21,6 +23,12 @@ class AiChatController extends RestController {
 		register_rest_route( $ns, '/ai/daily-brief', [
 			'methods'             => 'POST',
 			'callback'            => [ __CLASS__, 'daily_brief' ],
+			'permission_callback' => $auth,
+		] );
+
+		register_rest_route( $ns, '/ai/proactive-suggestion', [
+			'methods'             => 'POST',
+			'callback'            => [ __CLASS__, 'proactive_suggestion' ],
 			'permission_callback' => $auth,
 		] );
 
@@ -45,6 +53,12 @@ class AiChatController extends RestController {
 		register_rest_route( $ns, '/ai/speech', [
 			'methods'             => 'POST',
 			'callback'            => [ __CLASS__, 'synthesize_speech' ],
+			'permission_callback' => $auth,
+		] );
+
+		register_rest_route( $ns, '/ai/transcribe', [
+			'methods'             => 'POST',
+			'callback'            => [ __CLASS__, 'transcribe_audio' ],
 			'permission_callback' => $auth,
 		] );
 
@@ -155,6 +169,61 @@ class AiChatController extends RestController {
 		}
 
 		$snapshot = DashboardController::get_daily_snapshot_data( $user_id );
+		$readiness_input = is_array( $req->get_param( 'readiness' ) ) ? $req->get_param( 'readiness' ) : [];
+		$readiness = [
+			'energy' => self::limit_suggestion_text( sanitize_text_field( (string) ( $readiness_input['energy'] ?? '' ) ), 24 ),
+			'body'   => self::limit_suggestion_text( sanitize_text_field( (string) ( $readiness_input['body'] ?? '' ) ), 24 ),
+			'head'   => self::limit_suggestion_text( sanitize_text_field( (string) ( $readiness_input['head'] ?? '' ) ), 24 ),
+		];
+		$intro_message = '';
+		$coach_feedback = '';
+		$coach_tips = [];
+		if ( ! in_array( '', $readiness, true ) ) {
+			$intro_cache_key = 'jf_daily_brief_coaching_v2_' . $user_id . '_' . md5( $today . '|' . implode( '|', $readiness ) );
+			$cached_coaching = get_transient( $intro_cache_key );
+			if ( is_array( $cached_coaching ) ) {
+				$intro_message = (string) ( $cached_coaching['intro_message'] ?? '' );
+				$coach_feedback = (string) ( $cached_coaching['coach_feedback'] ?? '' );
+				$coach_tips = is_array( $cached_coaching['coach_tips'] ?? null ) ? $cached_coaching['coach_tips'] : [];
+			}
+			if ( '' === $intro_message || '' === $coach_feedback ) {
+				$intro_prompt = 'Create the personalized coaching opening for this user’s private daily fitness briefing. '
+					. 'Sound like Johnny: warm, observant, concise, confident, and human. Carefully interpret readiness together with the live facts. '
+					. 'The intro should inspire without a quotation, cliché, diagnosis, shame, invented fact, greeting, heading, or instruction; maximum 18 words. '
+					. 'The feedback should be 2 concise sentences, name the most meaningful relationship between readiness and logged stats, and explain what it means for today. '
+					. 'Return exactly 2 specific tips, each under 18 words. Tips must fit the time of day and current data. Do not always mention water; recommend hydration only when the context supports it. '
+					. 'Never treat missing data as zero, invent a trend, or claim a workout is approved, queued, or active unless the context confirms it. '
+					. 'Return JSON only as {"intro":string,"feedback":string,"tips":[string,string]}. Context: ' . wp_json_encode( [
+						'local_day'       => $now->format( 'l' ),
+						'local_hour'      => (int) $now->format( 'G' ),
+						'readiness'       => $readiness,
+						'latest_weight'   => $snapshot['latest_weight'] ?? null,
+						'sleep'           => $snapshot['sleep'] ?? null,
+						'nutrition'       => $snapshot['nutrition_totals'] ?? [],
+						'goal'            => $snapshot['goal'] ?? null,
+						'training_status' => $snapshot['training_status'] ?? [],
+						'today_schedule'  => $snapshot['today_schedule'] ?? null,
+						'week_attendance' => $snapshot['week_attendance'] ?? [],
+						'recovery_summary'=> $snapshot['recovery_summary'] ?? null,
+						'steps'           => $snapshot['steps'] ?? null,
+						'score_7d'        => $snapshot['score_7d'] ?? null,
+						'streaks'         => $snapshot['streaks'] ?? null,
+						'skip_count_30d'  => $snapshot['skip_count_30d'] ?? null,
+					] );
+				$intro_result = AiService::preview_json( $user_id, $intro_prompt, 'accountability', [
+					'screen'   => 'daily_briefing',
+					'pathname' => '/dashboard',
+				] );
+				if ( ! is_wp_error( $intro_result ) ) {
+					$intro_message = self::limit_suggestion_text( sanitize_text_field( (string) ( $intro_result['data']['intro'] ?? '' ) ), 180 );
+					$coach_feedback = self::limit_suggestion_text( sanitize_textarea_field( (string) ( $intro_result['data']['feedback'] ?? '' ) ), 480 );
+					$coach_tips = array_slice( array_values( array_filter( array_map( static fn( $tip ): string => sanitize_text_field( (string) $tip ), (array) ( $intro_result['data']['tips'] ?? [] ) ) ) ), 0, 2 );
+					if ( '' !== $intro_message && '' !== $coach_feedback ) {
+						set_transient( $intro_cache_key, compact( 'intro_message', 'coach_feedback', 'coach_tips' ), 6 * HOUR_IN_SECONDS );
+					}
+				}
+			}
+		}
 		$yesterday_calories = (int) round( (float) $wpdb->get_var( $wpdb->prepare(
 			"SELECT COALESCE(SUM(mi.calories), 0)
 			 FROM {$wpdb->prefix}fit_meals m
@@ -169,6 +238,9 @@ class AiChatController extends RestController {
 			'date'              => $today,
 			'timezone'          => $timezone->getName(),
 			'local_hour'        => (int) $now->format( 'G' ),
+			'intro_message'     => $intro_message,
+			'coach_feedback'    => $coach_feedback,
+			'coach_tips'        => $coach_tips,
 			'latest_weight'     => $snapshot['latest_weight'] ?? null,
 			'yesterday'         => [
 				'date'     => $yesterday,
@@ -177,7 +249,125 @@ class AiChatController extends RestController {
 			'sleep'             => $snapshot['sleep'] ?? null,
 			'training_status'   => $snapshot['training_status'] ?? [],
 			'today_schedule'    => $snapshot['today_schedule'] ?? null,
+			'week_attendance'   => $snapshot['week_attendance'] ?? [],
 		] );
+	}
+
+	public static function proactive_suggestion( \WP_REST_Request $req ): \WP_REST_Response {
+		return new \WP_REST_Response( self::generate_proactive_suggestion_for_user( get_current_user_id() ) );
+	}
+
+	public static function generate_proactive_suggestion_for_user( int $user_id ): array {
+		global $wpdb;
+		if ( $user_id <= 0 ) {
+			return [ 'suggestion' => null ];
+		}
+		$cache_key = 'jf_proactive_suggestion_' . $user_id;
+		$cached = get_transient( $cache_key );
+		if ( is_array( $cached ) ) {
+			return $cached;
+		}
+
+		$snapshot = DashboardController::get_daily_snapshot_data( $user_id );
+		$thread_key = 'u' . $user_id . '_main';
+		$recent_messages = $wpdb->get_results( $wpdb->prepare(
+			"SELECT m.role, m.message_text
+			 FROM {$wpdb->prefix}fit_ai_messages m
+			 JOIN {$wpdb->prefix}fit_ai_threads t ON t.id = m.thread_id
+			 WHERE t.user_id = %d AND t.thread_key = %s AND m.role IN ('user','assistant')
+			 ORDER BY m.id DESC LIMIT 8",
+			$user_id,
+			$thread_key
+		), ARRAY_A );
+		$recent_messages = array_reverse( is_array( $recent_messages ) ? $recent_messages : [] );
+		$recent_messages = array_map( static function( array $message ): array {
+			return [
+				'role' => 'user' === ( $message['role'] ?? '' ) ? 'user' : 'assistant',
+				'message_text' => self::limit_suggestion_text( (string) ( $message['message_text'] ?? '' ), 800 ),
+			];
+		}, $recent_messages );
+
+		$today_context = [
+			'date'                 => $snapshot['date'] ?? '',
+			'goal'                 => $snapshot['goal'] ?? null,
+			'nutrition_totals'     => $snapshot['nutrition_totals'] ?? [],
+			'micronutrient_totals' => $snapshot['micronutrient_totals'] ?? [],
+			'meals_today'          => $snapshot['meals_today'] ?? [],
+			'training_status'      => $snapshot['training_status'] ?? [],
+			'today_schedule'       => $snapshot['today_schedule'] ?? null,
+			'sleep'                => $snapshot['sleep'] ?? null,
+			'steps'                => $snapshot['steps'] ?? [],
+			'latest_weight'        => $snapshot['latest_weight'] ?? null,
+			'pending_follow_ups'   => $snapshot['pending_follow_ups'] ?? [],
+		];
+
+		$prompt = 'Evaluate whether there is one genuinely useful, timely suggestion to offer this user right now. '
+			. 'Use their local time, goals, everything logged today, meaningful gaps still remaining, and the recent conversation. '
+			. 'Possible categories include a missing log, next meal idea, hydration, movement, sleep preparation, recovery, a healthy-living nudge, a short inspirational micro-story, or occasionally a fun Johnny image that meaningfully celebrates progress or inspires the user. '
+			. 'Do not nag, repeat the recent conversation, manufacture urgency, diagnose, or offer a suggestion merely to fill space. '
+			. 'For inspirational stories, do not invent claims about identifiable real people. '
+			. 'Return JSON only with exactly this shape: '
+			. '{"has_suggestion":boolean,"label":string,"title":string,"subtitle":string,"action_type":"chat|daily_checkin|nutrition|progress_diary|open_screen|none","screen":"nutrition|saved_meals|recipes|grocery_gap|pantry|steps|sleep|weight|workouts|cardio|workout|body|activity_log|settings|none","presentation":"text|chart|link|story|meal_idea|image|none","prompt":string}. '
+			. 'Keep label under 24 characters, title under 56 characters, and subtitle under 72 characters. '
+			. 'Use open_screen when the best next step is an existing app destination. Use chat with a precise prompt when Johnny should answer with a chart, useful source link, meal idea, inspirational story, Johnny image, or explanation. For presentation image, explicitly ask for an image of Johnny so his official likeness reference is used. '
+			. 'If has_suggestion is false, use empty strings and action_type none. '
+			. "Today's live snapshot: " . wp_json_encode( $today_context ) . '. '
+			. 'Recent conversation: ' . wp_json_encode( $recent_messages ) . '.';
+
+		$result = AiService::preview_json( $user_id, $prompt, 'accountability', [
+			'screen'              => 'johnny_home',
+			'pathname'            => '/dashboard',
+		] );
+
+		if ( is_wp_error( $result ) ) {
+			return [ 'suggestion' => null ];
+		}
+
+		$suggestion = self::normalize_proactive_suggestion( $result['data'] ?? [] );
+		$response = [ 'suggestion' => $suggestion ];
+		set_transient( $cache_key, $response, 105 );
+
+		return $response;
+	}
+
+	private static function normalize_proactive_suggestion( array $data ): ?array {
+		if ( empty( $data['has_suggestion'] ) ) {
+			return null;
+		}
+
+		$action_type = sanitize_key( (string) ( $data['action_type'] ?? 'none' ) );
+		if ( ! in_array( $action_type, [ 'chat', 'daily_checkin', 'nutrition', 'progress_diary', 'open_screen' ], true ) ) {
+			return null;
+		}
+		$screen = sanitize_key( (string) ( $data['screen'] ?? 'none' ) );
+		$presentation = sanitize_key( (string) ( $data['presentation'] ?? 'none' ) );
+		if ( ! in_array( $presentation, self::PROACTIVE_SUGGESTION_PRESENTATIONS, true ) ) {
+			$presentation = 'text';
+		}
+		if ( 'open_screen' === $action_type && ! in_array( $screen, self::PROACTIVE_SUGGESTION_SCREENS, true ) ) {
+			return null;
+		}
+
+		$title = self::limit_suggestion_text( sanitize_text_field( (string) ( $data['title'] ?? '' ) ), 56 );
+		$subtitle = self::limit_suggestion_text( sanitize_text_field( (string) ( $data['subtitle'] ?? '' ) ), 72 );
+		$prompt = self::limit_suggestion_text( sanitize_textarea_field( (string) ( $data['prompt'] ?? '' ) ), 500 );
+		if ( '' === $title || ( 'chat' === $action_type && '' === $prompt ) ) {
+			return null;
+		}
+
+		return [
+			'label'       => self::limit_suggestion_text( sanitize_text_field( (string) ( $data['label'] ?? 'Johnny suggests' ) ), 24 ) ?: 'Johnny suggests',
+			'title'       => $title,
+			'subtitle'    => $subtitle,
+			'action_type' => $action_type,
+			'screen'      => $screen,
+			'presentation'=> $presentation,
+			'prompt'      => $prompt,
+		];
+	}
+
+	private static function limit_suggestion_text( string $text, int $length ): string {
+		return function_exists( 'mb_substr' ) ? mb_substr( $text, 0, $length ) : substr( $text, 0, $length );
 	}
 
 	public static function exercise_demo( \WP_REST_Request $req ): \WP_REST_Response {
@@ -260,6 +450,17 @@ class AiChatController extends RestController {
 			'voice' => (string) ( $result['voice'] ?? $voice ),
 			'model' => (string) ( $result['model'] ?? '' ),
 		] );
+	}
+
+	public static function transcribe_audio( \WP_REST_Request $req ): \WP_REST_Response {
+		$encoded = (string) ( $req->get_param( 'audio_base64' ) ?: '' );
+		$mime_type = sanitize_text_field( (string) ( $req->get_param( 'mime_type' ) ?: 'audio/webm' ) );
+		if ( str_contains( $encoded, ',' ) ) $encoded = (string) substr( $encoded, strpos( $encoded, ',' ) + 1 );
+		$audio = base64_decode( preg_replace( '/\s+/', '', $encoded ), true );
+		if ( false === $audio || '' === $audio ) return new \WP_REST_Response( [ 'message' => 'No valid voice recording was provided.' ], 400 );
+		$result = AiService::transcribe_audio( get_current_user_id(), $audio, $mime_type );
+		if ( is_wp_error( $result ) ) return new \WP_REST_Response( [ 'message' => $result->get_error_message() ], 500 );
+		return new \WP_REST_Response( $result, 200 );
 	}
 
 	public static function analyse_food_text( \WP_REST_Request $req ): \WP_REST_Response {

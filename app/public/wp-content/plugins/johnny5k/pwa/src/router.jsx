@@ -20,6 +20,7 @@ const JohnnyHomeScreen = lazy(() => import('./screens/johnny/JohnnyHomeScreen'))
 const WorkoutScreen = lazy(() => import('./screens/workout/WorkoutScreen'))
 const ExerciseLibraryScreen = lazy(() => import('./screens/workout/ExerciseLibraryScreen'))
 const NutritionScreen = lazy(() => import('./screens/nutrition/NutritionScreen'))
+const ShoppingListScreen = lazy(() => import('./screens/nutrition/ShoppingListScreen'))
 const BodyScreen = lazy(() => import('./screens/body/BodyScreen'))
 const ActivityLogScreen = lazy(() => import('./screens/activity/ActivityLogScreen'))
 const AiScreen = lazy(() => import('./screens/ai/AiScreen'))
@@ -120,6 +121,11 @@ export const router = createBrowserRouter([
                     path: '/nutrition/*',
                     element: lazyElement(NutritionScreen),
                     errorElement: <RouteErrorScreen area="nutrition" />,
+                  },
+                  {
+                    path: '/shopping-list',
+                    element: lazyElement(ShoppingListScreen),
+                    errorElement: <RouteErrorScreen area="shopping list" />,
                   },
                   {
                     path: '/body',

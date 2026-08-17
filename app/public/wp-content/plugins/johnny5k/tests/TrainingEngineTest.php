@@ -61,7 +61,9 @@ class TrainingEngineTest extends ServiceTestCase {
 		$db->expectGetVar( 'SELECT equipment FROM wp_fit_exercises WHERE id = 502', 'cable' );
 		$db->expectGetRow( 'FROM wp_fit_workout_sessions WHERE user_id = 7 AND completed = 1', null );
 		$db->expectGetResults( 'FROM wp_fit_workout_sets ws', [] );
+		$db->expectGetRow( 'SELECT e.movement_pattern, e.equipment', null );
 		$db->expectGetResults( 'FROM wp_fit_workout_sets ws', [] );
+		$db->expectGetRow( 'SELECT e.movement_pattern, e.equipment', null );
 
 		$result = TrainingEngine::preview_session( 7, 'short', false, 'push' );
 
@@ -123,6 +125,7 @@ class TrainingEngineTest extends ServiceTestCase {
 		] );
 		$db->expectGetVar( 'SELECT equipment FROM wp_fit_exercises WHERE id = 501', 'barbell' );
 		$db->expectGetResults( 'FROM wp_fit_workout_sets ws', [] );
+		$db->expectGetRow( 'SELECT e.movement_pattern, e.equipment', null );
 		$db->expectGetRow( 'FROM wp_fit_exercises WHERE id = 502', (object) [
 			'id' => 502,
 			'name' => 'Cable Fly',
@@ -139,6 +142,7 @@ class TrainingEngineTest extends ServiceTestCase {
 		] );
 		$db->expectGetVar( 'SELECT equipment FROM wp_fit_exercises WHERE id = 503', 'machine' );
 		$db->expectGetResults( 'FROM wp_fit_workout_sets ws', [] );
+		$db->expectGetRow( 'SELECT e.movement_pattern, e.equipment', null );
 
 		$result = TrainingEngine::preview_session( 7, 'short', false, 'push' );
 
@@ -217,6 +221,24 @@ class TrainingEngineTest extends ServiceTestCase {
 
 		$this->assertSame( 95.0, $result['weight'] );
 		$this->assertSame( 'Match your last session weight and aim for the top of your rep range.', $result['note'] );
+	}
+
+	public function test_recommended_progression_uses_a_conservative_standard_without_history(): void {
+		$db = $this->wpdb();
+
+		$db->expectGetVar( 'SELECT equipment FROM wp_fit_exercises WHERE id = 503', 'barbell' );
+		$db->expectGetResults( 'FROM wp_fit_workout_sets ws', [] );
+		$db->expectGetRow( 'SELECT e.movement_pattern, e.equipment', (object) [
+			'movement_pattern'   => 'horizontal_push',
+			'equipment'          => 'barbell',
+			'training_experience'=> 'beginner',
+			'body_weight_lb'     => 200,
+		] );
+
+		$result = TrainingEngine::recommended_progression( 7, 503 );
+
+		$this->assertSame( 40.0, $result['weight'] );
+		$this->assertStringContainsString( 'Conservative starter target', $result['note'] );
 	}
 
 	public function test_record_snapshots_does_not_grant_pr_award_when_estimated_1rm_does_not_improve(): void {

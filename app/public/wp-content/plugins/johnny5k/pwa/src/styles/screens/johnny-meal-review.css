@@ -1,0 +1,56 @@
+.johnny-meal-review-screen {
+  height: 100dvh;
+  overflow: hidden;
+  padding-bottom: max(clamp(18px, 4vw, 36px), env(safe-area-inset-bottom));
+}
+
+.johnny-meal-review-results {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 2px 5px 18px;
+  scrollbar-gutter: stable;
+  -webkit-overflow-scrolling: touch;
+}
+
+.johnny-meal-review-item {
+  scroll-margin-block: 12px;
+}
+
+.johnny-meal-review-item-editor input {
+  scroll-margin-bottom: 120px;
+}
+
+.johnny-meal-review-actions {
+  position: relative;
+  bottom: auto;
+  z-index: 2;
+  padding-top: 8px;
+  background: #080c09;
+}
+
+@media (max-height: 700px) {
+  .johnny-meal-review-screen {
+    gap: 10px;
+  }
+
+  .johnny-meal-review-header h1 {
+    font-size: 24px;
+  }
+
+  .johnny-meal-review-header p {
+    display: none;
+  }
+
+  .johnny-meal-review-total > div {
+    padding: 8px;
+  }
+
+  .johnny-meal-review-total strong {
+    font-size: 16px;
+  }
+
+  .johnny-meal-review-actions button {
+    min-height: 44px;
+  }
+}

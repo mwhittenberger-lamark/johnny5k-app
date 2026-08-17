@@ -237,6 +237,19 @@ function getThemeMode(colors) {
   return getRelativeLuminance(parsedBackground) < 0.24 ? 'dark' : 'light'
 }
 
+function getReadableAccentText(accent) {
+  const parsedAccent = parseHexColor(accent)
+  if (!parsedAccent) return '#14181A'
+
+  const accentLuminance = getRelativeLuminance(parsedAccent)
+  const darkLuminance = getRelativeLuminance({ red: 20, green: 24, blue: 26 })
+  const lightLuminance = 1
+  const darkContrast = (accentLuminance + 0.05) / (darkLuminance + 0.05)
+  const lightContrast = (lightLuminance + 0.05) / (accentLuminance + 0.05)
+
+  return lightContrast > darkContrast ? '#FFFFFF' : '#14181A'
+}
+
 function getSchemeColor(colors, key, fallback) {
   return isValidColorString(colors?.[key]) ? colors[key] : fallback
 }
@@ -348,9 +361,10 @@ export function applyColorScheme(value, options = {}) {
     root.style.setProperty('--rust', scheme.colors.danger)
     root.style.setProperty('--signal', scheme.colors.accent2)
     root.style.setProperty('--good', scheme.colors.success)
-    root.style.setProperty('--ink', '#14181A')
+    root.style.setProperty('--ink', getReadableAccentText(scheme.colors.accent))
+    root.style.setProperty('--on-accent', getReadableAccentText(scheme.colors.accent))
     if (scheme.id === 'classic') {
-      root.style.setProperty('--whistle-dim', '#6B5326')
+      root.style.setProperty('--whistle-dim', `color-mix(in srgb, ${scheme.colors.accent} 42%, black)`)
       root.style.setProperty('--rust-dim', '#4A2A1C')
       root.style.setProperty('--surface-2', '#10161D')
       root.style.setProperty('--surface-alt', '#1A232C')
@@ -361,8 +375,8 @@ export function applyColorScheme(value, options = {}) {
       root.style.setProperty('--glass', 'rgba(17, 25, 34, 0.5)')
       root.style.setProperty('--glass-strong', 'rgba(17, 25, 34, 0.74)')
       root.style.setProperty('--glass-border', 'rgba(190, 215, 235, 0.12)')
-      root.style.setProperty('--glass-user', 'rgba(232, 184, 74, 0.14)')
-      root.style.setProperty('--glass-user-border', 'rgba(232, 184, 74, 0.28)')
+      root.style.setProperty('--glass-user', `color-mix(in srgb, ${scheme.colors.accent} 14%, transparent)`)
+      root.style.setProperty('--glass-user-border', `color-mix(in srgb, ${scheme.colors.accent} 28%, transparent)`)
     } else {
       root.style.setProperty('--whistle-dim', `color-mix(in srgb, ${scheme.colors.accent} 42%, black)`)
       root.style.setProperty('--rust-dim', `color-mix(in srgb, ${scheme.colors.danger} 38%, black)`)

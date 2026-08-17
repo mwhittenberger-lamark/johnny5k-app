@@ -20,6 +20,7 @@ class RestRouteRegistrationTest extends ServiceTestCase {
 		NutritionRecipeController::register_routes();
 
 		$this->assertRouteRegistered( '/ai/chat', [ AiChatController::class, 'chat' ] );
+		$this->assertRouteRegistered( '/ai/proactive-suggestion', [ AiChatController::class, 'proactive_suggestion' ] );
 		$this->assertRouteRegistered( '/nutrition/meal', [ NutritionController::class, 'log_meal' ] );
 		$this->assertRouteRegistered( '/nutrition/recipes', [ NutritionRecipeController::class, 'get_recipe_suggestions' ] );
 	}
@@ -55,6 +56,7 @@ class RestRouteRegistrationTest extends ServiceTestCase {
 		$this->assertRouteRegistered( '/auth/dev-login', [ AuthController::class, 'dev_login' ], [ AuthController::class, 'dev_login_permission' ] );
 		$this->assertRouteRegistered( '/dashboard', [ \Johnny5k\REST\DashboardController::class, 'get_daily_snapshot' ] );
 		$this->assertRouteRegistered( '/dashboard/coaching-context', [ \Johnny5k\REST\DashboardController::class, 'get_coaching_context' ] );
+		$this->assertRouteRegistered( '/dashboard/ticker', [ \Johnny5k\REST\DashboardController::class, 'get_ticker_messages' ] );
 		$this->assertRouteRegistered( '/ai/chat', [ AiChatController::class, 'chat' ] );
 		$this->assertRouteRegistered( '/nutrition/recipes', [ NutritionRecipeController::class, 'get_recipe_suggestions' ] );
 		$this->assertRouteRegistered( '/nutrition/summary', [ NutritionController::class, 'get_nutrition_summary' ] );

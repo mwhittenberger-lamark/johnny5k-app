@@ -52,7 +52,9 @@ class AiToolServiceTest extends ServiceTestCase {
 		$this->assertFalse( $tool['read_only'] ?? true );
 		$this->assertSame( [ 'prompt', 'title', 'alt_text', 'category' ], $tool['parameters']['required'] ?? [] );
 		$this->assertContains( 'exercise_illustration', $tool['parameters']['properties']['category']['enum'] ?? [] );
+		$this->assertContains( 'johnny_moment', $tool['parameters']['properties']['category']['enum'] ?? [] );
 		$this->assertContains( '9:16', $tool['parameters']['properties']['aspect_ratio']['enum'] ?? [] );
+		$this->assertSame( 'boolean', $tool['parameters']['properties']['use_johnny_likeness']['type'] ?? null );
 	}
 
 	public function test_explicit_image_requests_require_the_image_tool(): void {
@@ -63,9 +65,11 @@ class AiToolServiceTest extends ServiceTestCase {
 		$this->assertSame( '', AiToolService::get_required_chat_tool( $registry, 'general', [], 'What kinds of images can you generate?' ) );
 		$this->assertSame( '', AiToolService::get_required_chat_tool( $registry, 'general', [], 'Create a chart of my weekly steps.' ) );
 		$this->assertSame( '', AiToolService::get_required_chat_tool( $registry, 'general', [], 'Do not generate an image yet.' ) );
-		$this->assertSame( '', AiToolService::get_required_chat_tool( $registry, 'general', [], 'Build me a new full-body circuit for today.' ) );
-		$this->assertSame( '', AiToolService::get_required_chat_tool( $registry, 'general', [], 'Put together a strength workout for me.' ) );
+		$this->assertSame( 'create_custom_workout', AiToolService::get_required_chat_tool( $registry, 'general', [], 'Build me a new full-body circuit for today.' ) );
+		$this->assertSame( 'create_custom_workout', AiToolService::get_required_chat_tool( $registry, 'general', [], 'Put together a strength workout for me.' ) );
 		$this->assertSame( '', AiToolService::get_required_chat_tool( $registry, 'general', [], 'How do I build a workout?' ) );
+		$this->assertSame( 'create_custom_workout', AiToolService::get_required_chat_tool( $registry, 'general', [], 'Use these exercises to create my workout: Pendulum Squat, Hatfield Split Squat, and Cable Y Raise.' ) );
+		$this->assertStringContainsString( 'automatically creates any missing exercises', $registry['create_custom_workout']['description'] ?? '' );
 	}
 
 	public function test_weight_progress_requests_require_complete_weight_history(): void {
@@ -352,7 +356,7 @@ class AiToolServiceTest extends ServiceTestCase {
 	public function test_complete_johnny_mutation_tool_batch_is_registered(): void {
 		$registry = AiToolService::tool_registry( 5, 5, 5 );
 		$expected = [
-			'approve_workout', 'search_exercises', 'modify_workout', 'start_workout', 'manage_workout_set', 'complete_workout',
+			'approve_workout', 'search_exercises', 'modify_workout', 'start_workout', 'manage_workout_set', 'cancel_workout', 'restart_workout_timer', 'complete_workout',
 			'log_body_measurement', 'manage_health_log', 'log_water', 'manage_meal', 'manage_saved_meal', 'update_goals', 'update_profile',
 		];
 		foreach ( $expected as $name ) {

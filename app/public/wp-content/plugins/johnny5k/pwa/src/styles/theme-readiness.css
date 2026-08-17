@@ -1,0 +1,173 @@
+/* Final theme bridge for production screens that predate the semantic palette.
+   Keep this file token-only: adding a theme should not require editing selectors. */
+
+:is(
+  .body-screen.progress-observatory,
+  .activity-log-screen.activity-observatory
+) {
+  background: var(--legacy-page-bg);
+}
+
+/* Full-viewport ledgers used fixed navy values; these now follow any scheme. */
+.activity-observatory-ambient,
+.progress-observatory-ambient {
+  background-image:
+    repeating-linear-gradient(90deg, var(--legacy-grid-line) 0 1px, transparent 1px 48px),
+    repeating-linear-gradient(0deg, var(--legacy-grid-line) 0 1px, transparent 1px 48px);
+}
+
+.activity-observatory-action,
+.progress-observatory-action,
+.progress-observatory-icon-button {
+  border-color: var(--legacy-panel-border);
+  background: var(--legacy-control-bg);
+  color: var(--text);
+}
+
+.activity-observatory-action.primary,
+.progress-observatory-action.primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.activity-observatory-vitals,
+.progress-observatory-vitals {
+  background: linear-gradient(90deg, transparent, var(--legacy-panel-bg), transparent);
+}
+
+.activity-observatory-notice,
+.activity-observatory-state,
+.activity-log-entry-card,
+.progress-diary-chart-grid,
+.progress-diary-day-card,
+.progress-observatory-state {
+  border-color: var(--legacy-panel-border);
+  background: var(--legacy-panel-bg);
+  color: var(--text);
+  box-shadow: var(--legacy-panel-shadow);
+}
+
+.progress-observatory-tabs {
+  border-color: var(--legacy-panel-border);
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
+}
+
+/* The standard Progress tabs and charts share the same semantic palette as
+   the full-screen diary. These overrides also neutralize older global styles. */
+.body-screen:not(.progress-observatory) .body-summary-card,
+.body-screen:not(.progress-observatory) .body-chart-card,
+.body-screen:not(.progress-observatory) .body-form-card,
+.body-screen:not(.progress-observatory) .progress-photos-entry-card,
+.body-screen:not(.progress-observatory) .settings-prediction-card,
+.body-screen:not(.progress-observatory) > .dash-card {
+  border-color: var(--legacy-panel-border);
+  color: var(--text);
+  box-shadow: var(--legacy-panel-shadow);
+}
+
+.body-screen:not(.progress-observatory) .tab-btn.active,
+.body-screen:not(.progress-observatory) .range-tab.active {
+  border-color: var(--progress-tab-active-bg);
+  background: var(--progress-tab-active-bg);
+  color: var(--progress-tab-active-text);
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--accent) 24%, transparent);
+}
+
+.body-screen:not(.progress-observatory) :is(.range-tabs, .sparkline-card, .sparkline-empty) {
+  border-color: var(--progress-chart-border);
+}
+
+.body-screen:not(.progress-observatory) :is(.range-tabs, .sparkline-empty) {
+  background: var(--progress-range-bg);
+}
+
+.body-screen:not(.progress-observatory) .sparkline-card { background: var(--progress-chart-bg); }
+.body-screen:not(.progress-observatory) .sparkline-reference { stroke: var(--progress-chart-guide); }
+.body-screen:not(.progress-observatory) .sparkline-legend-line { border-color: var(--progress-chart-guide); }
+.body-screen:not(.progress-observatory) .progress-activity-log-button {
+  border-color: var(--legacy-panel-border);
+  background: var(--legacy-control-bg);
+  color: var(--text);
+}
+
+.progress-nutrition-day-list,
+.progress-nutrition-meal {
+  border-color: var(--legacy-panel-border);
+  background: var(--legacy-panel-raised-bg);
+  color: var(--text);
+  box-shadow: var(--legacy-panel-shadow);
+}
+
+.progress-observatory-signal .sparkline-empty {
+  border-color: var(--legacy-panel-border) !important;
+  background: var(--legacy-inset-bg) !important;
+  color: var(--text-muted) !important;
+}
+
+.progress-diary-floor-number {
+  color: color-mix(in srgb, var(--text) 5%, transparent);
+}
+
+.progress-diary-day-card::before {
+  background: linear-gradient(var(--accent), color-mix(in srgb, var(--accent) 8%, transparent) 58%, transparent);
+}
+
+/* Rewards, photos, and library management surfaces. */
+.rewards-hero-card {
+  border-color: var(--legacy-panel-border) !important;
+  background: var(--legacy-feature-bg) !important;
+  color: var(--text) !important;
+}
+
+.progress-angle-card,
+.progress-date-group-card,
+.progress-photo-card,
+.progress-comparison-card,
+.workout-library-group,
+.workout-library-duplicates-card,
+.workout-library-duplicate-group,
+.workout-library-duplicate-pill,
+.workout-library-merge-summary,
+.workout-library-merge-row {
+  border-color: var(--legacy-panel-border) !important;
+  background: var(--legacy-panel-raised-bg) !important;
+  color: var(--text) !important;
+}
+
+.rewards-stat-block,
+.rewards-breakdown-card,
+.reward-card,
+.reward-card.locked,
+.reward-card-unlock {
+  border-color: var(--legacy-panel-border);
+  background: var(--legacy-panel-bg);
+  color: var(--text);
+}
+
+.reward-card-icon,
+.progress-photo-tags span {
+  border-color: var(--glass-user-border);
+  background: var(--glass-user);
+  color: var(--accent);
+}
+
+/* Portaled system UI participates in the same contract. */
+.ui-overlay-backdrop { background: var(--legacy-overlay-bg); }
+.ui-dialog,
+.ui-drawer {
+  border-color: var(--legacy-panel-border);
+  background: var(--legacy-feature-bg);
+  color: var(--text);
+}
+.ui-dialog :is(.ui-dialog-title, h1, h2, h3),
+.ui-drawer :is(.ui-drawer-title, h1, h2, h3) { color: var(--text); }
+.ui-dialog :is(.ui-dialog-description, .ui-dialog-message, p),
+.ui-drawer :is(.ui-drawer-description, p) { color: var(--text-muted); }
+
+@media (prefers-reduced-transparency: reduce) {
+  :is(.dash-card, .small-card, .ui-dialog, .ui-drawer) {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}

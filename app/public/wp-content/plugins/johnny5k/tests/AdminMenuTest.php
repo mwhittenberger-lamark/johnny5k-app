@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Johnny5k\Tests;
 
 use Johnny5k\Admin\AdminMenu;
+use Johnny5k\Admin\MessageDeliveryLog;
 use Johnny5k\Admin\OverviewPage;
 use Johnny5k\Admin\OverviewStats;
 use Johnny5k\Tests\Support\ServiceTestCase;
@@ -20,6 +21,13 @@ class AdminMenuTest extends ServiceTestCase {
 		foreach ( $GLOBALS['johnny5k_test_admin_pages']['submenu'] as $submenu ) {
 			$this->assertSame( 'manage_options', $submenu['capability'] ?? null );
 		}
+
+		$delivery_page = array_values( array_filter(
+			$GLOBALS['johnny5k_test_admin_pages']['submenu'],
+			static fn ( array $submenu ): bool => 'jf-message-delivery-log' === ( $submenu['menu_slug'] ?? '' )
+		) );
+		$this->assertCount( 1, $delivery_page );
+		$this->assertSame( [ MessageDeliveryLog::class, 'render' ], $delivery_page[0]['callback'] ?? null );
 	}
 
 	public function test_enqueue_assets_only_loads_on_plugin_pages(): void {

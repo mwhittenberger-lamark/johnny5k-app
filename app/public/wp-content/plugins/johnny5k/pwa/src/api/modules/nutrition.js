@@ -20,6 +20,7 @@ export const nutritionApi = {
   logSavedFood: (id, data) => api.post(`/nutrition/saved-foods/${id}/log`, data ?? {}),
   getRecipeCookbook: () => api.get('/nutrition/recipe-cookbook'),
   updateRecipeCookbook: (recipes) => api.put('/nutrition/recipe-cookbook', { recipes }),
+  generateRecipeImage: (recipe) => api.post('/nutrition/recipe-image', { recipe }),
   addPantry: (data) => api.post('/nutrition/pantry', data),
   addPantryBulk: (items) => api.post('/nutrition/pantry/bulk', { items }),
   getPantry: () => api.get('/nutrition/pantry'),
