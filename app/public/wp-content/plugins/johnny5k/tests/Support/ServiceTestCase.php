@@ -20,10 +20,12 @@ abstract class ServiceTestCase extends TestCase {
 		$GLOBALS['johnny5k_test_transients'] = [];
 		$GLOBALS['johnny5k_test_http'] = [
 			'post' => [],
+			'get' => [],
 			'request' => [],
 		];
 		$GLOBALS['johnny5k_test_http_log'] = [
 			'post' => [],
+			'get' => [],
 			'request' => [],
 		];
 		$GLOBALS['johnny5k_test_hooks'] = [
@@ -68,6 +70,10 @@ abstract class ServiceTestCase extends TestCase {
 
 	protected function queueHttpPostResponse( mixed $response ): void {
 		$GLOBALS['johnny5k_test_http']['post'][] = $response;
+	}
+
+	protected function queueHttpGetResponse( mixed $response ): void {
+		$GLOBALS['johnny5k_test_http']['get'][] = $response;
 	}
 
 	protected function queueHttpRequestResponse( mixed $response ): void {

@@ -12,7 +12,12 @@ class NutritionSourceService {
 	private const SEARCH_ENDPOINT = 'https://api.nal.usda.gov/fdc/v1/foods/search';
 	private const DETAIL_ENDPOINT = 'https://api.nal.usda.gov/fdc/v1/food/';
 	private const DEMO_API_KEY    = 'DEMO_KEY';
-	private const REQUEST_TIMEOUT = 20;
+	// Kept short because enrich_meal_analysis() makes up to two of these calls
+	// (search + detail) per detected food item, sequentially — a multi-item
+	// photo analysis can otherwise stack several of these before the AI call's
+	// own response even starts, pushing the whole request past typical gateway
+	// timeouts and leaving the client stalled with no response at all.
+	private const REQUEST_TIMEOUT = 8;
 
 	private const DATA_TYPE_SCORES = [
 		'Foundation'      => 18,
@@ -325,25 +330,35 @@ class NutritionSourceService {
 				?? $entry['nutrientNumber']
 				?? ''
 			);
+			$unit = self::normalise_text(
+				(string) (
+					$entry['nutrient']['unitName']
+					?? $entry['unitName']
+					?? ''
+				)
+			);
 			$amount = isset( $entry['amount'] ) ? (float) $entry['amount'] : null;
 
 			if ( null === $amount ) {
 				continue;
 			}
 
-			if ( '1008' === $number || str_contains( $name, 'energy' ) ) {
+			// FoodData Central lists energy twice per food, in kcal and in kJ, both
+			// literally named "Energy" — matching on name alone (with max()) picked
+			// whichever number was larger, i.e. always the ~4.18x too-high kJ value.
+			if ( '1008' === $number || '208' === $number || ( str_contains( $name, 'energy' ) && 'kj' !== $unit ) ) {
 				$nutrients['calories'] = max( $nutrients['calories'], $amount );
-			} elseif ( '1003' === $number || str_contains( $name, 'protein' ) ) {
+			} elseif ( '1003' === $number || '203' === $number || str_contains( $name, 'protein' ) ) {
 				$nutrients['protein_g'] = $amount;
-			} elseif ( '1005' === $number || str_contains( $name, 'carbohydrate' ) ) {
+			} elseif ( '1005' === $number || '205' === $number || str_contains( $name, 'carbohydrate' ) ) {
 				$nutrients['carbs_g'] = $amount;
-			} elseif ( '1004' === $number || str_contains( $name, 'total lipid' ) || str_contains( $name, 'total fat' ) ) {
+			} elseif ( '1004' === $number || '204' === $number || str_contains( $name, 'total lipid' ) || str_contains( $name, 'total fat' ) ) {
 				$nutrients['fat_g'] = $amount;
-			} elseif ( '1079' === $number || str_contains( $name, 'fiber' ) ) {
+			} elseif ( '1079' === $number || '291' === $number || str_contains( $name, 'fiber' ) ) {
 				$nutrients['fiber_g'] = $amount;
-			} elseif ( '2000' === $number || str_contains( $name, 'sugars, total' ) ) {
+			} elseif ( '2000' === $number || '269' === $number || ( str_contains( $name, 'sugar' ) && ! str_contains( $name, 'added' ) ) ) {
 				$nutrients['sugar_g'] = $amount;
-			} elseif ( '1093' === $number || str_contains( $name, 'sodium' ) ) {
+			} elseif ( '1093' === $number || '307' === $number || str_contains( $name, 'sodium' ) ) {
 				$nutrients['sodium_mg'] = $amount;
 			}
 		}

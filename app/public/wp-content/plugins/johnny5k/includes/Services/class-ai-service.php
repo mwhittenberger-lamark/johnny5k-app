@@ -874,16 +874,28 @@ class AiService {
 		return is_numeric( $value ) ? (float) $value : 0.0;
 	}
 
+	// Each fallback below is a full sequential OpenAI call (up to 60-90s). Meal
+	// photos routinely have several items that don't match USDA cleanly (mixed
+	// or homemade dishes), so leaving this uncapped can chain enough of these
+	// calls to stall the request for minutes. Items past the cap simply keep
+	// their AI-estimated numbers from the initial analysis.
+	private const MAX_WEB_SEARCH_FALLBACKS_PER_MEAL = 2;
+
 	private static function resolve_meal_analysis_with_web_search( int $user_id, array $analysis, array $context_data ): array {
 		$items = is_array( $analysis['items'] ?? null ) ? $analysis['items'] : [];
 		$used_web_search = false;
 		$sources = [];
+		$fallbacks_used = 0;
 
 		foreach ( $items as $index => $item ) {
 			$item = is_array( $item ) ? $item : [];
 			if ( ! self::should_fallback_food_analysis_to_web( [ 'source' => $item['source'] ?? null ] ) ) {
 				continue;
 			}
+			if ( $fallbacks_used >= self::MAX_WEB_SEARCH_FALLBACKS_PER_MEAL ) {
+				continue;
+			}
+			$fallbacks_used++;
 
 			$query = self::build_item_lookup_query( $item );
 			$web_resolved = self::analyse_food_text_with_web_search( $user_id, $query, $context_data, $item );

@@ -171,12 +171,34 @@ async function performRequest(method, url, body = null, isFormData = false, redi
     headers['Content-Type'] = 'application/json'
   }
 
-  const res = await fetch(url, {
-    method,
-    credentials: 'include',
-    headers,
-    body: isFormData ? body : body ? JSON.stringify(body) : undefined,
-  })
+  let signal
+  let timeoutId
+  if (options.timeoutMs) {
+    const controller = new AbortController()
+    timeoutId = window.setTimeout(() => controller.abort(), options.timeoutMs)
+    signal = controller.signal
+  }
+
+  let res
+  try {
+    res = await fetch(url, {
+      method,
+      credentials: 'include',
+      headers,
+      body: isFormData ? body : body ? JSON.stringify(body) : undefined,
+      signal,
+    })
+  } catch (error) {
+    if (error?.name === 'AbortError') {
+      const timeoutError = new Error('Johnny is taking longer than expected to respond. Try again.')
+      timeoutError.status = 0
+      timeoutError.isTimeout = true
+      throw timeoutError
+    }
+    throw error
+  } finally {
+    window.clearTimeout(timeoutId)
+  }
 
   const refreshedNonce = res.headers.get('X-WP-Nonce')
   if (refreshedNonce) {

@@ -760,6 +760,21 @@ if ( ! function_exists( 'wp_remote_post' ) ) {
 	}
 }
 
+if ( ! function_exists( 'wp_remote_get' ) ) {
+	function wp_remote_get( string $url, array $args = [] ): mixed {
+		$GLOBALS['johnny5k_test_http_log']['get'][] = [
+			'url' => $url,
+			'args' => $args,
+		];
+		$queue = &$GLOBALS['johnny5k_test_http']['get'];
+		if ( empty( $queue ) ) {
+			return new WP_Error( 'missing_http_stub', 'No stubbed wp_remote_get response available.' );
+		}
+
+		return array_shift( $queue );
+	}
+}
+
 if ( ! function_exists( 'wp_remote_request' ) ) {
 	function wp_remote_request( string $url, array $args = [] ): mixed {
 		$GLOBALS['johnny5k_test_http_log']['request'][] = [
