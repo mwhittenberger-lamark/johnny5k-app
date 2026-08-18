@@ -28,6 +28,7 @@ const workoutState = vi.hoisted(() => ({
   workoutApproval: null,
   session: null,
 }))
+const confirmGlobalActionMock = vi.hoisted(() => vi.fn(() => Promise.resolve(true)))
 const aiApiMock = vi.hoisted(() => ({
   analyseFoodText: vi.fn(),
   analyseMeal: vi.fn(),
@@ -60,6 +61,7 @@ vi.mock('../../api/modules/dashboard', () => ({ dashboardApi: dashboardApiMock }
 vi.mock('../../api/modules/workout', () => ({ workoutApi: workoutApiMock }))
 vi.mock('../../api/modules/onboarding', () => ({ onboardingApi: onboardingApiMock }))
 vi.mock('../../lib/appImages', () => ({ getAppImageUrl: vi.fn(() => '/johnny.webp') }))
+vi.mock('../../lib/uiFeedback', () => ({ confirmGlobalAction: confirmGlobalActionMock }))
 vi.mock('../../store/authStore', () => ({
   useAuthStore: selector => selector(authState),
 }))
@@ -88,6 +90,8 @@ describe('JohnnyHomeScreen', () => {
     root = createRoot(container)
     chatScrollTo = vi.fn()
     Object.defineProperty(window.HTMLElement.prototype, 'scrollTo', { configurable: true, value: chatScrollTo })
+    confirmGlobalActionMock.mockReset()
+    confirmGlobalActionMock.mockResolvedValue(true)
     workoutState.bootstrapSession.mockClear()
     workoutState.clearCustomWorkoutDraft.mockClear()
     workoutState.takeRestDay.mockClear()
@@ -1024,6 +1028,8 @@ describe('JohnnyHomeScreen', () => {
   })
 
   it('analyzes and saves a meal from the nutrition popup', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-01-01T08:00:00'))
     aiApiMock.getThread.mockResolvedValue({ messages: [] })
     await renderScreen()
     const nutritionButton = [...container.querySelectorAll('button')].find(button => button.textContent.includes('Log Nutrition'))
@@ -1049,7 +1055,73 @@ describe('JohnnyHomeScreen', () => {
     expect(reviewScreen.querySelector('[type="number"]')).toBeTruthy()
     const acceptButton = [...reviewScreen.querySelectorAll('button')].find(button => button.textContent === 'Approve and log meal')
     await act(async () => { acceptButton.click(); await Promise.resolve() })
+    expect(confirmGlobalActionMock).not.toHaveBeenCalled()
     expect(nutritionApiMock.logMeal).toHaveBeenCalledWith(expect.objectContaining({ meal_type: 'breakfast' }))
+  })
+
+  it('confirms with the user before logging breakfast at or after 11am', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-01-01T14:00:00'))
+    aiApiMock.getThread.mockResolvedValue({ messages: [] })
+    await renderScreen()
+    const nutritionButton = [...container.querySelectorAll('button')].find(button => button.textContent.includes('Log Nutrition'))
+    await act(async () => nutritionButton.click())
+    await act(async () => { await Promise.resolve() })
+    const dialog = document.querySelector('[role="dialog"][aria-label="Daily nutrition log"]')
+    const skipPhotoButton = [...dialog.querySelectorAll('button')].find(button => button.textContent.includes('Skip photo'))
+    await act(async () => skipPhotoButton.click())
+    const description = dialog.querySelector('[aria-label="Describe your meal"]')
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set
+      setter.call(description, 'chicken, rice, and broccoli')
+      description.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    const analyzeButton = [...dialog.querySelectorAll('button')].find(button => button.textContent === 'Analyze meal')
+    await act(async () => { analyzeButton.click(); await Promise.resolve(); await Promise.resolve() })
+    const reviewScreen = document.querySelector('.johnny-meal-review-screen')
+    const acceptButton = [...reviewScreen.querySelectorAll('button')].find(button => button.textContent === 'Approve and log meal')
+
+    await act(async () => { acceptButton.click(); await Promise.resolve(); await Promise.resolve() })
+    expect(confirmGlobalActionMock).toHaveBeenCalledWith(expect.objectContaining({
+      title: 'Log this as breakfast?',
+      confirmLabel: 'Yes, it’s breakfast',
+    }))
+    expect(nutritionApiMock.logMeal).toHaveBeenCalledWith(expect.objectContaining({ meal_type: 'breakfast' }))
+  })
+
+  it('lets the user switch meal type from the review screen instead of logging a declined breakfast', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-01-01T14:00:00'))
+    confirmGlobalActionMock.mockResolvedValue(false)
+    aiApiMock.getThread.mockResolvedValue({ messages: [] })
+    await renderScreen()
+    const nutritionButton = [...container.querySelectorAll('button')].find(button => button.textContent.includes('Log Nutrition'))
+    await act(async () => nutritionButton.click())
+    await act(async () => { await Promise.resolve() })
+    const dialog = document.querySelector('[role="dialog"][aria-label="Daily nutrition log"]')
+    const skipPhotoButton = [...dialog.querySelectorAll('button')].find(button => button.textContent.includes('Skip photo'))
+    await act(async () => skipPhotoButton.click())
+    const description = dialog.querySelector('[aria-label="Describe your meal"]')
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set
+      setter.call(description, 'chicken, rice, and broccoli')
+      description.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    const analyzeButton = [...dialog.querySelectorAll('button')].find(button => button.textContent === 'Analyze meal')
+    await act(async () => { analyzeButton.click(); await Promise.resolve(); await Promise.resolve() })
+    const reviewScreen = document.querySelector('.johnny-meal-review-screen')
+    const acceptButton = [...reviewScreen.querySelectorAll('button')].find(button => button.textContent === 'Approve and log meal')
+
+    await act(async () => { acceptButton.click(); await Promise.resolve() })
+    expect(nutritionApiMock.logMeal).not.toHaveBeenCalled()
+    expect(reviewScreen.textContent).toContain('Chicken')
+
+    const lunchTab = [...reviewScreen.querySelectorAll('[role="group"][aria-label="Meal type"] button')].find(button => button.textContent === 'Lunch')
+    await act(async () => lunchTab.click())
+    expect(reviewScreen.textContent).toContain('Review your lunch')
+
+    await act(async () => { acceptButton.click(); await Promise.resolve(); await Promise.resolve() })
+    expect(nutritionApiMock.logMeal).toHaveBeenCalledWith(expect.objectContaining({ meal_type: 'lunch' }))
   })
 
   it('opens profile in a modal and returns to the mounted Johnny screen', async () => {

@@ -4,11 +4,21 @@ import { aiApi } from '../../api/modules/ai'
 import { nutritionApi } from '../../api/modules/nutrition'
 import AppDialog from '../ui/AppDialog'
 import LabelScanPromptPanel from '../nutrition/LabelScanPromptPanel'
+import { confirmGlobalAction } from '../../lib/uiFeedback'
+
+const LATE_BREAKFAST_HOUR = 11
 
 const today = () => {
   const date = new Date()
   const offset = date.getTimezoneOffset() * 60_000
   return new Date(date.getTime() - offset).toISOString().slice(0, 10)
+}
+
+function formatHour(hour) {
+  const normalized = ((hour % 24) + 24) % 24
+  const period = normalized >= 12 ? 'pm' : 'am'
+  const displayHour = normalized % 12 === 0 ? 12 : normalized % 12
+  return `${displayHour}${period}`
 }
 
 export default function JohnnyNutritionLogModal({ onClose }) {
@@ -308,6 +318,15 @@ export default function JohnnyNutritionLogModal({ onClose }) {
 
   async function saveMealDraft() {
     if (!mealDraft?.items?.length) return
+    if (mealType === 'breakfast' && new Date().getHours() >= LATE_BREAKFAST_HOUR) {
+      const confirmed = await confirmGlobalAction({
+        title: 'Log this as breakfast?',
+        message: `It’s after ${formatHour(LATE_BREAKFAST_HOUR)} — just checking you meant to log this as breakfast and not lunch.`,
+        confirmLabel: 'Yes, it’s breakfast',
+        cancelLabel: 'Change meal type',
+      })
+      if (!confirmed) return
+    }
     setSavingMeal(true)
     setError('')
     setStatus('')
@@ -335,11 +354,16 @@ export default function JohnnyNutritionLogModal({ onClose }) {
     return <FullScreenMealAnalyzer hasPhoto={Boolean(mealPhoto)} />
   }
 
+  if (savingMeal) {
+    return <FullScreenSavingMeal />
+  }
+
   if (mealDraft) {
     return (
       <FullScreenMealReview
         draft={mealDraft}
         mealType={mealType}
+        onChangeMealType={setMealType}
         saving={savingMeal}
         onChange={setMealDraft}
         onApprove={() => { void saveMealDraft() }}
@@ -711,6 +735,30 @@ function FuelSummary({ summary, meals, loading }) {
 }
 
 function FullScreenMealAnalyzer({ hasPhoto }) {
+  return (
+    <FullScreenMealProgress
+      ariaLabel="Analyzing meal"
+      eyebrow="Johnny is analyzing"
+      title={hasPhoto ? 'Reading your plate' : 'Breaking down your meal'}
+      subtitle={hasPhoto ? 'Identifying foods, portions, and macros from your photo and note.' : 'Matching your description to foods, portions, and macros.'}
+      footnote="Keep this screen open. Your editable review is next."
+    />
+  )
+}
+
+function FullScreenSavingMeal() {
+  return (
+    <FullScreenMealProgress
+      ariaLabel="Saving meal"
+      eyebrow="Johnny is logging"
+      title="Saving your meal"
+      subtitle="Recording foods, portions, and macros to today’s log."
+      footnote="Keep this screen open. This only takes a moment."
+    />
+  )
+}
+
+function FullScreenMealProgress({ ariaLabel, eyebrow, title, subtitle, footnote }) {
   const ringRef = useRef(null)
   const ringLabelRef = useRef(null)
   const dotRefs = useRef([])
@@ -782,7 +830,7 @@ function FullScreenMealAnalyzer({ hasPhoto }) {
   }, [])
 
   return (
-    <main className="johnny-meal-analyzer" role="status" aria-live="assertive" aria-label="Analyzing meal">
+    <main className="johnny-meal-analyzer" role="status" aria-live="assertive" aria-label={ariaLabel}>
       <div className="johnny-meal-analyzer-field" aria-hidden="true">
         <span ref={el => { fieldRefs.current[0] = el }} />
         <span ref={el => { fieldRefs.current[1] = el }} />
@@ -790,17 +838,17 @@ function FullScreenMealAnalyzer({ hasPhoto }) {
       </div>
       <div className="johnny-meal-analyzer-core">
         <div className="johnny-meal-analyzer-ring" ref={ringRef} style={{ position: 'relative' }}><span ref={ringLabelRef}>J5K</span></div>
-        <p>Johnny is analyzing</p>
-        <h2>{hasPhoto ? 'Reading your plate' : 'Breaking down your meal'}</h2>
-        <span>{hasPhoto ? 'Identifying foods, portions, and macros from your photo and note.' : 'Matching your description to foods, portions, and macros.'}</span>
+        <p>{eyebrow}</p>
+        <h2>{title}</h2>
+        <span>{subtitle}</span>
         <div className="johnny-meal-analyzer-progress"><i ref={el => { dotRefs.current[0] = el }} /><i ref={el => { dotRefs.current[1] = el }} /><i ref={el => { dotRefs.current[2] = el }} /></div>
-        <small>Keep this screen open. Your editable review is next.</small>
+        <small>{footnote}</small>
       </div>
     </main>
   )
 }
 
-function FullScreenMealReview({ draft, mealType, saving, onChange, onApprove, onBack, onStartOver }) {
+function FullScreenMealReview({ draft, mealType, onChangeMealType, saving, onChange, onApprove, onBack, onStartOver }) {
   const [editingIndex, setEditingIndex] = useState(null)
   const itemRefs = useRef([])
   const totals = sumNutritionItems(draft.items)
@@ -832,7 +880,14 @@ function FullScreenMealReview({ draft, mealType, saving, onChange, onApprove, on
     <main className="johnny-meal-review-screen" aria-labelledby="johnny-meal-review-title">
       <header className="johnny-meal-review-header">
         <button type="button" onClick={onBack} disabled={saving} aria-label="Back to meal capture">←</button>
-        <div><span>Analysis complete</span><h1 id="johnny-meal-review-title">Review your {formatMealType(mealType).toLowerCase()}</h1><p>Confirm what Johnny found. Adjust only the items that need it.</p></div>
+        <div>
+          <span>Analysis complete</span>
+          <h1 id="johnny-meal-review-title">Review your {formatMealType(mealType).toLowerCase()}</h1>
+          <p>Confirm what Johnny found. Adjust only the items that need it.</p>
+          <div className="johnny-nutrition-meal-type" role="group" aria-label="Meal type">
+            {['breakfast', 'lunch', 'dinner', 'snack'].map(type => <button key={type} type="button" className={mealType === type ? 'active' : ''} aria-pressed={mealType === type} disabled={saving} onClick={() => onChangeMealType(type)}>{formatMealType(type)}</button>)}
+          </div>
+        </div>
       </header>
 
       <section className="johnny-meal-review-total" aria-label="Detected meal totals">
