@@ -7,6 +7,73 @@
     <link rel="apple-touch-icon" href="/brandmark.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Johnny5k</title>
+    <script>
+      // Pre-paint theme init: applies the stored color scheme/experience mode
+      // before first paint so reloads don't flash the default theme.
+      // Keep the COLORS map in sync with DEFAULT_COLOR_SCHEMES in src/lib/theme.js —
+      // this is a best-effort static fallback for known built-in schemes; a
+      // server-customized scheme still corrects itself once React bootstraps.
+      (function () {
+        try {
+          var COLORS = {
+            classic: { bg: '#0A0E14', bg2: '#111922', bg3: '#16212B', text: '#EAF1F6', textMuted: '#7C8E9C', border: '#253244', accent: '#4FC3E0', accent2: '#E8B84A', accent3: '#4FC3E0', danger: '#D9724A', success: '#5FD9A0', yellow: '#E8B84A' },
+            batman: { bg: '#0A0B0F', bg2: '#171A21', bg3: '#242933', text: '#E8EDF6', textMuted: '#97A4BA', border: '#445064', accent: '#F5C400', accent2: '#2D6CDF', accent3: '#5A6475', danger: '#FF5B6E', success: '#35C57A', yellow: '#FFD54A' },
+            'mint-drive': { bg: '#EAFBF4', bg2: '#FFFFFF', bg3: '#D0F3E5', text: '#123B3A', textMuted: '#507A73', border: '#9EDBBC', accent: '#0E7C66', accent2: '#3BC9A3', accent3: '#89E219', danger: '#D1495B', success: '#1E9E63', yellow: '#E7D04A' },
+            'midnight-track': { bg: '#0D1B2A', bg2: '#132238', bg3: '#1C3350', text: '#EAF4FF', textMuted: '#98B6D8', border: '#315074', accent: '#FF7A21', accent2: '#4FD1FF', accent3: '#FF4FA3', danger: '#FF5C7A', success: '#36D48C', yellow: '#FFD95A' },
+            'gold-rush': { bg: '#F8F2E3', bg2: '#FFF9ED', bg3: '#E8D8B1', text: '#3B2A19', textMuted: '#7A6243', border: '#CFB37A', accent: '#B8572D', accent2: '#5B8C5A', accent3: '#C08B14', danger: '#C64845', success: '#478C4A', yellow: '#E2B93B' },
+            'ironquest-codex': { bg: '#EFE2C8', bg2: '#FFF8EB', bg3: '#D8BE92', text: '#2A2013', textMuted: '#58452F', border: '#B89158', accent: '#8F4B2A', accent2: '#4E6540', accent3: '#A97A1B', danger: '#B94A43', success: '#4F7D46', yellow: '#C89B2F' },
+            'ironquest-ember': { bg: '#141016', bg2: '#211A22', bg3: '#403139', text: '#F7F1E6', textMuted: '#D6C5B0', border: '#8C725B', accent: '#C06A3D', accent2: '#C7A03A', accent3: '#8797BC', danger: '#DA6A61', success: '#6FA66B', yellow: '#D6B252' },
+            'ironquest-grove': { bg: '#E1EADF', bg2: '#F8FBF4', bg3: '#C6D7C5', text: '#1F2F25', textMuted: '#476054', border: '#8DA48D', accent: '#955334', accent2: '#3E6D5A', accent3: '#A58A46', danger: '#B4554C', success: '#3F8559', yellow: '#C0A64E' },
+          };
+          var IRONQUEST_IDS = { 'ironquest-codex': 1, 'ironquest-ember': 1, 'ironquest-grove': 1 };
+
+          var experienceMode = localStorage.getItem('jf_experience_mode') === 'ironquest' ? 'ironquest' : 'standard';
+          var schemeId = localStorage.getItem('jf_color_scheme');
+          if (!schemeId || !COLORS[schemeId]) schemeId = 'classic';
+          if (experienceMode === 'ironquest' && !IRONQUEST_IDS[schemeId]) schemeId = 'ironquest-codex';
+
+          var colors = COLORS[schemeId];
+          var root = document.documentElement;
+
+          function hex(c) {
+            var n = parseInt(c.replace('#', ''), 16);
+            return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+          }
+          function luminance(c) {
+            var rgb = hex(c).map(function (v) {
+              v /= 255;
+              return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+            });
+            return 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2];
+          }
+
+          var props = {
+            '--bg': colors.bg, '--bg2': colors.bg2, '--bg3': colors.bg3, '--border': colors.border,
+            '--text': colors.text, '--text-muted': colors.textMuted,
+            '--text2': colors.text, '--text-muted2': colors.textMuted,
+            '--text3': colors.text, '--text-muted3': colors.textMuted,
+            '--accent': colors.accent, '--accent2': colors.accent2, '--accent3': colors.accent3,
+            '--danger': colors.danger, '--success': colors.success, '--yellow': colors.yellow,
+            '--field': colors.bg, '--field-2': colors.bg2, '--surface': colors.bg3,
+            '--chalk': colors.text, '--text-soft': colors.text, '--mist': colors.textMuted,
+            '--whistle': colors.accent, '--rust': colors.danger, '--signal': colors.accent2,
+            '--good': colors.success, '--ink': '#14181A',
+          };
+          for (var key in props) root.style.setProperty(key, props[key]);
+
+          root.dataset.colorScheme = schemeId;
+          root.dataset.themeMode = luminance(colors.bg) < 0.24 ? 'dark' : 'light';
+          root.dataset.experienceMode = experienceMode;
+          if (experienceMode === 'ironquest') {
+            root.style.setProperty('--font-body', "'Spectral', Georgia, serif");
+            root.style.setProperty('--font-display', "'Cinzel', Georgia, serif");
+            root.style.setProperty('--font-ui', "'Exo 2', 'Trebuchet MS', system-ui, sans-serif");
+          }
+        } catch (e) {
+          // Fall through silently — React bootstrap will still apply the theme.
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

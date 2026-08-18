@@ -4,6 +4,7 @@ namespace Johnny5k\REST;
 defined( 'ABSPATH' ) || exit;
 
 use Johnny5k\Services\AiService;
+use Johnny5k\Services\RecipeImageService;
 
 class NutritionRecipeController extends RestController {
 	private const GROCERY_GAP_ITEMS_META_KEY = 'jf_nutrition_grocery_gap_items';
@@ -32,6 +33,12 @@ class NutritionRecipeController extends RestController {
 				'callback'            => [ self::class, 'update_recipe_cookbook' ],
 				'permission_callback' => $auth,
 			],
+		] );
+
+		register_rest_route( $ns, '/nutrition/recipe-image', [
+			'methods'             => 'POST',
+			'callback'            => [ self::class, 'generate_recipe_image' ],
+			'permission_callback' => $auth,
 		] );
 
 		register_rest_route( $ns, '/nutrition/grocery-gap', [
@@ -103,6 +110,15 @@ class NutritionRecipeController extends RestController {
 			'updated' => true,
 			'recipes' => $sanitized,
 		] );
+	}
+
+	public static function generate_recipe_image( \WP_REST_Request $req ): \WP_REST_Response|\WP_Error {
+		$recipe = $req->get_param( 'recipe' );
+		if ( ! is_array( $recipe ) ) {
+			return new \WP_Error( 'invalid_recipe', 'A recipe payload is required.', [ 'status' => 400 ] );
+		}
+
+		return rest_ensure_response( RecipeImageService::generate( get_current_user_id(), $recipe ) );
 	}
 
 	public static function get_grocery_gap( \WP_REST_Request $req ): \WP_REST_Response {

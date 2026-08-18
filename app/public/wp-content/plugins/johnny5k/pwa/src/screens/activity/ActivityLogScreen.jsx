@@ -99,52 +99,61 @@ export default function ActivityLogScreen() {
     return groups
   }, [entries])
 
-  if (loading && !entries.length && !error) {
-    return (
-      <AppLoadingScreen
-        eyebrow="Activity"
-        title="Building your activity log"
-        message="Johnny is stitching together recent workouts and cardio sessions into one timeline."
-        compact
-        variant="list"
-      />
-    )
-  }
+  const workoutCount = entries.filter(entry => entry.type === 'workout').length
+  const cardioCount = entries.filter(entry => entry.type === 'cardio').length
+  const totalMinutes = entries.reduce((sum, entry) => sum + Number(entry.durationMinutes || 0), 0)
 
   return (
-    <div className="screen activity-log-screen">
-      <header className="screen-header body-screen-header">
-        <div>
-          <h1>Activity Log</h1>
-          <p className="body-screen-subtitle">See completed lifts and cardio sessions with the details that were actually logged.</p>
-        </div>
-        <div className="activity-log-header-actions">
-          <button className="btn-secondary" type="button" onClick={() => navigate('/body')}>
-            Back to Progress
+    <div className="screen activity-log-screen activity-observatory">
+      <div className="activity-observatory-ambient" aria-hidden="true" />
+
+      <header className="activity-observatory-header">
+        <div className="activity-observatory-title">
+          <button type="button" className="activity-observatory-back" onClick={() => navigate('/dashboard')}>
+            <span aria-hidden="true">←</span>
+            Back to Johnny
           </button>
+          <span className="activity-observatory-kicker">Training telemetry</span>
+          <h1>Activity Log</h1>
+          <p>Every completed lift and conditioning session, ordered into one training record.</p>
+        </div>
+        <div className="activity-observatory-actions">
+          <button className="activity-observatory-action primary" type="button" onClick={() => navigate('/body', { state: { focusTab: 'diary' } })}>
+            Progress diary
+          </button>
+        </div>
+
+        <div className="activity-observatory-vitals" aria-label="Activity summary">
+          <div><span>Total entries</span><strong>{entries.length || '—'}</strong></div>
+          <div><span>Workouts</span><strong>{workoutCount || '—'}</strong></div>
+          <div><span>Cardio</span><strong>{cardioCount || '—'}</strong></div>
+          <div><span>Recorded time</span><strong>{totalMinutes ? formatDurationMinutes(totalMinutes) : '—'}</strong></div>
         </div>
       </header>
 
-      <section className="body-summary-grid">
-        <SummaryCard label="Entries" value={entries.length || '—'} meta={entries.length ? 'Workouts and cardio sessions shown newest first' : 'No activity entries yet'} accent="orange" />
-        <SummaryCard label="Workouts" value={entries.filter(entry => entry.type === 'workout').length || '—'} meta="Completed lifting sessions in your log" accent="teal" />
-        <SummaryCard label="Cardio" value={entries.filter(entry => entry.type === 'cardio').length || '—'} meta="Conditioning sessions mixed into the same feed" accent="pink" />
-      </section>
+      <main className="activity-observatory-scroll">
+        <div className="activity-observatory-ledger-head">
+          <div>
+            <span className="activity-observatory-kicker">Session ledger</span>
+            <h2>Recent training record</h2>
+          </div>
+          <span>{groupedEntries.length} recorded days · newest first</span>
+        </div>
 
       {johnnyActionNotice && dismissedActionNoticeKey !== actionNoticeKey ? (
-        <div className="dash-card settings-warning dashboard-notice" role="status">
+        <div className="activity-observatory-notice" role="status">
           <div>
             <strong>Johnny opened this screen.</strong>
             <p>{johnnyActionNotice}</p>
           </div>
-          <button className="btn-outline small" type="button" onClick={() => setDismissedActionNoticeKey(actionNoticeKey)}>
+          <button type="button" onClick={() => setDismissedActionNoticeKey(actionNoticeKey)}>
             Dismiss
           </button>
         </div>
       ) : null}
 
       {loading ? (
-        <section className="dash-card">
+        <section className="activity-observatory-state" role="status">
           <AppLoadingScreen
             eyebrow="Activity"
             title="Refreshing your timeline"
@@ -157,37 +166,42 @@ export default function ActivityLogScreen() {
       ) : null}
 
       {!loading && error ? (
-        <section className="dash-card">
+        <section className="activity-observatory-state error">
           <ErrorState className="activity-inline-error" message={error} title="Could not load activity log" />
         </section>
       ) : null}
 
       {!loading && !error && !entries.length ? (
-        <section className="dash-card">
-          <p className="body-recovery-note">No completed workouts or cardio sessions are logged yet.</p>
+        <section className="activity-observatory-state empty">
+          <span>00</span>
+          <div><h2>Your training ledger is waiting</h2><p>Complete a workout or log cardio and the session will appear here automatically.</p></div>
         </section>
       ) : null}
 
-      {!loading && !error ? groupedEntries.map(group => (
-        <section key={group.dateKey} className="dash-card activity-log-day-card">
-          <div className="body-card-header">
-            <h3>{group.label}</h3>
-            <p>{group.entries.length} {group.entries.length === 1 ? 'entry' : 'entries'} logged</p>
-          </div>
-          <div className="activity-log-entry-list">
-            {group.entries.map(entry => (
-              <article key={entry.key} className={`activity-log-entry-card ${entry.type}`}>
-                <div className="activity-log-entry-header">
+      {!loading && !error && entries.length ? (
+        <section className="activity-log-timeline" aria-label="Activity timeline">
+          {groupedEntries.map((group, groupIndex) => (
+            <section key={group.dateKey} className="activity-log-day-card">
+              <header className="activity-log-day-marker">
+                <span>{String(groupIndex + 1).padStart(2, '0')}</span>
+                <div><h3>{group.label}</h3><p>{group.entries.length} {group.entries.length === 1 ? 'session' : 'sessions'}</p></div>
+              </header>
+              <div className="activity-log-entry-list">
+                {group.entries.map((entry, entryIndex) => (
+                  <details key={entry.key} className={`activity-log-entry-card ${entry.type}`} open={groupIndex === 0 && entryIndex === 0}>
+                    <summary className="activity-log-entry-header">
                   <div>
-                    <span className={`dashboard-chip ${entry.type === 'workout' ? 'workout' : 'coach'}`}>{entry.type === 'workout' ? 'Workout' : 'Cardio'}</span>
+                    <span className="activity-log-entry-type">{entry.type === 'workout' ? 'Workout' : 'Cardio'}</span>
                     <h4>{entry.title}</h4>
                   </div>
                   <div className="activity-log-entry-summary">
                     <strong>{entry.durationLabel}</strong>
                     <span>{entry.summary}</span>
                   </div>
-                </div>
+                  <span className="activity-log-entry-toggle" aria-hidden="true" />
+                </summary>
 
+                <div className="activity-log-entry-body">
                 {entry.type === 'workout' ? (
                   <>
                     <p className="activity-log-entry-meta">
@@ -216,22 +230,16 @@ export default function ActivityLogScreen() {
                     {entry.notes ? <p>{entry.notes}</p> : null}
                   </div>
                 )}
-              </article>
-            ))}
-          </div>
+                </div>
+              </details>
+                ))}
+              </div>
+            </section>
+          ))}
         </section>
-      )) : null}
+      ) : null}
+      </main>
     </div>
-  )
-}
-
-function SummaryCard({ label, value, suffix = '', meta, accent = 'orange' }) {
-  return (
-    <article className={`dash-card dashboard-stat-card activity-log-stat-card ${accent}`}>
-      <p>{label}</p>
-      <h3>{value}{suffix}</h3>
-      <span>{meta}</span>
-    </article>
   )
 }
 
@@ -256,6 +264,7 @@ function buildWorkoutEntry(summary, detail) {
     title: `${formatDayType(dayType)} day`,
     summary: completedAt ? `Finished ${formatSessionTime(completedAt)}` : `Logged ${formatUsShortDate(sessionDate, sessionDate)}`,
     durationLabel: formatDurationMinutes(durationMinutes),
+    durationMinutes,
     exerciseCountLabel: `${exerciseCount} ${exerciseCount === 1 ? 'exercise' : 'exercises'}`,
     completedSetLabel: completedSets ? `${completedSets} completed sets` : '',
     dateKey: sessionDate,
@@ -274,6 +283,7 @@ function buildCardioEntry(entry) {
     title: formatCardioType(entry?.cardio_type),
     summary: `Logged ${formatUsShortDate(sessionDate, sessionDate)}`,
     durationLabel: formatDurationMinutes(durationMinutes),
+    durationMinutes,
     intensityLabel: `Intensity: ${formatDayType(entry?.intensity || 'moderate')}`,
     distanceLabel: entry?.distance ? `${trimNumber(entry.distance)} mi` : '',
     caloriesLabel: entry?.estimated_calories ? `${Number(entry.estimated_calories).toLocaleString()} cal` : '',

@@ -35,7 +35,9 @@ class AdminMenu {
 		add_submenu_page( 'johnny5k', 'Prebuilt Workouts', 'Prebuilt Workouts', 'manage_options', 'jf-prebuilt-workouts',  [ PrebuiltWorkoutLibrary::class, 'render' ] );
 		add_submenu_page( 'johnny5k', 'Recipe Library',    'Recipe Library',    'manage_options', 'jf-recipe-library',     [ RecipeLibrary::class,      'render' ] );
 		add_submenu_page( 'johnny5k', 'Job Monitor',       'Job Monitor',       'manage_options', 'jf-job-monitor',        [ JobMonitorPage::class,     'render' ] );
+		add_submenu_page( 'johnny5k', 'Message Delivery Log', 'Message Delivery Log', 'manage_options', 'jf-message-delivery-log', [ MessageDeliveryLog::class, 'render' ] );
 		add_submenu_page( 'johnny5k', 'Support Guides',    'Support Guides',    'manage_options', 'jf-support-guides',     [ SupportGuides::class,      'render' ] );
+		add_submenu_page( 'johnny5k', 'Johnny Wire',       'Johnny Wire',       'manage_options', 'jf-announcement-ticker', [ AnnouncementTicker::class, 'render' ] );
 		add_submenu_page( 'johnny5k', 'Settings',          'Settings',          'manage_options', 'jf-settings',           [ Settings::class,           'render' ] );
 	}
 

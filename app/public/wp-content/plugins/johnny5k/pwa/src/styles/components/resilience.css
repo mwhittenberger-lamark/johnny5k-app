@@ -70,23 +70,29 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 18px;
-  padding: 16px 18px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border);
-  background: var(--surface-card-alt);
-  box-shadow: var(--glass-shadow);
-  backdrop-filter: var(--glass-filter);
-  -webkit-backdrop-filter: var(--glass-filter);
+  padding: 13px 16px;
+  border-radius: var(--radius-lg);
+  border: 1px solid color-mix(in srgb, var(--accent2) 26%, var(--border) 74%);
+  background: color-mix(in srgb, var(--accent2) 10%, var(--bg2) 90%);
+  box-shadow: 0 14px 30px rgba(3, 5, 12, 0.22);
+  backdrop-filter: blur(10px);
+  color: var(--text);
 }
 
 .startup-issue-card.info {
-  background: var(--surface-card);
+  border-color: color-mix(in srgb, var(--accent2) 26%, var(--border) 74%);
+  background: color-mix(in srgb, var(--accent2) 10%, var(--bg2) 90%);
+}
+
+.startup-issue-card.warning {
+  border-color: color-mix(in srgb, var(--yellow) 28%, var(--border) 72%);
+  background: color-mix(in srgb, var(--yellow) 12%, var(--bg2) 88%);
 }
 
 .startup-issue-card.error,
 .startup-issue-card.blocking {
-  background-color: color-mix(in srgb, var(--danger) 14%, var(--surface-card-alt));
-  border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
+  border-color: color-mix(in srgb, var(--danger) 30%, var(--border) 70%);
+  background: color-mix(in srgb, var(--danger) 12%, var(--bg2) 88%);
 }
 
 .startup-issue-copy {
@@ -102,7 +108,7 @@
 }
 
 .startup-issue-kicker {
-  color: var(--accent2);
+  color: color-mix(in srgb, var(--accent2) 70%, var(--text) 30%);
   font-size: 0.76rem;
   font-weight: 800;
   letter-spacing: 0.08em;
@@ -125,8 +131,29 @@
   line-height: 1.45;
 }
 
+.startup-issue-detail-toggle {
+  margin-top: 2px;
+}
+
+.startup-issue-detail-toggle summary {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 0.14em;
+  list-style: none;
+}
+
+.startup-issue-detail-toggle summary::-webkit-details-marker {
+  display: none;
+}
+
 .startup-issue-detail {
-  font-size: 0.88rem;
+  margin-top: 6px;
+  font-size: 0.82rem;
+  font-family: var(--font-mono, monospace);
+  color: var(--text-muted);
+  word-break: break-word;
 }
 
 .startup-issue-actions {

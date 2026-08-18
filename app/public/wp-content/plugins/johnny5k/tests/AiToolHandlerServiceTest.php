@@ -8,6 +8,20 @@ use Johnny5k\Services\AiToolHandlerService;
 use Johnny5k\Tests\Support\ServiceTestCase;
 
 class AiToolHandlerServiceTest extends ServiceTestCase {
+	public function test_get_grocery_gap_returns_live_list_for_chat_card(): void {
+		$result = AiToolHandlerService::execute( 42, 'get_grocery_gap', [], [
+			'get_grocery_gap' => static fn( int $user_id ): array => [
+				'missing_items' => [ 'Eggs', 'Spinach' ],
+				'manual_items'  => [ [ 'item_name' => 'Greek yogurt', 'quantity' => 2, 'unit' => 'cups' ] ],
+				'pantry_count'  => 8,
+			],
+		] );
+
+		$this->assertTrue( $result['ok'] );
+		$this->assertSame( 'show_grocery_gap', $result['action'] );
+		$this->assertSame( 3, $result['item_count'] );
+		$this->assertSame( 'Eggs', $result['grocery_gap']['missing_items'][0] );
+	}
 	public function test_save_workout_to_library_can_save_an_active_session(): void {
 		$saved_payload = [];
 		$result = AiToolHandlerService::execute( 42, 'save_workout_to_library', [ 'name' => 'My Active Circuit' ], [
@@ -43,6 +57,42 @@ class AiToolHandlerServiceTest extends ServiceTestCase {
 		$this->assertSame( 1, $result['total_matches'] ?? 0 );
 		$this->assertSame( 'Core Reset', $result['workouts'][0]['name'] ?? '' );
 		$this->assertSame( 'Dead Bug', $result['workouts'][0]['exercises'][0]['name'] ?? '' );
+	}
+
+	public function test_remove_saved_workout_deletes_an_exact_library_match(): void {
+		$deleted_id = 0;
+		$result = AiToolHandlerService::execute( 42, 'remove_saved_workout', [ 'name' => 'Core Reset' ], [
+			'workout_saved_library' => static fn( \WP_REST_Request $request ): \WP_REST_Response => new \WP_REST_Response( [
+				[ 'id' => 8, 'name' => 'Monday Circuit' ],
+				[ 'id' => 9, 'name' => 'Core Reset' ],
+			], 200 ),
+			'workout_delete_saved' => static function( \WP_REST_Request $request ) use ( &$deleted_id ): \WP_REST_Response {
+				$deleted_id = (int) $request->get_param( 'id' );
+				return new \WP_REST_Response( [ 'deleted' => true ], 200 );
+			},
+		] );
+
+		$this->assertTrue( $result['ok'] ?? false );
+		$this->assertSame( 9, $deleted_id );
+		$this->assertSame( 'Core Reset', $result['name'] ?? '' );
+		$this->assertSame( 'remove_saved_workout', $result['action'] ?? '' );
+	}
+
+	public function test_remove_saved_workout_refuses_an_ambiguous_name(): void {
+		$delete_called = false;
+		$result = AiToolHandlerService::execute( 42, 'remove_saved_workout', [ 'name' => 'Push Day' ], [
+			'workout_saved_library' => static fn( \WP_REST_Request $request ): \WP_REST_Response => new \WP_REST_Response( [
+				[ 'id' => 8, 'name' => 'Push Day' ],
+				[ 'id' => 9, 'name' => 'Push Day' ],
+			], 200 ),
+			'workout_delete_saved' => static function() use ( &$delete_called ): \WP_REST_Response {
+				$delete_called = true;
+				return new \WP_REST_Response( [ 'deleted' => true ], 200 );
+			},
+		] );
+
+		$this->assertFalse( $delete_called );
+		$this->assertStringContainsString( 'More than one', (string) ( $result['error'] ?? '' ) );
 	}
 
 	public function test_current_workout_exposes_the_queued_draft_and_matching_approval(): void {
@@ -273,6 +323,31 @@ class AiToolHandlerServiceTest extends ServiceTestCase {
 		$this->assertSame( 'ai', $captured_request->get_param( 'source' ) );
 		$this->assertSame( '2026-04-09 13:15:00', $captured_request->get_param( 'meal_datetime' ) );
 		$this->assertSame( 'Greek Yogurt Bowl', $captured_request->get_param( 'items' )[0]['food_name'] ?? null );
+	}
+
+	public function test_create_food_tile_analyzes_and_saves_a_reusable_food(): void {
+		$captured_request = null;
+		$result = AiToolHandlerService::execute( 42, 'create_food_tile', [
+			'food_text' => 'one cup nonfat Greek yogurt',
+			'calories' => 140,
+		], [
+			'analyse_food_text' => static fn( int $user_id, string $food_text ): array => [
+				'food_name' => 'Nonfat Greek Yogurt', 'serving_size' => '1 cup', 'calories' => 130,
+				'protein_g' => 23, 'carbs_g' => 9, 'fat_g' => 0,
+			],
+			'nutrition_create_saved_food' => static function( \WP_REST_Request $request ) use ( &$captured_request ): \WP_REST_Response {
+				$captured_request = $request;
+				return new \WP_REST_Response( [ 'id' => 71 ], 201 );
+			},
+		] );
+
+		$this->assertTrue( $result['ok'] ?? false );
+		$this->assertSame( 'create_food_tile', $result['action'] ?? '' );
+		$this->assertSame( 71, $result['tile_id'] ?? 0 );
+		$this->assertSame( 'Nonfat Greek Yogurt', $result['name'] ?? '' );
+		$this->assertSame( 140, $result['calories'] ?? 0 );
+		$this->assertSame( 23.0, $result['protein_g'] ?? 0 );
+		$this->assertSame( 'ai_tile', $captured_request?->get_param( 'source' ) );
 	}
 
 	public function test_add_pantry_items_uses_nutrition_controller_path(): void {
@@ -786,6 +861,27 @@ class AiToolHandlerServiceTest extends ServiceTestCase {
 		] );
 		$this->assertTrue( $completed['ok'] ?? false );
 		$this->assertSame( 51, $completed['data']['id'] ?? 0 );
+
+		$object_active = static fn(): \WP_REST_Response => new \WP_REST_Response( [ 'session' => (object) [ 'id' => 51 ] ], 200 );
+		$canceled = AiToolHandlerService::execute( 42, 'cancel_workout', [], [
+			'workout_current' => $object_active,
+			'workout_discard' => static fn( \WP_REST_Request $request ): \WP_REST_Response => new \WP_REST_Response( [ 'discarded' => true, 'id' => $request->get_param( 'id' ) ], 200 ),
+		] );
+		$this->assertTrue( $canceled['ok'] ?? false );
+		$this->assertSame( 51, $canceled['data']['id'] ?? 0 );
+
+		$timer = AiToolHandlerService::execute( 42, 'restart_workout_timer', [], [
+			'workout_current' => $object_active,
+			'workout_reset_timer' => static fn( \WP_REST_Request $request ): \WP_REST_Response => new \WP_REST_Response( [ 'timer_restarted' => true, 'id' => $request->get_param( 'id' ) ], 200 ),
+		] );
+		$this->assertTrue( $timer['ok'] ?? false );
+		$this->assertSame( 51, $timer['data']['id'] ?? 0 );
+
+		$queued = AiToolHandlerService::execute( 42, 'cancel_workout', [], [
+			'workout_current' => static fn(): \WP_REST_Response => new \WP_REST_Response( [ 'custom_workout_draft' => (object) [ 'id' => 'draft-2' ] ], 200 ),
+			'workout_clear_custom_draft' => static fn(): \WP_REST_Response => new \WP_REST_Response( [ 'deleted' => true ], 200 ),
+		] );
+		$this->assertTrue( $queued['ok'] ?? false );
 	}
 
 	public function test_health_water_and_correction_tools_route_every_log_type(): void {

@@ -69,6 +69,8 @@ export default function WorkoutScreen() {
     startSession,
     reloadSession,
     clearCustomWorkoutDraft,
+    saveActiveWorkoutToLibrary,
+    resetActiveWorkout,
     logSet,
     updateSet,
     deleteSet,
@@ -522,6 +524,14 @@ export default function WorkoutScreen() {
           navigate('/dashboard')
         }}
         onComplete={sessionController.handleComplete}
+        onSaveWorkout={saveActiveWorkoutToLibrary}
+        onResetWorkout={resetActiveWorkout}
+        onAskJohnny={() => {
+          setJohnnyLiveWorkoutRequested(false)
+          navigate('/dashboard')
+        }}
+        pauseSessionTimer={sessionController.pauseSessionTimer}
+        resumeSessionTimer={sessionController.resumeSessionTimer}
         timerLabel={sessionController.activeSessionTimerLabel}
         displayDayType={planning.displayDayType}
       />
@@ -579,7 +589,7 @@ export default function WorkoutScreen() {
   }
 
   return (
-    <WorkoutActiveSession
+      <WorkoutActiveSession
       session={session}
       exercises={exercises}
       activeExerciseIdx={activeExerciseIdx}
@@ -601,6 +611,12 @@ export default function WorkoutScreen() {
       sessionController={{ ...sessionController, dismissUndoToast }}
       undoToast={undoToast}
       navigate={navigate}
+      onSaveActiveWorkout={saveActiveWorkoutToLibrary}
+      onResetActiveWorkout={resetActiveWorkout}
+      onAskJohnnyFromLive={() => {
+        setJohnnyLiveWorkoutRequested(false)
+        navigate('/dashboard')
+      }}
       forceLiveWorkoutOpen={johnnyLiveWorkoutRequested}
       onCloseForcedLiveWorkout={() => {
         setJohnnyLiveWorkoutRequested(false)

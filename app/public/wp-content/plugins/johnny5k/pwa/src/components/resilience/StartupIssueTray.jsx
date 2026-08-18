@@ -39,7 +39,12 @@ export default function StartupIssueTray() {
               <p className="startup-issue-kicker">Startup issue</p>
               <strong>{issue.title}</strong>
               {issue.message ? <p>{issue.message}</p> : null}
-              {issue.detail ? <p className="startup-issue-detail">{issue.detail}</p> : null}
+              {issue.detail ? (
+                <details className="startup-issue-detail-toggle">
+                  <summary>Technical details</summary>
+                  <p className="startup-issue-detail">{issue.detail}</p>
+                </details>
+              ) : null}
             </div>
             <div className="startup-issue-actions">
               {runAction && issue.action?.label ? (

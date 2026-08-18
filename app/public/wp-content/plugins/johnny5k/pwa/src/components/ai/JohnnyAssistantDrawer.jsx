@@ -13,6 +13,8 @@ import { useDashboardStore } from '../../store/dashboardStore'
 import { useJohnnyAssistantStore } from '../../store/johnnyAssistantStore'
 import { useWorkoutStore } from '../../store/workoutStore'
 import { renderChatMessageBlocks } from './chatMessageFormatter'
+import RecipeGallery from './RecipeGallery'
+import GroceryGapCard from './GroceryGapCard'
 import AppIcon from '../ui/AppIcon'
 import ClearableInput from '../ui/ClearableInput'
 
@@ -21,14 +23,19 @@ const ACTION_TOOLS = new Set([
   'log_steps',
   'log_sleep',
   'log_food_from_description',
+  'create_food_tile',
   'create_training_plan',
   'set_training_schedule',
   'create_custom_workout',
   'create_personal_exercise',
   'save_workout_to_library',
   'load_saved_workout',
+  'remove_saved_workout',
   'add_pantry_items',
+  'remove_pantry_items',
   'add_grocery_gap_items',
+  'remove_grocery_gap_items',
+  'add_recipe_ingredients_to_grocery_list',
   'add_recipe_to_cookbook',
   'swap_workout_exercise',
   'schedule_sms_reminder',
@@ -41,16 +48,20 @@ const ACTION_DESTINATIONS = {
   log_sleep: { path: '/body', state: { focusTab: 'sleep' }, label: 'Open sleep' },
   log_food_from_description: { path: '/nutrition', label: 'Open nutrition' },
   show_recipe_catalog: { path: '/nutrition', state: { focusSection: 'recipes', johnnyActionNotice: 'Johnny opened recipe ideas so you can review the latest recommendations.' }, label: 'Open recipes' },
-  show_recipe_cookbook: { path: '/nutrition', state: { focusSection: 'recipes', recipeCollectionFilter: 'cookbook', johnnyActionNotice: 'Johnny opened My Cookbook so you can revisit the saved recipes.' }, label: 'Open My Cookbook' },
-  add_recipe_to_cookbook: { path: '/nutrition', state: { focusSection: 'recipes', recipeCollectionFilter: 'cookbook', johnnyActionNotice: 'Johnny saved that recipe to My Cookbook.' }, label: 'Open My Cookbook' },
+  show_recipe_cookbook: { path: '/nutrition', state: { focusSection: 'recipes', recipeCollectionFilter: 'cookbook', johnnyActionNotice: 'Johnny opened your Planning Shelf so you can revisit the recipe tiles you saved.' }, label: 'Open planning shelf' },
+  add_recipe_to_cookbook: { path: '/nutrition', state: { focusSection: 'recipes', recipeCollectionFilter: 'cookbook', johnnyActionNotice: 'Johnny added that recipe tile to your Planning Shelf.' }, label: 'Open planning shelf' },
   add_pantry_items: { path: '/nutrition/pantry', label: 'Open pantry' },
-  add_grocery_gap_items: { path: '/nutrition', state: { focusSection: 'groceryGap' }, label: 'Open grocery gap' },
+  remove_pantry_items: { path: '/nutrition/pantry', label: 'Open pantry' },
+  add_grocery_gap_items: { path: '/shopping-list', label: 'Open shopping list' },
+  remove_grocery_gap_items: { path: '/shopping-list', label: 'Open shopping list' },
+  add_recipe_ingredients_to_grocery_list: { path: '/shopping-list', label: 'Open shopping list' },
   create_training_plan: { path: '/workout', label: 'Open workout' },
   set_training_schedule: { path: '/workout', state: { johnnyActionNotice: 'Johnny updated your weekly split and rebuilt the active training schedule.' }, label: 'Open workout' },
   create_custom_workout: { path: '/workout', state: { johnnyActionNotice: 'Johnny queued a custom workout for you on the Workout screen.' }, label: 'Open workout' },
   create_personal_exercise: { path: '/workout/library', state: { johnnyActionNotice: 'Johnny added an exercise to your custom exercise library.' }, label: 'Open library' },
   save_workout_to_library: { path: '/workout', state: { johnnyActionNotice: 'Johnny saved that workout to My Workouts.' }, label: 'Open My Workouts' },
   load_saved_workout: { path: '/workout', state: { johnnyActionNotice: 'Johnny loaded a saved workout for review.' }, label: 'Open workout' },
+  remove_saved_workout: { path: '/workout', state: { johnnyActionNotice: 'Johnny removed that workout from My Workouts.' }, label: 'Open My Workouts' },
   swap_workout_exercise: { path: '/workout', label: 'Open workout' },
   clear_follow_ups: { path: '/settings', state: { johnnyActionNotice: 'Johnny cleared the requested follow-ups.' }, label: 'Open settings' },
   clear_sms_reminders: { path: '/settings', state: { johnnyActionNotice: 'Johnny canceled the requested SMS reminders.' }, label: 'Open settings' },
@@ -260,6 +271,7 @@ export default function JohnnyAssistantDrawer() {
   const sendPrompt = useCallback(async (message, options = {}) => {
     const nextMessage = message.trim()
     if (!nextMessage || loading) return
+    const shoppingModeRequested = isShoppingModeNavigationRequest(nextMessage)
 
     const supportMeta = normalizeSupportStarterMeta(options.meta)
 
@@ -287,7 +299,7 @@ export default function JohnnyAssistantDrawer() {
       const usedTools = Array.isArray(data.used_tools) ? data.used_tools : []
       const actionResults = Array.isArray(data.action_results) ? data.action_results : []
       const actionTools = getActionTools(usedTools, actionResults)
-      const autoAction = !actionTools.length ? getAutoExecutableModelAction(modelActions) : null
+      const autoAction = !actionTools.length && !shoppingModeRequested ? getAutoExecutableModelAction(modelActions) : null
 
       setMessages(current => [...current, {
         role: 'assistant',
@@ -302,6 +314,13 @@ export default function JohnnyAssistantDrawer() {
       }])
       if (Array.isArray(data.queued_follow_ups) && data.queued_follow_ups.length) {
         setFollowUps(current => dedupeFollowUps([...current, ...data.queued_follow_ups]))
+      }
+
+      if (shoppingModeRequested) {
+        setStatusMessage('Shopping mode is ready.')
+        closeDrawer()
+        navigate('/shopping-list', { state: { johnnyActionNotice: 'Johnny opened shopping mode with your current grocery gap.' } })
+        return
       }
 
       if (actionTools.length) {
@@ -402,7 +421,7 @@ export default function JohnnyAssistantDrawer() {
     } finally {
       setLoading(false)
     }
-  }, [chatMode, invalidate, loadSnapshot, loading, location.pathname, navigate, reloadWorkoutSession])
+  }, [bootstrapWorkoutSession, chatMode, closeDrawer, invalidate, loadSnapshot, loading, location.pathname, navigate, reloadWorkoutSession])
 
   useEffect(() => {
     if (!isOpen || initialising || loading) return
@@ -699,6 +718,10 @@ export default function JohnnyAssistantDrawer() {
                   }} onQueueFollowUp={prompt => {
                     sendPrompt(prompt)
                   }} onRunWorkflow={handleRunWorkflow} /> : null}
+                  <GroceryGapCard actionResults={actionResults} modelActions={modelActions} onOpen={() => {
+                    navigate('/shopping-list')
+                    closeDrawer()
+                  }} />
                   {!actionResults.length && actionTools.length ? (
                     <div className="johnny-action-tags">
                       {actionTools.map(toolName => (
@@ -921,6 +944,8 @@ function formatToolLabel(toolName) {
       return 'Sleep logged'
     case 'log_food_from_description':
       return 'Food logged'
+    case 'create_food_tile':
+      return 'Food tile created'
     case 'show_recipe_catalog':
       return 'Recipe recommendations'
     case 'show_recipe_cookbook':
@@ -943,6 +968,8 @@ function formatToolLabel(toolName) {
       return 'Workout saved'
     case 'load_saved_workout':
       return 'Saved workout loaded'
+    case 'remove_saved_workout':
+      return 'Workout removed'
     case 'swap_workout_exercise':
       return 'Workout updated'
     case 'schedule_sms_reminder':
@@ -1019,11 +1046,17 @@ function deriveJohnnyMode(pathname, messages = []) {
   const loweredPath = String(pathname || '').toLowerCase()
   const loweredText = String(recentUserText || '').toLowerCase()
 
-  if (loweredPath.includes('/nutrition')) return 'nutrition'
+  if (loweredPath.includes('/nutrition') || loweredPath.includes('/shopping-list')) return 'nutrition'
   if (loweredPath.includes('/workout')) return loweredText.includes('review') ? 'workout_review' : 'coach'
   if (loweredPath.includes('/settings')) return 'planning'
   if (loweredPath.includes('/dashboard')) return 'accountability'
   return 'general'
+}
+
+function isShoppingModeNavigationRequest(value) {
+  const message = String(value || '').toLowerCase()
+  return /\b(open|activate|start|enter|launch|show|take me to|go to)\b/.test(message)
+    && /\b(shopping mode|shopping list|grocery shopping)\b/.test(message)
 }
 
 function formatModelActionLabel(type) {
@@ -1340,6 +1373,8 @@ function resolveOpenScreenDestination(screen, payload = {}) {
       return { path: '/nutrition', state: { focusSection: 'recipes', recipeMealFilter: payload.meal_type || 'all', johnnyActionNotice: 'Johnny opened Recipes to narrow the next best meal option.' }, label: 'Open recipes', actionLabel: 'Open again' }
     case 'grocery_gap':
       return { path: '/nutrition', state: { focusSection: 'groceryGap', johnnyActionNotice: 'Johnny opened Grocery Gap so you can fix the missing ingredients list.' }, label: 'Open grocery gap', actionLabel: 'Open again' }
+    case 'shopping_list':
+      return { path: '/shopping-list', label: 'Open shopping list', actionLabel: 'Open again' }
     case 'pantry':
       return { path: '/nutrition/pantry', state: { johnnyActionNotice: 'Johnny opened Pantry to work from what you already have.' }, label: 'Open pantry', actionLabel: 'Open again' }
     case 'steps':
@@ -1479,6 +1514,8 @@ function buildActionTitle(result) {
       return `${result.hours_sleep || 0} hours of sleep logged`
     case 'log_food_from_description':
       return `${result.estimated ? 'Estimated' : 'Logged'} ${result.food_name || 'food entry'}`
+    case 'create_food_tile':
+      return result.name || 'Food tile created'
     case 'show_recipe_catalog':
       return result.recipe_count === 1 ? '1 recipe recommendation ready' : `${Number(result.recipe_count || getRecipeActionItems(result).length || 0).toLocaleString()} recipe recommendations ready`
     case 'show_recipe_cookbook':
@@ -1501,6 +1538,8 @@ function buildActionTitle(result) {
       return result.name || 'Workout saved to My Workouts'
     case 'load_saved_workout':
       return result.name || 'Saved workout loaded'
+    case 'remove_saved_workout':
+      return result.name || 'Workout removed from My Workouts'
     case 'swap_workout_exercise':
       return result.new_exercise || 'Workout swap complete'
     case 'schedule_sms_reminder':
@@ -1534,6 +1573,8 @@ function buildFallbackSummary(result) {
       return 'Sleep logged.'
     case 'log_food_from_description':
       return result.estimated ? 'Estimated food entry logged. Review if serving size was rough.' : 'Food logged.'
+    case 'create_food_tile':
+      return result.summary || 'Johnny created that reusable food tile.'
     case 'schedule_sms_reminder':
       return 'SMS reminder scheduled.'
     case 'clear_follow_ups':
@@ -1550,6 +1591,8 @@ function buildFallbackSummary(result) {
       return result.summary || 'Johnny saved that workout to My Workouts.'
     case 'load_saved_workout':
       return result.summary || 'Johnny loaded that workout from My Workouts.'
+    case 'remove_saved_workout':
+      return result.summary || 'Johnny removed that workout from My Workouts.'
     default:
       return `${formatToolLabel(actionName)}.`
   }
@@ -1579,6 +1622,12 @@ function buildActionMeta(result) {
         Number.isFinite(result.protein_g) && result.protein_g > 0 ? `${result.protein_g}g protein` : '',
         result.estimated ? 'Estimate' : '',
         result.review_recommended ? 'Review recommended' : '',
+      ].filter(Boolean).join(' | ')
+    case 'create_food_tile':
+      return [
+        result.serving_size || '',
+        Number.isFinite(result.calories) ? `${result.calories} cal` : '',
+        Number.isFinite(result.protein_g) ? `${result.protein_g}g protein` : '',
       ].filter(Boolean).join(' | ')
     case 'show_recipe_catalog':
     case 'show_recipe_cookbook':
@@ -1654,95 +1703,7 @@ function getRecipeActionItems(result) {
 }
 
 function RecipeActionPreviewList({ recipes }) {
-  return (
-    <div className="johnny-recipe-preview-list">
-      {recipes.map((recipe, index) => <RecipeActionPreviewCard key={String(recipe?.key || recipe?.recipe_name || `recipe-${index}`)} recipe={recipe} />)}
-    </div>
-  )
-}
-
-function RecipeActionPreviewCard({ recipe }) {
-  const [detailsOpen, setDetailsOpen] = useState(false)
-  const dietaryTags = Array.isArray(recipe?.dietary_tags) ? recipe.dietary_tags : []
-  const onHand = Array.isArray(recipe?.on_hand_ingredients) ? recipe.on_hand_ingredients.filter(Boolean) : []
-  const missing = Array.isArray(recipe?.missing_ingredients) ? recipe.missing_ingredients.filter(Boolean) : []
-  const ingredients = Array.isArray(recipe?.ingredients) ? recipe.ingredients.filter(Boolean) : []
-  const instructions = Array.isArray(recipe?.instructions) ? recipe.instructions.filter(Boolean) : []
-
-  return (
-    <section className="johnny-recipe-preview-card">
-      {recipe?.image_url ? <img className="johnny-recipe-preview-image" src={recipe.image_url} alt={recipe?.recipe_name || 'Recipe'} loading="lazy" /> : null}
-      <div className="johnny-recipe-preview-body">
-        <div className="johnny-recipe-preview-head">
-          <strong>{recipe?.recipe_name || 'Recipe'}</strong>
-          {recipe?.is_in_cookbook ? <span className="johnny-recipe-preview-status">In My Cookbook</span> : null}
-        </div>
-        <p className="johnny-recipe-preview-macros">
-          {formatRecipeMealTypeLabel(recipe?.meal_type || 'lunch')} · {Math.round(Number(recipe?.estimated_calories) || 0)} Calories · {Math.round(Number(recipe?.estimated_protein_g) || 0)}g protein · {Math.round(Number(recipe?.estimated_carbs_g) || 0)}g carbs · {Math.round(Number(recipe?.estimated_fat_g) || 0)}g fat
-        </p>
-        {recipe?.why_this_works ? <p className="johnny-recipe-preview-note">{recipe.why_this_works}</p> : null}
-        <div className="johnny-recipe-preview-badges">
-          {formatRecipeSourceLabel(recipe?.source) ? <span className="nutrition-inline-badge pantry-category">{formatRecipeSourceLabel(recipe?.source)}</span> : null}
-          {onHand.length ? <span className="nutrition-inline-badge on-hand">{onHand.length} on hand</span> : null}
-          {missing.length ? <span className="nutrition-inline-badge missing">{missing.length} need pickup</span> : null}
-          {dietaryTags.map(tag => <span key={tag} className="nutrition-inline-badge">{formatRecipeDietaryTagLabel(tag)}</span>)}
-        </div>
-        {recipe?.source_title ? (
-          <p className="johnny-recipe-preview-source">
-            <strong>Source:</strong>{' '}
-            {recipe?.source_url ? (
-              <a href={recipe.source_url} target="_blank" rel="noreferrer">{recipe.source_title}</a>
-            ) : (
-              <span>{recipe.source_title}</span>
-            )}
-          </p>
-        ) : null}
-        <details className="johnny-recipe-preview-details" open={detailsOpen} onToggle={event => setDetailsOpen(event.currentTarget.open)}>
-          <summary>{detailsOpen ? 'Hide details' : 'Show details'}</summary>
-          <div className="johnny-recipe-preview-details-body">
-            {onHand.length ? <p><strong>On hand:</strong> {onHand.join(', ')}</p> : null}
-            {missing.length ? <p><strong>Still need:</strong> {missing.join(', ')}</p> : null}
-            {!onHand.length && !missing.length && ingredients.length ? <p><strong>Ingredients:</strong> {ingredients.join(', ')}</p> : null}
-            {instructions.length ? (
-              <ol className="johnny-recipe-preview-steps">
-                {instructions.map((step, index) => <li key={`${recipe?.key || recipe?.recipe_name || 'recipe'}-${index}`}>{step}</li>)}
-              </ol>
-            ) : null}
-          </div>
-        </details>
-      </div>
-    </section>
-  )
-}
-
-function formatRecipeMealTypeLabel(value) {
-  return String(value || 'meal')
-    .replace(/_/g, ' ')
-    .replace(/\b\w/g, char => char.toUpperCase())
-}
-
-function formatRecipeDietaryTagLabel(tag) {
-  switch (tag) {
-    case 'high_protein':
-      return 'High Protein'
-    case 'whole30':
-      return 'Whole30'
-    default:
-      return formatRecipeMealTypeLabel(tag)
-  }
-}
-
-function formatRecipeSourceLabel(source) {
-  switch (source) {
-    case 'admin_library':
-      return 'Recipe library'
-    case 'ai_discovery':
-      return 'Web recipe'
-    case 'generated':
-      return 'Generated'
-    default:
-      return ''
-  }
+  return <RecipeGallery recipes={recipes} />
 }
 
 function getStarterSuggestionsForCurrentTime(now = new Date()) {

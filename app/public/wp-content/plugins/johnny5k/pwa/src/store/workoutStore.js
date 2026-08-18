@@ -128,7 +128,46 @@ export const useWorkoutStore = create(persist((set, get) => ({
   dismissUndoToast: () => set({ undoToast: null }),
   clearCustomWorkoutDraft: async () => {
     await workoutApi.clearCustomDraft()
-    set({ customWorkoutDraft: null })
+    set({ customWorkoutDraft: null, workoutApproval: null, previewDayType: '', previewDrafts: {} })
+  },
+
+  saveActiveWorkoutToLibrary: async () => {
+    const active = get().session
+    const sessionRecord = active?.session || {}
+    const exercises = Array.isArray(active?.exercises) ? active.exercises : []
+    if (!sessionRecord.id || !exercises.length) throw new Error('There is no active workout to save.')
+    return workoutApi.saveSavedWorkout({
+      name: sessionRecord.custom_title || `${String(sessionRecord.planned_day_type || 'Workout').replace(/[_-]+/g, ' ')} workout`,
+      day_type: sessionRecord.planned_day_type || 'custom',
+      time_tier: sessionRecord.time_tier || 'medium',
+      workout_structure: sessionRecord.workout_structure || 'standard',
+      rounds: Number(sessionRecord.rounds_total || 1),
+      rest_between_exercises_seconds: Number(sessionRecord.rest_between_exercises_seconds || 0),
+      rest_between_rounds_seconds: Number(sessionRecord.rest_between_rounds_seconds || 0),
+      exercises: exercises.map((exercise, index) => ({
+        plan_exercise_id: Number(exercise.plan_exercise_id || exercise.id || index + 1),
+        exercise_id: Number(exercise.exercise_id || 0),
+        exercise_name: exercise.exercise_name || exercise.name || '',
+        slot_type: exercise.slot_type || 'accessory',
+        sets: Number(exercise.planned_sets || exercise.sets?.length || 1),
+        target_type: exercise.target_type || 'reps',
+        rep_min: Number(exercise.planned_rep_min || exercise.planned_rep_max || 8),
+        rep_max: Number(exercise.planned_rep_max || exercise.planned_rep_min || 12),
+        duration_seconds: Number(exercise.planned_duration_seconds || 0) || null,
+        reps_per_side: Boolean(exercise.reps_per_side),
+      })),
+    })
+  },
+
+  resetActiveWorkout: async () => {
+    const { sessionId, session } = get()
+    if (!sessionId) throw new Error('There is no active workout to restart.')
+    const setIds = (session?.exercises || []).flatMap(exercise => exercise.sets || []).map(setRecord => Number(setRecord.id || 0)).filter(id => id > 0)
+    await Promise.all(setIds.map(setId => workoutApi.deleteSet(sessionId, setId)))
+    await workoutApi.resetTimer(sessionId)
+    await get().reloadSession()
+    set({ undoToast: null, activeExerciseIdx: 0 })
+    return { reset: true, cleared_sets: setIds.length }
   },
 
   markSessionDiscarded: (sessionRecord) => set((state) => {

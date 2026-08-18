@@ -262,6 +262,28 @@ class TrainingEngine {
 		) );
 
 		if ( ! $last_sets ) {
+			$standard_context = $wpdb->get_row( $wpdb->prepare(
+				"SELECT e.movement_pattern, e.equipment,
+				        p.training_experience,
+				        COALESCE(
+				          (SELECT bm.weight_lb FROM {$p}fit_body_metrics bm WHERE bm.user_id = %d ORDER BY bm.metric_date DESC, bm.id DESC LIMIT 1),
+				          p.starting_weight_lb
+				        ) AS body_weight_lb
+				 FROM {$p}fit_exercises e
+				 LEFT JOIN {$p}fit_user_profiles p ON p.user_id = %d
+				 WHERE e.id = %d
+				 LIMIT 1",
+				$user_id,
+				$user_id,
+				$exercise_id
+			) );
+			$starter_weight = self::conservative_standard_weight( $standard_context );
+			if ( null !== $starter_weight ) {
+				return [
+					'weight' => $starter_weight,
+					'note'   => 'Conservative starter target based on your body weight, experience, movement, and equipment. Adjust down if form is not clean.',
+				];
+			}
 			return [ 'weight' => null, 'note' => 'Start light — first time performing this exercise.' ];
 		}
 
@@ -278,6 +300,45 @@ class TrainingEngine {
 
 		// Otherwise, hold weight and aim for top of rep range
 		return [ 'weight' => self::round_training_weight( $avg_w, $equipment ), 'note' => 'Match your last session weight and aim for the top of your rep range.' ];
+	}
+
+	private static function conservative_standard_weight( ?object $context ): ?float {
+		if ( ! $context ) {
+			return null;
+		}
+
+		$body_weight = (float) ( $context->body_weight_lb ?? 0 );
+		$equipment   = sanitize_key( (string) ( $context->equipment ?? '' ) );
+		$pattern     = sanitize_key( (string) ( $context->movement_pattern ?? '' ) );
+		$experience  = sanitize_key( (string) ( $context->training_experience ?? 'beginner' ) );
+		if ( $body_weight <= 0 || in_array( $equipment, [ '', 'bodyweight', 'other' ], true ) ) {
+			return null;
+		}
+
+		$pattern_ratios = [
+			'squat'            => 0.45,
+			'hip_hinge'        => 0.45,
+			'hip_extension'    => 0.40,
+			'horizontal_push'  => 0.30,
+			'vertical_push'    => 0.18,
+			'horizontal_pull'  => 0.30,
+			'vertical_pull'    => 0.25,
+			'lunge'            => 0.18,
+			'carry'            => 0.20,
+			'knee_extension'   => 0.20,
+			'knee_flexion'     => 0.15,
+			'elbow_flexion'    => 0.08,
+			'elbow_extension'  => 0.08,
+		];
+		if ( ! isset( $pattern_ratios[ $pattern ] ) ) {
+			return null;
+		}
+
+		$experience_multiplier = [ 'beginner' => 0.65, 'intermediate' => 0.85, 'advanced' => 1.0 ][ $experience ] ?? 0.65;
+		$equipment_multiplier  = [ 'barbell' => 1.0, 'machine' => 0.55, 'dumbbell' => 0.45, 'kettlebell' => 0.35, 'cable' => 0.40 ][ $equipment ] ?? 0.50;
+		$estimate              = $body_weight * $pattern_ratios[ $pattern ] * $experience_multiplier * $equipment_multiplier;
+
+		return max( 2.5, self::round_training_weight( $estimate, $equipment ) );
 	}
 
 	// ── Helpers ───────────────────────────────────────────────────────────────

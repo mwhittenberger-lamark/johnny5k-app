@@ -1,5 +1,5 @@
 .btn-primary {
-  background: linear-gradient(180deg, #F3DE7A 0%, var(--accent) 100%);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 65%, white) 0%, var(--accent) 100%);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -16,7 +16,7 @@
   letter-spacing: 0.03em;
   transition: opacity .2s, box-shadow .2s;
   width: 100%;
-  box-shadow: 0 8px 24px rgba(232, 203, 76, 0.24);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--accent) 24%, transparent);
   font-family: var(--font-ui);
   white-space: normal;
   text-align: center;
@@ -25,7 +25,7 @@
 
 .btn-primary:hover {
   opacity: 0.92;
-  box-shadow: 0 10px 30px rgba(232, 203, 76, 0.32);
+  box-shadow: 0 10px 30px color-mix(in srgb, var(--accent) 32%, transparent);
 }
 
 .btn-primary:disabled {

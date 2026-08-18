@@ -29,6 +29,9 @@ export default function WorkoutActiveSession({
   sessionController,
   undoToast,
   navigate,
+  onSaveActiveWorkout,
+  onResetActiveWorkout,
+  onAskJohnnyFromLive,
   forceLiveWorkoutOpen = false,
   onCloseForcedLiveWorkout,
 }) {
@@ -316,6 +319,9 @@ export default function WorkoutActiveSession({
           if (forceLiveWorkoutOpen) onCloseForcedLiveWorkout?.()
         }}
         onComplete={sessionController.handleComplete}
+        onSaveWorkout={onSaveActiveWorkout}
+        onResetWorkout={onResetActiveWorkout}
+        onAskJohnny={onAskJohnnyFromLive}
         onSetIronQuestStance={sessionController.setIronQuestLiveStance}
         onSetIronQuestBeatsEnabled={sessionController.setIronQuestLiveBeatsEnabled}
         ironQuestStoryBusy={sessionController.ironQuestStoryBusy}

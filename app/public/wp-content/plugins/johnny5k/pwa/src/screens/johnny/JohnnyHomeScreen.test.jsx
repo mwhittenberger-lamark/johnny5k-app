@@ -16,6 +16,7 @@ const authState = vi.hoisted(() => ({
 }))
 const workoutState = vi.hoisted(() => ({
   bootstrapSession: vi.fn(async () => {}),
+  clearCustomWorkoutDraft: vi.fn(async () => {}),
   takeRestDay: vi.fn(async () => ({})),
   customWorkoutDraft: {
     id: 42,
@@ -29,9 +30,12 @@ const workoutState = vi.hoisted(() => ({
 }))
 const aiApiMock = vi.hoisted(() => ({
   analyseFoodText: vi.fn(),
+  analyseMeal: vi.fn(),
+  analyseMealText: vi.fn(),
   chat: vi.fn(),
   clearThread: vi.fn(),
   dailyBrief: vi.fn(),
+	proactiveSuggestion: vi.fn(),
 	exerciseDemo: vi.fn(),
   getThread: vi.fn(),
 }))
@@ -45,7 +49,7 @@ const onboardingApiMock = vi.hoisted(() => ({
   savePrefs: vi.fn(),
 }))
 const bodyApiMock = vi.hoisted(() => ({ getSleep: vi.fn(), getSteps: vi.fn(), getWeight: vi.fn(), logCardio: vi.fn(), logSleep: vi.fn(), logSteps: vi.fn(), logWeight: vi.fn() }))
-const nutritionApiMock = vi.hoisted(() => ({ getBeverageBoard: vi.fn(), logMeal: vi.fn(), searchFoods: vi.fn(), setWaterIntake: vi.fn() }))
+const nutritionApiMock = vi.hoisted(() => ({ createSavedFood: vi.fn(), generateRecipeImage: vi.fn(), getBeverageBoard: vi.fn(), getMeals: vi.fn(), getRecipeCookbook: vi.fn(), getRecipes: vi.fn(), getSavedFoods: vi.fn(), getSavedMeals: vi.fn(), getSummary: vi.fn(), logMeal: vi.fn(), logSavedMeal: vi.fn(), searchFoods: vi.fn(), setWaterIntake: vi.fn(), updateRecipeCookbook: vi.fn() }))
 const dashboardApiMock = vi.hoisted(() => ({ snapshot: vi.fn(), photoUpload: vi.fn() }))
 const workoutApiMock = vi.hoisted(() => ({ saveCustomDraft: vi.fn() }))
 
@@ -85,6 +89,7 @@ describe('JohnnyHomeScreen', () => {
     chatScrollTo = vi.fn()
     Object.defineProperty(window.HTMLElement.prototype, 'scrollTo', { configurable: true, value: chatScrollTo })
     workoutState.bootstrapSession.mockClear()
+    workoutState.clearCustomWorkoutDraft.mockClear()
     workoutState.takeRestDay.mockClear()
     workoutState.workoutApproval = null
     workoutState.session = null
@@ -109,17 +114,39 @@ describe('JohnnyHomeScreen', () => {
     bodyApiMock.getSteps.mockResolvedValue([])
     bodyApiMock.logSteps.mockResolvedValue({ saved: true })
     nutritionApiMock.getBeverageBoard.mockReset()
+    nutritionApiMock.generateRecipeImage.mockReset()
+    nutritionApiMock.getMeals.mockReset()
+    nutritionApiMock.getRecipeCookbook.mockReset()
+    nutritionApiMock.getRecipes.mockReset()
+    nutritionApiMock.getSavedFoods.mockReset()
+    nutritionApiMock.getSavedMeals.mockReset()
+    nutritionApiMock.getSummary.mockReset()
     nutritionApiMock.logMeal.mockReset()
+    nutritionApiMock.logSavedMeal.mockReset()
     nutritionApiMock.searchFoods.mockReset()
     nutritionApiMock.setWaterIntake.mockReset()
+    nutritionApiMock.updateRecipeCookbook.mockReset()
     nutritionApiMock.getBeverageBoard.mockResolvedValue({ water: { glasses: 2, target_glasses: 6 } })
+    nutritionApiMock.generateRecipeImage.mockResolvedValue({ image_url: '' })
+    nutritionApiMock.getMeals.mockResolvedValue([])
+    nutritionApiMock.getRecipeCookbook.mockResolvedValue({ recipes: [] })
+    nutritionApiMock.getRecipes.mockResolvedValue([])
+    nutritionApiMock.getSavedFoods.mockResolvedValue([])
+    nutritionApiMock.getSavedMeals.mockResolvedValue([])
+    nutritionApiMock.getSummary.mockResolvedValue({ totals: {}, targets: {} })
     nutritionApiMock.setWaterIntake.mockResolvedValue({ water: { glasses: 3, target_glasses: 6 } })
     nutritionApiMock.searchFoods.mockResolvedValue([])
     nutritionApiMock.logMeal.mockResolvedValue({ saved: true })
+    nutritionApiMock.logSavedMeal.mockResolvedValue({ saved: true })
+    nutritionApiMock.updateRecipeCookbook.mockResolvedValue({ recipes: [] })
     aiApiMock.analyseFoodText.mockReset()
+	aiApiMock.chat.mockReset()
+	aiApiMock.chat.mockResolvedValue({ reply: 'Done.', used_tools: [], action_results: [] })
     aiApiMock.clearThread.mockReset()
     aiApiMock.clearThread.mockResolvedValue({ cleared: true })
     aiApiMock.dailyBrief.mockReset()
+	aiApiMock.proactiveSuggestion.mockReset()
+	aiApiMock.proactiveSuggestion.mockResolvedValue({ suggestion: null })
 	aiApiMock.exerciseDemo.mockReset()
 	aiApiMock.exerciseDemo.mockResolvedValue({ video_id: 'dQw4w9WgXcQ', video_url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ', embed_url: '', embed_verified: false, video_title: 'Exercise technique tutorial', description: 'I set the equipment and brace before the first rep. Keep every repetition controlled through the full range.' })
     aiApiMock.dailyBrief.mockResolvedValue({
@@ -128,6 +155,10 @@ describe('JohnnyHomeScreen', () => {
       training_status: { scheduled_day_type: 'push', recorded: false },
     })
     aiApiMock.analyseFoodText.mockResolvedValue({ food_name: 'Iced latte', serving_size: '16 oz', calories: 180, carbs_g: 24, sugar_g: 18 })
+    aiApiMock.analyseMeal.mockReset()
+    aiApiMock.analyseMeal.mockResolvedValue({ items: [{ food_name: 'Chicken', serving_amount: 1, serving_unit: 'plate', calories: 420, protein_g: 38 }] })
+    aiApiMock.analyseMealText.mockReset()
+    aiApiMock.analyseMealText.mockResolvedValue({ items: [{ food_name: 'Chicken', serving_amount: 1, serving_unit: 'plate', calories: 420, protein_g: 38 }] })
     dashboardApiMock.snapshot.mockReset()
     dashboardApiMock.photoUpload.mockReset()
     workoutApiMock.saveCustomDraft.mockReset()
@@ -151,6 +182,127 @@ describe('JohnnyHomeScreen', () => {
     await act(async () => root.unmount())
     container.remove()
     vi.clearAllMocks()
+	vi.useRealTimers()
+  })
+
+  it('checks for a contextual suggestion every two minutes and shows it for one minute', async () => {
+    vi.useFakeTimers()
+    aiApiMock.getThread.mockResolvedValue({ messages: [] })
+    aiApiMock.proactiveSuggestion.mockResolvedValue({
+      suggestion: {
+        label: 'Johnny suggests',
+        title: 'Build a protein-first dinner',
+        subtitle: 'You still have room in today’s target',
+        action_type: 'chat',
+        prompt: 'Give me a protein-first dinner idea for tonight.',
+      },
+    })
+    await renderScreen()
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(120000)
+    })
+    expect(aiApiMock.proactiveSuggestion).toHaveBeenCalledTimes(1)
+    expect(container.querySelector('.quick-nav-cta.suggestion-active')?.textContent).toContain('Build a protein-first dinner')
+    expect(container.querySelector('[aria-label="Clear Johnny suggestion"]')).toBeTruthy()
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60000)
+    })
+    expect(container.querySelector('.quick-nav-cta.suggestion-exiting')).toBeTruthy()
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(650)
+    })
+    expect(container.querySelector('.quick-nav-cta.suggestion-active')).toBeNull()
+    expect(container.textContent).toContain('Plan Workout')
+  })
+
+  it('clears a Johnny suggestion immediately and restores the workout action', async () => {
+    vi.useFakeTimers()
+    aiApiMock.getThread.mockResolvedValue({ messages: [] })
+    aiApiMock.proactiveSuggestion.mockResolvedValue({
+      suggestion: {
+        label: 'Johnny suggests',
+        title: 'Take a quick walk',
+        subtitle: 'A little movement would help',
+        action_type: 'chat',
+        prompt: 'Help me plan a short walk.',
+      },
+    })
+    await renderScreen()
+    await act(async () => { await vi.advanceTimersByTimeAsync(120000) })
+
+    await act(async () => container.querySelector('[aria-label="Clear Johnny suggestion"]').click())
+
+    expect(container.querySelector('.quick-nav-cta.suggestion-active')).toBeNull()
+    expect(container.querySelector('.quick-nav-cta')?.textContent).toContain('Plan Workout')
+    expect(aiApiMock.chat).not.toHaveBeenCalled()
+  })
+
+  it('turns a suggestion presentation into the right Johnny prompt', async () => {
+    vi.useFakeTimers()
+    aiApiMock.getThread.mockResolvedValue({ messages: [] })
+    aiApiMock.chat.mockResolvedValue({ reply: 'Dinner idea ready.', used_tools: [], action_results: [] })
+    aiApiMock.proactiveSuggestion.mockResolvedValue({
+      suggestion: {
+        label: 'Johnny suggests',
+        title: 'Build tonight’s dinner',
+        subtitle: 'Use what remains in today’s targets',
+        action_type: 'chat',
+        presentation: 'meal_idea',
+        prompt: 'Build dinner from my remaining targets.',
+      },
+    })
+    await renderScreen()
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(120000)
+    })
+    const suggestionButton = container.querySelector('.quick-nav-cta.suggestion-active')
+    await act(async () => {
+      suggestionButton.click()
+      await Promise.resolve()
+    })
+
+    expect(aiApiMock.chat).toHaveBeenCalledWith(
+      expect.stringContaining('one specific meal idea matched to what remains'),
+      'main',
+      'general',
+      expect.any(Object),
+    )
+  })
+
+  it('keeps the primary action and chat composer together in the bottom dock', async () => {
+    aiApiMock.getThread.mockResolvedValue({ messages: [] })
+    await renderScreen()
+
+    const dock = container.querySelector('.johnny-primary-dock')
+    expect(dock?.querySelector('[aria-label="Johnny actions"]')).toBeTruthy()
+    expect(dock?.querySelector('#johnny-message')).toBeTruthy()
+    expect(dock?.querySelector('[aria-label="Start voice recording"]')).toBeTruthy()
+    expect(dock?.querySelector('[aria-label="Send message"]')).toBeTruthy()
+    expect(dock?.textContent).toContain('Progress Diary')
+  })
+
+  it('transcribes voice recording into the primary Johnny composer', async () => {
+    let recognition
+    window.SpeechRecognition = class {
+      constructor() { recognition = this }
+      start = vi.fn()
+      stop = vi.fn()
+    }
+    aiApiMock.getThread.mockResolvedValue({ messages: [] })
+    await renderScreen()
+
+    const mic = container.querySelector('[aria-label="Start voice recording"]')
+    await act(async () => mic.click())
+    expect(recognition.start).toHaveBeenCalled()
+    expect(container.querySelector('[aria-label="Stop voice recording"]')).toBeTruthy()
+
+    await act(async () => recognition.onresult({ results: [[{ transcript: 'Plan a lighter workout' }]] }))
+    expect(container.querySelector('#johnny-message').value).toBe('Plan a lighter workout')
+    delete window.SpeechRecognition
   })
 
   it('shows a generated image returned by Johnny', async () => {
@@ -309,9 +461,23 @@ describe('JohnnyHomeScreen', () => {
     expect(container.textContent).toContain('Monday Circuit')
 	const workoutCard = container.querySelector('.workout-card')
 	const decisionRail = container.querySelector('.johnny-decision-rail')
-	expect(decisionRail?.textContent).toContain('Approve workout')
-	expect(decisionRail?.textContent).toContain('Ask for changes')
-	expect(workoutCard.compareDocumentPosition(decisionRail) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+	expect(workoutCard?.querySelector('.wc-approval-actions')?.textContent).toContain('Approve workout')
+	expect(workoutCard?.querySelector('.wc-approval-actions')?.textContent).toContain('Ask for changes')
+	expect(container.textContent).toContain('Review Monday Circuit →')
+	expect(container.textContent).not.toContain('Plan Workout →')
+	expect(decisionRail).toBeNull()
+
+	aiApiMock.chat.mockResolvedValueOnce({
+	  reply: 'Locked in. Your workout is ready to start.',
+	  used_tools: ['approve_workout'],
+	  action_results: [{ action: 'approve_workout', ok: true }],
+	})
+	await act(async () => {
+	  workoutCard.querySelector('.wc-approve').click()
+	  await Promise.resolve()
+	})
+	expect(container.textContent).toContain('Activate Monday Circuit →')
+	expect(container.querySelector('.johnny-decision-rail')).toBeNull()
   })
 
   it('refreshes the persisted workout before showing a card after Johnny modifies it', async () => {
@@ -338,7 +504,41 @@ describe('JohnnyHomeScreen', () => {
     expect(workoutState.bootstrapSession).toHaveBeenCalledTimes(2)
     expect(container.textContent).toContain('I replaced Barbell Bench Press with Dumbbell Bench Press.')
     expect(container.textContent).toContain('Planning · approval needed')
-	expect(container.querySelector('.johnny-decision-rail')?.textContent).toContain('Approve workout')
+	expect(container.querySelector('.johnny-decision-rail')).toBeNull()
+  })
+
+  it('removes the stale plan and gold activate CTA after Johnny cancels the workout', async () => {
+    workoutState.workoutApproval = { date: '2026-08-07', workout_id: 42 }
+    aiApiMock.getThread.mockResolvedValue({
+      messages: [{ role: 'assistant', message_text: 'Here is the old plan.', action_results: [{ action: 'show_workout_plan' }] }],
+    })
+    aiApiMock.chat.mockResolvedValue({
+      reply: 'I cleared that workout.',
+      used_tools: ['get_current_workout', 'cancel_workout'],
+      action_results: [
+        { action: 'get_current_workout', ok: true, data: { custom_workout_draft: { id: 42 } } },
+        { action: 'cancel_workout', ok: true, data: { deleted: true } },
+      ],
+    })
+    await renderScreen()
+    expect(container.textContent).toContain('Activate Monday Circuit →')
+
+    const input = container.querySelector('#johnny-message')
+    await act(async () => {
+      const valueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set
+      valueSetter.call(input, 'Clear my queued workout.')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await act(async () => {
+      container.querySelector('.input-bar').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+      await Promise.resolve()
+    })
+
+    expect(workoutState.bootstrapSession).toHaveBeenCalledTimes(2)
+    expect(container.textContent).toContain('Plan Workout →')
+    expect(container.textContent).not.toContain('Activate Monday Circuit →')
+    expect(container.querySelector('.johnny-workout-card')).toBeNull()
+    expect(container.querySelector('.johnny-decision-rail')).toBeNull()
   })
 
 	it('does not offer planning approval controls for an approved workout read', async () => {
@@ -420,7 +620,7 @@ describe('JohnnyHomeScreen', () => {
     expect(container.textContent.match(/Planning · approval needed/g)).toHaveLength(1)
   })
 
-  it('places workout approval decisions after the workout card', async () => {
+  it('does not repeat workout approval decisions below the workout card', async () => {
     aiApiMock.getThread.mockResolvedValue({
       messages: [{
         role: 'assistant',
@@ -444,10 +644,9 @@ describe('JohnnyHomeScreen', () => {
     const workoutCard = container.querySelector('.workout-card')
     const decisionRail = container.querySelector('.johnny-decision-rail')
     expect(workoutCard).toBeTruthy()
-    expect(decisionRail).toBeTruthy()
-    expect(workoutCard.compareDocumentPosition(decisionRail) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(decisionRail.textContent).toContain('Approve workout')
-    expect(decisionRail.textContent).toContain('Ask for changes')
+    expect(decisionRail).toBeNull()
+    expect(workoutCard.querySelector('.wc-approval-actions')?.textContent).toContain('Approve workout')
+    expect(workoutCard.querySelector('.wc-approval-actions')?.textContent).toContain('Ask for changes')
   })
 
   it('shows reps for rep targets and seconds only for timed targets', async () => {
@@ -499,7 +698,26 @@ describe('JohnnyHomeScreen', () => {
     workoutState.workoutApproval = { date: '2026-08-07', workout_id: 42 }
     await renderScreen()
 
-    expect(container.textContent).toContain('Activate Workout')
+    expect(container.textContent).toContain('Activate Monday Circuit →')
+  })
+
+  it('clears the queued workout after a long press without activating it', async () => {
+    aiApiMock.getThread.mockResolvedValue({ messages: [] })
+    workoutState.workoutApproval = { date: '2026-08-07', workout_id: 42 }
+    await renderScreen()
+    const button = [...container.querySelectorAll('button')].find(item => item.textContent.includes('Activate Monday Circuit'))
+
+    await act(async () => {
+      button.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'touch' }))
+      await new Promise(resolve => window.setTimeout(resolve, 675))
+      button.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerType: 'touch' }))
+      button.click()
+      await Promise.resolve()
+    })
+
+    expect(workoutState.clearCustomWorkoutDraft).toHaveBeenCalledTimes(1)
+    expect(container.textContent).toContain('Queued workout cleared')
+    expect(container.textContent).toContain('Plan Workout')
   })
 
   it("labels an approved workout as today's plan", async () => {
@@ -669,23 +887,24 @@ describe('JohnnyHomeScreen', () => {
     expect(container.textContent).toContain('Workout Logged')
   })
 
-  it('opens the demo progress check-in instead of the morning readiness modal', async () => {
+  it('keeps the progress logger available beside the daily briefing', async () => {
     aiApiMock.getThread.mockResolvedValue({ messages: [] })
     await renderScreen()
 
     const dailyCheckInButton = [...container.querySelectorAll('button')]
-      .find(button => button.textContent.includes('Check-In'))
+      .find(button => button.textContent.includes('Log Progress'))
     await act(async () => dailyCheckInButton.dispatchEvent(new MouseEvent('click', { bubbles: true })))
 
     const dialog = document.querySelector('[role="dialog"][aria-label="Daily progress check-in"]')
     expect(dialog).toBeTruthy()
     expect(dialog?.textContent).toContain('Hours of sleep')
     expect(dialog?.textContent).toContain('Weight')
+    expect(dialog?.textContent).toContain('Steps today')
     expect(dialog?.textContent).toContain('Progress photo')
     expect(dialog?.textContent).not.toContain('How is your energy right now?')
   })
 
-  it('saves sleep and weight from the demo progress check-in', async () => {
+  it('saves sleep, weight, and steps from the demo progress check-in', async () => {
     aiApiMock.getThread.mockResolvedValue({ messages: [] })
     bodyApiMock.getSleep.mockResolvedValue([
       { sleep_date: '2026-08-05', hours_sleep: 6.8 },
@@ -696,17 +915,19 @@ describe('JohnnyHomeScreen', () => {
       { metric_date: '2026-08-06', weight_lb: 199.1 },
     ])
     await renderScreen()
-    const dailyCheckInButton = [...container.querySelectorAll('button')].find(button => button.textContent.includes('Check-In'))
+    const dailyCheckInButton = [...container.querySelectorAll('button')].find(button => button.textContent.includes('Log Progress'))
     await act(async () => dailyCheckInButton.click())
 
     const dialog = document.querySelector('[role="dialog"][aria-label="Daily progress check-in"]')
     const numberInputs = dialog.querySelectorAll('input[type="number"]')
     await act(async () => {
       const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set
-      setter.call(numberInputs[0], '7.5')
+      setter.call(numberInputs[2], '7.5')
+      numberInputs[2].dispatchEvent(new Event('input', { bubbles: true }))
+      setter.call(numberInputs[0], '198.4')
       numberInputs[0].dispatchEvent(new Event('input', { bubbles: true }))
-      setter.call(numberInputs[1], '198.4')
-      numberInputs[1].dispatchEvent(new Event('input', { bubbles: true }))
+      setter.call(dialog.querySelector('#johnny-steps'), '8240')
+      dialog.querySelector('#johnny-steps').dispatchEvent(new Event('input', { bubbles: true }))
     })
     await act(async () => {
       dialog.querySelector('form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
@@ -715,16 +936,25 @@ describe('JohnnyHomeScreen', () => {
 
     expect(bodyApiMock.logSleep).toHaveBeenCalledWith(expect.objectContaining({ hours_sleep: 7.5, sleep_quality: 'good' }))
     expect(bodyApiMock.logWeight).toHaveBeenCalledWith(expect.objectContaining({ weight_lb: 198.4 }))
+    expect(bodyApiMock.logSteps).toHaveBeenCalledWith(expect.objectContaining({ steps: 8240 }))
     expect(bodyApiMock.getSleep).toHaveBeenCalledWith(8)
     expect(bodyApiMock.getWeight).toHaveBeenCalledWith(8)
     expect(dialog.textContent).toContain('Check-in saved')
-    expect(dialog.querySelector('[aria-label="Recent sleep graph"]')).toBeTruthy()
     expect(dialog.querySelector('[aria-label="Recent weight graph"]')).toBeTruthy()
-    expect(dialog.textContent).toContain('7.5 h')
     expect(dialog.textContent).toContain('198.4 lb')
+
+    const trendTabs = [...dialog.querySelectorAll('[role="tab"]')]
+    expect(trendTabs.map(tab => tab.textContent)).toEqual(['Weight', 'Steps', 'Sleep'])
+    await act(async () => trendTabs.find(tab => tab.textContent === 'Steps').click())
+    expect(dialog.querySelector('[aria-label="Recent steps graph"]')).toBeTruthy()
+    expect(dialog.textContent).toContain('8,240 steps')
+
+    await act(async () => trendTabs.find(tab => tab.textContent === 'Sleep').click())
+    expect(dialog.querySelector('[aria-label="Recent sleep graph"]')).toBeTruthy()
+    expect(dialog.textContent).toContain('7.5 h')
   })
 
-  it('opens the nutrition logger and saves water and steps', async () => {
+  it('opens the nutrition logger and saves water without showing steps', async () => {
     aiApiMock.getThread.mockResolvedValue({ messages: [] })
     await renderScreen()
     const nutritionButton = [...container.querySelectorAll('button')].find(button => button.textContent.includes('Nutrition'))
@@ -733,7 +963,8 @@ describe('JohnnyHomeScreen', () => {
 
     const dialog = document.querySelector('[role="dialog"][aria-label="Daily nutrition log"]')
     expect(dialog).toBeTruthy()
-    expect(dialog.textContent).toContain('Meal logging is coming here')
+    expect(dialog.textContent).toContain('Break out by meal')
+    expect(dialog.textContent).toContain('Add a photo of your meal')
     expect(dialog.querySelectorAll('[aria-label^="Water glass "]')).toHaveLength(6)
 
     await act(async () => {
@@ -741,22 +972,8 @@ describe('JohnnyHomeScreen', () => {
       await Promise.resolve()
     })
     expect(nutritionApiMock.setWaterIntake).toHaveBeenCalledWith(expect.any(String), 3)
-
-    const stepsInput = dialog.querySelector('#johnny-steps')
-    await act(async () => {
-      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set
-      setter.call(stepsInput, '8240')
-      stepsInput.dispatchEvent(new Event('input', { bubbles: true }))
-    })
-    await act(async () => {
-      dialog.querySelector('.johnny-nutrition-steps').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
-      await Promise.resolve()
-    })
-    expect(bodyApiMock.logSteps).toHaveBeenCalledWith(expect.objectContaining({ steps: 8240 }))
-    expect(bodyApiMock.getSteps).toHaveBeenCalledWith(8)
-    expect(dialog.textContent).toContain('8,240 steps saved')
-    expect(dialog.querySelector('.johnny-nutrition-steps [aria-label="Recent steps graph"]')).toBeTruthy()
-    expect(dialog.querySelector('[aria-label="Recent steps graph"]')?.textContent).toContain('8,240')
+    expect(dialog.querySelector('#johnny-steps')).toBeNull()
+    expect(dialog.querySelector('[aria-label="Recent steps graph"]')).toBeNull()
   })
 
   it('looks up and saves a beverage from the nutrition logger', async () => {
@@ -776,10 +993,63 @@ describe('JohnnyHomeScreen', () => {
     await act(async () => { lookupButton.click(); await Promise.resolve() })
     expect(aiApiMock.analyseFoodText).toHaveBeenCalledWith('iced latte')
     expect(dialog.textContent).toContain('Iced latte')
+    const drinkSize = dialog.querySelector('[aria-label="Drink size"]')
+    expect([...drinkSize.options].map(option => option.textContent)).toEqual(expect.arrayContaining(['12 fl oz can', '20 fl oz bottle']))
     const saveDrinkButton = [...dialog.querySelectorAll('button')].find(button => button.textContent === 'Save drink')
     await act(async () => { saveDrinkButton.click(); await Promise.resolve() })
     expect(nutritionApiMock.logMeal).toHaveBeenCalledWith(expect.objectContaining({ meal_type: 'beverage' }))
     expect(dialog.textContent).toContain('saved to today’s nutrition log')
+  })
+
+  it('builds and locks a meal from nutrition planning tiles', async () => {
+    aiApiMock.getThread.mockResolvedValue({ messages: [] })
+    nutritionApiMock.getSavedFoods.mockResolvedValue([{ id: 7, canonical_name: 'Greek Yogurt', serving_size: '1 cup', calories: 150, protein_g: 22, carbs_g: 9, fat_g: 4 }])
+    nutritionApiMock.getSummary.mockResolvedValue({ totals: {}, targets: { target_calories: 2200, target_protein_g: 180, target_carbs_g: 220, target_fat_g: 70 } })
+    await renderScreen()
+    const nutritionButton = [...container.querySelectorAll('button')].find(button => button.textContent.includes('Log Nutrition'))
+    await act(async () => nutritionButton.click())
+    await act(async () => { await Promise.resolve() })
+    const dialog = document.querySelector('[role="dialog"][aria-label="Daily nutrition log"]')
+    const planTab = [...dialog.querySelectorAll('[role="tab"]')].find(tab => tab.textContent === 'Plan')
+    await act(async () => planTab.click())
+    expect(dialog.textContent).toContain('Macro workbench')
+    expect(dialog.textContent).toContain('Greek Yogurt')
+
+    const addTile = dialog.querySelector('[aria-label="Add Greek Yogurt"]')
+    await act(async () => addTile.click())
+    expect(dialog.textContent).toContain('150 cal · 22g P')
+    const lockMeal = [...dialog.querySelectorAll('button')].find(button => button.textContent === 'Lock meal')
+    await act(async () => { lockMeal.click(); await Promise.resolve() })
+    expect(nutritionApiMock.logMeal).toHaveBeenCalledWith(expect.objectContaining({ meal_type: 'breakfast', source: 'planned' }))
+  })
+
+  it('analyzes and saves a meal from the nutrition popup', async () => {
+    aiApiMock.getThread.mockResolvedValue({ messages: [] })
+    await renderScreen()
+    const nutritionButton = [...container.querySelectorAll('button')].find(button => button.textContent.includes('Log Nutrition'))
+    await act(async () => nutritionButton.click())
+    await act(async () => { await Promise.resolve() })
+    const dialog = document.querySelector('[role="dialog"][aria-label="Daily nutrition log"]')
+    const skipPhotoButton = [...dialog.querySelectorAll('button')].find(button => button.textContent.includes('Skip photo'))
+    await act(async () => skipPhotoButton.click())
+    const description = dialog.querySelector('[aria-label="Describe your meal"]')
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set
+      setter.call(description, 'chicken, rice, and broccoli')
+      description.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    const analyzeButton = [...dialog.querySelectorAll('button')].find(button => button.textContent === 'Analyze meal')
+    await act(async () => { analyzeButton.click(); await Promise.resolve(); await Promise.resolve() })
+    expect(aiApiMock.analyseMealText).toHaveBeenCalledWith('chicken, rice, and broccoli')
+    const reviewScreen = document.querySelector('.johnny-meal-review-screen')
+    expect(reviewScreen.textContent).toContain('Chicken')
+    expect(reviewScreen.textContent).toContain('Review your breakfast')
+    const adjustButton = [...reviewScreen.querySelectorAll('button')].find(button => button.textContent === 'Adjust')
+    await act(async () => adjustButton.click())
+    expect(reviewScreen.querySelector('[type="number"]')).toBeTruthy()
+    const acceptButton = [...reviewScreen.querySelectorAll('button')].find(button => button.textContent === 'Approve and log meal')
+    await act(async () => { acceptButton.click(); await Promise.resolve() })
+    expect(nutritionApiMock.logMeal).toHaveBeenCalledWith(expect.objectContaining({ meal_type: 'breakfast' }))
   })
 
   it('opens profile in a modal and returns to the mounted Johnny screen', async () => {

@@ -22,6 +22,7 @@ class Settings {
 		'jf_openai_api_key'      => [ 'label' => 'OpenAI API Key',          'type' => 'password', 'placeholder' => 'sk-…'        ],
 		'jf_gemini_api_key'      => [ 'label' => 'Gemini API Key',          'type' => 'password', 'placeholder' => 'AIza...'       ],
 		'jf_usda_api_key'        => [ 'label' => 'USDA API Key',            'type' => 'password', 'placeholder' => 'DEMO_KEY or your key' ],
+		'jf_giphy_api_key'       => [ 'label' => 'GIPHY API Key',           'type' => 'password', 'placeholder' => ''               ],
 		'jf_clicksend_username'  => [ 'label' => 'ClickSend Username',       'type' => 'text',     'placeholder' => 'you@email.com' ],
 		'jf_clicksend_api_key'   => [ 'label' => 'ClickSend API Key',        'type' => 'password', 'placeholder' => ''             ],
 		'jf_clicksend_sender_id' => [ 'label' => 'SMS Sender ID (≤11 chars)','type' => 'text',     'placeholder' => 'Johnny5k'  ],
@@ -129,6 +130,9 @@ class Settings {
 		echo '<tr><th colspan="2"><h2 style="margin:0;padding-top:16px">Nutrition Sources</h2></th></tr>';
 		self::render_field( 'jf_usda_api_key' );
 		echo '<tr><td></td><td><p class="description">Used to improve meal-photo nutrition accuracy with USDA FoodData Central. Leave blank to fall back to USDA demo access.</p></td></tr>';
+		echo '<tr><th colspan="2"><h2 style="margin:0;padding-top:16px">GIF Search (GIPHY)</h2></th></tr>';
+		self::render_field( 'jf_giphy_api_key' );
+		echo '<tr><td></td><td><p class="description">Lets Johnny share one reaction GIF for celebratory or encouraging moments. Get a free key at <strong>developers.giphy.com</strong> (create an account, click Create an App, choose the free API tier, and copy the generated key). Leave blank to disable GIF sharing.</p></td></tr>';
 
 		// ── ClickSend section ─────────────────────────────────────────────
 		$current_sender_id = (string) get_option( 'jf_clicksend_sender_id', '' );

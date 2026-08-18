@@ -1,14 +1,15 @@
 import { DAILY_CHECK_IN_QUESTIONS } from '../../lib/dailyCheckIn'
 import AppDialog from '../ui/AppDialog'
 
-export default function DailyCheckInModal({ answers, closeButtonRef = null, onAnswer, onClose }) {
+export default function DailyCheckInModal({ answers, closeButtonRef = null, onAnswer, onClose, onStartBriefing }) {
+  const complete = DAILY_CHECK_IN_QUESTIONS.every(question => answers?.[question.key])
   return (
     <AppDialog ariaLabel="Daily check-in" className="app-shell-checkin-modal" initialFocusRef={closeButtonRef} onClose={onClose} open overlayClassName="app-shell-checkin-shell" size="lg">
       <div className="app-shell-checkin-head">
         <div>
           <p className="dashboard-eyebrow">Daily check-in</p>
-          <h2>Start the day on purpose</h2>
-          <p>Before coffee or breakfast, drink some water first. Then give Johnny a quick read on how today feels.</p>
+          <h2>How are you arriving today?</h2>
+          <p>Give Johnny a quick read on your energy, soreness, and stress. First move: drink a glass of water.</p>
         </div>
         <button ref={closeButtonRef} type="button" className="app-shell-checkin-close" onClick={onClose}>Close</button>
       </div>
@@ -28,7 +29,8 @@ export default function DailyCheckInModal({ answers, closeButtonRef = null, onAn
         ))}
       </div>
       <div className="app-shell-checkin-actions">
-        <button type="button" className="btn-secondary" onClick={onClose}>Continue to app</button>
+        <button type="button" className="btn-secondary" onClick={onClose}>Maybe later</button>
+        <button type="button" className="btn-primary" onClick={onStartBriefing} disabled={!complete}>Start my briefing</button>
       </div>
     </AppDialog>
   )

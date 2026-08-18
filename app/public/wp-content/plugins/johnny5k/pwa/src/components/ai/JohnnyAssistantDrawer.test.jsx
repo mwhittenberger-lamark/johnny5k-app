@@ -40,10 +40,18 @@ const aiApiMock = vi.hoisted(() => ({
   updateFollowUp: vi.fn(async () => ({})),
   dismissFollowUp: vi.fn(async () => ({})),
 }))
+const nutritionApiMock = vi.hoisted(() => ({
+  generateRecipeImage: vi.fn(async () => ({ image_url: '' })),
+  getGroceryGap: vi.fn(async () => ({ missing_items: [] })),
+  getRecipeCookbook: vi.fn(async () => ({ recipes: [] })),
+  updateRecipeCookbook: vi.fn(async recipes => ({ recipes })),
+}))
 
 vi.mock('../../api/modules/ai', () => ({
   aiApi: aiApiMock,
 }))
+
+vi.mock('../../api/modules/nutrition', () => ({ nutritionApi: nutritionApiMock }))
 
 vi.mock('../../api/modules/analytics', () => ({
   analyticsApi: {
@@ -152,6 +160,8 @@ describe('JohnnyAssistantDrawer', () => {
     workoutState.exitSession.mockReset()
     aiApiMock.getThread.mockClear()
     aiApiMock.chat.mockClear()
+    nutritionApiMock.getRecipeCookbook.mockClear()
+    nutritionApiMock.updateRecipeCookbook.mockClear()
     document.body.innerHTML = ''
     container = document.createElement('div')
     document.body.appendChild(container)
@@ -206,6 +216,26 @@ describe('JohnnyAssistantDrawer', () => {
     expect(johnnyState.closeDrawer).toHaveBeenCalledTimes(2)
   })
 
+  it('activates shopping mode directly when the user asks Johnny to open it', async () => {
+    aiApiMock.chat.mockResolvedValueOnce({ reply: 'Opening shopping mode.', actions: [], used_tools: [], action_results: [] })
+    await renderComponent(
+      <MemoryRouter initialEntries={['/nutrition']}>
+        <Routes>
+          <Route path="*" element={<><JohnnyAssistantDrawer /><LocationProbe /></>} />
+        </Routes>
+      </MemoryRouter>,
+    )
+    await flushPendingWork()
+
+    const field = document.querySelector('textarea[aria-label="Message Johnny"]')
+    await typeInTextarea(field, 'Activate shopping mode')
+    await click(document.querySelector('button[aria-label="Send message to Johnny"]'))
+    await flushPendingWork()
+
+    expect(document.querySelector('[data-testid="location-probe"]')?.getAttribute('data-pathname')).toBe('/shopping-list')
+    expect(johnnyState.closeDrawer).toHaveBeenCalledTimes(1)
+  })
+
   it('renders recipe recommendations with image and details in action cards', async () => {
     aiApiMock.getThread.mockResolvedValueOnce({
       messages: [{
@@ -247,7 +277,14 @@ describe('JohnnyAssistantDrawer', () => {
     expect(document.body.textContent).toContain('Salmon Rice Bowl')
     expect(document.body.textContent).toContain('High-protein dinner with straightforward prep.')
     expect(document.querySelector('img[src="https://example.com/salmon-rice-bowl.jpg"]')).not.toBeNull()
-    expect(Array.from(document.querySelectorAll('summary')).some(node => node.textContent?.includes('Show details'))).toBe(true)
+    expect(document.querySelector('.johnny-recipe-gallery.solo')).not.toBeNull()
+    expect(Array.from(document.querySelectorAll('button')).some(node => node.textContent?.includes('Add tile to planning shelf'))).toBe(true)
+
+    const shelfButton = Array.from(document.querySelectorAll('button')).find(node => node.textContent?.includes('Add tile to planning shelf'))
+    await click(shelfButton)
+    await flushPendingWork()
+    expect(nutritionApiMock.updateRecipeCookbook).toHaveBeenCalledWith([expect.objectContaining({ recipe_name: 'Salmon Rice Bowl', is_in_cookbook: true })])
+    expect(document.body.textContent).toContain('On planning shelf')
   })
 
   it('opens recipe review and cookbook destinations with Johnny route state', async () => {
@@ -311,7 +348,7 @@ describe('JohnnyAssistantDrawer', () => {
 
     const actionButtons = Array.from(document.querySelectorAll('button.johnny-action-link'))
     const openRecipesButton = actionButtons.find(button => button.textContent?.includes('Open recipes'))
-    const openCookbookButton = actionButtons.find(button => button.textContent?.includes('Open My Cookbook'))
+    const openCookbookButton = actionButtons.find(button => button.textContent?.includes('Open planning shelf'))
     const locationProbe = () => document.querySelector('[data-testid="location-probe"]')
 
     expect(openRecipesButton).not.toBeUndefined()
@@ -331,7 +368,7 @@ describe('JohnnyAssistantDrawer', () => {
     expect(JSON.parse(locationProbe()?.getAttribute('data-state') || 'null')).toEqual({
       focusSection: 'recipes',
       recipeCollectionFilter: 'cookbook',
-      johnnyActionNotice: 'Johnny saved that recipe to My Cookbook.',
+      johnnyActionNotice: 'Johnny added that recipe tile to your Planning Shelf.',
     })
   })
 

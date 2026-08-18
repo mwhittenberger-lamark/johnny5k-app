@@ -134,8 +134,8 @@ export function applyColorScheme(value, options = {}) {
       root.style.setProperty('--glass', 'rgba(17, 25, 34, 0.5)')
       root.style.setProperty('--glass-strong', 'rgba(17, 25, 34, 0.74)')
       root.style.setProperty('--glass-border', 'rgba(190, 215, 235, 0.12)')
-      root.style.setProperty('--glass-user', 'rgba(232, 184, 74, 0.14)')
-      root.style.setProperty('--glass-user-border', 'rgba(232, 184, 74, 0.28)')
+      root.style.setProperty('--glass-user', `color-mix(in srgb, ${scheme.colors.accent} 14%, transparent)`)
+      root.style.setProperty('--glass-user-border', `color-mix(in srgb, ${scheme.colors.accent} 28%, transparent)`)
     } else {
       root.style.setProperty('--whistle-dim', `color-mix(in srgb, ${scheme.colors.accent} 42%, black)`)
       root.style.setProperty('--rust-dim', `color-mix(in srgb, ${scheme.colors.danger} 38%, black)`)

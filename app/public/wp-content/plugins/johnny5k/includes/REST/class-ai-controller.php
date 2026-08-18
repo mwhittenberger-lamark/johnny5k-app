@@ -332,7 +332,7 @@ abstract class AbstractNutritionController extends RestController {
 		$user_id = get_current_user_id();
 
 		$rows = $wpdb->get_results( $wpdb->prepare(
-			"SELECT id, canonical_name, brand, serving_size, serving_grams, calories, protein_g, carbs_g, fat_g, fiber_g, sugar_g, sodium_mg, micros_json, is_beverage, source, label_json, source_json
+			"SELECT id, canonical_name, brand, serving_size, serving_grams, calories, protein_g, carbs_g, fat_g, fiber_g, sugar_g, sodium_mg, micros_json, is_beverage, category, source, label_json, source_json
 			 FROM {$p}fit_foods
 			 WHERE user_id = %d AND active = 1
 			 ORDER BY updated_at DESC, id DESC",
@@ -375,6 +375,7 @@ abstract class AbstractNutritionController extends RestController {
 			'sodium_mg'     => $payload['sodium_mg'],
 			'micros_json'   => $payload['micros_json'],
 			'is_beverage'   => ! empty( $payload['is_beverage'] ) ? 1 : 0,
+			'category'      => $payload['category'],
 			'source'        => $payload['source'],
 			'label_json'    => $payload['label_json'],
 			'source_json'   => $payload['source_json'],
@@ -409,6 +410,7 @@ abstract class AbstractNutritionController extends RestController {
 			'sodium_mg'     => $payload['sodium_mg'],
 			'micros_json'   => $payload['micros_json'],
 			'is_beverage'   => ! empty( $payload['is_beverage'] ) ? 1 : 0,
+			'category'      => $payload['category'],
 			'source'        => $payload['source'],
 			'label_json'    => $payload['label_json'],
 			'source_json'   => $payload['source_json'],
@@ -791,7 +793,7 @@ abstract class AbstractNutritionController extends RestController {
 
 		$merged = [];
 		foreach ( $saved_foods ?: [] as $row ) {
-			if ( null !== self::find_food_match_index( $merged, (string) $row->canonical_name, (string) $row->brand ) ) {
+			if ( null !== self::find_food_match_index( $merged, (string) $row->canonical_name, (string) $row->brand, $beverage_only ? (string) $row->serving_size : '' ) ) {
 				continue;
 			}
 
@@ -815,7 +817,7 @@ abstract class AbstractNutritionController extends RestController {
 		}
 
 		foreach ( $recent_items as $row ) {
-			if ( null !== self::find_food_match_index( $merged, (string) ( $row['canonical_name'] ?? '' ), (string) ( $row['brand'] ?? '' ) ) ) {
+			if ( null !== self::find_food_match_index( $merged, (string) ( $row['canonical_name'] ?? '' ), (string) ( $row['brand'] ?? '' ), $beverage_only ? (string) ( $row['serving_size'] ?? '' ) : '' ) ) {
 				continue;
 			}
 
@@ -1267,6 +1269,7 @@ abstract class AbstractNutritionController extends RestController {
 			'sodium_mg'      => $req->get_param( 'sodium_mg' ) !== null ? round( (float) $req->get_param( 'sodium_mg' ), 2 ) : null,
 			'micros_json'    => ! empty( $micros ) ? wp_json_encode( $micros ) : null,
 			'is_beverage'    => rest_sanitize_boolean( $req->get_param( 'is_beverage' ) ),
+			'category'       => sanitize_key( (string) ( $req->get_param( 'category' ) ?: '' ) ) ?: null,
 			'source'         => sanitize_text_field( (string) ( $req->get_param( 'source' ) ?: 'manual' ) ),
 			'label_json'     => ! empty( $label ) ? wp_json_encode( $label ) : null,
 			'source_json'    => ! empty( $source_details ) ? wp_json_encode( $source_details ) : null,
@@ -1326,7 +1329,11 @@ abstract class AbstractNutritionController extends RestController {
 				continue;
 			}
 
-			$key = self::build_recent_food_dedupe_key( (string) ( $row['food_name'] ?? '' ), $row['source_json'] ?? null );
+			$key = self::build_recent_food_dedupe_key(
+				(string) ( $row['food_name'] ?? '' ),
+				$row['source_json'] ?? null,
+				$beverage_only ? (string) ( $row['serving_unit'] ?? '' ) : ''
+			);
 			if ( '' === $key || isset( $seen[ $key ] ) || isset( $hidden_keys[ $key ] ) ) {
 				continue;
 			}
@@ -1396,11 +1403,11 @@ abstract class AbstractNutritionController extends RestController {
 		];
 	}
 
-	private static function build_recent_food_dedupe_key( string $food_name, $source_json = null ): string {
+	private static function build_recent_food_dedupe_key( string $food_name, $source_json = null, string $serving_size = '' ): string {
 		$source_details = is_array( $source_json ) ? $source_json : json_decode( (string) $source_json, true );
 		$brand = is_array( $source_details ) && ! empty( $source_details['brand'] ) ? sanitize_text_field( (string) $source_details['brand'] ) : '';
 
-		return self::build_food_match_dedupe_key( $food_name, $brand, '' );
+		return self::build_food_match_dedupe_key( $food_name, $brand, $serving_size );
 	}
 
 	private static function get_hidden_recent_food_keys( int $user_id ): array {
@@ -1426,9 +1433,10 @@ abstract class AbstractNutritionController extends RestController {
 		self::save_hidden_recent_food_keys( $user_id, array_merge( $current, $keys ) );
 	}
 
-	private static function find_food_match_index( array $items, string $name, string $brand = '' ): ?int {
+	private static function find_food_match_index( array $items, string $name, string $brand = '', string $serving_size = '' ): ?int {
 		$normalized_name  = self::normalize_food_match_value( $name );
 		$normalized_brand = self::normalize_food_match_value( $brand );
+		$normalized_serving_size = self::normalize_food_match_value( $serving_size );
 
 		if ( '' === $normalized_name ) {
 			return null;
@@ -1442,6 +1450,11 @@ abstract class AbstractNutritionController extends RestController {
 
 			$item_brand = self::normalize_food_match_value( (string) ( $item['brand'] ?? '' ) );
 			if ( '' !== $item_brand && '' !== $normalized_brand && $item_brand !== $normalized_brand ) {
+				continue;
+			}
+
+			$item_serving_size = self::normalize_food_match_value( (string) ( $item['serving_size'] ?? $item['serving_unit'] ?? '' ) );
+			if ( '' !== $item_serving_size && '' !== $normalized_serving_size && $item_serving_size !== $normalized_serving_size ) {
 				continue;
 			}
 

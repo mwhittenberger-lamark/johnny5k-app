@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { aiApi } from '../../api/modules/ai'
+import { dashboardApi } from '../../api/modules/dashboard'
 import { onboardingApi } from '../../api/modules/onboarding'
+import AnnouncementTicker from '../layout/AnnouncementTicker'
 import AppDialog from '../ui/AppDialog'
 import ToastPortal from '../ui/ToastPortal'
 import ExerciseDemoImageLightbox from './ExerciseDemoImageLightbox'
@@ -94,6 +96,7 @@ export default function LiveWorkoutMode({
   const [coachLogOpen, setCoachLogOpen] = useState(false)
   const [voiceTestingOpen, setVoiceTestingOpen] = useState(false)
   const [restToast, setRestToast] = useState(null)
+  const [restTickerMessages, setRestTickerMessages] = useState([])
   const [showIntroModal, setShowIntroModal] = useState(false)
   const [selectingStoryChoice, setSelectingStoryChoice] = useState('')
   const [activeIronQuestPanel, setActiveIronQuestPanel] = useState('ironquest')
@@ -256,6 +259,19 @@ export default function LiveWorkoutMode({
 
   useEffect(() => {
     isOpenRef.current = isOpen
+  }, [isOpen])
+
+  useEffect(() => {
+    if (!isOpen) return undefined
+    let active = true
+    dashboardApi.ticker()
+      .then(data => {
+        if (active) setRestTickerMessages(Array.isArray(data?.messages) ? data.messages : [])
+      })
+      .catch(() => {
+        // Announcements are optional and must never interrupt a live workout.
+      })
+    return () => { active = false }
   }, [isOpen])
 
   useEffect(() => {
@@ -1379,6 +1395,11 @@ export default function LiveWorkoutMode({
           </>
         )}
       </nav>
+      {lastTransition?.allowRestMessages && restTickerMessages.length ? (
+        <div className="live-workout-rest-wire">
+          <AnnouncementTicker messages={restTickerMessages} />
+        </div>
+      ) : null}
     </div>
   )
 

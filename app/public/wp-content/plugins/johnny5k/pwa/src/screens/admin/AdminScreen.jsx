@@ -219,7 +219,7 @@ export default function AdminScreen() {
   }
 
   return (
-    <div>
+    <div className="screen admin-screen">
       {!isAdmin ? (
         <div className="admin-tab admin-qa-notice">
           <p className="dashboard-eyebrow">Limited access</p>

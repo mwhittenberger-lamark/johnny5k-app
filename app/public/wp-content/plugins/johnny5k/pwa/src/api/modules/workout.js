@@ -46,6 +46,7 @@ export const workoutApi = {
   quickAdd: (id, data) => api.post(`/workout/${id}/quick-add`, data),
   undoQuickAdd: (id, data) => api.post(`/workout/${id}/quick-add/undo`, data),
   restart: (id) => api.post(`/workout/${id}/restart`, {}),
+  resetTimer: (id) => api.post(`/workout/${id}/reset-timer`, {}),
   discard: (id) => api.post(`/workout/${id}/discard`, {}),
   skip: (id) => api.post(`/workout/${id}/skip`, {}),
   complete: (id, data) => api.post(`/workout/${id}/complete`, data),

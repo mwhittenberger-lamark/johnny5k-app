@@ -6,6 +6,10 @@ import { dashboardApi } from '../../api/modules/dashboard'
 import { onboardingApi } from '../../api/modules/onboarding'
 import { workoutApi } from '../../api/modules/workout'
 import { renderChatMessageBlocks } from '../../components/ai/chatMessageFormatter'
+import RecipeGallery from '../../components/ai/RecipeGallery'
+import GroceryGapCard from '../../components/ai/GroceryGapCard'
+import DailyBriefingView from '../../components/checkin/DailyBriefingView'
+import DailyCheckInModal from '../../components/checkin/DailyCheckInModal'
 import JohnnyDailyCheckInModal from '../../components/checkin/JohnnyDailyCheckInModal'
 import JohnnyNutritionLogModal from '../../components/checkin/JohnnyNutritionLogModal'
 import JohnnyProfileModal from '../../components/checkin/JohnnyProfileModal'
@@ -13,10 +17,46 @@ import AppDialog from '../../components/ui/AppDialog'
 import { getAppImageUrl } from '../../lib/appImages'
 import { reportClientDiagnostic } from '../../lib/clientDiagnostics'
 import { formatUsChartDate } from '../../lib/dateFormat'
+import { createDailyCheckInAnswers } from '../../lib/dailyCheckIn'
 import { useAuthStore } from '../../store/authStore'
 import { useWorkoutStore } from '../../store/workoutStore'
 
 const THREAD_KEY = 'main'
+const DEFAULT_ACCENT_COLOR = 'default'
+const ACCENT_PRESETS = {
+  default: { label: 'Default', rgb: '79,195,224' },
+  green: { label: 'Green', rgb: '95,217,160' },
+  violet: { label: 'Violet', rgb: '155,127,224' },
+  rose: { label: 'Rose', rgb: '226,127,158' },
+  amber: { label: 'Amber', rgb: '227,150,64' },
+}
+function resolveAccentRgb(color) {
+  return ACCENT_PRESETS[color]?.rgb || ACCENT_PRESETS[DEFAULT_ACCENT_COLOR].rgb
+}
+const COLOR_DANCE_STEP_MS = 420
+const COLOR_DANCE_SEQUENCE = ['green', 'violet', 'rose', 'amber', 'green', 'violet', 'rose', 'amber', DEFAULT_ACCENT_COLOR]
+const WORKOUT_ACTIVITY_PATTERN = /\b(workout|training|exercise|circuit|cardio|rest day)\b/i
+const TRANSIENT_MOOD_RESET_MS = { celebrating: 2800, concerned: 2800, proud: 3600, surprised: 1400 }
+const FIRE_MODE_ACTIVE_MS = 3800
+const FIRE_MODE_EXIT_MS = 600
+const FIRE_EMBERS = Array.from({ length: 14 }, (_, index) => ({
+  left: 4 + (index * 92) / 13,
+  delay: (index % 7) * 0.35,
+  duration: 2.2 + (index % 5) * 0.3,
+  drift: (index % 2 === 0 ? 1 : -1) * (10 + (index % 4) * 6),
+}))
+const CONFETTI_ACTIVE_MS = 1500
+const CONFETTI_EXIT_MS = 500
+const CONFETTI_COLORS = ['79,195,224', '95,217,160', '155,127,224', '226,127,158', '227,150,64', '232,203,76']
+const CONFETTI_PIECES = Array.from({ length: 30 }, (_, index) => ({
+  left: (index * 97) % 100,
+  delay: (index % 10) * 0.09,
+  duration: 1.3 + (index % 6) * 0.15,
+  rotate: (index % 2 === 0 ? 1 : -1) * (180 + (index % 5) * 40),
+  colorRgb: CONFETTI_COLORS[index % CONFETTI_COLORS.length],
+  drift: (index % 2 === 0 ? 1 : -1) * (20 + (index % 7) * 8),
+}))
+
 export default function JohnnyHomeScreen() {
   const navigate = useNavigate()
   const email = useAuthStore(state => state.email)
@@ -25,6 +65,7 @@ export default function JohnnyHomeScreen() {
   const workoutApproval = useWorkoutStore(state => state.workoutApproval)
   const session = useWorkoutStore(state => state.session)
   const bootstrapSession = useWorkoutStore(state => state.bootstrapSession)
+  const clearCustomWorkoutDraft = useWorkoutStore(state => state.clearCustomWorkoutDraft)
   const takeRestDay = useWorkoutStore(state => state.takeRestDay)
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
@@ -32,14 +73,40 @@ export default function JohnnyHomeScreen() {
   const [initialising, setInitialising] = useState(true)
   const [status, setStatus] = useState('')
   const [activityLabel, setActivityLabel] = useState('loading your conversation')
+  const [brandMood, setBrandMood] = useState('ready')
+  const [accentColor, setAccentColor] = useState(DEFAULT_ACCENT_COLOR)
+  const [streaks, setStreaks] = useState(null)
+  const [greetingTail] = useState(() => pickRandomPhrase(GREETING_TAIL_PHRASES))
+  const [briefTail] = useState(() => pickRandomPhrase(BRIEF_TAIL_PHRASES))
+  const colorDanceTimeoutsRef = useRef([])
+  const [fireMode, setFireMode] = useState('idle')
+  const fireModeTimeoutsRef = useRef([])
+  const [confettiMode, setConfettiMode] = useState('idle')
+  const confettiTimeoutsRef = useRef([])
+  const [helpfulSuggestion, setHelpfulSuggestion] = useState(null)
+  const [suggestionPhase, setSuggestionPhase] = useState('idle')
   const [dailyBrief, setDailyBrief] = useState(null)
   const [streakCount, setStreakCount] = useState(0)
   const [dailyCheckInOpen, setDailyCheckInOpen] = useState(false)
+  const [dailyBriefingOpen, setDailyBriefingOpen] = useState(false)
+  const [dailyCheckInAnswers, setDailyCheckInAnswers] = useState(() => createDailyCheckInAnswers())
   const [nutritionLogOpen, setNutritionLogOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
   const [clearingChat, setClearingChat] = useState(false)
+  const [listening, setListening] = useState(false)
+  const [transcribingVoice, setTranscribingVoice] = useState(false)
+  const [primaryDockHeight, setPrimaryDockHeight] = useState(220)
   const feedRef = useRef(null)
+  const primaryDockRef = useRef(null)
+  const messageInputRef = useRef(null)
+  const recognitionRef = useRef(null)
+  const mediaRecorderRef = useRef(null)
+  const mediaStreamRef = useRef(null)
+  const audioChunksRef = useRef([])
   const hasPositionedInitialThreadRef = useRef(false)
+  const suggestionRequestRef = useRef(false)
+  const lastSuggestionCheckRef = useRef(Date.now())
+  const suggestionSuppressedRef = useRef(true)
 
   const userName = useMemo(() => {
     const localPart = String(email || '').split('@')[0]
@@ -47,6 +114,7 @@ export default function JohnnyHomeScreen() {
   }, [email])
 
   const workout = useMemo(() => normalizeWorkout(customWorkoutDraft, session), [customWorkoutDraft, session])
+  const headlineStreak = useMemo(() => pickHeadlineStreak(streaks), [streaks])
   const brandmarkImage = getAppImageUrl(appImages, 'brandmark')
   const workoutMessageIndex = useMemo(() => findLatestWorkoutMessageIndex(messages), [messages])
   const decisionMessageIndex = useMemo(() => findLatestDecisionMessageIndex(messages), [messages])
@@ -54,19 +122,151 @@ export default function JohnnyHomeScreen() {
   const cardioFormMessageIndex = useMemo(() => findLatestCardioFormMessageIndex(messages), [messages])
   const [workoutApproved, setWorkoutApproved] = useState(false)
   const [workoutLogged, setWorkoutLogged] = useState(false)
+  const [queuedWorkoutDismissed, setQueuedWorkoutDismissed] = useState(false)
+  const [clearingQueuedWorkout, setClearingQueuedWorkout] = useState(false)
   const hasActiveWorkout = Boolean(session?.session?.id)
-  const isWorkoutApproved = Boolean(workout?.id) && (
+  const isWorkoutApproved = Boolean(workout?.id) && !queuedWorkoutDismissed && (
     hasActiveWorkout ||
     workoutApproved || String(workoutApproval?.workout_id || '') === String(workout.id)
   )
+  const hasVisibleWorkoutForApproval = Boolean(workout) && workoutMessageIndex >= 0 && !queuedWorkoutDismissed && !isWorkoutApproved
+  const recorderSupported = typeof window !== 'undefined' && Boolean(window.MediaRecorder && navigator.mediaDevices?.getUserMedia)
+  const voiceSupported = recorderSupported || (typeof window !== 'undefined' && Boolean(window.SpeechRecognition || window.webkitSpeechRecognition))
+
+  useEffect(() => { setQueuedWorkoutDismissed(false) }, [workout?.id])
+
+  const statusMood = status
+    ? (/could not|couldn't|failed|unavailable|unexpected|stopped|needs a refresh/i.test(status) ? 'concerned' : 'celebrating')
+    : ''
+  const isWorkoutFocusedActivity = WORKOUT_ACTIVITY_PATTERN.test(activityLabel)
+  const displayedBrandMood = initialising || loading || transcribingVoice
+    ? (isWorkoutFocusedActivity ? 'focused' : 'thinking')
+    : statusMood || brandMood
+
+  useEffect(() => {
+    const resetDelay = TRANSIENT_MOOD_RESET_MS[brandMood]
+    if (!resetDelay) return undefined
+    const timeoutId = window.setTimeout(() => setBrandMood('ready'), resetDelay)
+    return () => window.clearTimeout(timeoutId)
+  }, [brandMood])
+
+  useEffect(() => {
+    if (!helpfulSuggestion) return undefined
+    const dismissId = window.setTimeout(() => setSuggestionPhase('exiting'), 60000)
+    const clearId = window.setTimeout(() => {
+      setHelpfulSuggestion(null)
+      setSuggestionPhase('idle')
+    }, 60650)
+    return () => {
+      window.clearTimeout(dismissId)
+      window.clearTimeout(clearId)
+    }
+  }, [helpfulSuggestion])
 
   const openDailyCheckIn = useCallback(() => { setActivityLabel('daily check-in open'); setDailyCheckInOpen(true) }, [])
+  const openDailyBriefing = useCallback(() => { setActivityLabel('daily briefing open'); setDailyCheckInOpen(true) }, [])
+  const startDailyBriefing = useCallback(() => { setDailyCheckInOpen(false); setDailyBriefingOpen(true) }, [])
+  const closeDailyBriefing = useCallback(() => { setDailyBriefingOpen(false); setActivityLabel('ready') }, [])
   const closeDailyCheckIn = useCallback(() => { setDailyCheckInOpen(false); setActivityLabel('ready') }, [])
   const openNutritionLog = useCallback(() => { setActivityLabel('nutrition log open'); setNutritionLogOpen(true) }, [])
   const closeNutritionLog = useCallback(() => { setNutritionLogOpen(false); setActivityLabel('ready') }, [])
+  const openProgressDiary = useCallback(() => {
+    setActivityLabel('opening progress diary')
+    navigate('/body', {
+      state: {
+        focusTab: 'diary',
+        johnnyActionNotice: 'Johnny opened Progress Diary so you can review your daily log, trends, meals, and photos together.',
+      },
+    })
+  }, [navigate])
   const openProfile = useCallback(() => { setActivityLabel('profile open'); setProfileOpen(true) }, [])
   const closeProfile = useCallback(() => { setProfileOpen(false); setActivityLabel('ready') }, [])
-  const openProgressDiary = useCallback(() => { navigate('/body', { state: { focusTab: 'weight' } }) }, [navigate])
+
+  suggestionSuppressedRef.current = initialising || loading || dailyCheckInOpen || nutritionLogOpen || profileOpen
+
+  const evaluateProactiveSuggestion = useCallback(async () => {
+    if (suggestionRequestRef.current || suggestionSuppressedRef.current || document.visibilityState !== 'visible') return
+    suggestionRequestRef.current = true
+    try {
+      const data = await aiApi.proactiveSuggestion()
+      const suggestion = data?.suggestion
+      if (!suggestion?.title || !['chat', 'daily_checkin', 'nutrition', 'progress_diary', 'open_screen'].includes(suggestion?.action_type)) return
+      if (suggestion.action_type === 'open_screen' && !getProactiveSuggestionDestination(suggestion.screen)) return
+      if (suggestion.action_type === 'chat' && !String(suggestion.prompt || '').trim()) return
+      setHelpfulSuggestion(suggestion)
+      setSuggestionPhase('active')
+      setBrandMood('celebrating')
+    } catch {
+      // Suggestions are optional and should never interrupt the main experience.
+    } finally {
+      suggestionRequestRef.current = false
+    }
+  }, [])
+
+  useEffect(() => {
+    if (initialising) return undefined
+    lastSuggestionCheckRef.current = Date.now()
+    const runIfDue = () => {
+      if (document.visibilityState !== 'visible') return
+      if (Date.now() - lastSuggestionCheckRef.current < 120000) return
+      lastSuggestionCheckRef.current = Date.now()
+      void evaluateProactiveSuggestion()
+    }
+    const intervalId = window.setInterval(runIfDue, 120000)
+    document.addEventListener('visibilitychange', runIfDue)
+    return () => {
+      window.clearInterval(intervalId)
+      document.removeEventListener('visibilitychange', runIfDue)
+    }
+  }, [evaluateProactiveSuggestion, initialising])
+
+  useLayoutEffect(() => {
+    const dock = primaryDockRef.current
+    if (!dock) return undefined
+    const updateHeight = () => {
+      const height = Math.ceil(dock.getBoundingClientRect().height)
+      if (height > 0) setPrimaryDockHeight(height)
+    }
+    updateHeight()
+    if (typeof ResizeObserver !== 'function') return undefined
+    const observer = new ResizeObserver(updateHeight)
+    observer.observe(dock)
+    return () => observer.disconnect()
+  }, [])
+
+  useEffect(() => () => {
+    recognitionRef.current?.stop?.()
+    if (mediaRecorderRef.current?.state === 'recording') mediaRecorderRef.current.stop()
+    mediaStreamRef.current?.getTracks?.().forEach(track => track.stop())
+    colorDanceTimeoutsRef.current.forEach(id => window.clearTimeout(id))
+    fireModeTimeoutsRef.current.forEach(id => window.clearTimeout(id))
+    confettiTimeoutsRef.current.forEach(id => window.clearTimeout(id))
+  }, [])
+
+  const runColorDance = useCallback(() => {
+    colorDanceTimeoutsRef.current.forEach(id => window.clearTimeout(id))
+    colorDanceTimeoutsRef.current = COLOR_DANCE_SEQUENCE.map((color, index) => (
+      window.setTimeout(() => setAccentColor(color), index * COLOR_DANCE_STEP_MS)
+    ))
+  }, [])
+
+  const runFireMode = useCallback(() => {
+    fireModeTimeoutsRef.current.forEach(id => window.clearTimeout(id))
+    setFireMode('active')
+    fireModeTimeoutsRef.current = [
+      window.setTimeout(() => setFireMode('exiting'), FIRE_MODE_ACTIVE_MS),
+      window.setTimeout(() => setFireMode('idle'), FIRE_MODE_ACTIVE_MS + FIRE_MODE_EXIT_MS),
+    ]
+  }, [])
+
+  const runConfettiBurst = useCallback(() => {
+    confettiTimeoutsRef.current.forEach(id => window.clearTimeout(id))
+    setConfettiMode('active')
+    confettiTimeoutsRef.current = [
+      window.setTimeout(() => setConfettiMode('exiting'), CONFETTI_ACTIVE_MS),
+      window.setTimeout(() => setConfettiMode('idle'), CONFETTI_ACTIVE_MS + CONFETTI_EXIT_MS),
+    ]
+  }, [])
 
   useEffect(() => {
     let active = true
@@ -79,7 +279,7 @@ export default function JohnnyHomeScreen() {
       }
       if (snapshotResult.status === 'fulfilled') {
         setWorkoutLogged(Boolean(snapshotResult.value?.training_status?.recorded))
-        setStreakCount(getBestStreak(snapshotResult.value?.streaks))
+        setStreaks(snapshotResult.value?.streaks || null)
       }
       if (briefResult.status === 'fulfilled') {
         setDailyBrief(briefResult.value)
@@ -122,13 +322,22 @@ export default function JohnnyHomeScreen() {
   useLayoutEffect(() => {
     const feed = feedRef.current
     if (!feed || initialising) return
-    const behavior = hasPositionedInitialThreadRef.current ? 'smooth' : 'auto'
-    if (typeof feed.scrollTo === 'function') {
-      feed.scrollTo({ top: feed.scrollHeight, behavior })
-    } else {
-      feed.scrollTop = feed.scrollHeight
+    const isInitialLoad = !hasPositionedInitialThreadRef.current
+    const behavior = isInitialLoad ? 'auto' : 'smooth'
+    const scrollToBottom = () => {
+      if (typeof feed.scrollTo === 'function') {
+        feed.scrollTo({ top: feed.scrollHeight, behavior })
+      } else {
+        feed.scrollTop = feed.scrollHeight
+      }
     }
+    scrollToBottom()
     hasPositionedInitialThreadRef.current = true
+    if (!isInitialLoad) return undefined
+    // Late-loading cards (generated images, GIFs) can grow the feed after this first scroll,
+    // so re-settle at the bottom a few times while that content finishes laying out.
+    const timeoutIds = [150, 400, 900].map(delay => window.setTimeout(scrollToBottom, delay))
+    return () => timeoutIds.forEach(id => window.clearTimeout(id))
   }, [initialising, messages, loading, workout])
 
   const sendPrompt = useCallback(async (prompt) => {
@@ -147,24 +356,54 @@ export default function JohnnyHomeScreen() {
       })
       const actionResults = await hydrateGeneratedImageResults(data)
       const tools = collectToolNames(data)
+	  setBrandMood(Array.isArray(data?.tool_errors) && data.tool_errors.length ? 'concerned' : 'celebrating')
 	  const successfulWorkoutActions = actionResults
 	    .filter(result => result?.ok !== false && !result?.error)
 	    .map(result => String(result?.action || result?.tool_name || ''))
-	  const refreshesWorkout = successfulWorkoutActions.some(action => ['create_custom_workout', 'modify_workout', 'load_saved_workout', 'save_workout_to_library'].includes(action))
+	  const ambientColorResult = [...actionResults].reverse().find(result => (
+	    result?.ok !== false && !result?.error && String(result?.action || result?.tool_name || '') === 'set_ambient_color'
+	  ))
+	  const fireModeResult = actionResults.find(result => (
+	    result?.ok !== false && !result?.error && String(result?.action || result?.tool_name || '') === 'activate_fire_mode'
+	  ))
+	  const confettiResult = actionResults.find(result => (
+	    result?.ok !== false && !result?.error && String(result?.action || result?.tool_name || '') === 'trigger_confetti_burst'
+	  ))
+	  if (fireModeResult) runFireMode()
+	  if (confettiResult) runConfettiBurst()
+	  if (ambientColorResult?.color === 'dance') {
+	    runColorDance()
+	  } else if (ambientColorResult && ACCENT_PRESETS[ambientColorResult.color]) {
+	    setAccentColor(ambientColorResult.color)
+	  }
+	  const gifShared = actionResults.some(result => (
+	    result?.ok !== false && !result?.error && String(result?.action || result?.tool_name || '') === 'search_gif'
+	  ))
+	  if (fireModeResult || ambientColorResult?.color === 'dance') {
+	    setBrandMood('proud')
+	  } else if (gifShared) {
+	    setBrandMood('surprised')
+	  }
+	  const cancelsWorkout = successfulWorkoutActions.includes('cancel_workout')
+	  const refreshesWorkout = successfulWorkoutActions.some(action => ['create_custom_workout', 'modify_workout', 'load_saved_workout', 'save_workout_to_library', 'cancel_workout'].includes(action))
 	  const resetsApproval = successfulWorkoutActions.some(action => ['create_custom_workout', 'modify_workout', 'load_saved_workout'].includes(action))
+	  if (cancelsWorkout) {
+	    setQueuedWorkoutDismissed(true)
+	    setWorkoutApproved(false)
+	  }
 	  if (refreshesWorkout) {
 	    await bootstrapSession().catch(() => setStatus('The workout was updated, but its preview needs a refresh.'))
 	  }
 	  if (resetsApproval) setWorkoutApproved(false)
 
-      if (tools.some(tool => ['get_current_workout', 'modify_workout'].includes(tool)) && workout) {
+      if (!cancelsWorkout && tools.some(tool => ['get_current_workout', 'modify_workout'].includes(tool)) && workout) {
         actionResults.push({ action: 'show_workout_plan' })
       }
 	  const isWorkoutApprovalRail = result => (
 	    String(result?.action || result?.tool_name || '') === 'present_choices'
 	    && (Array.isArray(result?.choices) ? result.choices : []).some(choice => choice?.response === '__johnny_approve_workout__')
 	  )
-	  const shouldOfferApproval = !hasActiveWorkout && (
+	  const shouldOfferApproval = !cancelsWorkout && !hasActiveWorkout && (
 	    resetsApproval || (tools.includes('get_current_workout') && Boolean(workout) && !isWorkoutApproved)
 	  )
 	  if (!shouldOfferApproval) {
@@ -188,17 +427,29 @@ export default function JohnnyHomeScreen() {
         }])
       }
 
+      if (isShoppingModeNavigationRequest(message)) {
+        navigate('/shopping-list', { state: { johnnyActionNotice: 'Johnny opened shopping mode with your current grocery gap.' } })
+        return
+      }
+
       if (tools.includes('approve_workout')) setWorkoutApproved(true)
       window.dispatchEvent(new CustomEvent('johnny-assistant-action', {
         detail: { usedTools: tools, actionResults },
       }))
     } catch (error) {
+      setBrandMood('concerned')
       setStatus(error?.message || 'Johnny could not respond. Try again.')
     } finally {
       setLoading(false)
       setActivityLabel('ready')
     }
-  }, [bootstrapSession, loading, workout])
+  }, [bootstrapSession, hasActiveWorkout, isWorkoutApproved, loading, navigate, runColorDance, runConfettiBurst, runFireMode, workout])
+
+  const planFromDailyBriefing = useCallback(({ answers, scheduleName }) => {
+    setDailyBriefingOpen(false)
+    setActivityLabel('planning today’s workout')
+    void sendPrompt(`Help me plan today's workout. My check-in is: energy ${answers?.energy || 'not provided'}, body ${answers?.body || 'not provided'}, and stress/focus ${answers?.head || 'not provided'}. Today's schedule suggests ${scheduleName}. Propose the best workout for us to review together. Do not treat it as approved; show me the workout and ask for my approval before locking it in.`)
+  }, [sendPrompt])
 
   const showCardioForm = useCallback((userMessage = 'Log cardio', defaults = {}) => {
     setInput('')
@@ -250,6 +501,11 @@ export default function JohnnyHomeScreen() {
     }
     void sendPrompt(response)
   }, [sendPrompt, showCardioForm, takeRestDay])
+
+  const requestWorkoutChanges = useCallback(() => {
+    setInput('I want to change this workout: ')
+    window.requestAnimationFrame(() => messageInputRef.current?.focus())
+  }, [])
 
   const startPlanningFlow = useCallback(async (userMessage = 'Plan today’s training.') => {
     if (loading) return
@@ -305,7 +561,105 @@ export default function JohnnyHomeScreen() {
 
   function handleSubmit(event) {
     event.preventDefault()
+    stopVoiceCapture()
     void sendPrompt(input)
+  }
+
+  function stopVoiceCapture() {
+    if (mediaRecorderRef.current?.state === 'recording') {
+      mediaRecorderRef.current.stop()
+      return
+    }
+    recognitionRef.current?.stop?.()
+    recognitionRef.current = null
+    setListening(false)
+  }
+
+  async function startVoiceCapture() {
+    if (recorderSupported) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+        const preferredType = ['audio/webm;codecs=opus', 'audio/mp4', 'audio/webm'].find(type => window.MediaRecorder.isTypeSupported?.(type)) || ''
+        const recorder = preferredType ? new window.MediaRecorder(stream, { mimeType: preferredType }) : new window.MediaRecorder(stream)
+        mediaStreamRef.current = stream
+        mediaRecorderRef.current = recorder
+        audioChunksRef.current = []
+        recorder.ondataavailable = event => { if (event.data?.size) audioChunksRef.current.push(event.data) }
+        recorder.onerror = () => {
+          stream.getTracks().forEach(track => track.stop())
+          mediaRecorderRef.current = null
+          mediaStreamRef.current = null
+          setListening(false)
+          setStatus('Voice recording stopped unexpectedly. Try again or type your message.')
+        }
+        recorder.onstop = async () => {
+          const mimeType = recorder.mimeType || preferredType || 'audio/webm'
+          const blob = new Blob(audioChunksRef.current, { type: mimeType })
+          stream.getTracks().forEach(track => track.stop())
+          mediaRecorderRef.current = null
+          mediaStreamRef.current = null
+          audioChunksRef.current = []
+          setListening(false)
+          if (!blob.size) {
+            setStatus('I did not capture any audio. Tap the microphone and try again.')
+            return
+          }
+          setTranscribingVoice(true)
+          setActivityLabel('transcribing your voice')
+          setStatus('Turning your recording into text…')
+          try {
+            const result = await aiApi.transcribe(await blobToBase64(blob), mimeType)
+            setInput(current => [current.trim(), String(result?.text || '').trim()].filter(Boolean).join(' '))
+            setStatus('Voice note ready. Review it, then send.')
+          } catch (error) {
+            setStatus(error?.message || 'I could not transcribe that recording. Try again or type your message.')
+          } finally {
+            setTranscribingVoice(false)
+            setActivityLabel('ready')
+          }
+        }
+        setStatus('Recording… tap the microphone again when you’re done.')
+        setListening(true)
+        recorder.start()
+        return
+      } catch (error) {
+        const blocked = error?.name === 'NotAllowedError' || error?.name === 'SecurityError'
+        setStatus(blocked ? 'Microphone access is blocked. Allow microphone access for this site and try again.' : 'The microphone could not start. Try again or type your message.')
+        return
+      }
+    }
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
+    if (!SpeechRecognition) {
+      setStatus('Voice capture is not supported in this browser. You can still type to Johnny.')
+      return
+    }
+    const recognition = new SpeechRecognition()
+    recognition.continuous = true
+    recognition.interimResults = true
+    recognition.lang = 'en-US'
+    recognition.onresult = event => {
+      let transcript = ''
+      for (let index = 0; index < event.results.length; index += 1) {
+        transcript += `${event.results[index][0]?.transcript || ''} `
+      }
+      setInput(transcript.trim())
+    }
+    recognition.onerror = event => {
+      recognitionRef.current = null
+      setListening(false)
+      setStatus(event?.error === 'network'
+        ? 'Browser voice recognition could not connect. Try again on a stable connection or type your message.'
+        : event?.error ? `Voice capture stopped: ${event.error}.` : 'Voice capture stopped unexpectedly.')
+    }
+    recognition.onend = () => {
+      recognitionRef.current = null
+      setListening(false)
+    }
+    setStatus('')
+    setListening(true)
+    recognition.start()
+    recognitionRef.current = recognition
   }
 
   async function handleClearChat() {
@@ -328,36 +682,123 @@ export default function JohnnyHomeScreen() {
     }
   }
 
+  const handleClearQueuedWorkout = useCallback(async () => {
+    if (clearingQueuedWorkout || !workout?.id || hasActiveWorkout) return
+    setClearingQueuedWorkout(true)
+    setActivityLabel('clearing queued workout')
+    setStatus('')
+    try {
+      await clearCustomWorkoutDraft()
+      setQueuedWorkoutDismissed(true)
+      setWorkoutApproved(false)
+      setStatus('Queued workout cleared. Start fresh whenever you’re ready.')
+      setMessages(current => [...current, { role: 'assistant', message_text: 'That workout is cleared. Tell me what you want to do instead.' }])
+    } catch (error) {
+      setStatus(error?.message || 'The queued workout could not be cleared. Try again.')
+    } finally {
+      setClearingQueuedWorkout(false)
+      setActivityLabel('ready')
+    }
+  }, [clearCustomWorkoutDraft, clearingQueuedWorkout, hasActiveWorkout, workout?.id])
+
+  function handleHelpfulSuggestion() {
+    if (!helpfulSuggestion) return
+    const suggestion = helpfulSuggestion
+    setHelpfulSuggestion(null)
+    setSuggestionPhase('idle')
+
+    if (suggestion.action_type === 'daily_checkin') {
+      openDailyCheckIn()
+    } else if (suggestion.action_type === 'nutrition') {
+      openNutritionLog()
+    } else if (suggestion.action_type === 'progress_diary') {
+      openProgressDiary()
+    } else if (suggestion.action_type === 'open_screen') {
+      const destination = getProactiveSuggestionDestination(suggestion.screen)
+      if (destination) navigate(destination.path, { state: destination.state })
+    } else if (suggestion.prompt) {
+      void sendPrompt(buildProactiveSuggestionPrompt(suggestion))
+    }
+  }
+
+  const clearHelpfulSuggestion = useCallback(() => {
+    setHelpfulSuggestion(null)
+    setSuggestionPhase('idle')
+  }, [])
+
+  const primaryActionSlide = {
+    title: helpfulSuggestion?.title || (hasVisibleWorkoutForApproval
+      ? `Review ${workout.name} →`
+      : isWorkoutApproved && workout
+        ? `Activate ${workout.name} →`
+        : workoutLogged
+          ? 'Workout Logged ✓'
+          : 'Plan Workout →'),
+    subtitle: helpfulSuggestion?.subtitle || (hasVisibleWorkoutForApproval
+      ? 'Approve or adjust the plan in Johnny’s message'
+      : isWorkoutApproved && workout
+        ? `${workout.exercises.length} exercises${workout.structure === 'circuit' ? ` · ${workout.rounds} rounds` : ''} · Hold to clear`
+        : workoutLogged
+          ? 'Plan another workout →'
+          : 'Review today’s schedule with Johnny'),
+    onClick: helpfulSuggestion
+      ? handleHelpfulSuggestion
+      : () => hasVisibleWorkoutForApproval
+        ? document.querySelector('.workout-card')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        : isWorkoutApproved && workout
+          ? navigate('/workout/live')
+          : workoutLogged
+            ? void startPlanningFlow('Plan another workout for today.')
+            : void startPlanningFlow(),
+    onLongPress: helpfulSuggestion ? undefined : (isWorkoutApproved && workout && !hasActiveWorkout ? handleClearQueuedWorkout : undefined),
+    disabled: clearingQueuedWorkout,
+    suggestionLabel: helpfulSuggestion?.label,
+    onClear: helpfulSuggestion ? clearHelpfulSuggestion : undefined,
+    clearLabel: 'Clear Johnny suggestion',
+  }
+
+  const navChips = [
+    { key: 'checkin', label: 'Briefing', onClick: openDailyBriefing },
+    { key: 'progress-log', label: 'Log Progress', onClick: openDailyCheckIn },
+    { key: 'nutrition', label: 'Log Nutrition', onClick: openNutritionLog },
+    { key: 'diary', label: 'Progress Diary', onClick: openProgressDiary },
+    { key: 'profile', label: 'Profile', onClick: openProfile },
+  ]
+
   return (
     <main className="johnny-prototype-stage">
-      <div className="johnny-prototype-phone">
+      <div className="johnny-prototype-phone" style={{ '--johnny-primary-dock-height': `${primaryDockHeight}px`, '--johnny-accent-rgb': resolveAccentRgb(accentColor) }}>
         <AmbientField />
+        <JohnnyFireOverlay phase={fireMode} />
+        <JohnnyConfettiBurst phase={confettiMode} />
 
         <header className="plan-header">
-          <div className="brand-badge">
+          <div className={`brand-badge mood-${displayedBrandMood}`}>
             {brandmarkImage
               ? <img src={brandmarkImage} alt="Johnny5k" />
               : <span aria-hidden="true">J5K</span>}
           </div>
           <div className="johnny-brand-copy">
             <div className="brand-name">Johnny5k</div>
-            <div className={`brand-status${activityLabel === 'ready' ? '' : ' busy'}`} role="status" aria-live="polite">
+            <div className={`brand-status mood-${displayedBrandMood}${activityLabel === 'ready' ? '' : ' busy'}`} role="status" aria-live="polite">
               <span className="pulse-dot" /> Johnny · {activityLabel}
             </div>
           </div>
-          <div className="johnny-header-actions">
-            <span className="johnny-streak-count" aria-label={`${streakCount}-day best streak`} title="Best current streak">
-              <span aria-hidden="true">🔥</span>
-              <span aria-hidden="true">{streakCount}</span>
-            </span>
-            <button type="button" className="johnny-clear-chat" onClick={() => { void handleClearChat() }} disabled={loading || clearingChat}>
-              {clearingChat ? 'Clearing…' : 'Clear chat'}
-            </button>
-          </div>
+          {headlineStreak ? (
+            <div className="johnny-streak-badge" title={`${headlineStreak.days}-day ${headlineStreak.label} streak`}>
+              <span aria-hidden="true">🔥</span> {headlineStreak.days}
+            </div>
+          ) : null}
+          <button type="button" className="johnny-clear-chat" onClick={() => { void handleClearChat() }} disabled={loading || clearingChat}>
+            {clearingChat ? 'Clearing…' : 'Clear chat'}
+          </button>
         </header>
 
         <section className="chat-feed" ref={feedRef} aria-live="polite" aria-busy={loading || initialising}>
-          <ChatBubble role="ai">{getTimeGreeting(dailyBrief?.local_hour)}, {capitalize(userName)}. {dailyBrief?.first_interaction ? 'Here’s your brief for today.' : 'What do you want to work on?'}</ChatBubble>
+          <ChatBubble role="ai">{getTimeGreeting(dailyBrief?.local_hour)}, {capitalize(userName)}. {dailyBrief?.first_interaction ? briefTail : greetingTail}</ChatBubble>
+          {dailyBrief?.first_interaction && dailyBrief?.week_attendance?.length ? (
+            <WeekAttendanceChart days={dailyBrief.week_attendance} />
+          ) : null}
           {dailyBrief?.first_interaction ? (
             <JohnnyDailyBrief
               brief={dailyBrief}
@@ -372,10 +813,22 @@ export default function JohnnyHomeScreen() {
               <div className="johnny-message-group" key={key}>
                 <ChatBubble role={message.role === 'user' ? 'user' : 'ai'}>{message.message_text}</ChatBubble>
                 <JohnnyVisualizationList results={message.action_results} />
+                <RecipeGallery actionResults={message.action_results} />
+                <GroceryGapCard actionResults={message.action_results} onOpen={() => navigate('/shopping-list')} />
                 <JohnnyGeneratedImageList results={message.action_results} latest={index === generatedImageMessageIndex} />
+                <JohnnyGifList results={message.action_results} />
                 {index === cardioFormMessageIndex ? <JohnnyCardioForm results={message.action_results} onLogged={handleCardioLogged} /> : null}
-                {index === workoutMessageIndex && workout ? <WorkoutDraftCard workout={workout} approved={isWorkoutApproved} onUpdate={updateWorkoutDraft} /> : null}
-                {index === decisionMessageIndex ? <JohnnyDecisionRail results={message.action_results} disabled={loading} onReply={handleDecision} onNavigate={navigate} /> : null}
+                {index === workoutMessageIndex && workout && !queuedWorkoutDismissed ? (
+                  <WorkoutDraftCard
+                    workout={workout}
+                    approved={isWorkoutApproved}
+                    disabled={loading}
+                    onApprove={() => void handleDecision('__johnny_approve_workout__')}
+                    onRequestChanges={requestWorkoutChanges}
+                    onUpdate={updateWorkoutDraft}
+                  />
+                ) : null}
+                {index === decisionMessageIndex && !(index === workoutMessageIndex && workout && !queuedWorkoutDismissed) ? <JohnnyDecisionRail results={message.action_results} disabled={loading} onReply={handleDecision} onNavigate={navigate} /> : null}
               </div>
             )
           })}
@@ -383,39 +836,41 @@ export default function JohnnyHomeScreen() {
           {status ? <div className="johnny-chat-status" role="status">{status}</div> : null}
         </section>
 
-        <nav className="johnny-quick-nav" aria-label="Johnny actions">
-          <button
-            type="button"
-            className="quick-nav-cta"
-            onClick={() => workoutLogged
-              ? void startPlanningFlow('Plan another workout for today.')
-              : isWorkoutApproved && workout
-                ? navigate('/workout/live')
-                : void startPlanningFlow()}
-          >
-            <span className="quick-nav-cta-title">{workoutLogged ? 'Workout Logged ✓' : isWorkoutApproved ? 'Activate Workout →' : 'Plan Workout →'}</span>
-            <span className="quick-nav-cta-sub">
-              {workoutLogged
-                ? 'Plan another workout →'
-                : isWorkoutApproved && workout
-                  ? `${workout.exercises.length} exercises${workout.structure === 'circuit' ? ` · ${workout.rounds} rounds` : ''}`
-                  : 'Review today’s schedule with Johnny'}
-            </span>
-          </button>
-          <div className="quick-nav-chips">
-            <QuickNavChip label="Check-In" onClick={openDailyCheckIn} />
-            <QuickNavChip label="Nutrition" onClick={openNutritionLog} />
-            <QuickNavChip label="Diary" onClick={openProgressDiary} />
-            <QuickNavChip label="Profile" onClick={openProfile} />
-          </div>
-        </nav>
+        <div className="johnny-primary-dock" ref={primaryDockRef}>
+          <nav className="johnny-quick-nav" aria-label="Johnny actions">
+            <PrimaryActionButton
+              title={primaryActionSlide.title}
+              subtitle={primaryActionSlide.subtitle}
+              onClick={primaryActionSlide.onClick}
+              onLongPress={primaryActionSlide.onLongPress}
+              disabled={primaryActionSlide.disabled}
+              suggestionLabel={primaryActionSlide.suggestionLabel}
+              suggestionPhase={primaryActionSlide.suggestionLabel ? suggestionPhase : 'idle'}
+              onClear={primaryActionSlide.onClear}
+              clearLabel={primaryActionSlide.clearLabel}
+            />
+            <div className="quick-nav-chips">
+              {navChips.map(chip => <QuickNavChip key={chip.key} label={chip.label} onClick={chip.onClick} />)}
+            </div>
+          </nav>
 
-        <form className="input-bar" onSubmit={handleSubmit}>
-          <label className="sr-only" htmlFor="johnny-message">Message Johnny5k</label>
-          <input id="johnny-message" className="chat-input" value={input} onChange={event => setInput(event.target.value)} placeholder="Message Johnny5k…" disabled={loading} />
-          <button className="send-btn" type="submit" disabled={loading || !input.trim()} aria-label="Send message">➤</button>
-        </form>
-        {dailyCheckInOpen ? <JohnnyDailyCheckInModal onClose={closeDailyCheckIn} /> : null}
+          <form className="input-bar" onSubmit={handleSubmit}>
+            <button className={`mic-btn${listening ? ' listening' : ''}`} type="button" disabled={loading || transcribingVoice || !voiceSupported} onClick={listening ? stopVoiceCapture : startVoiceCapture} aria-label={listening ? 'Stop voice recording' : transcribingVoice ? 'Transcribing voice recording' : 'Start voice recording'} aria-pressed={listening} title={voiceSupported ? 'Talk to Johnny' : 'Voice recording is unavailable in this browser'}>🎙</button>
+            <label className="sr-only" htmlFor="johnny-message">Message Johnny5k</label>
+            <input ref={messageInputRef} id="johnny-message" className="chat-input" value={input} onChange={event => setInput(event.target.value)} placeholder={listening ? 'Recording…' : transcribingVoice ? 'Transcribing…' : 'Message Johnny5k…'} disabled={loading || transcribingVoice} />
+            <button className="send-btn" type="submit" disabled={loading || !input.trim()} aria-label="Send message">➤</button>
+          </form>
+        </div>
+        {dailyCheckInOpen && activityLabel === 'daily briefing open' ? (
+          <DailyCheckInModal
+            answers={dailyCheckInAnswers}
+            onAnswer={(key, value) => setDailyCheckInAnswers(current => ({ ...current, [key]: value }))}
+            onClose={closeDailyCheckIn}
+            onStartBriefing={startDailyBriefing}
+          />
+        ) : null}
+        {dailyCheckInOpen && activityLabel !== 'daily briefing open' ? <JohnnyDailyCheckInModal onClose={closeDailyCheckIn} /> : null}
+        {dailyBriefingOpen ? <DailyBriefingView answers={dailyCheckInAnswers} onClose={closeDailyBriefing} onPlanWorkout={planFromDailyBriefing} /> : null}
         {nutritionLogOpen ? <JohnnyNutritionLogModal onClose={closeNutritionLog} /> : null}
         {profileOpen ? <JohnnyProfileModal onClose={closeProfile} /> : null}
       </div>
@@ -431,19 +886,82 @@ function ChatBubble({ role, children }) {
 function getJohnnyActivityForPrompt(prompt) {
   const message = String(prompt || '').toLowerCase()
   if (/\b(clear|delete|erase|reset)\b/.test(message) && /\b(chat|conversation|thread)\b/.test(message)) return 'clearing conversation'
-  if (/\b(workout|training|exercise|circuit|cardio|rest day)\b/.test(message)) return 'checking your training'
+  if (WORKOUT_ACTIVITY_PATTERN.test(message)) return 'checking your training'
   if (/\b(weight|sleep|steps|nutrition|meal|food|water)\b/.test(message)) return 'checking your health data'
   return 'thinking'
 }
 
-function getBestStreak(streaks = {}) {
-  return Math.max(
-    0,
-    Number(streaks?.logging_days ?? 0),
-    Number(streaks?.training_days ?? 0),
-    Number(streaks?.sleep_days ?? 0),
-    Number(streaks?.cardio_days ?? 0),
-  )
+function isShoppingModeNavigationRequest(value) {
+  const message = String(value || '').toLowerCase()
+  return /\b(open|activate|start|enter|launch|show|take me to|go to)\b/.test(message)
+    && /\b(shopping mode|shopping list|grocery shopping)\b/.test(message)
+}
+
+function getProactiveSuggestionDestination(screen) {
+  if (['steps', 'sleep', 'weight', 'workouts', 'cardio'].includes(screen)) {
+    return {
+      path: '/body',
+      state: { focusTab: screen, johnnyActionNotice: `Johnny opened ${screen} because it matches this suggestion.` },
+    }
+  }
+
+  const destinations = {
+    nutrition: { path: '/nutrition', state: { johnnyActionNotice: 'Johnny opened Nutrition for this suggestion.' } },
+    saved_meals: { path: '/nutrition', state: { focusSection: 'savedMeals', johnnyActionNotice: 'Johnny opened Saved Meals for a fast repeatable option.' } },
+    recipes: { path: '/nutrition', state: { focusSection: 'recipes', johnnyActionNotice: 'Johnny opened Recipes for this meal suggestion.' } },
+    grocery_gap: { path: '/nutrition', state: { focusSection: 'groceryGap', johnnyActionNotice: 'Johnny opened Grocery Gap to handle the missing ingredients.' } },
+    pantry: { path: '/nutrition/pantry', state: { johnnyActionNotice: 'Johnny opened Pantry to work with what is already available.' } },
+    workout: { path: '/workout', state: { johnnyActionNotice: 'Johnny opened Workout for the suggested training step.' } },
+    body: { path: '/body', state: { johnnyActionNotice: 'Johnny opened Progress so you can review the data behind this suggestion.' } },
+    activity_log: { path: '/activity-log', state: { johnnyActionNotice: 'Johnny opened Activity Log to review the relevant session history.' } },
+    settings: { path: '/settings', state: { johnnyActionNotice: 'Johnny opened Profile & Settings for this suggestion.' } },
+  }
+  return destinations[screen] || null
+}
+
+function buildProactiveSuggestionPrompt(suggestion) {
+  const prompt = String(suggestion?.prompt || '').trim()
+  const presentationInstructions = {
+    chart: 'Use my current logged data and include the most useful structured chart or visualization in your response.',
+    link: 'Include a trustworthy, directly relevant source link. Search the web if current or specific information is needed.',
+    meal_idea: 'Give me one specific meal idea matched to what remains in today’s calorie and protein targets.',
+    story: 'Tell this as one concise, grounded inspirational story. Do not invent claims about an identifiable real person.',
+    image: 'Create and share a personalized image of yourself, Johnny, that fits this moment. Use your official likeness reference and make it fun, encouraging, and grounded in my current progress.',
+    text: 'Give me one concise, actionable response grounded in my current data.',
+  }
+  const instruction = presentationInstructions[suggestion?.presentation] || presentationInstructions.text
+  return `${prompt} ${instruction}`.trim()
+}
+
+const GREETING_TAIL_PHRASES = [
+  'What do you want to work on?',
+  'What are we tackling today?',
+  'Where do you want to start?',
+  'What’s the move today?',
+  'Ready when you are — what’s first?',
+]
+const BRIEF_TAIL_PHRASES = [
+  'Here’s your brief for today.',
+  'Here’s where things stand today.',
+  'Here’s today’s rundown.',
+  'Got your brief ready.',
+]
+
+function pickRandomPhrase(phrases) {
+  return phrases[Math.floor(Math.random() * phrases.length)]
+}
+
+const STREAK_LABELS = { logging_days: 'meal logging', training_days: 'training', sleep_days: 'sleep', cardio_days: 'cardio' }
+
+function pickHeadlineStreak(streaks) {
+  if (!streaks || typeof streaks !== 'object') return null
+  const entries = Object.entries(streaks)
+    .map(([key, days]) => [key, Number(days) || 0])
+    .filter(([, days]) => days >= 2)
+  if (!entries.length) return null
+  entries.sort((a, b) => b[1] - a[1])
+  const [key, days] = entries[0]
+  return { days, label: STREAK_LABELS[key] || key.replace(/_/g, ' ') }
 }
 
 function getTimeGreeting(hourValue) {
@@ -452,6 +970,25 @@ function getTimeGreeting(hourValue) {
   if (hour >= 5 && hour < 12) return 'Good morning'
   if (hour >= 12 && hour < 17) return 'Good afternoon'
   return 'Good evening'
+}
+
+function WeekAttendanceChart({ days }) {
+  return (
+    <div className="week-chart-wrap">
+      <div className="section-label">This week</div>
+      <div className="week-chart">
+        {days.map(day => {
+          const height = day.status === 'today' ? 48 : day.status === 'done' ? 34 : 14
+          return (
+            <div className="week-col" key={day.date}>
+              <div className={`week-bar ${day.status === 'today' ? 'today' : day.status === 'done' ? 'done' : ''}`} style={{ height: `${height}px` }} />
+              <div className="week-label">{day.weekday_label}</div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
 }
 
 function JohnnyDailyBrief({ brief, onStick, onChange }) {
@@ -496,7 +1033,7 @@ function TypingBubble() {
   )
 }
 
-function WorkoutDraftCard({ workout, approved, onUpdate }) {
+function WorkoutDraftCard({ workout, approved, disabled, onApprove, onRequestChanges, onUpdate }) {
   const [savingIndex, setSavingIndex] = useState(-1)
   const [demoExercise, setDemoExercise] = useState(null)
 
@@ -543,6 +1080,12 @@ function WorkoutDraftCard({ workout, approved, onUpdate }) {
               <button type="button" className="wc-remove" onClick={() => void remove(index)} disabled={workout.exercises.length <= 1 || savingIndex >= 0} aria-label={`Remove ${exercise.name}`}>×</button>
             </div>
           ))}
+          {!approved ? (
+            <div className="wc-approval-actions" aria-label="Workout approval actions">
+              <button type="button" className="wc-approve" onClick={onApprove} disabled={disabled || savingIndex >= 0}>Approve workout</button>
+              <button type="button" className="wc-request-changes" onClick={onRequestChanges} disabled={disabled}>Ask for changes</button>
+            </div>
+          ) : null}
         </article>
 		{demoExercise ? <ExerciseVideoDialog key={demoExercise.id || demoExercise.name} exercise={demoExercise} onClose={() => setDemoExercise(null)} /> : null}
       </div>
@@ -639,12 +1182,115 @@ function extractYouTubeVideoId(value) {
   return match?.[1] || ''
 }
 
-function AmbientField() {
-  return <div className="ambient-bg" aria-hidden="true"><div className="ambient-glow glow-1" /><div className="ambient-glow glow-2" /><svg viewBox="0 0 400 100" preserveAspectRatio="none"><path className="pulse-path" d="M0,50 L60,50 L80,20 L100,80 L120,50 L400,50" /></svg></div>
+function JohnnyConfettiBurst({ phase }) {
+  if (phase === 'idle') return null
+  return (
+    <div className={`johnny-confetti-overlay ${phase}`} aria-hidden="true">
+      {CONFETTI_PIECES.map((piece, index) => (
+        <span
+          className="johnny-confetti-piece"
+          key={index}
+          style={{
+            left: `${piece.left}%`,
+            animationDelay: `${piece.delay}s`,
+            animationDuration: `${piece.duration}s`,
+            '--confetti-rgb': piece.colorRgb,
+            '--confetti-rotate': `${piece.rotate}deg`,
+            '--confetti-drift': `${piece.drift}px`,
+          }}
+        />
+      ))}
+    </div>
+  )
 }
 
 function QuickNavChip({ label, onClick }) {
   return <button type="button" className="quick-nav-chip" onClick={onClick}>{label}</button>
+}
+
+function JohnnyFireOverlay({ phase }) {
+  if (phase === 'idle') return null
+  return (
+    <div className={`johnny-fire-overlay ${phase}`} aria-hidden="true">
+      <div className="johnny-fire-glow" />
+      <div className="johnny-fire-flames">
+        {Array.from({ length: 7 }, (_, index) => <span className="johnny-fire-flame" key={index} />)}
+      </div>
+      <div className="johnny-fire-embers">
+        {FIRE_EMBERS.map((ember, index) => (
+          <span
+            className="johnny-fire-ember"
+            key={index}
+            style={{
+              left: `${ember.left}%`,
+              animationDelay: `${ember.delay}s`,
+              animationDuration: `${ember.duration}s`,
+              '--fire-ember-drift': `${ember.drift}px`,
+            }}
+          />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function AmbientField() {
+  return (
+    <div className="ambient-bg" aria-hidden="true">
+      <div className="ambient-glow glow-1" />
+      <div className="ambient-glow glow-2" />
+      <div className="ambient-glow glow-3" />
+      <svg viewBox="0 0 400 100" preserveAspectRatio="none">
+        <path className="pulse-path pulse-path-1" d="M0,50 L60,50 L80,20 L100,80 L120,50 L400,50" />
+        <path className="pulse-path pulse-path-2" d="M0,70 L40,70 L60,40 L90,95 L130,70 L400,70" />
+      </svg>
+    </div>
+  )
+}
+
+function PrimaryActionButton({ title, subtitle, onClick, onLongPress, onClear, clearLabel = 'Clear action', disabled = false, suggestionLabel = '', suggestionPhase = 'idle' }) {
+  const timerRef = useRef(null)
+  const consumedRef = useRef(false)
+  const [pressing, setPressing] = useState(false)
+
+  function cancelPress() {
+    if (timerRef.current) window.clearTimeout(timerRef.current)
+    timerRef.current = null
+    setPressing(false)
+  }
+
+  function beginPress(event) {
+    if (!onLongPress || disabled || (event.pointerType === 'mouse' && event.button !== 0)) return
+    consumedRef.current = false
+    setPressing(true)
+    timerRef.current = window.setTimeout(() => {
+      consumedRef.current = true
+      setPressing(false)
+      timerRef.current = null
+      onLongPress()
+    }, 650)
+  }
+
+  useEffect(() => () => { if (timerRef.current) window.clearTimeout(timerRef.current) }, [])
+
+  return <div className={`quick-nav-cta-wrap${onClear ? ' has-clear-action' : ''}`}><button
+    type="button"
+    className={`quick-nav-cta${pressing ? ' long-pressing' : ''}${suggestionLabel ? ` suggestion-${suggestionPhase}` : ''}`}
+    onPointerDown={beginPress}
+    onPointerUp={cancelPress}
+    onPointerCancel={cancelPress}
+    onPointerLeave={cancelPress}
+    onClick={event => {
+      if (consumedRef.current) {
+        consumedRef.current = false
+        event.preventDefault()
+        return
+      }
+      onClick?.()
+    }}
+    disabled={disabled}
+    aria-description={onLongPress ? 'Press and hold to clear this queued workout' : undefined}
+  >{suggestionLabel ? <span className="quick-nav-cta-suggestion" aria-live="polite">{suggestionLabel}</span> : null}<span className="quick-nav-cta-title">{title}</span><span className="quick-nav-cta-sub">{subtitle}</span></button>{onClear ? <button type="button" className="quick-nav-cta-clear" onClick={onClear} aria-label={clearLabel}>Clear</button> : null}</div>
 }
 
 function JohnnyVisualizationList({ results }) {
@@ -718,6 +1364,36 @@ function JohnnyGeneratedImageList({ results, latest = false }) {
   const images = (Array.isArray(results) ? results : []).map(normalizeGeneratedImage).filter(Boolean)
   if (!images.length) return null
   return <>{images.map((image, index) => <JohnnyGeneratedImage image={image} latest={latest && index === images.length - 1} key={image.image_id} />)}</>
+}
+
+function JohnnyGifList({ results }) {
+  const gifs = (Array.isArray(results) ? results : []).map(normalizeGifResult).filter(Boolean)
+  if (!gifs.length) return null
+  return <>{gifs.map((gif, index) => <JohnnyGif gif={gif} key={`${gif.gif_url}-${index}`} />)}</>
+}
+
+function JohnnyGif({ gif }) {
+  return (
+    <figure className="johnny-gif-card">
+      <img src={gif.gif_url} alt={gif.title} loading="lazy" />
+      <figcaption>
+        <span>via GIPHY</span>
+        {gif.page_url ? <a href={gif.page_url} target="_blank" rel="noreferrer">View</a> : null}
+      </figcaption>
+    </figure>
+  )
+}
+
+function normalizeGifResult(result) {
+  if (!result || typeof result !== 'object') return null
+  if (String(result.action || result.tool_name || '') !== 'search_gif') return null
+  const gifUrl = String(result.gif_url || '').trim()
+  if (!gifUrl) return null
+  return {
+    gif_url: gifUrl,
+    page_url: String(result.page_url || '').trim(),
+    title: String(result.title || result.query || 'GIF'),
+  }
 }
 
 function JohnnyDecisionRail({ results, disabled, onReply, onNavigate }) {
@@ -1106,6 +1782,15 @@ function localDateString() {
   const now = new Date()
   const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000)
   return local.toISOString().slice(0, 10)
+}
+
+function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result || '').split(',').pop() || '')
+    reader.onerror = () => reject(new Error('The voice recording could not be prepared.'))
+    reader.readAsDataURL(blob)
+  })
 }
 
 function capitalize(value) {

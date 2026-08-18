@@ -233,6 +233,13 @@ class WorkoutController {
 			'args'                => [ 'id' => [ 'required' => true, 'type' => 'integer' ] ],
 		] );
 
+		register_rest_route( $ns, '/workout/(?P<id>\d+)/reset-timer', [
+			'methods'             => 'POST',
+			'callback'            => [ __CLASS__, 'reset_session_timer' ],
+			'permission_callback' => $auth,
+			'args'                => [ 'id' => [ 'required' => true, 'type' => 'integer' ] ],
+		] );
+
 		register_rest_route( $ns, '/workout/(?P<id>\d+)/discard', [
 			'methods'             => 'POST',
 			'callback'            => [ __CLASS__, 'discard_session' ],
@@ -595,6 +602,15 @@ class WorkoutController {
 		$draft['source_type'] = 'saved_workout_library';
 		$draft['source_id'] = 0;
 		$table = $wpdb->prefix . 'fit_saved_workouts';
+		$existing = self::find_duplicate_saved_workout( $user_id, $draft );
+		if ( $existing ) {
+			$existing_draft = json_decode( (string) $existing->workout_json, true );
+			return new \WP_REST_Response( [
+				'saved'     => true,
+				'duplicate' => true,
+				'workout'   => self::format_saved_workout( $existing, is_array( $existing_draft ) ? $existing_draft : $draft ),
+			], 200 );
+		}
 		$now = current_time( 'mysql', true );
 		$inserted = $wpdb->insert( $table, [
 			'user_id'          => $user_id,
@@ -663,6 +679,52 @@ class WorkoutController {
 		return $row ?: null;
 	}
 
+	private static function find_duplicate_saved_workout( int $user_id, array $draft ): ?object {
+		global $wpdb;
+		$table = $wpdb->prefix . 'fit_saved_workouts';
+		$rows = $wpdb->get_results( $wpdb->prepare(
+			"SELECT id, name, workout_structure, workout_json, created_at, updated_at FROM {$table} WHERE user_id = %d ORDER BY id DESC",
+			$user_id
+		) );
+		$signature = self::saved_workout_signature( $draft );
+
+		foreach ( $rows ?: [] as $row ) {
+			$existing_draft = json_decode( (string) $row->workout_json, true );
+			if ( is_array( $existing_draft ) && hash_equals( $signature, self::saved_workout_signature( $existing_draft ) ) ) {
+				return $row;
+			}
+		}
+
+		return null;
+	}
+
+	private static function saved_workout_signature( array $draft ): string {
+		$exercises = array_map( static function ( $exercise ): array {
+			$exercise = is_array( $exercise ) ? $exercise : (array) $exercise;
+			return [
+				'exercise_id'      => (int) ( $exercise['exercise_id'] ?? 0 ),
+				'slot_type'        => (string) ( $exercise['slot_type'] ?? '' ),
+				'rep_min'          => (int) ( $exercise['rep_min'] ?? 0 ),
+				'rep_max'          => (int) ( $exercise['rep_max'] ?? 0 ),
+				'sets'             => (int) ( $exercise['sets'] ?? 0 ),
+				'target_type'      => (string) ( $exercise['target_type'] ?? '' ),
+				'duration_seconds' => isset( $exercise['duration_seconds'] ) ? (int) $exercise['duration_seconds'] : null,
+				'reps_per_side'    => ! empty( $exercise['reps_per_side'] ),
+				'notes'            => (string) ( $exercise['notes'] ?? '' ),
+			];
+		}, is_array( $draft['exercises'] ?? null ) ? $draft['exercises'] : [] );
+
+		return hash( 'sha256', wp_json_encode( [
+			'day_type'                       => (string) ( $draft['day_type'] ?? '' ),
+			'time_tier'                      => (string) ( $draft['time_tier'] ?? '' ),
+			'workout_structure'              => (string) ( $draft['workout_structure'] ?? '' ),
+			'rounds'                         => (int) ( $draft['rounds'] ?? 1 ),
+			'rest_between_exercises_seconds' => isset( $draft['rest_between_exercises_seconds'] ) ? (int) $draft['rest_between_exercises_seconds'] : null,
+			'rest_between_rounds_seconds'    => isset( $draft['rest_between_rounds_seconds'] ) ? (int) $draft['rest_between_rounds_seconds'] : null,
+			'exercises'                      => $exercises,
+		] ) );
+	}
+
 	private static function format_saved_workout( object $row, array $draft ): array {
 		return [
 			'id'                => (int) $row->id,
@@ -724,7 +786,9 @@ class WorkoutController {
 	}
 
 	public static function delete_custom_draft( \WP_REST_Request $req ): \WP_REST_Response {
-		self::delete_custom_workout_draft_for_user( get_current_user_id() );
+		$user_id = get_current_user_id();
+		self::delete_custom_workout_draft_for_user( $user_id );
+		delete_user_meta( $user_id, 'jf_workout_approval' );
 		return new \WP_REST_Response( [ 'deleted' => true ], 200 );
 	}
 
@@ -919,6 +983,14 @@ class WorkoutController {
 			'user_id' => get_current_user_id(),
 			'session_id' => (int) $req->get_param( 'id' ),
 		], $req, 'restart_session' );
+	}
+
+	public static function reset_session_timer( \WP_REST_Request $req ): \WP_REST_Response {
+		return self::execute_workout_action( [
+			'type' => 'reset_session_timer',
+			'user_id' => get_current_user_id(),
+			'session_id' => (int) $req->get_param( 'id' ),
+		], $req, 'reset_session_timer' );
 	}
 
 	public static function discard_session( \WP_REST_Request $req ): \WP_REST_Response {

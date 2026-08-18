@@ -2000,7 +2000,7 @@ export default function SettingsScreen() {
             <div className="settings-headshot-head">
               <div>
                 <h3>Your Headshot + Johnny Image Generation</h3>
-                <p className="settings-subtitle">Upload a clear face photo. Gemini uses this together with your recent progress photos and Johnny&apos;s reference image to generate square scenes of you and Johnny together.</p>
+                <p className="settings-subtitle">Upload a clear face photo. Johnny can use it as a private likeness reference when you explicitly ask him to create a realistic image of you.</p>
               </div>
               <div className="settings-headshot-actions">
                 <label className="btn-secondary settings-upload-trigger">

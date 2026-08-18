@@ -19,11 +19,12 @@ class CronBootstrapActionSchedulerTest extends ServiceTestCase {
 		\wp_schedule_event( 1000, 'weekly', 'jf_weekly_calorie_adjust' );
 		\wp_schedule_event( 1000, 'twicedaily', 'jf_evaluate_awards' );
 		\wp_schedule_event( 1000, 'hourly', 'jf_process_coach_deliveries' );
+		\wp_schedule_event( 1000, 'johnny_two_hours', 'jf_send_contextual_push_suggestions' );
 
 		CronBootstrap::ensure_schedules();
 
 		self::assertSame( [], $GLOBALS['johnny5k_test_scheduled_events'] );
-		self::assertCount( 4, $GLOBALS['johnny5k_test_action_scheduler_actions'] );
+		self::assertCount( 5, $GLOBALS['johnny5k_test_action_scheduler_actions'] );
 	}
 
 	public function test_failed_execution_schedules_retry_for_retryable_job(): void {

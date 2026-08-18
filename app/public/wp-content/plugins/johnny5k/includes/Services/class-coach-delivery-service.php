@@ -4,6 +4,7 @@ namespace Johnny5k\Services;
 defined( 'ABSPATH' ) || exit;
 
 use Johnny5k\Support\TrainingDayTypes;
+use Johnny5k\REST\AiChatController;
 
 class CoachDeliveryService {
 	private const MAX_PROACTIVE_PER_DAY = 1;
@@ -11,6 +12,7 @@ class CoachDeliveryService {
 	private const FOLLOW_UP_META_KEY = 'jf_johnny_follow_ups';
 	private const CRON_LOCK_KEY = 'jf_process_coach_deliveries_lock';
 	private const CRON_LOCK_TTL = 900;
+	private const CONTEXTUAL_PUSH_INTERVAL = 7200;
 
 	public static function process_due_follow_ups_all_users(): void {
 		if ( get_transient( self::CRON_LOCK_KEY ) ) {
@@ -28,6 +30,91 @@ class CoachDeliveryService {
 		} finally {
 			delete_transient( self::CRON_LOCK_KEY );
 		}
+	}
+
+	public static function process_contextual_push_suggestions_all_users(): void {
+		foreach ( self::get_candidate_user_ids() as $user_id ) {
+			self::process_contextual_push_suggestion_for_user( $user_id );
+		}
+	}
+
+	public static function process_contextual_push_suggestion_for_user( int $user_id ): ?array {
+		global $wpdb;
+		if ( $user_id <= 0 || ! PushService::can_deliver_to_user( $user_id ) ) {
+			return null;
+		}
+
+		$preferences = self::get_user_delivery_preferences( $user_id );
+		if ( empty( $preferences['push_enabled'] ) || self::is_within_quiet_hours( UserTime::now( $user_id ), $preferences ) ) {
+			return null;
+		}
+
+		$active_session = (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT COUNT(*) FROM {$wpdb->prefix}fit_workout_sessions WHERE user_id = %d AND completed = 0",
+			$user_id
+		) );
+		if ( $active_session > 0 || self::contextual_push_sent_recently( $user_id ) ) {
+			return null;
+		}
+
+		$response = AiChatController::generate_proactive_suggestion_for_user( $user_id );
+		$suggestion = is_array( $response['suggestion'] ?? null ) ? $response['suggestion'] : null;
+		if ( ! $suggestion ) {
+			return null;
+		}
+
+		$title = sanitize_text_field( (string) ( $suggestion['title'] ?? 'Johnny has an idea' ) );
+		$body = sanitize_textarea_field( (string) ( $suggestion['subtitle'] ?? '' ) );
+		if ( '' === $body ) {
+			$body = 'Tap to see the next useful step Johnny found in your day.';
+		}
+		$url = self::contextual_push_url( $suggestion );
+		$result = PushService::send_notification_to_user( $user_id, $title, $body, $url, [
+			'type'         => 'proactive_suggestion',
+			'trigger_type' => 'contextual_suggestion',
+			'source'       => 'johnny_context',
+			'action_type'  => sanitize_key( (string) ( $suggestion['action_type'] ?? '' ) ),
+			'presentation' => sanitize_key( (string) ( $suggestion['presentation'] ?? '' ) ),
+		] );
+
+		if ( is_wp_error( $result ) ) {
+			self::log_delivery( $user_id, [
+				'channel' => 'push', 'delivery_type' => 'proactive_suggestion', 'delivery_key' => 'contextual_push_failed',
+				'title' => $title, 'message_preview' => $body, 'payload' => [ 'suggestion' => $suggestion ],
+				'status' => 'failed', 'error_code' => $result->get_error_code(), 'error_message' => $result->get_error_message(),
+			] );
+		}
+
+		return is_wp_error( $result ) ? [ 'status' => 'failed', 'error' => $result->get_error_code() ] : [ 'status' => 'sent', 'result' => $result ];
+	}
+
+	private static function contextual_push_sent_recently( int $user_id ): bool {
+		global $wpdb;
+		$sent_at = $wpdb->get_var( $wpdb->prepare(
+			"SELECT created_at FROM {$wpdb->prefix}fit_coach_delivery_logs
+			 WHERE user_id = %d AND channel = 'push' AND delivery_type = 'proactive_suggestion' AND status = 'sent'
+			 ORDER BY created_at DESC LIMIT 1",
+			$user_id
+		) );
+		return $sent_at && strtotime( (string) $sent_at . ' UTC' ) > time() - self::CONTEXTUAL_PUSH_INTERVAL;
+	}
+
+	private static function contextual_push_url( array $suggestion ): string {
+		$action = sanitize_key( (string) ( $suggestion['action_type'] ?? '' ) );
+		$screen = sanitize_key( (string) ( $suggestion['screen'] ?? '' ) );
+		$presentation = sanitize_key( (string) ( $suggestion['presentation'] ?? 'text' ) );
+		if ( 'daily_checkin' === $action ) return '/dashboard?open_daily_checkin=1';
+		if ( 'nutrition' === $action ) return '/nutrition';
+		if ( 'progress_diary' === $action ) return '/body?focus=diary';
+		if ( 'open_screen' === $action ) {
+			if ( in_array( $screen, [ 'nutrition', 'saved_meals', 'recipes', 'grocery_gap' ], true ) ) return '/nutrition';
+			if ( 'pantry' === $screen ) return '/nutrition/pantry';
+			if ( in_array( $screen, [ 'steps', 'sleep', 'weight', 'workouts', 'cardio', 'body' ], true ) ) return '/body?focus=' . rawurlencode( $screen );
+			if ( 'activity_log' === $screen ) return '/activity-log';
+			if ( 'workout' === $screen ) return '/workout';
+			if ( 'settings' === $screen ) return '/settings';
+		}
+		return '/dashboard?coach_prompt=proactive_' . rawurlencode( $presentation );
 	}
 
 	public static function process_due_follow_ups_for_user( int $user_id ): ?array {
