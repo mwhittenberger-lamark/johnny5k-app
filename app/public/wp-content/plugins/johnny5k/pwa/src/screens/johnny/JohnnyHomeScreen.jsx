@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { aiApi } from '../../api/modules/ai'
 import { bodyApi } from '../../api/modules/body'
 import { dashboardApi } from '../../api/modules/dashboard'
@@ -59,6 +59,7 @@ const CONFETTI_PIECES = Array.from({ length: 30 }, (_, index) => ({
 
 export default function JohnnyHomeScreen() {
   const navigate = useNavigate()
+  const location = useLocation()
   const email = useAuthStore(state => state.email)
   const appImages = useAuthStore(state => state.appImages)
   const customWorkoutDraft = useWorkoutStore(state => state.customWorkoutDraft)
@@ -121,7 +122,7 @@ export default function JohnnyHomeScreen() {
   const generatedImageMessageIndex = useMemo(() => findLatestGeneratedImageMessageIndex(messages), [messages])
   const cardioFormMessageIndex = useMemo(() => findLatestCardioFormMessageIndex(messages), [messages])
   const [workoutApproved, setWorkoutApproved] = useState(false)
-  const [workoutLogged, setWorkoutLogged] = useState(false)
+  const [workoutLogged, setWorkoutLogged] = useState(() => Boolean(location.state?.workoutJustCompleted))
   const [queuedWorkoutDismissed, setQueuedWorkoutDismissed] = useState(false)
   const [clearingQueuedWorkout, setClearingQueuedWorkout] = useState(false)
   const hasActiveWorkout = Boolean(session?.session?.id)

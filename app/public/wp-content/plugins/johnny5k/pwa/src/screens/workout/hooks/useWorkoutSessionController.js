@@ -474,7 +474,7 @@ export function useWorkoutSessionController({
         showGlobalToast(ironQuestToast)
       }
 
-      navigate('/dashboard', { state: { workoutResult: result } })
+      navigate('/dashboard', { state: { workoutResult: result, workoutJustCompleted: true } })
     } finally {
       setCompleting(false)
     }
@@ -491,7 +491,10 @@ export function useWorkoutSessionController({
     }
 
     navigate('/dashboard', {
-      state: { johnnyActionNotice: 'Johnny gave you a post-workout review right after you completed the session.' },
+      state: {
+        johnnyActionNotice: 'Johnny gave you a post-workout review right after you completed the session.',
+        workoutJustCompleted: true,
+      },
     })
   }
 

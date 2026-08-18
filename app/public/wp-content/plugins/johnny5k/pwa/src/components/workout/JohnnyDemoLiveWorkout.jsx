@@ -6,7 +6,7 @@ import AnnouncementTicker from '../layout/AnnouncementTicker'
 
 export default function JohnnyDemoLiveWorkout({
   isOpen, session, exercises, activeExerciseIdx, onSetActiveExerciseIdx,
-  onCreateSet, onUpdateSet, onClose, onComplete, onSaveWorkout, onResetWorkout, onAskJohnny,
+  onCreateSet, onUpdateSet, onClose, onComplete, completing = false, onSaveWorkout, onResetWorkout, onAskJohnny,
   pauseSessionTimer, resumeSessionTimer, timerLabel, displayDayType,
 }) {
   const exercise = exercises[activeExerciseIdx]
@@ -476,7 +476,15 @@ export default function JohnnyDemoLiveWorkout({
           </div>
           <div className="demo-live-rest-actions"><button type="button" onClick={() => onAskJohnny?.()}>Ask Johnny</button><button type="button" className="primary" onClick={endRest}>Skip rest</button></div>
         </div> : null}
-        {done ? <div className="demo-live-overlay done"><span>Workout complete</span><strong>Nice work.</strong><p>{completedExercises + 1}/{totalExercises} stations cleared · {timerLabel || 'Session logged'}</p><button type="button" className="finish" onClick={() => { void onComplete() }}>Done — Finish Workout</button></div> : null}
+        {done ? <div className="demo-live-overlay done"><span>Workout complete</span><strong>Nice work.</strong><p>{completedExercises + 1}/{totalExercises} stations cleared · {timerLabel || 'Session logged'}</p><button type="button" className="finish" disabled={completing} onClick={() => { void onComplete() }}>{completing ? 'Finishing…' : 'Done — Finish Workout'}</button></div> : null}
+        {completing ? (
+          <div className="demo-live-overlay completing" role="status" aria-live="assertive" aria-label="Finishing your workout">
+            <div className="demo-live-completing-dots" aria-hidden="true"><b></b><b></b><b></b></div>
+            <span>Wrapping up</span>
+            <strong>Saving your workout</strong>
+            <p>Johnny is logging your sets and putting together your review. This only takes a moment.</p>
+          </div>
+        ) : null}
         {confirmExit ? <div className="demo-live-confirm"><div><p>Leave live mode? Your completed sets are already saved.</p><div><button type="button" onClick={() => setConfirmExit(false)}>Keep going</button><button type="button" className="danger" onClick={onClose}>Exit</button></div></div></div> : null}
         {demoOpen ? <div className="demo-live-demo"><header><strong>{exercise.exercise_name}</strong><button type="button" onClick={() => setDemoOpen(false)}>×</button></header><iframe title={`${exercise.exercise_name} exercise demo`} src={`https://www.youtube.com/embed?listType=search&list=${demoQuery}`} allow="autoplay; encrypted-media" allowFullScreen/><p>{buildCoachCue(exercise, currentSetNumber, plannedSets)}</p></div> : null}
         {multiSetOpen ? <div className="demo-live-multi" role="dialog" aria-modal="true" aria-labelledby="demo-live-multi-title">

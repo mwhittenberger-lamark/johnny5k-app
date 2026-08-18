@@ -524,6 +524,7 @@ export default function WorkoutScreen() {
           navigate('/dashboard')
         }}
         onComplete={sessionController.handleComplete}
+        completing={sessionController.completing}
         onSaveWorkout={saveActiveWorkoutToLibrary}
         onResetWorkout={resetActiveWorkout}
         onAskJohnny={() => {

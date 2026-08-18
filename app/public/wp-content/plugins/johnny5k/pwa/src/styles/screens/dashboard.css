@@ -538,7 +538,7 @@
   justify-content: center;
 }
 .dashboard-chip.ai { background: rgba(0, 188, 222, 0.18); border-color: rgba(0, 95, 114, 0.16); color: #005f72; }
-.dashboard-chip.workout { background: rgba(255, 56, 160, 0.16); border-color: rgba(143, 27, 88, 0.16); color: #8f1b58; }
+.dashboard-chip.workout, .dashboard-chip.coach { background: rgba(255, 56, 160, 0.16); border-color: rgba(143, 27, 88, 0.16); color: #8f1b58; }
 .dashboard-chip.awards { background: rgba(255, 208, 0, 0.24); border-color: rgba(112, 82, 0, 0.16); color: #705200; }
 .dashboard-chip.success { background: rgba(34, 197, 94, 0.18); border-color: rgba(22, 104, 69, 0.16); color: #166845; }
 .dashboard-chip.subtle {
@@ -1431,7 +1431,8 @@
   color: color-mix(in srgb, var(--accent2) 70%, var(--text2) 30%);
 }
 
-:root[data-experience-mode='ironquest'] .dashboard-chip.workout {
+:root[data-experience-mode='ironquest'] .dashboard-chip.workout,
+:root[data-experience-mode='ironquest'] .dashboard-chip.coach {
   border-color: color-mix(in srgb, var(--accent3) 36%, var(--border) 64%);
   background: color-mix(in srgb, var(--accent3) 14%, var(--bg2) 86%);
   color: color-mix(in srgb, var(--accent3) 72%, var(--text2) 28%);
