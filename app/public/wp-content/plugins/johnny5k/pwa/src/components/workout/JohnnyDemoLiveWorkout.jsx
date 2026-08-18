@@ -3,6 +3,7 @@ import { aiApi } from '../../api/modules/ai'
 import { dashboardApi } from '../../api/modules/dashboard'
 import johnnyPortrait from '../../assets/8CD0AD13-4C88-49C7-A455-4B180A3F732B.webp'
 import AnnouncementTicker from '../layout/AnnouncementTicker'
+import { formatExerciseTarget } from './liveWorkoutCoachHelpers'
 
 export default function JohnnyDemoLiveWorkout({
   isOpen, session, exercises, activeExerciseIdx, onSetActiveExerciseIdx,
@@ -165,6 +166,41 @@ export default function JohnnyDemoLiveWorkout({
     return () => resumeSessionTimer?.()
   }, [timersPaused, pauseSessionTimer, resumeSessionTimer])
 
+  // Keeps the screen awake for the duration of a live workout so the rest
+  // timer and set timer keep visibly ticking instead of being interrupted by
+  // the OS idle timeout. Best-effort only — denial or lack of support should
+  // never block the workout. The lock is released by the browser whenever the
+  // tab is hidden, so it's re-requested on the next visibilitychange back to visible.
+  useEffect(() => {
+    if (!isOpen || typeof navigator === 'undefined' || !('wakeLock' in navigator)) return undefined
+
+    let sentinel = null
+    let released = false
+
+    async function requestWakeLock() {
+      try {
+        sentinel = await navigator.wakeLock.request('screen')
+      } catch {
+        // Wake lock is best-effort — denial or lack of support shouldn't block the workout.
+      }
+    }
+
+    function handleVisibilityChange() {
+      if (document.visibilityState === 'visible' && !released) {
+        void requestWakeLock()
+      }
+    }
+
+    void requestWakeLock()
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      released = true
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      sentinel?.release?.().catch(() => {})
+    }
+  }, [isOpen])
+
   useEffect(() => {
     if (rest?.seconds === 0) endRest()
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -182,6 +218,8 @@ export default function JohnnyDemoLiveWorkout({
   const suggestedWeight = Number(exercise.recommended_weight ?? exercise.suggested_weight ?? recentHistoryWeight) || 0
   const suggestionNote = String(exercise.suggestion_note || (recentHistoryWeight > 0 ? 'Based on your most recent performance for this exercise.' : '')).trim()
   const remainingSetCount = Math.max(0, plannedSets - completedSets)
+  const restNextExercise = rest && Number.isInteger(rest.nextIndex) ? exercises[rest.nextIndex] : null
+  const restNextSuggestedWeight = restNextExercise ? getSuggestedWeight(restNextExercise) : 0
 
   function endRest() {
     const nextIndex = rest?.nextIndex
@@ -469,6 +507,13 @@ export default function JohnnyDemoLiveWorkout({
             {restCueLoading ? <div><span>Johnny is preparing your recovery cue</span><i aria-hidden="true"><b></b><b></b><b></b></i></div> : <p>{restCue}</p>}
           </div>
           <div className="demo-live-rest-next"><small>Next up</small><b>{rest.next}</b></div>
+          {restNextExercise ? (
+            <div className="demo-live-rest-next-detail">
+              <div><span>Target</span><strong>{formatExerciseTarget(restNextExercise)}</strong></div>
+              <div><span>Suggested weight</span><strong>{restNextSuggestedWeight > 0 ? `${formatWeight(restNextSuggestedWeight)} lb` : '—'}</strong></div>
+              {restNextExercise.equipment ? <div><span>Equipment</span><strong>{restNextExercise.equipment}</strong></div> : null}
+            </div>
+          ) : null}
           <div className="demo-live-rest-adjust" aria-label="Adjust rest timer">
             <button type="button" onClick={() => setRest(current => current ? { ...current, seconds: Math.max(0, current.seconds - 15) } : current)}>−15 sec</button>
             <button type="button" onClick={() => setRestPaused(current => !current)}>{restPaused ? 'Resume timer' : 'Pause timer'}</button>
@@ -535,6 +580,7 @@ function Metric({ label, value, unit, step, onChange, editable = false }) {
 }
 
 function isExerciseComplete(exercise) { return (exercise?.sets?.filter(set => set.completed).length || 0) >= Math.max(1, Number(exercise?.planned_sets || 0)) }
+function getSuggestedWeight(exercise) { const recentHistoryWeight = Number(exercise?.recent_history?.[0]?.best_weight || 0) || 0; return Number(exercise?.recommended_weight ?? exercise?.suggested_weight ?? recentHistoryWeight) || 0 }
 function formatClock(seconds) { const value = Math.max(0, Number(seconds) || 0); return `${String(Math.floor(value / 60)).padStart(2, '0')}:${String(value % 60).padStart(2, '0')}` }
 function formatWeight(value) { return Number.isInteger(Number(value)) ? String(Number(value)) : Number(value).toFixed(1) }
 function formatToken(value) { return String(value || '').replace(/[_-]+/g, ' ').replace(/\b\w/g, letter => letter.toUpperCase()) }

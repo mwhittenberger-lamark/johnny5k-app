@@ -291,6 +291,68 @@ describe('JohnnyDemoLiveWorkout', () => {
     expect(onResetWorkout).toHaveBeenCalledTimes(1)
   })
 
+  it('shows the next exercise target and suggested weight while resting between exercises', async () => {
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    await act(async () => root.render(
+      <JohnnyDemoLiveWorkout
+        isOpen
+        session={{ session: { id: 50, planned_day_type: 'push' } }}
+        exercises={[
+          { id: 20, exercise_name: 'Bench Press', planned_sets: 1, planned_rep_min: 8, planned_rep_max: 10, sets: [] },
+          { id: 21, exercise_name: 'Lateral Raise', planned_sets: 3, planned_rep_min: 12, planned_rep_max: 15, recommended_weight: 15, equipment: 'Dumbbells', sets: [] },
+        ]}
+        activeExerciseIdx={0}
+        onSetActiveExerciseIdx={vi.fn()}
+        onCreateSet={vi.fn().mockResolvedValue({ id: 96 })}
+        onUpdateSet={vi.fn()}
+        onClose={vi.fn()}
+        onComplete={vi.fn()}
+      />,
+    ))
+
+    const logButton = [...container.querySelectorAll('button')].find(button => button.textContent.includes('Log & Next'))
+    await act(async () => { logButton.click(); await Promise.resolve() })
+
+    expect(container.textContent).toContain('Lateral Raise')
+    expect(container.querySelector('.demo-live-rest-next-detail')).toBeTruthy()
+    expect(container.textContent).toContain('12-15 reps')
+    expect(container.textContent).toContain('15 lb')
+    expect(container.textContent).toContain('Dumbbells')
+  })
+
+  it('requests a screen wake lock while open and releases it on close', async () => {
+    const sentinel = { release: vi.fn().mockResolvedValue(undefined) }
+    const request = vi.fn().mockResolvedValue(sentinel)
+    navigator.wakeLock = { request }
+
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    await act(async () => root.render(
+      <JohnnyDemoLiveWorkout
+        isOpen
+        session={{ session: { id: 51, planned_day_type: 'push' } }}
+        exercises={[{ id: 22, exercise_name: 'Row', planned_sets: 3, planned_rep_min: 8, planned_rep_max: 10, sets: [] }]}
+        activeExerciseIdx={0}
+        onSetActiveExerciseIdx={vi.fn()}
+        onCreateSet={vi.fn()}
+        onUpdateSet={vi.fn()}
+        onClose={vi.fn()}
+        onComplete={vi.fn()}
+      />,
+    ))
+
+    await act(async () => { await Promise.resolve() })
+    expect(request).toHaveBeenCalledWith('screen')
+
+    await act(async () => root.unmount())
+    root = null
+    expect(sentinel.release).toHaveBeenCalledTimes(1)
+    delete navigator.wakeLock
+  })
+
   it('keeps the workout visible when paused and offers Johnny or resume', async () => {
     container = document.createElement('div')
     document.body.appendChild(container)
