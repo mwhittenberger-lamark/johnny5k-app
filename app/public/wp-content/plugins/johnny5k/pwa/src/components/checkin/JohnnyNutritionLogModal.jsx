@@ -5,6 +5,7 @@ import { nutritionApi } from '../../api/modules/nutrition'
 import AppDialog from '../ui/AppDialog'
 import LabelScanPromptPanel from '../nutrition/LabelScanPromptPanel'
 import { confirmGlobalAction } from '../../lib/uiFeedback'
+import { useSpinRef } from '../../hooks/useSpinRef'
 
 const LATE_BREAKFAST_HOUR = 11
 
@@ -759,16 +760,13 @@ function FullScreenSavingMeal() {
 }
 
 function FullScreenMealProgress({ ariaLabel, eyebrow, title, subtitle, footnote }) {
-  const ringRef = useRef(null)
-  const ringLabelRef = useRef(null)
+  // SVG rotation sidesteps a known iOS Safari WebKit bug where a rotating
+  // conic-gradient background (whether driven by a CSS animation or JS style
+  // writes) can freeze on its first frame inside a position:fixed ancestor.
+  const ringSpinRef = useSpinRef(1300)
   const dotRefs = useRef([])
   const fieldRefs = useRef([])
 
-  // iOS Safari has a known WebKit bug where a CSS @keyframes animation on an
-  // element with a conic-gradient background (inside a position:fixed ancestor)
-  // freezes on its first frame. Driving the motion with rAF + direct style
-  // writes sidesteps that entirely, since it never relies on the CSS animation
-  // engine to tick the frame.
   useEffect(() => {
     const reduceMotion = typeof window !== 'undefined'
       && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
@@ -790,7 +788,6 @@ function FullScreenMealProgress({ ariaLabel, eyebrow, title, subtitle, footnote 
       return () => cancelAnimationFrame(frameId)
     }
 
-    const RING_MS = 1300
     const DOT_MS = 1000
     const FIELD_MS = 2400
     const DOT_DELAYS = [0, 140, 280]
@@ -800,10 +797,6 @@ function FullScreenMealProgress({ ariaLabel, eyebrow, title, subtitle, footnote 
 
     function tick(now) {
       const elapsed = now - start
-
-      const ringAngle = ((elapsed % RING_MS) / RING_MS) * 360
-      if (ringRef.current) ringRef.current.style.transform = `rotate(${ringAngle}deg)`
-      if (ringLabelRef.current) ringLabelRef.current.style.transform = `rotate(${-ringAngle}deg)`
 
       dotRefs.current.forEach((el, index) => {
         if (!el) return
@@ -837,7 +830,14 @@ function FullScreenMealProgress({ ariaLabel, eyebrow, title, subtitle, footnote 
         <span ref={el => { fieldRefs.current[2] = el }} />
       </div>
       <div className="johnny-meal-analyzer-core">
-        <div className="johnny-meal-analyzer-ring" ref={ringRef} style={{ position: 'relative' }}><span ref={ringLabelRef}>J5K</span></div>
+        <div className="johnny-meal-analyzer-ring">
+          <svg ref={ringSpinRef} viewBox="0 0 100 100" aria-hidden="true">
+            <circle className="track" cx="50" cy="50" r="42" />
+            <circle className="arc arc-a" cx="50" cy="50" r="42" />
+            <circle className="arc arc-b" cx="50" cy="50" r="42" />
+          </svg>
+          <span>J5K</span>
+        </div>
         <p>{eyebrow}</p>
         <h2>{title}</h2>
         <span>{subtitle}</span>

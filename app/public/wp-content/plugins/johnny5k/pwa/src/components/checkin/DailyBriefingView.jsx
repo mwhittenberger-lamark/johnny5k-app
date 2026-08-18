@@ -3,6 +3,7 @@ import { aiApi } from '../../api/modules/ai'
 import { dashboardApi } from '../../api/modules/dashboard'
 import { onboardingApi } from '../../api/modules/onboarding'
 import { formatUsChartDate } from '../../lib/dateFormat'
+import { useSpinRef } from '../../hooks/useSpinRef'
 
 export default function DailyBriefingView({ answers, onClose, onPlanWorkout }) {
   const [brief, setBrief] = useState(null)
@@ -168,12 +169,25 @@ function BriefingCoachReviewLoading() {
 }
 
 function BriefingImageLoading() {
+  // SVG rotation sidesteps a known iOS Safari WebKit bug where a rotating
+  // conic-gradient background (whether driven by a CSS animation or JS style
+  // writes) can freeze on its first frame inside a position:fixed ancestor —
+  // this loader sits inside the fixed-position .daily-briefing shell.
+  const ringSpinRef = useSpinRef(1350)
+
   return (
     <div className="daily-briefing-image-loader" role="status" aria-live="polite" aria-label="Creating today’s team image">
       <div className="daily-briefing-image-field" aria-hidden="true"><i /><i /><i /></div>
       <div className="daily-briefing-image-scan" aria-hidden="true" />
       <div className="daily-briefing-image-loader-core">
-        <div className="daily-briefing-image-ring" aria-hidden="true"><span>J5K</span></div>
+        <div className="daily-briefing-image-ring" aria-hidden="true">
+          <svg ref={ringSpinRef} viewBox="0 0 100 100">
+            <circle className="track" cx="50" cy="50" r="40" />
+            <circle className="arc arc-a" cx="50" cy="50" r="40" />
+            <circle className="arc arc-b" cx="50" cy="50" r="40" />
+          </svg>
+          <span>J5K</span>
+        </div>
         <p>Johnny is building the scene</p>
         <h2>Bringing today’s team into focus</h2>
         <div className="daily-briefing-image-steps" aria-hidden="true"><i /><i /><i /></div>
