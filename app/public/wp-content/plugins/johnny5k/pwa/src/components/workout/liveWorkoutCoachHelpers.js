@@ -210,6 +210,15 @@ export function formatRepRange(exercise) {
   return `${max || min} reps`
 }
 
+export function formatExerciseTarget(exercise) {
+  if (!exercise) return 'working set'
+  if (exercise.target_type === 'duration') {
+    const seconds = Number(exercise.planned_duration_seconds || 0)
+    return seconds > 0 ? `${seconds}s hold` : 'timed hold'
+  }
+  return formatRepRange(exercise)
+}
+
 export function buildNextSetCoachMessage(exercise, setNumber, totalSetCount) {
   const exerciseName = exercise?.exercise_name || 'the current exercise'
   const repRange = formatRepRange(exercise)

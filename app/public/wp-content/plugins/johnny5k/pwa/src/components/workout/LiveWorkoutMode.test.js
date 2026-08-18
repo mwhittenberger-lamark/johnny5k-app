@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildCoachPrompt, buildCompletedExerciseReview, buildNextSetCoachMessage, buildRestCoachMessage, buildSavedSetSummary } from './liveWorkoutCoachHelpers'
+import { buildCoachPrompt, buildCompletedExerciseReview, buildNextSetCoachMessage, buildRestCoachMessage, buildSavedSetSummary, formatExerciseTarget } from './liveWorkoutCoachHelpers'
 import { buildRestoredIronQuestMissionIntro } from '../../screens/workout/hooks/useWorkoutSessionController'
 
 describe('LiveWorkoutMode helpers', () => {
@@ -202,6 +202,18 @@ describe('LiveWorkoutMode helpers', () => {
     expect(intro.hpMax).toBe(100)
     expect(intro.hpLossThisSet).toBe(1)
     expect(intro.aiAnchor).toEqual(['dust and iron', 'training banners'])
+  })
+
+  it('formats a rep range target for a standard exercise', () => {
+    expect(formatExerciseTarget({ planned_rep_min: 8, planned_rep_max: 12 })).toBe('8-12 reps')
+  })
+
+  it('formats a timed-hold target for a duration-based exercise', () => {
+    expect(formatExerciseTarget({ target_type: 'duration', planned_duration_seconds: 45 })).toBe('45s hold')
+  })
+
+  it('falls back to a generic timed-hold label when duration is missing', () => {
+    expect(formatExerciseTarget({ target_type: 'duration', planned_duration_seconds: 0 })).toBe('timed hold')
   })
 
   it('does not rebuild an IronQuest intro for a different workout session', () => {

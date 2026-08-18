@@ -32,6 +32,7 @@ import {
   buildLiveExerciseSnapshot,
   buildNextSetCoachMessage,
   buildSavedSetSummary,
+  formatExerciseTarget,
   formatRepRange,
   normalizeLiveWorkoutCoachingCues,
   normalizeLiveWorkoutHistory,
@@ -306,6 +307,44 @@ export default function LiveWorkoutMode({
       }
     }
   }, [isOpen, restTimerPausedAt])
+
+  // Keeps the screen from auto-locking during a live session so the rest
+  // timer keeps visibly ticking and voice cues fire on time. This can't stop
+  // a deliberate power-button lock, but it does stop the OS's idle timeout,
+  // which is what actually interrupts most workouts. The lock is released by
+  // the browser whenever the tab is hidden, so it's re-requested on the next
+  // visibilitychange back to visible; `now` is also force-resynced then in
+  // case the tab really was suspended (e.g. the user locked it manually).
+  useEffect(() => {
+    if (!isOpen || typeof navigator === 'undefined' || !('wakeLock' in navigator)) return undefined
+
+    let sentinel = null
+    let released = false
+
+    async function requestWakeLock() {
+      try {
+        sentinel = await navigator.wakeLock.request('screen')
+      } catch {
+        // Wake lock is best-effort — denial or lack of support shouldn't block the workout.
+      }
+    }
+
+    function handleVisibilityChange() {
+      setNow(Date.now())
+      if (document.visibilityState === 'visible' && !released) {
+        void requestWakeLock()
+      }
+    }
+
+    void requestWakeLock()
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      released = true
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      sentinel?.release?.().catch(() => {})
+    }
+  }, [isOpen])
 
   useEffect(() => {
     if (!hasIronQuestOverlay) {
@@ -1622,6 +1661,39 @@ export default function LiveWorkoutMode({
     </section>
   )
 
+  const showUpNextPanel = Boolean(lastTransition?.kind === 'exercise' && lastTransition?.allowRestMessages && nextExercise)
+  const upNextPanel = showUpNextPanel ? (
+    <section className="dash-card live-workout-exercise-card live-workout-interface-card live-workout-up-next-card">
+      <div className="live-workout-section-head">
+        <span className="dashboard-chip coach">Resting • up next</span>
+        <span className="dashboard-chip subtle">Exercise {activeExerciseIdx + 2} of {totalExerciseCount}</span>
+      </div>
+      <div className="live-workout-exercise-head">
+        <div>
+          <h3>{nextExercise.exercise_name}</h3>
+          <p>
+            {formatToken(nextExercise.slot_type || 'accessory')} slot • {nextExercise.planned_sets || getLiveTotalSetCount(nextExercise)} planned sets • {formatExerciseTarget(nextExercise)}
+          </p>
+        </div>
+        <div className="exercise-demo-actions live-workout-demo-actions">
+          <button type="button" className="btn-outline small" onClick={() => openDemoForExercise(nextExercise.exercise_name)}>Demo</button>
+        </div>
+      </div>
+      <div className="live-workout-progress-grid live-workout-progress-grid-compact">
+        <div className="live-workout-progress-card">
+          <span>Suggested weight</span>
+          <strong>{Number(nextExercise.recommended_weight || 0) > 0 ? `${Number(nextExercise.recommended_weight)} lb` : '—'}</strong>
+          <small>{Number(nextExercise.recommended_weight || 0) > 0 ? 'Based on recent sets' : 'No previous weight logged'}</small>
+        </div>
+        <div className="live-workout-progress-card">
+          <span>Equipment</span>
+          <strong>{nextExercise.equipment || '—'}</strong>
+          <small>Get it set up while you rest</small>
+        </div>
+      </div>
+    </section>
+  ) : null
+
   const sessionMapPanel = (
     <section className="dash-card live-workout-plan-card live-workout-interface-card">
       <details open={sessionMapOpen} onToggle={event => setSessionMapOpen(event.currentTarget.open)}>
@@ -1804,12 +1876,14 @@ export default function LiveWorkoutMode({
               <>
                 {activeIronQuestPanel === 'ironquest' ? ironQuestLivePanel : null}
                 {activeIronQuestPanel === 'lift' ? currentLiftPanel : null}
+                {activeIronQuestPanel === 'lift' ? upNextPanel : null}
                 {activeIronQuestPanel === 'lift' ? sessionMapPanel : null}
                 {activeIronQuestPanel === 'johnny' ? johnnyPanel : null}
               </>
             ) : (
               <>
                 {currentLiftPanel}
+                {upNextPanel}
                 {sessionMapPanel}
               </>
             )}
