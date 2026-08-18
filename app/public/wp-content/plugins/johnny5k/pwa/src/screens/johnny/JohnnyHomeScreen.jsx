@@ -759,9 +759,9 @@ export default function JohnnyHomeScreen() {
 
   const navChips = [
     { key: 'checkin', label: 'Briefing', onClick: openDailyBriefing },
-    { key: 'progress-log', label: 'Log Progress', onClick: openDailyCheckIn },
-    { key: 'nutrition', label: 'Log Nutrition', onClick: openNutritionLog },
-    { key: 'diary', label: 'Progress Diary', onClick: openProgressDiary },
+    { key: 'progress-log', label: 'Log Progress', onClick: openDailyCheckIn, stacked: true },
+    { key: 'nutrition', label: 'Log Nutrition', onClick: openNutritionLog, stacked: true },
+    { key: 'diary', label: 'Progress Diary', onClick: openProgressDiary, stacked: true },
     { key: 'profile', label: 'Profile', onClick: openProfile },
   ]
 
@@ -850,7 +850,7 @@ export default function JohnnyHomeScreen() {
               clearLabel={primaryActionSlide.clearLabel}
             />
             <div className="quick-nav-chips">
-              {navChips.map(chip => <QuickNavChip key={chip.key} label={chip.label} onClick={chip.onClick} />)}
+              {navChips.map(chip => <QuickNavChip key={chip.key} label={chip.label} onClick={chip.onClick} stacked={chip.stacked} />)}
             </div>
           </nav>
 
@@ -1204,8 +1204,8 @@ function JohnnyConfettiBurst({ phase }) {
   )
 }
 
-function QuickNavChip({ label, onClick }) {
-  return <button type="button" className="quick-nav-chip" onClick={onClick}>{label}</button>
+function QuickNavChip({ label, onClick, stacked = false }) {
+  return <button type="button" className={`quick-nav-chip${stacked ? ' stacked' : ''}`} onClick={onClick}>{label}</button>
 }
 
 function JohnnyFireOverlay({ phase }) {
