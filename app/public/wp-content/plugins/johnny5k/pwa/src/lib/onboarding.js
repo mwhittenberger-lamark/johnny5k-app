@@ -436,7 +436,6 @@ export function settingsFormFromState(profile, prefs, goal) {
     rest_between_sets_max_seconds: training.rest_between_sets_max_seconds,
     rest_between_exercises_min_seconds: training.rest_between_exercises_min_seconds,
     rest_between_exercises_max_seconds: training.rest_between_exercises_max_seconds,
-    color_scheme: preferenceMeta?.color_scheme ?? 'classic',
     add_exercise_calories_to_target: Boolean(preferenceMeta?.add_exercise_calories_to_target),
     preference_meta: preferenceMeta,
   }

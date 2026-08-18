@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { pushApi } from '../../api/modules/push'
 import { reportClientDiagnostic } from '../../lib/clientDiagnostics'
 import { getCurrentPushSubscription, getPushSupportState, serializeSubscription } from '../../lib/pushNotifications'
+import { isPushMessagingAllowed } from '../../lib/pushEnvironment'
 import { useAuthStore } from '../../store/authStore'
 import { useStartupStatusStore } from '../../store/startupStatusStore'
 import { createPushBootstrapIssue, createPushConfigIssue, createPushSubscriptionIssue } from './startupCopy'
@@ -15,11 +16,26 @@ export function usePushBootstrap(session, onboarding) {
   const clearIssue = useStartupStatusStore((state) => state.clearIssue)
   const [resolvedStatus, setResolvedStatus] = useState(STARTUP_STATUS.loading)
   const [completedKey, setCompletedKey] = useState('')
-  const canBootstrap = Boolean(session?.ready && onboarding?.ready && isAuthenticated)
+  const pushMessagingAllowed = isPushMessagingAllowed()
+  const canBootstrap = Boolean(pushMessagingAllowed && session?.ready && onboarding?.ready && isAuthenticated)
   const bootstrapKey = canBootstrap ? `${Number(Boolean(session?.ready))}:${Number(Boolean(onboarding?.ready))}:${Number(Boolean(isAuthenticated))}` : ''
 
   useEffect(() => {
     let active = true
+
+    if (!pushMessagingAllowed) {
+      clearIssue(STARTUP_ISSUE_KEYS.pushConfig)
+      clearIssue(STARTUP_ISSUE_KEYS.pushSubscription)
+      clearIssue(STARTUP_ISSUE_KEYS.pushBootstrap)
+      setNotificationPrefs({
+        pushSupported: false,
+        pushConfigured: false,
+        pushSubscribed: false,
+      })
+      return () => {
+        active = false
+      }
+    }
 
     if (!canBootstrap) {
       return () => {
@@ -139,7 +155,7 @@ export function usePushBootstrap(session, onboarding) {
     return () => {
       active = false
     }
-  }, [bootstrapKey, canBootstrap, clearIssue, setIssue, setNotificationPrefs])
+  }, [bootstrapKey, canBootstrap, clearIssue, pushMessagingAllowed, setIssue, setNotificationPrefs])
 
   const status = canBootstrap
     ? (completedKey === bootstrapKey ? resolvedStatus : STARTUP_STATUS.loading)

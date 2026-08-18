@@ -189,7 +189,6 @@ class OnboardingController {
 			'profile'             => $profile,
 			'prefs'               => self::decode_preferences( $prefs ),
 			'goal'                => $goal,
-			'color_schemes'       => AdminApiController::get_color_schemes_config(),
 			'app_images'          => AdminApiController::get_app_images_config(),
 			'live_workout_frames' => AdminApiController::get_live_workout_frames_config(),
 			'health_flags'        => $health_flags,

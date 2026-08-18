@@ -1,4 +1,4 @@
-import { applyColorScheme, getDefaultIronQuestColorSchemeId, getStoredColorScheme, isIronQuestColorScheme } from './theme'
+import { applyColorScheme, DEFAULT_COLOR_SCHEME } from './theme'
 
 export const EXPERIENCE_MODE_STORAGE_KEY = 'jf_experience_mode'
 export const DEFAULT_EXPERIENCE_MODE = 'standard'
@@ -32,13 +32,12 @@ export function applyExperienceMode(value) {
       Object.entries(IRONQUEST_STYLE_OVERRIDES).forEach(([token, tokenValue]) => {
         root.style.setProperty(token, tokenValue)
       })
-      const storedScheme = getStoredColorScheme()
-      applyColorScheme(isIronQuestColorScheme(storedScheme) ? storedScheme : getDefaultIronQuestColorSchemeId(), { persist: false })
+      applyColorScheme(DEFAULT_COLOR_SCHEME, { persist: false })
     } else {
       Object.keys(IRONQUEST_STYLE_OVERRIDES).forEach(token => {
         root.style.removeProperty(token)
       })
-      applyColorScheme(getStoredColorScheme())
+      applyColorScheme(DEFAULT_COLOR_SCHEME)
     }
   }
 

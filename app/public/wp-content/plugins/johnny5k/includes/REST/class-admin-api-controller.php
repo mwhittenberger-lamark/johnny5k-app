@@ -48,130 +48,6 @@ class AdminApiController {
 	private const IRONQUEST_STORY_WORKBENCH_APPROVALS_OPTION = 'jf_ironquest_story_workbench_approvals';
 	private const IRONQUEST_STORY_WORKBENCH_SESSION_LIMIT = 24;
 
-	public static function default_color_schemes(): array {
-		return [
-			[
-				'id' => 'classic',
-				'label' => 'Modern Skyscraper',
-				'description' => 'Steel-blue glass at dusk with amber window light, coral warnings, and mint success states.',
-				'colors' => [
-					'bg' => '#0A0E14',
-					'bg2' => '#111922',
-					'bg3' => '#16212B',
-					'text' => '#EAF1F6',
-					'textMuted' => '#7C8E9C',
-					'text2' => '#EAF1F6',
-					'textMuted2' => '#7C8E9C',
-					'text3' => '#EAF1F6',
-					'textMuted3' => '#7C8E9C',
-					'border' => '#253244',
-					'accent' => '#E8B84A',
-					'accent2' => '#4FC3E0',
-					'accent3' => '#4FC3E0',
-					'danger' => '#D9724A',
-					'success' => '#5FD9A0',
-					'yellow' => '#E8B84A',
-				],
-			],
-			[
-				'id' => 'batman',
-				'label' => 'Batman',
-				'description' => 'Black, steel grey, Gotham blue, and signal yellow.',
-				'colors' => [
-					'bg' => '#0A0B0F',
-					'bg2' => '#171A21',
-					'bg3' => '#242933',
-					'text' => '#E8EDF6',
-					'textMuted' => '#97A4BA',
-					'text2' => '#E8EDF6',
-					'textMuted2' => '#97A4BA',
-					'text3' => '#E8EDF6',
-					'textMuted3' => '#97A4BA',
-					'border' => '#445064',
-					'accent' => '#F5C400',
-					'accent2' => '#2D6CDF',
-					'accent3' => '#5A6475',
-					'danger' => '#FF5B6E',
-					'success' => '#35C57A',
-					'yellow' => '#FFD54A',
-				],
-			],
-			[
-				'id' => 'mint-drive',
-				'label' => 'Mint Drive',
-				'description' => 'Cool mint surfaces with navy and lime highlights.',
-				'colors' => [
-					'bg' => '#EAFBF4',
-					'bg2' => '#FFFFFF',
-					'bg3' => '#D0F3E5',
-					'text' => '#123B3A',
-					'textMuted' => '#507A73',
-					'text2' => '#123B3A',
-					'textMuted2' => '#507A73',
-					'text3' => '#123B3A',
-					'textMuted3' => '#507A73',
-					'border' => '#9EDBBC',
-					'accent' => '#0E7C66',
-					'accent2' => '#3BC9A3',
-					'accent3' => '#89E219',
-					'danger' => '#D1495B',
-					'success' => '#1E9E63',
-					'yellow' => '#E7D04A',
-				],
-			],
-			[
-				'id' => 'midnight-track',
-				'label' => 'Midnight Track',
-				'description' => 'Deep slate base with electric cyan and hot orange.',
-				'colors' => [
-					'bg' => '#0D1B2A',
-					'bg2' => '#132238',
-					'bg3' => '#1C3350',
-					'text' => '#EAF4FF',
-					'textMuted' => '#98B6D8',
-					'text2' => '#EAF4FF',
-					'textMuted2' => '#98B6D8',
-					'text3' => '#EAF4FF',
-					'textMuted3' => '#98B6D8',
-					'border' => '#315074',
-					'accent' => '#FF7A21',
-					'accent2' => '#4FD1FF',
-					'accent3' => '#FF4FA3',
-					'danger' => '#FF5C7A',
-					'success' => '#36D48C',
-					'yellow' => '#FFD95A',
-				],
-			],
-			[
-				'id' => 'gold-rush',
-				'label' => 'Gold Rush',
-				'description' => 'Cream, brass, and forest accents with a punchy red.',
-				'colors' => [
-					'bg' => '#F8F2E3',
-					'bg2' => '#FFF9ED',
-					'bg3' => '#E8D8B1',
-					'text' => '#3B2A19',
-					'textMuted' => '#7A6243',
-					'text2' => '#3B2A19',
-					'textMuted2' => '#7A6243',
-					'text3' => '#3B2A19',
-					'textMuted3' => '#7A6243',
-					'border' => '#CFB37A',
-					'accent' => '#B8572D',
-					'accent2' => '#5B8C5A',
-					'accent3' => '#C08B14',
-					'danger' => '#C64845',
-					'success' => '#478C4A',
-					'yellow' => '#E2B93B',
-				],
-			],
-		];
-	}
-
-	public static function get_color_schemes_config(): array {
-		return self::sanitize_color_schemes( get_option( 'jf_color_schemes', self::default_color_schemes() ) );
-	}
-
 	public static function default_live_workout_frames(): array {
 		return [];
 	}
@@ -193,62 +69,6 @@ class AdminApiController {
 
 	public static function get_live_workout_frames_config(): array {
 		return self::sanitize_live_workout_frames( get_option( 'jf_live_workout_frames', self::default_live_workout_frames() ) );
-	}
-
-	public static function sanitize_color_schemes( $schemes ): array {
-		$defaults = self::default_color_schemes();
-		$allowed_color_keys = [ 'bg', 'bg2', 'bg3', 'text', 'textMuted', 'text2', 'textMuted2', 'text3', 'textMuted3', 'border', 'accent', 'accent2', 'accent3', 'danger', 'success', 'yellow' ];
-		$clean = [];
-
-		if ( ! is_array( $schemes ) ) {
-			$schemes = [];
-		}
-
-		foreach ( $schemes as $index => $scheme ) {
-			if ( ! is_array( $scheme ) ) {
-				continue;
-			}
-
-			$fallback = $defaults[ $index ] ?? $defaults[0];
-			$id = sanitize_key( (string) ( $scheme['id'] ?? '' ) );
-			if ( '' === $id ) {
-				$id = sanitize_key( (string) $fallback['id'] );
-			}
-
-			$colors = [];
-			$raw_colors = is_array( $scheme['colors'] ?? null ) ? $scheme['colors'] : [];
-			foreach ( $allowed_color_keys as $color_key ) {
-				$fallback_key = $color_key;
-
-				if ( 'text2' === $color_key || 'text3' === $color_key ) {
-					$fallback_key = 'text';
-				}
-
-				if ( 'textMuted2' === $color_key || 'textMuted3' === $color_key ) {
-					$fallback_key = 'textMuted';
-				}
-
-				$color_value = sanitize_hex_color( (string) ( $raw_colors[ $color_key ] ?? '' ) );
-				if ( ! $color_value && isset( $raw_colors[ $fallback_key ] ) ) {
-					$color_value = sanitize_hex_color( (string) $raw_colors[ $fallback_key ] );
-				}
-
-				$colors[ $color_key ] = $color_value ?: ( $fallback['colors'][ $color_key ] ?? $fallback['colors'][ $fallback_key ] );
-			}
-
-			$clean[] = [
-				'id' => $id,
-				'label' => sanitize_text_field( (string) ( $scheme['label'] ?? $fallback['label'] ) ),
-				'description' => sanitize_text_field( (string) ( $scheme['description'] ?? $fallback['description'] ) ),
-				'colors' => $colors,
-			];
-		}
-
-		if ( empty( $clean ) ) {
-			return $defaults;
-		}
-
-		return array_values( $clean );
 	}
 
 	public static function sanitize_live_workout_frames( $frames ): array {
@@ -2249,7 +2069,6 @@ class AdminApiController {
 				'recovery_summary'=> 1,
 			] ),
 			'push_settings' => PushService::get_settings(),
-			'color_schemes' => self::get_color_schemes_config(),
 			'app_images' => self::get_app_images_config(),
 			'live_workout_frames' => self::get_live_workout_frames_config(),
 		] );
@@ -2259,7 +2078,6 @@ class AdminApiController {
 		$ai_settings = (array) $req->get_param( 'ai_settings' );
 		$feature_flags = (array) $req->get_param( 'feature_flags' );
 		$push_settings = (array) $req->get_param( 'push_settings' );
-		$color_schemes = $req->get_param( 'color_schemes' );
 		$app_images = $req->get_param( 'app_images' );
 		$live_workout_frames = $req->get_param( 'live_workout_frames' );
 
@@ -2276,7 +2094,6 @@ class AdminApiController {
 		), false );
 
 		update_option( 'jf_push_settings', PushService::sanitize_settings( $push_settings ), false );
-		update_option( 'jf_color_schemes', self::sanitize_color_schemes( $color_schemes ), false );
 		update_option( 'jf_app_images', self::sanitize_app_images( $app_images ), false );
 		update_option( 'jf_live_workout_frames', self::sanitize_live_workout_frames( $live_workout_frames ), false );
 

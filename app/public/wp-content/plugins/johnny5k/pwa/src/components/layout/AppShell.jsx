@@ -6,6 +6,7 @@ import { authApi } from '../../api/modules/auth'
 import { onboardingApi } from '../../api/modules/onboarding'
 import { getAppImageUrl } from '../../lib/appImages'
 import { reportClientDiagnostic } from '../../lib/clientDiagnostics'
+import { isPushMessagingAllowed } from '../../lib/pushEnvironment'
 import { createDailyCheckInAnswers, getDailyCheckInDateKey, getNextDailyCheckInBoundary, isDailyCheckInWindowOpen, normalizeDailyCheckInEntry } from '../../lib/dailyCheckIn'
 import { useOverlayAccessibility } from '../../lib/accessibility'
 import {
@@ -70,8 +71,10 @@ export default function AppShell({ children }) {
   const dailyCheckInStateRef = useRef(normalizeDailyCheckInEntry(dailyCheckInEntry))
   const preferenceMetaRef = useRef(preferenceMeta ?? {})
   const brandmarkImage = getAppImageUrl(appImages, 'brandmark')
+  const pushMessagingAllowed = isPushMessagingAllowed()
   const isAppleInstallFlow = !isStandaloneApp && isAppleMobileDevice()
-  const showPushPromptNotice = notificationPrefs?.pushSupported
+  const showPushPromptNotice = pushMessagingAllowed
+    && notificationPrefs?.pushSupported
     && notificationPrefs?.pushConfigured
     && !notificationPrefs?.pushSubscribed
     && notificationPrefs?.pushPromptStatus !== 'refused'
@@ -693,6 +696,10 @@ export default function AppShell({ children }) {
 }
 
 function InstallHelpModal({ onClose }) {
+  const installBenefitCopy = isPushMessagingAllowed()
+    ? 'Johnny5k works best from the installed app icon. That unlocks standalone mode, push support on iPhone, and stronger offline behavior.'
+    : 'Johnny5k works best from the installed app icon. That unlocks standalone mode and stronger offline behavior.'
+
   return (
     <AppDialog
       ariaLabel="Install Johnny5k"
@@ -706,7 +713,7 @@ function InstallHelpModal({ onClose }) {
           <div>
             <p className="dashboard-eyebrow">Install Johnny5k</p>
             <h2 id="install-help-title">Use Home Screen install on iPhone</h2>
-            <p>Johnny5k works best from the installed app icon. That unlocks standalone mode, push support on iPhone, and stronger offline behavior.</p>
+            <p>{installBenefitCopy}</p>
           </div>
           <button type="button" className="app-shell-checkin-close" onClick={onClose}>
             Close

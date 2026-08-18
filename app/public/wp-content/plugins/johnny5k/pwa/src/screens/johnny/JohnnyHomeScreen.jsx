@@ -33,14 +33,13 @@ export default function JohnnyHomeScreen() {
   const [status, setStatus] = useState('')
   const [activityLabel, setActivityLabel] = useState('loading your conversation')
   const [dailyBrief, setDailyBrief] = useState(null)
-  const [navIndex, setNavIndex] = useState(0)
+  const [streakCount, setStreakCount] = useState(0)
   const [dailyCheckInOpen, setDailyCheckInOpen] = useState(false)
   const [nutritionLogOpen, setNutritionLogOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
   const [clearingChat, setClearingChat] = useState(false)
   const feedRef = useRef(null)
   const hasPositionedInitialThreadRef = useRef(false)
-  const navStartXRef = useRef(null)
 
   const userName = useMemo(() => {
     const localPart = String(email || '').split('@')[0]
@@ -67,6 +66,7 @@ export default function JohnnyHomeScreen() {
   const closeNutritionLog = useCallback(() => { setNutritionLogOpen(false); setActivityLabel('ready') }, [])
   const openProfile = useCallback(() => { setActivityLabel('profile open'); setProfileOpen(true) }, [])
   const closeProfile = useCallback(() => { setProfileOpen(false); setActivityLabel('ready') }, [])
+  const openProgressDiary = useCallback(() => { navigate('/body', { state: { focusTab: 'weight' } }) }, [navigate])
 
   useEffect(() => {
     let active = true
@@ -79,6 +79,7 @@ export default function JohnnyHomeScreen() {
       }
       if (snapshotResult.status === 'fulfilled') {
         setWorkoutLogged(Boolean(snapshotResult.value?.training_status?.recorded))
+        setStreakCount(getBestStreak(snapshotResult.value?.streaks))
       }
       if (briefResult.status === 'fulfilled') {
         setDailyBrief(briefResult.value)
@@ -338,15 +339,21 @@ export default function JohnnyHomeScreen() {
               ? <img src={brandmarkImage} alt="Johnny5k" />
               : <span aria-hidden="true">J5K</span>}
           </div>
-          <div>
+          <div className="johnny-brand-copy">
             <div className="brand-name">Johnny5k</div>
             <div className={`brand-status${activityLabel === 'ready' ? '' : ' busy'}`} role="status" aria-live="polite">
               <span className="pulse-dot" /> Johnny · {activityLabel}
             </div>
           </div>
-          <button type="button" className="johnny-clear-chat" onClick={() => { void handleClearChat() }} disabled={loading || clearingChat}>
-            {clearingChat ? 'Clearing…' : 'Clear chat'}
-          </button>
+          <div className="johnny-header-actions">
+            <span className="johnny-streak-count" aria-label={`${streakCount}-day best streak`} title="Best current streak">
+              <span aria-hidden="true">🔥</span>
+              <span aria-hidden="true">{streakCount}</span>
+            </span>
+            <button type="button" className="johnny-clear-chat" onClick={() => { void handleClearChat() }} disabled={loading || clearingChat}>
+              {clearingChat ? 'Clearing…' : 'Clear chat'}
+            </button>
+          </div>
         </header>
 
         <section className="chat-feed" ref={feedRef} aria-live="polite" aria-busy={loading || initialising}>
@@ -376,42 +383,30 @@ export default function JohnnyHomeScreen() {
           {status ? <div className="johnny-chat-status" role="status">{status}</div> : null}
         </section>
 
-        <nav className="nav-carousel" aria-label="Johnny actions">
-          <div className="nav-viewport">
-            <div
-              className="nav-track"
-              style={{ transform: `translateX(-${navIndex * 100}%)` }}
-              onPointerDown={event => { navStartXRef.current = event.clientX }}
-              onPointerUp={event => {
-                if (navStartXRef.current == null) return
-                const distance = event.clientX - navStartXRef.current
-                if (distance > 40) setNavIndex(current => Math.max(0, current - 1))
-                if (distance < -40) setNavIndex(current => Math.min(3, current + 1))
-                navStartXRef.current = null
-              }}
-            >
-              <ActionSlide
-                title={workoutLogged ? 'Workout Logged ✓' : isWorkoutApproved ? 'Activate Workout →' : 'Plan Workout →'}
-                subtitle={workoutLogged
-                  ? 'Plan another workout →'
-                  : isWorkoutApproved && workout
-                    ? `${workout.exercises.length} exercises${workout.structure === 'circuit' ? ` · ${workout.rounds} rounds` : ''}`
-                    : 'Review today’s schedule with Johnny'}
-                onClick={() => workoutLogged
-                  ? void startPlanningFlow('Plan another workout for today.')
-                  : isWorkoutApproved && workout
-                    ? navigate('/workout/live')
-                    : void startPlanningFlow()}
-              />
-              <ActionSlide title="Daily Check-In" subtitle="Sleep · weight · photos" secondary onClick={openDailyCheckIn} />
-              <ActionSlide title="Log Nutrition" subtitle="Food · water · steps" secondary onClick={openNutritionLog} />
-              <ActionSlide title="Profile & Settings" subtitle="Goals · units · reminders" secondary onClick={openProfile} />
-            </div>
-          </div>
-          <div className="nav-controls">
-            <button type="button" className="nav-arrow" onClick={() => setNavIndex(Math.max(0, navIndex - 1))} aria-label="Previous action">‹</button>
-            <div className="nav-dots">{[0, 1, 2, 3].map(index => <span key={index} className={`nav-dot${index === navIndex ? ' active' : ''}`} />)}</div>
-            <button type="button" className="nav-arrow" onClick={() => setNavIndex(Math.min(3, navIndex + 1))} aria-label="Next action">›</button>
+        <nav className="johnny-quick-nav" aria-label="Johnny actions">
+          <button
+            type="button"
+            className="quick-nav-cta"
+            onClick={() => workoutLogged
+              ? void startPlanningFlow('Plan another workout for today.')
+              : isWorkoutApproved && workout
+                ? navigate('/workout/live')
+                : void startPlanningFlow()}
+          >
+            <span className="quick-nav-cta-title">{workoutLogged ? 'Workout Logged ✓' : isWorkoutApproved ? 'Activate Workout →' : 'Plan Workout →'}</span>
+            <span className="quick-nav-cta-sub">
+              {workoutLogged
+                ? 'Plan another workout →'
+                : isWorkoutApproved && workout
+                  ? `${workout.exercises.length} exercises${workout.structure === 'circuit' ? ` · ${workout.rounds} rounds` : ''}`
+                  : 'Review today’s schedule with Johnny'}
+            </span>
+          </button>
+          <div className="quick-nav-chips">
+            <QuickNavChip label="Check-In" onClick={openDailyCheckIn} />
+            <QuickNavChip label="Nutrition" onClick={openNutritionLog} />
+            <QuickNavChip label="Diary" onClick={openProgressDiary} />
+            <QuickNavChip label="Profile" onClick={openProfile} />
           </div>
         </nav>
 
@@ -439,6 +434,16 @@ function getJohnnyActivityForPrompt(prompt) {
   if (/\b(workout|training|exercise|circuit|cardio|rest day)\b/.test(message)) return 'checking your training'
   if (/\b(weight|sleep|steps|nutrition|meal|food|water)\b/.test(message)) return 'checking your health data'
   return 'thinking'
+}
+
+function getBestStreak(streaks = {}) {
+  return Math.max(
+    0,
+    Number(streaks?.logging_days ?? 0),
+    Number(streaks?.training_days ?? 0),
+    Number(streaks?.sleep_days ?? 0),
+    Number(streaks?.cardio_days ?? 0),
+  )
 }
 
 function getTimeGreeting(hourValue) {
@@ -638,8 +643,8 @@ function AmbientField() {
   return <div className="ambient-bg" aria-hidden="true"><div className="ambient-glow glow-1" /><div className="ambient-glow glow-2" /><svg viewBox="0 0 400 100" preserveAspectRatio="none"><path className="pulse-path" d="M0,50 L60,50 L80,20 L100,80 L120,50 L400,50" /></svg></div>
 }
 
-function ActionSlide({ title, subtitle, secondary = false, onClick }) {
-  return <div className="cta-slide"><button type="button" className={`activate-btn${secondary ? ' secondary-cta' : ''}`} onClick={onClick}>{title}<span className="activate-sub">{subtitle}</span></button></div>
+function QuickNavChip({ label, onClick }) {
+  return <button type="button" className="quick-nav-chip" onClick={onClick}>{label}</button>
 }
 
 function JohnnyVisualizationList({ results }) {

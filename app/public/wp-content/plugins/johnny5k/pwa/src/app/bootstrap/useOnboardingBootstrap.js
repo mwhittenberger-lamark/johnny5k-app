@@ -5,7 +5,7 @@ import { reportClientDiagnostic } from '../../lib/clientDiagnostics'
 import { normalizeDailyCheckInEntry } from '../../lib/dailyCheckIn'
 import { resolveExperienceModeFromIronQuestPayload } from '../../lib/experienceMode'
 import { normalizePushPromptStatus } from '../../lib/onboarding'
-import { applyColorScheme, getDefaultIronQuestColorSchemeId, isIronQuestColorScheme, setAvailableColorSchemes } from '../../lib/theme'
+import { applyColorScheme, DEFAULT_COLOR_SCHEME } from '../../lib/theme'
 import { useAuthStore } from '../../store/authStore'
 import { useStartupStatusStore } from '../../store/startupStatusStore'
 import { createOnboardingBootstrapIssue } from './startupCopy'
@@ -55,16 +55,7 @@ export function useOnboardingBootstrap(session) {
         })
         const nextExperienceMode = resolveExperienceModeFromIronQuestPayload(ironQuest)
         setExperienceMode(nextExperienceMode)
-        setAvailableColorSchemes(data?.color_schemes)
-        if (nextExperienceMode === 'ironquest') {
-          applyColorScheme(
-            isIronQuestColorScheme(preferenceMeta?.color_scheme)
-              ? preferenceMeta?.color_scheme
-              : getDefaultIronQuestColorSchemeId()
-          )
-        } else {
-          applyColorScheme(preferenceMeta?.color_scheme)
-        }
+        applyColorScheme(DEFAULT_COLOR_SCHEME)
         clearIssue(STARTUP_ISSUE_KEYS.authBootstrap)
         setCompletedKey(bootstrapKey)
         setResolvedStatus(STARTUP_STATUS.ready)

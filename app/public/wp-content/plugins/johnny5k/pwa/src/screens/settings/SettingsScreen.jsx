@@ -27,7 +27,6 @@ import { buildThirtyDayPrediction } from '../../lib/thirtyDayPrediction'
 import { DAY_TYPE_OPTIONS } from '../../lib/trainingDayTypes'
 import { formatUsChartDate, formatUsShortDate } from '../../lib/dateFormat'
 import { openSupportGuide } from '../../lib/supportHelp'
-import { applyColorScheme, getColorSchemeOptions, getDefaultIronQuestColorSchemeId, isIronQuestColorScheme, normalizeColorScheme, setAvailableColorSchemes } from '../../lib/theme'
 import { confirmGlobalAction } from '../../lib/uiFeedback'
 
 const TIMEZONE_REGIONS = getTimezoneRegions()
@@ -45,6 +44,12 @@ const PROFILE_ACCORDION_DEFAULTS = {
 }
 const SCROLL_BEHAVIOR = getAccessibleScrollBehavior()
 
+function withoutRetiredColorScheme(preferenceMeta) {
+  const nextPreferenceMeta = { ...(preferenceMeta ?? {}) }
+  delete nextPreferenceMeta.color_scheme
+  return nextPreferenceMeta
+}
+
 export default function SettingsScreen() {
   const initialPushSupport = getPushSupportState()
   const location = useLocation()
@@ -56,7 +61,6 @@ export default function SettingsScreen() {
   const dailyCheckInEntry = useAuthStore(s => s.dailyCheckInEntry)
   const setAuth = useAuthStore(s => s.setAuth)
   const setExperienceMode = useAuthStore(s => s.setExperienceMode)
-  const experienceMode = useAuthStore(s => s.experienceMode)
   const setNotificationPrefs = useAuthStore(s => s.setNotificationPrefs)
   const setPreferenceMeta = useAuthStore(s => s.setPreferenceMeta)
   const openDrawer = useJohnnyAssistantStore(state => state.openDrawer)
@@ -75,7 +79,6 @@ export default function SettingsScreen() {
   const [johnnyOverview, setJohnnyOverview] = useState(null)
   const [johnnyError, setJohnnyError] = useState('')
   const [johnnyMessage, setJohnnyMessage] = useState('')
-  const [colorSchemeOptions, setColorSchemeOptions] = useState(getColorSchemeOptions())
   const [smsReminders, setSmsReminders] = useState({ timezone: '', scheduled: [], history: [] })
   const [smsReminderLoading, setSmsReminderLoading] = useState(true)
   const [smsReminderError, setSmsReminderError] = useState('')
@@ -160,12 +163,9 @@ export default function SettingsScreen() {
     onboardingApi.getState()
       .then(data => {
         if (!active) return
-        const nextColorSchemes = setAvailableColorSchemes(data?.color_schemes)
-        setColorSchemeOptions(nextColorSchemes)
         const nextForm = settingsFormFromState(data.profile, data.prefs, data.goal)
         setForm({
           ...nextForm,
-          color_scheme: normalizeColorScheme(nextForm.color_scheme),
           phone: formatPhoneInput(nextForm.phone),
         })
         setPreferenceMeta(data?.prefs?.exercise_preferences_json ?? {})
@@ -208,18 +208,6 @@ export default function SettingsScreen() {
 
     return () => { active = false }
   }, [setExperienceMode])
-
-  useEffect(() => {
-    if (experienceMode === 'ironquest') {
-      const nextScheme = isIronQuestColorScheme(form.color_scheme)
-        ? form.color_scheme
-        : getDefaultIronQuestColorSchemeId()
-      applyColorScheme(nextScheme)
-      return
-    }
-
-    applyColorScheme(form.color_scheme)
-  }, [experienceMode, form.color_scheme])
 
   useEffect(() => {
     writeLiveWorkoutVoicePrefs(liveVoicePrefs)
@@ -513,8 +501,7 @@ export default function SettingsScreen() {
         target_sleep_hours: form.target_sleep_hours,
         notifications_enabled: form.notifications_enabled,
         exercise_preferences_json: {
-          ...(form.preference_meta ?? {}),
-          color_scheme: form.color_scheme,
+          ...withoutRetiredColorScheme(form.preference_meta),
           add_exercise_calories_to_target: form.add_exercise_calories_to_target,
           workout_reminder_enabled: form.workout_reminder_enabled,
           workout_reminder_hour: Number(form.workout_reminder_hour),
@@ -554,7 +541,6 @@ export default function SettingsScreen() {
       setPreferenceMeta(nextPreferenceMeta)
       setForm(current => ({
         ...current,
-        color_scheme: normalizeColorScheme(nextPreferenceMeta?.color_scheme ?? current.color_scheme),
         preference_meta: nextPreferenceMeta,
       }))
       setMissingFields(formatMissingFields(state.missing_profile_fields))
@@ -2183,37 +2169,6 @@ export default function SettingsScreen() {
               </>
             )}
             {ironQuestError ? <ErrorState className="settings-inline-error" message={ironQuestError} title="Could not update IronQuest mode" /> : null}
-          </section>
-
-          <section className="settings-section dash-card">
-            <h3>Color Scheme</h3>
-            <p className="settings-subtitle">Pick the app palette you want to use everywhere. The current colors stay as the first option.</p>
-            <div className="settings-theme-grid">
-              {colorSchemeOptions.map(option => (
-                <button
-                  key={option.id}
-                  type="button"
-                  className={`settings-theme-option${form.color_scheme === option.id ? ' active' : ''}`}
-                  onClick={() => update('color_scheme', option.id)}
-                  style={{
-                    '--theme-bg': option.colors.bg,
-                    '--theme-bg2': option.colors.bg2,
-                    '--theme-bg3': option.colors.bg3,
-                    '--theme-border': option.colors.border,
-                    '--theme-text': option.colors.text2 ?? option.colors.text,
-                    '--theme-text-muted': option.colors.textMuted2 ?? option.colors.textMuted,
-                  }}
-                >
-                  <span className="settings-theme-swatches" aria-hidden="true">
-                    <span style={{ background: option.colors.bg }} />
-                    <span style={{ background: option.colors.bg2 }} />
-                    <span style={{ background: option.colors.bg3 }} />
-                  </span>
-                  <strong>{option.label}</strong>
-                  <span>{option.description}</span>
-                </button>
-              ))}
-            </div>
           </section>
 
           <section className="settings-section dash-card">

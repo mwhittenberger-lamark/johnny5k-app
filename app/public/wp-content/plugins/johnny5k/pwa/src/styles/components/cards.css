@@ -84,8 +84,8 @@
   font-weight: 600;
 }
 
-:root[data-color-scheme='classic'] .dash-card,
-:root[data-color-scheme='classic'] .small-card {
+:root[data-color-scheme='modern-skyscraper'] .dash-card,
+:root[data-color-scheme='modern-skyscraper'] .small-card {
   border-width: 1px;
   border-color: var(--glass-border);
 }

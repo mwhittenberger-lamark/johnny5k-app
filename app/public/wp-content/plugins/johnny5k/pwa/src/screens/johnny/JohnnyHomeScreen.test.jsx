@@ -674,7 +674,7 @@ describe('JohnnyHomeScreen', () => {
     await renderScreen()
 
     const dailyCheckInButton = [...container.querySelectorAll('button')]
-      .find(button => button.textContent.includes('Daily Check-In'))
+      .find(button => button.textContent.includes('Check-In'))
     await act(async () => dailyCheckInButton.dispatchEvent(new MouseEvent('click', { bubbles: true })))
 
     const dialog = document.querySelector('[role="dialog"][aria-label="Daily progress check-in"]')
@@ -696,7 +696,7 @@ describe('JohnnyHomeScreen', () => {
       { metric_date: '2026-08-06', weight_lb: 199.1 },
     ])
     await renderScreen()
-    const dailyCheckInButton = [...container.querySelectorAll('button')].find(button => button.textContent.includes('Daily Check-In'))
+    const dailyCheckInButton = [...container.querySelectorAll('button')].find(button => button.textContent.includes('Check-In'))
     await act(async () => dailyCheckInButton.click())
 
     const dialog = document.querySelector('[role="dialog"][aria-label="Daily progress check-in"]')
@@ -727,7 +727,7 @@ describe('JohnnyHomeScreen', () => {
   it('opens the nutrition logger and saves water and steps', async () => {
     aiApiMock.getThread.mockResolvedValue({ messages: [] })
     await renderScreen()
-    const nutritionButton = [...container.querySelectorAll('button')].find(button => button.textContent.includes('Log Nutrition'))
+    const nutritionButton = [...container.querySelectorAll('button')].find(button => button.textContent.includes('Nutrition'))
     await act(async () => nutritionButton.click())
     await act(async () => { await Promise.resolve() })
 
@@ -762,7 +762,7 @@ describe('JohnnyHomeScreen', () => {
   it('looks up and saves a beverage from the nutrition logger', async () => {
     aiApiMock.getThread.mockResolvedValue({ messages: [] })
     await renderScreen()
-    const nutritionButton = [...container.querySelectorAll('button')].find(button => button.textContent.includes('Log Nutrition'))
+    const nutritionButton = [...container.querySelectorAll('button')].find(button => button.textContent.includes('Nutrition'))
     await act(async () => nutritionButton.click())
     await act(async () => { await Promise.resolve() })
     const dialog = document.querySelector('[role="dialog"][aria-label="Daily nutrition log"]')
@@ -785,7 +785,7 @@ describe('JohnnyHomeScreen', () => {
   it('opens profile in a modal and returns to the mounted Johnny screen', async () => {
     aiApiMock.getThread.mockResolvedValue({ messages: [{ role: 'assistant', message_text: 'Keep this conversation here.' }] })
     await renderScreen()
-    const profileButton = [...container.querySelectorAll('button')].find(button => button.textContent.includes('Profile & Settings'))
+    const profileButton = [...container.querySelectorAll('button')].find(button => button.textContent.includes('Profile'))
     await act(async () => profileButton.click())
     await act(async () => { await Promise.resolve(); await Promise.resolve() })
     const dialog = document.querySelector('[role="dialog"][aria-label="Profile and settings"]')

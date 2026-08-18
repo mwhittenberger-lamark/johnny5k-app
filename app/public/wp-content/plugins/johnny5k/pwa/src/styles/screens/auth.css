@@ -6,7 +6,7 @@
   align-items: center;
   justify-content: center;
   padding: 24px;
-  background: linear-gradient(160deg, #ddf0ff 0%, #c8e8ff 45%, #d8f8ee 100%);
+  background: var(--surface-app);
 }
 
 .auth-screen h1 {
@@ -27,7 +27,7 @@
   height: auto;
   margin: 4px 0 14px;
   border-radius: 28px;
-  box-shadow: 0 16px 40px rgba(15, 31, 85, 0.16);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
 }
 
 .auth-screen .subtitle {

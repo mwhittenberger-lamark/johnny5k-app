@@ -31,16 +31,14 @@
 
 .johnny-prototype-phone .wc-row,
 .johnny-prototype-phone .wc-arrow,
-.johnny-prototype-phone .nav-arrow,
 .johnny-prototype-phone .johnny-bar-row > i,
-.johnny-prototype-phone .activate-btn.secondary-cta,
+.johnny-prototype-phone .quick-nav-chip,
 .johnny-prototype-phone .johnny-nutrition-steps {
   border-color: var(--border);
   background: var(--surface-2);
 }
 .johnny-prototype-phone .wc-row { border-radius: var(--radius-sm); background: rgba(16, 22, 29, 0.5); border-color: var(--surface-alt); }
 
-.johnny-prototype-phone .nav-dot { background: var(--border); }
 .johnny-prototype-phone .johnny-clear-chat { border-color: var(--glass-border); background: rgba(10, 14, 20, 0.52); }
 .johnny-prototype-phone .johnny-clear-chat:hover { border-color: var(--glass-user-border); }
 .johnny-prototype-phone .brand-status.busy { color: var(--text-soft); }
@@ -55,10 +53,9 @@
 .johnny-prototype-phone .wc-planning-note { border-color: var(--glass-user-border); background: var(--glass-user); color: var(--text-soft); }
 .johnny-prototype-phone .wc-demo { border-color: var(--glass-user-border); background: var(--glass-user); }
 .johnny-prototype-phone .wc-demo:hover { border-color: var(--whistle); background: rgba(232, 184, 74, 0.2); }
-.johnny-prototype-phone .activate-btn { border-color: var(--chalk); background: linear-gradient(180deg, #F0CD7A, var(--whistle)); color: var(--ink); }
-.johnny-prototype-phone .activate-btn.secondary-cta { border-color: var(--chalk); background: linear-gradient(180deg, var(--surface-alt), var(--surface-2)); }
-.johnny-prototype-phone .nav-arrow,
-.johnny-prototype-phone .nav-arrow:active { border-color: var(--chalk); background: rgba(16, 22, 29, 0.5); color: var(--chalk); }
+.johnny-prototype-phone .quick-nav-cta { border-color: var(--chalk); background: linear-gradient(180deg, #F0CD7A, var(--whistle)); color: var(--ink); }
+.johnny-prototype-phone .quick-nav-chip,
+.johnny-prototype-phone .quick-nav-chip:active { border-color: var(--chalk); background: rgba(16, 22, 29, 0.5); color: var(--chalk); }
 .johnny-prototype-phone .johnny-decision-rail button,
 .johnny-prototype-phone .johnny-decision-rail button.primary { border-color: var(--chalk); }
 .johnny-prototype-phone .johnny-visual-card { border-radius: var(--radius-md); box-shadow: var(--glass-shadow); }

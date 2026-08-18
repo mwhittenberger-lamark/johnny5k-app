@@ -11,13 +11,11 @@ import Field from '../../components/ui/Field'
 import { normalizeAppIconName } from '../../components/ui/AppIcon.utils'
 import { reportClientDiagnostic } from '../../lib/clientDiagnostics'
 import { APP_IMAGE_FIELDS } from '../../lib/appImages'
-import { getColorSchemeOptions, setAvailableColorSchemes } from '../../lib/theme'
 import { runLabelScanTestSuite } from '../nutrition/labelScanTestSuite'
 import { useAuthStore } from '../../store/authStore'
 
 const TABS = ['invites', 'costs', 'persona', 'users', 'exercises', 'awards', 'recipes', 'support', 'diagnostics', 'ironquest', 'settings', 'label-tests']
 const AWARD_ICON_OPTIONS = ['award', 'trophy', 'star', 'flame', 'bolt']
-const COLOR_FIELDS = ['bg', 'text', 'textMuted', 'bg2', 'text2', 'textMuted2', 'bg3', 'text3', 'textMuted3', 'border', 'accent', 'accent2', 'accent3', 'danger', 'success', 'yellow']
 const QA_ONLY_TABS = ['label-tests']
 const IRONQUEST_DAILY_QUEST_OPTIONS = ['meal', 'sleep', 'cardio', 'steps', 'workout']
 const IRONQUEST_MISSION_RESULT_OPTIONS = ['victory', 'partial', 'failure']
@@ -97,17 +95,6 @@ function handleAdminDiagnostic({ source, message, error, context = {}, setMsg = 
   })
 }
 
-function createEmptyColorScheme(index = 0) {
-  const fallback = getColorSchemeOptions()[0]
-
-  return {
-    id: `scheme-${Date.now()}-${index}`,
-    label: `New Scheme ${index + 1}`,
-    description: 'Custom color scheme',
-    colors: { ...(fallback?.colors ?? {}) },
-  }
-}
-
 function createEmptyAppImages() {
   return APP_IMAGE_FIELDS.reduce((acc, field) => {
     acc[field.key] = ''
@@ -158,10 +145,6 @@ function reorderItems(items, fromIndex, toIndex) {
   const [moved] = next.splice(fromIndex, 1)
   next.splice(toIndex, 0, moved)
   return next
-}
-
-function optionLabel(options, value, fallback = 'Unknown') {
-  return options.find(([optionValue]) => optionValue === value)?.[1] || fallback
 }
 
 function listMissionStoryTemplates(mission, slot) {
@@ -2634,7 +2617,6 @@ function SettingsTab() {
       vapid_private_key: '',
       subject: 'mailto:support@johnny5k.app',
     },
-    color_schemes: getColorSchemeOptions(),
     app_images: createEmptyAppImages(),
     live_workout_frames: [],
   })
@@ -2653,7 +2635,6 @@ function SettingsTab() {
   useEffect(() => {
     adminApi.settings()
       .then(data => {
-        const schemes = setAvailableColorSchemes(data?.color_schemes)
         setSettings({
           ...data,
           push_settings: {
@@ -2662,7 +2643,6 @@ function SettingsTab() {
             vapid_private_key: data?.push_settings?.vapid_private_key ?? '',
             subject: data?.push_settings?.subject ?? 'mailto:support@johnny5k.app',
           },
-          color_schemes: schemes,
           app_images: { ...createEmptyAppImages(), ...(data?.app_images ?? {}) },
         })
       })
@@ -2695,38 +2675,6 @@ function SettingsTab() {
     setSettings(current => ({
       ...current,
       app_images: { ...current.app_images, [field]: value },
-    }))
-  }
-
-  function updateScheme(index, field, value) {
-    setSettings(current => ({
-      ...current,
-      color_schemes: current.color_schemes.map((scheme, schemeIndex) => (
-        schemeIndex === index ? { ...scheme, [field]: value } : scheme
-      )),
-    }))
-  }
-
-  function updateSchemeColor(index, colorKey, value) {
-    setSettings(current => ({
-      ...current,
-      color_schemes: current.color_schemes.map((scheme, schemeIndex) => (
-        schemeIndex === index ? { ...scheme, colors: { ...scheme.colors, [colorKey]: value } } : scheme
-      )),
-    }))
-  }
-
-  function addScheme() {
-    setSettings(current => ({
-      ...current,
-      color_schemes: [...(current.color_schemes ?? []), createEmptyColorScheme((current.color_schemes ?? []).length)],
-    }))
-  }
-
-  function removeScheme(index) {
-    setSettings(current => ({
-      ...current,
-      color_schemes: (current.color_schemes ?? []).filter((_, schemeIndex) => schemeIndex !== index),
     }))
   }
 
@@ -2804,7 +2752,6 @@ function SettingsTab() {
   async function save(event) {
     event.preventDefault()
     await adminApi.saveSettings(settings)
-    setAvailableColorSchemes(settings.color_schemes)
     setMsg('Settings saved.')
   }
 
@@ -2880,48 +2827,6 @@ function SettingsTab() {
               </button>
             </div>
           </div>
-        </div>
-      </div>
-      <div className="admin-settings-section">
-        <div className="admin-settings-section-head">
-          <h3>Color schemes</h3>
-          <button className="btn-secondary small" type="button" onClick={addScheme}>Add color scheme</button>
-        </div>
-        <p className="settings-subtitle">These schemes drive the profile selector in the app. The first scheme becomes the fallback default.</p>
-        <div className="admin-color-scheme-list">
-          {(settings.color_schemes ?? []).map((scheme, index) => (
-            <div key={`${scheme.id}-${index}`} className="admin-color-scheme-card">
-              <div className="admin-color-scheme-head">
-                <strong>Scheme {index + 1}</strong>
-                <button className="btn-danger small" type="button" onClick={() => removeScheme(index)} disabled={(settings.color_schemes ?? []).length <= 1}>Remove</button>
-              </div>
-              <div className="admin-color-scheme-meta">
-                <label>
-                  <span>ID</span>
-                  <input value={scheme.id ?? ''} onChange={e => updateScheme(index, 'id', e.target.value)} />
-                </label>
-                <label>
-                  <span>Label</span>
-                  <input value={scheme.label ?? ''} onChange={e => updateScheme(index, 'label', e.target.value)} />
-                </label>
-                <label className="admin-color-scheme-description">
-                  <span>Description</span>
-                  <input value={scheme.description ?? ''} onChange={e => updateScheme(index, 'description', e.target.value)} />
-                </label>
-              </div>
-              <div className="admin-color-grid">
-                {COLOR_FIELDS.map(colorKey => (
-                  <label key={colorKey} className="admin-color-field">
-                    <span>{colorKey}</span>
-                    <div className="admin-color-input-row">
-                      <input type="color" value={scheme.colors?.[colorKey] ?? '#000000'} onChange={e => updateSchemeColor(index, colorKey, e.target.value)} />
-                      <input value={scheme.colors?.[colorKey] ?? ''} onChange={e => updateSchemeColor(index, colorKey, e.target.value)} />
-                    </div>
-                  </label>
-                ))}
-              </div>
-            </div>
-          ))}
         </div>
       </div>
       <div className="admin-settings-section">

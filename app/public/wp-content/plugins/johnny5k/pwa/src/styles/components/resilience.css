@@ -8,12 +8,13 @@
   flex-direction: column;
   gap: 14px;
   padding: clamp(24px, 4vw, 36px);
-  border: 1px solid rgba(151, 185, 215, 0.72);
-  border-radius: 30px;
-  background:
-    radial-gradient(circle at top right, rgba(255, 177, 42, 0.14), transparent 28%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(238, 247, 252, 0.98));
-  box-shadow: 0 24px 48px rgba(8, 21, 51, 0.14);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background-color: var(--surface-card);
+  background-image: radial-gradient(circle at top right, color-mix(in srgb, var(--accent) 16%, transparent), transparent 30%);
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: var(--glass-filter);
+  -webkit-backdrop-filter: var(--glass-filter);
 }
 
 .resilience-screen {
@@ -22,7 +23,7 @@
 
 .resilience-eyebrow {
   margin: 0;
-  color: #1c6088;
+  color: var(--accent2);
   font-size: 0.82rem;
   font-weight: 800;
   letter-spacing: 0.08em;
@@ -70,20 +71,22 @@
   justify-content: space-between;
   gap: 18px;
   padding: 16px 18px;
-  border-radius: 22px;
-  border: 1px solid rgba(39, 82, 119, 0.16);
-  background: rgba(255, 252, 244, 0.94);
-  box-shadow: 0 14px 30px rgba(12, 30, 57, 0.08);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface-card-alt);
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: var(--glass-filter);
+  -webkit-backdrop-filter: var(--glass-filter);
 }
 
 .startup-issue-card.info {
-  background: rgba(239, 247, 255, 0.94);
+  background: var(--surface-card);
 }
 
 .startup-issue-card.error,
 .startup-issue-card.blocking {
-  background: rgba(255, 241, 241, 0.96);
-  border-color: rgba(162, 53, 53, 0.24);
+  background-color: color-mix(in srgb, var(--danger) 14%, var(--surface-card-alt));
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
 }
 
 .startup-issue-copy {
@@ -99,14 +102,20 @@
 }
 
 .startup-issue-kicker {
-  color: #1c6088;
+  color: var(--accent2);
   font-size: 0.76rem;
   font-weight: 800;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
+.startup-issue-card.error .startup-issue-kicker,
+.startup-issue-card.blocking .startup-issue-kicker {
+  color: var(--danger);
+}
+
 .startup-issue-copy strong {
+  color: var(--text);
   font-family: 'Exo 2', system-ui, sans-serif;
   font-size: 1rem;
 }
@@ -143,10 +152,12 @@
   display: grid;
   gap: 10px;
   padding: 18px 20px;
-  border-radius: 24px;
-  border: 1px solid rgba(39, 82, 119, 0.16);
-  background: rgba(255, 255, 255, 0.9);
-  box-shadow: 0 14px 30px rgba(12, 30, 57, 0.08);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface-card);
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: var(--glass-filter);
+  -webkit-backdrop-filter: var(--glass-filter);
 }
 
 .startup-pending-panel p,
@@ -160,6 +171,7 @@
 }
 
 .startup-pending-panel > strong {
+  color: var(--text);
   font-family: 'Exo 2', system-ui, sans-serif;
   font-size: 1rem;
 }

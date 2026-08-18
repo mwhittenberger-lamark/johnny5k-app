@@ -29,9 +29,7 @@ const startupStatusStoreState = vi.hoisted(() => ({
 
 const themeState = vi.hoisted(() => ({
   applyColorScheme: vi.fn(),
-  getDefaultIronQuestColorSchemeId: vi.fn(() => 'ironquest-codex'),
-  isIronQuestColorScheme: vi.fn((value) => value === 'ironquest-grove'),
-  setAvailableColorSchemes: vi.fn(),
+  DEFAULT_COLOR_SCHEME: 'modern-skyscraper',
 }))
 
 vi.mock('../../api/modules/onboarding', () => ({
@@ -107,9 +105,6 @@ describe('useOnboardingBootstrap', () => {
     startupStatusStoreState.clearIssue.mockReset()
     startupStatusStoreState.setIssue.mockReset()
     themeState.applyColorScheme.mockReset()
-    themeState.getDefaultIronQuestColorSchemeId.mockClear()
-    themeState.isIronQuestColorScheme.mockClear()
-    themeState.setAvailableColorSchemes.mockReset()
   })
 
   afterEach(async () => {
@@ -122,7 +117,7 @@ describe('useOnboardingBootstrap', () => {
     document.body.innerHTML = ''
   })
 
-  it('syncs the saved IronQuest color scheme without forcing persist false', async () => {
+  it('uses Modern Skyscraper even when an old IronQuest palette is saved', async () => {
     onboardingApiState.getState.mockResolvedValue({
       prefs: {
         exercise_preferences_json: {
@@ -130,7 +125,6 @@ describe('useOnboardingBootstrap', () => {
           push_prompt_status: 'accepted',
         },
       },
-      color_schemes: [],
     })
     ironQuestApiState.profile.mockResolvedValue({
       profile: {
@@ -142,7 +136,6 @@ describe('useOnboardingBootstrap', () => {
     await flushPromises()
 
     expect(authStoreState.setExperienceMode).toHaveBeenCalledWith('ironquest')
-    expect(themeState.applyColorScheme).toHaveBeenCalledWith('ironquest-grove')
-    expect(themeState.applyColorScheme).not.toHaveBeenCalledWith('ironquest-grove', { persist: false })
+    expect(themeState.applyColorScheme).toHaveBeenCalledWith('modern-skyscraper')
   })
 })
