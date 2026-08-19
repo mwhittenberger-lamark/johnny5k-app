@@ -576,8 +576,10 @@
 
 @media (prefers-reduced-motion: reduce) {
   .app-shell-brand-copy small i { animation: none; }
-  .johnny-wire-track { width: auto; overflow-x: auto; animation: none; }
-  .johnny-wire-group[aria-hidden='true'] { display: none; }
+  /* Reduced motion asks for less motion, not none — a fully frozen ticker
+     reads as broken rather than idle. Slowing the scroll (38s -> 110s)
+     keeps the crawl legible and gentle instead of a fast marquee sweep. */
+  .johnny-wire-track { animation-duration: 110s; }
   .johnny-wire-label i { animation: none; }
 }
 .ui-overlay.app-shell-checkin-shell {
@@ -839,6 +841,7 @@
 @keyframes daily-briefing-image-pulse { 0% { transform: scale(.8); opacity: 0; } 40% { opacity: 1; } 100% { transform: scale(1.08); opacity: 0; } }
 @keyframes daily-briefing-image-scan { 0%, 8% { transform: translateY(0); opacity: 0; } 18% { opacity: .8; } 76% { opacity: .8; } 92%, 100% { transform: translateY(520px); opacity: 0; } }
 @keyframes daily-briefing-image-dot { 0%, 100% { transform: translateY(0); opacity: .32; } 50% { transform: translateY(-6px); opacity: 1; } }
+@keyframes daily-briefing-image-dot-fade { 0%, 100% { opacity: .32; } 50% { opacity: 1; } }
 
 .daily-briefing-note { margin: 18px 0 0; color: #e5c77d; }
 .daily-briefing-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-top: clamp(34px, 6vw, 78px); }
@@ -875,8 +878,12 @@
 	.daily-briefing-image-field i,
 	.daily-briefing-image-scan,
 	.daily-briefing-image-ring,
-	.daily-briefing-image-ring span,
-	.daily-briefing-image-steps i { animation: none; }
+	.daily-briefing-image-ring span { animation: none; }
+	/* The ring, scan line, and field pulse are the large positional/scale
+	   motion reduced-motion is meant to remove — those stay frozen. But
+	   freezing every cue too leaves the loader looking stuck rather than
+	   working, so the step dots keep a small opacity-only fade. */
+	.daily-briefing-image-steps i { animation: daily-briefing-image-dot-fade 1.1s ease-in-out infinite; }
 	.daily-briefing-intro-loader::after,
 	.daily-briefing-intro-signal i,
 	.daily-briefing-intro-loader strong,
