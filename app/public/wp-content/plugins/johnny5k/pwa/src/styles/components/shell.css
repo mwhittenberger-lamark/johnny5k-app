@@ -281,6 +281,10 @@
   background: rgba(255, 255, 255, 0.94);
   box-shadow: 0 8px 18px rgba(15, 31, 85, 0.08);
 }
+.app-shell-desktop-link:focus-visible {
+  outline: 2px solid var(--accent2);
+  outline-offset: 2px;
+}
 .app-shell-coach,
 .app-shell-logout {
   width: auto;
@@ -427,6 +431,13 @@
   color: var(--text);
   font-weight: 700;
 }
+.app-shell-mobile-nav-close:hover {
+  border-color: var(--accent2);
+}
+.app-shell-mobile-nav-close:focus-visible {
+  outline: 2px solid var(--accent2);
+  outline-offset: 2px;
+}
 .app-shell-mobile-nav-grid {
   display: grid;
   gap: 10px;
@@ -451,6 +462,10 @@
   transform: translateY(-1px);
   border-color: var(--shell-mobile-link-active-border);
   box-shadow: var(--shell-mobile-link-active-shadow);
+}
+.app-shell-mobile-link:focus-visible {
+  outline: 2px solid var(--accent2);
+  outline-offset: 2px;
 }
 .app-shell-mobile-link-icon {
   display: inline-flex;

@@ -191,10 +191,10 @@
 .body-summary-card.pink { background: var(--progress-metric-movement-bg); }
 .body-summary-label {
   display: block;
-  color: var(--text-muted);
-  font-size: 0.78rem;
+  color: var(--whistle);
+  font: 700 0.67rem var(--font-data, monospace);
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.18em;
   margin-bottom: 8px;
 }
 .body-summary-value {

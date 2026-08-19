@@ -3090,21 +3090,26 @@ label.field-label.nutrition-saved-food-field {
 }
 
 :root[data-theme-mode='dark'] .macro-detail-green,
-:root[data-theme-mode='dark'] .badge.green {
+:root[data-theme-mode='dark'] .badge.green,
+:root[data-theme-mode='dark'] .nutrition-inline-badge.success,
+:root[data-theme-mode='dark'] .nutrition-inline-badge.on-hand {
   background: rgba(34, 196, 126, 0.2);
   color: #effff6;
 }
 
 :root[data-theme-mode='dark'] .macro-detail-yellow,
 :root[data-theme-mode='dark'] .sleep-quality-pill.fair,
-:root[data-theme-mode='dark'] .cardio-intensity-pill.moderate {
+:root[data-theme-mode='dark'] .cardio-intensity-pill.moderate,
+:root[data-theme-mode='dark'] .nutrition-inline-badge.info,
+:root[data-theme-mode='dark'] .nutrition-inline-badge.missing {
   background: rgba(255, 208, 0, 0.2);
   color: #fff8dc;
 }
 
 :root[data-theme-mode='dark'] .macro-detail-red,
 :root[data-theme-mode='dark'] .sleep-quality-pill.poor,
-:root[data-theme-mode='dark'] .cardio-intensity-pill.max {
+:root[data-theme-mode='dark'] .cardio-intensity-pill.max,
+:root[data-theme-mode='dark'] .nutrition-inline-badge.active {
   background: rgba(255, 46, 80, 0.2);
   color: #fff1f4;
 }

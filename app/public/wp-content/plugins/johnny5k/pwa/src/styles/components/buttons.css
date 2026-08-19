@@ -148,6 +148,16 @@
   outline-offset: 3px;
 }
 
+.btn-primary:focus-visible,
+.btn-secondary:focus-visible,
+.btn-outline:focus-visible,
+.btn-danger:focus-visible,
+.btn-ghost:focus-visible,
+.btn-icon:focus-visible {
+  outline: 2px solid var(--accent2);
+  outline-offset: 3px;
+}
+
 .support-icon-button .app-icon {
   width: 18px;
   height: 18px;

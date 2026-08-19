@@ -50,11 +50,11 @@
   /* Progress / Body surfaces. Keep chart chrome and metric cards readable in
      every scheme without baking light-mode whites into legacy components. */
   --progress-metric-weight-bg:
-    linear-gradient(145deg, color-mix(in srgb, var(--accent) 14%, var(--surface-card-alt)), var(--surface-card));
+    linear-gradient(145deg, color-mix(in srgb, var(--accent) 26%, var(--surface-card-alt)), var(--surface-card));
   --progress-metric-sleep-bg:
-    linear-gradient(145deg, color-mix(in srgb, var(--accent2) 14%, var(--surface-card-alt)), var(--surface-card));
+    linear-gradient(145deg, color-mix(in srgb, var(--accent2) 26%, var(--surface-card-alt)), var(--surface-card));
   --progress-metric-movement-bg:
-    linear-gradient(145deg, color-mix(in srgb, var(--success) 12%, var(--surface-card-alt)), var(--surface-card));
+    linear-gradient(145deg, color-mix(in srgb, var(--success) 24%, var(--surface-card-alt)), var(--surface-card));
   --progress-chart-bg:
     radial-gradient(circle at top left, color-mix(in srgb, var(--accent2) 8%, transparent), transparent 46%),
     var(--legacy-inset-bg);

@@ -1966,6 +1966,11 @@
   color: var(--text);
 }
 
+:root[data-theme-mode='dark'] .dashboard-stat-card.orange { background: linear-gradient(160deg, rgba(255, 85, 48, 0.22), var(--bg2)); }
+:root[data-theme-mode='dark'] .dashboard-stat-card.teal { background: linear-gradient(160deg, rgba(0, 188, 222, 0.22), var(--bg2)); }
+:root[data-theme-mode='dark'] .dashboard-stat-card.pink { background: linear-gradient(160deg, rgba(255, 56, 160, 0.2), var(--bg2)); }
+:root[data-theme-mode='dark'] .dashboard-stat-card.yellow { background: linear-gradient(160deg, rgba(255, 208, 0, 0.26), var(--bg2)); }
+
 :root[data-experience-mode='ironquest'] .dashboard-daily-focus-actions .btn-outline,
 :root[data-experience-mode='ironquest'] .dashboard-daily-focus-actions .btn-secondary,
 :root[data-experience-mode='ironquest'] .dashboard-daily-focus-followups,
