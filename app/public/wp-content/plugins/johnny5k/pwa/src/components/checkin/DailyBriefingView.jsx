@@ -76,9 +76,9 @@ export default function DailyBriefingView({ answers, onClose, onPlanWorkout }) {
   const activeWorkout = Boolean(snapshot?.training_status?.has_active_session)
 
   return (
-    <section className="daily-briefing" aria-label="Johnny’s daily briefing">
+    <section className="daily-briefing" aria-label="Johnny’s briefing">
       <header className="daily-briefing-topbar">
-        <div><span>Johnny’s daily briefing</span><strong>{brief?.date ? formatUsChartDate(brief.date, brief.date) : 'Today'}</strong></div>
+        <div><span>Johnny’s briefing</span><strong>{brief?.date ? formatUsChartDate(brief.date, brief.date) : 'Today'}</strong></div>
         <button type="button" onClick={onClose}>Close</button>
       </header>
 

@@ -24,6 +24,8 @@ function formatHour(hour) {
 
 export default function JohnnyNutritionLogModal({ onClose }) {
   const closeRef = useRef(null)
+  const loggedMealRef = useRef(false)
+  const handleClose = () => onClose(loggedMealRef.current)
   const mealPhotoInputRef = useRef(null)
   const labelFrontInputRef = useRef(null)
   const labelBackInputRef = useRef(null)
@@ -343,6 +345,7 @@ export default function JohnnyNutritionLogModal({ onClose }) {
       setMealPhoto(null)
       setMealEntryMode('photo')
       setMealDraft(null)
+      loggedMealRef.current = true
       setStatus(`${formatMealType(mealType)} saved to today’s nutrition log.`)
     } catch (saveError) {
       setError(saveError?.message || 'The meal could not be saved. Try again.')
@@ -488,7 +491,7 @@ export default function JohnnyNutritionLogModal({ onClose }) {
   }
 
   return (
-    <AppDialog ariaLabel="Daily nutrition log" className={`johnny-nutrition-log-modal${activePanel === 'plan' ? ' planning' : ''}`} initialFocusRef={closeRef} onClose={onClose} open overlayClassName="johnny-daily-log-shell" size="md">
+    <AppDialog ariaLabel="Daily nutrition log" className={`johnny-nutrition-log-modal${activePanel === 'plan' ? ' planning' : ''}`} initialFocusRef={closeRef} onClose={handleClose} open overlayClassName="johnny-daily-log-shell" size="md">
       <div className="johnny-nutrition-log">
         <header className="johnny-daily-log-head">
           <div>
@@ -496,7 +499,7 @@ export default function JohnnyNutritionLogModal({ onClose }) {
             <h2>{activePanel === 'plan' ? 'Build your day' : 'Log today’s inputs'}</h2>
             <p>{activePanel === 'plan' ? 'Try combinations before they count.' : 'Food, hydration, and movement in one quick view.'}</p>
           </div>
-          <button ref={closeRef} type="button" onClick={onClose} aria-label="Close daily nutrition log">×</button>
+          <button ref={closeRef} type="button" onClick={handleClose} aria-label="Close daily nutrition log">×</button>
         </header>
 
         <div className="johnny-nutrition-tabs" role="tablist" aria-label="Nutrition views">
@@ -586,7 +589,7 @@ export default function JohnnyNutritionLogModal({ onClose }) {
 
         {error ? <p className="johnny-daily-log-error" role="alert">{error}</p> : null}
         {status ? <p className="johnny-daily-log-success" role="status">{status}</p> : null}
-        <button type="button" className="johnny-nutrition-done" onClick={onClose}>Done</button>
+        <button type="button" className="johnny-nutrition-done" onClick={handleClose}>Done</button>
       </div>
       <input ref={labelFrontInputRef} type="file" accept="image/*" capture="environment" hidden onChange={event => { void selectTileLabelImage('front', event) }} />
       <input ref={labelBackInputRef} type="file" accept="image/*" capture="environment" hidden onChange={event => { void selectTileLabelImage('back', event) }} />

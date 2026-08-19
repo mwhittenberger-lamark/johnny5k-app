@@ -1,6 +1,8 @@
 /* Progress Observatory — the full-viewport glass skyscraper diary. */
 
 .body-screen.progress-observatory {
+  position: relative;
+  isolation: isolate;
   min-height: calc(100% + var(--screen-gutter-y) + var(--space-5));
   margin: calc(var(--screen-gutter-y) * -1) calc(var(--screen-gutter-x) * -1) calc(var(--space-5) * -1);
   color: var(--chalk);
@@ -143,6 +145,7 @@
 .progress-observatory-vitals span,
 .progress-diary-day-topline small { display: block; color: var(--mist); font: 600 0.62rem var(--font-data, monospace); letter-spacing: 0.09em; text-transform: uppercase; }
 .progress-observatory-vitals strong { display: block; margin-top: 0.35rem; overflow: hidden; color: var(--chalk); font: 700 clamp(1rem, 2vw, 1.35rem) var(--font-display, sans-serif); text-overflow: ellipsis; white-space: nowrap; }
+.progress-observatory-vitals small { display: block; margin-top: 0.2rem; overflow: hidden; color: var(--mist); font-size: 0.68rem; text-overflow: ellipsis; white-space: nowrap; text-transform: none; letter-spacing: normal; }
 
 .progress-observatory-tabs {
   position: sticky;

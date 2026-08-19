@@ -9,7 +9,6 @@ import { workoutApi } from '../../api/modules/workout'
 import ClearableInput from '../../components/ui/ClearableInput'
 import AppDialog from '../../components/ui/AppDialog'
 import AppIcon from '../../components/ui/AppIcon'
-import SupportIconButton from '../../components/ui/SupportIconButton'
 import { getAccessibleScrollBehavior } from '../../lib/accessibility'
 import { formatUsChartDate, formatUsShortDate } from '../../lib/dateFormat'
 import { resolveIronQuestSleepStateDate } from '../../lib/ironquestDailyProgress'
@@ -33,6 +32,14 @@ const BODY_TABS = [
   ['workouts', 'Workouts'],
   ['cardio', 'Cardio'],
 ]
+const BODY_TAB_COPY = {
+  diary: { title: 'Progress Diary', subtitle: 'Your body, recovery, fuel, and training—assembled by day.' },
+  weight: { title: 'Weight', subtitle: 'Log weigh-ins and track your trend over time.' },
+  sleep: { title: 'Sleep', subtitle: 'Log last night and watch your recovery trend build.' },
+  steps: { title: 'Steps', subtitle: 'Track daily movement against your target.' },
+  workouts: { title: 'Workouts', subtitle: 'Review, edit, and refine your logged training sessions.' },
+  cardio: { title: 'Cardio', subtitle: 'Log cardio sessions and track your conditioning trend.' },
+}
 
 async function syncIronQuestDailyProgress(payload) {
   try {
@@ -58,6 +65,7 @@ export default function BodyScreen() {
   const [diaryLoading, setDiaryLoading] = useState(false)
   const [diaryError, setDiaryError] = useState('')
   const [metrics, setMetrics]   = useState({ weight: [], sleep: [], steps: [], cardio: [] })
+  const [justLogged, setJustLogged] = useState(null)
   const [weightInput, setWt]    = useState('')
   const [weightDate, setWeightDate] = useState(todayInputValue())
   const [sleepInput, setSleep]  = useState('')
@@ -239,6 +247,7 @@ export default function BodyScreen() {
           weight: upsertLocalSeriesEntry(current.weight, { date: weightDate, weight_lb: +weightInput }, 'date'),
         }))
         setFlash(result?.queued ? 'Weight saved offline. It will sync when you reconnect.' : 'Weight logged!')
+        setJustLogged('weight')
       }
       resetWeightForm()
       invalidate()
@@ -282,6 +291,7 @@ export default function BodyScreen() {
           sleep: upsertLocalSeriesEntry(current.sleep, { date: sleepDate, hours_sleep: +sleepInput }, 'date'),
         }))
         setFlash(result?.queued ? 'Sleep saved offline. It will sync when you reconnect.' : 'Sleep logged!')
+        setJustLogged('sleep')
       }
       resetSleepForm()
       invalidate()
@@ -338,6 +348,7 @@ export default function BodyScreen() {
           movement: upsertLocalSeriesEntry(current.movement, { date: stepsDate, steps: +stepsInput }, 'date'),
         }))
         setFlash(result?.queued ? 'Steps saved offline. They will sync when you reconnect.' : 'Steps logged!')
+        setJustLogged('steps')
       }
       resetStepsForm()
       invalidate()
@@ -700,27 +711,54 @@ export default function BodyScreen() {
   }, [pendingRouteFocus, scrollToForm, tab])
 
   return (
-    <div className={`screen body-screen${tab === 'diary' ? ' progress-observatory' : ''}`}>
-      {tab !== 'diary' ? <>
-      <header className="screen-header body-screen-header support-icon-anchor">
-        <SupportIconButton label="Get help with progress tracking" onClick={handleOpenBodySupport} />
-        <div>
-          <h1>Progress</h1>
-          <p className="body-screen-subtitle">Track bodyweight, movement, and cardio in one place.</p>
-        </div>
-        <div className="header-actions">
-          <button className="btn-secondary progress-activity-log-button" type="button" onClick={() => navigate('/activity-log')}>
-            Activity Log
+    <div className="screen body-screen progress-observatory">
+      <div className="progress-observatory-ambient" aria-hidden="true">
+        <span className="progress-observatory-glow glow-one" />
+        <span className="progress-observatory-glow glow-two" />
+      </div>
+
+      <header className="progress-observatory-header support-icon-anchor">
+        <div className="progress-observatory-title">
+          <button type="button" className="progress-observatory-back" onClick={() => navigate('/dashboard', justLogged ? { state: { loggedActivity: justLogged } } : undefined)}>
+            <span aria-hidden="true">←</span>
+            Back to Johnny
           </button>
+          <span className="progress-observatory-kicker">Progress observatory</span>
+          <h1>{BODY_TAB_COPY[tab]?.title || 'Progress'}</h1>
+          <p>{BODY_TAB_COPY[tab]?.subtitle || 'Track bodyweight, movement, and cardio in one place.'}</p>
+        </div>
+        <div className="progress-observatory-actions">
+          <button type="button" className="progress-observatory-icon-button" onClick={handleOpenBodySupport} aria-label="Get help with progress tracking">?</button>
+          <button type="button" className="progress-observatory-action" onClick={() => navigate('/progress-photos')}>Photos</button>
+          <button type="button" className="progress-observatory-action primary" onClick={() => navigate('/activity-log')}>Activity log</button>
+        </div>
+
+        <div className="progress-observatory-vitals" aria-label="Current progress snapshot">
+          <div>
+            <span>Current weight</span>
+            <strong>{latestWeight !== '—' ? `${latestWeight} lb` : '—'}</strong>
+            <small>{weightTrend}</small>
+          </div>
+          <div>
+            <span>Average sleep</span>
+            <strong>{avgSleep ? `${avgSleep.toFixed(1)} h` : '—'}</strong>
+            <small>{lastSleep !== '—' ? `Last night ${lastSleep}h` : 'Log sleep to see recovery trends'}</small>
+          </div>
+          <div><span>Movement pace</span><strong>{stepPct}%</strong></div>
+          <div><span>Diary signal</span><strong>{diaryDays.length ? `${diaryDays.length} days` : 'Waiting'}</strong></div>
         </div>
       </header>
 
-      <section className="body-summary-grid">
-        <SummaryCard label="Latest weight" value={latestWeight} suffix=" lbs" meta={weightTrend} accent="orange" />
-        <SummaryCard label="Avg sleep" value={avgSleep ? avgSleep.toFixed(1) : '—'} suffix=" h" meta={lastSleep !== '—' ? `Last night ${lastSleep}h` : 'Log sleep to see recovery trends'} accent="teal" />
-        <SummaryCard label="Movement today" value={Number(todayMovement).toLocaleString()} meta={`Target ${Number(stepTarget).toLocaleString()} • ${stepPct}%`} accent="pink" />
-      </section>
+      <nav className="progress-observatory-tabs" aria-label="Progress views">
+        {BODY_TABS.map(([key, label]) => (
+          <button key={key} type="button" className={tab === key ? 'active' : ''} onClick={() => setTab(key)}>
+            {label}
+          </button>
+        ))}
+      </nav>
 
+      <main className="progress-observatory-scroll">
+      {tab !== 'diary' ? <>
       <section className="dash-card settings-prediction-card body-thirty-day-prediction-card">
         <div className="settings-prediction-head">
           <div>
@@ -768,32 +806,16 @@ export default function BodyScreen() {
       </section>
       </> : null}
 
-      {tab !== 'diary' ? <div className="tab-bar">
-        {BODY_TABS.map(([key, label]) => (
-          <button key={key} className={`tab-btn ${tab === key ? 'active' : ''}`} onClick={() => setTab(key)}>
-            {label}
-          </button>
-        ))}
-      </div> : null}
-
       {tab === 'diary' && (
         <DiaryTab
-          avgSleep={avgSleep}
           days={diaryDays}
           error={diaryError}
-          latestWeight={latestWeight}
           loading={diaryLoading}
-          stepPct={stepPct}
           stepSeries={stepSeries}
           sleepSeries={sleepSeries}
           weightSeries={weightSeries}
-          tabs={BODY_TABS}
-          onSelectTab={setTab}
-          onOpenActivityLog={() => navigate('/activity-log')}
-          onOpenPhotos={() => navigate('/progress-photos')}
-          onOpenSupport={handleOpenBodySupport}
-          onBackToJohnny={() => navigate('/dashboard')}
           onUpdateMeal={updateDiaryMeal}
+          onOpenActivityLog={() => navigate('/activity-log')}
         />
       )}
 
@@ -1057,54 +1079,17 @@ export default function BodyScreen() {
       onFocusHandled={() => setPendingRouteFocus(current => current?.tab === 'workouts' ? null : current)}
     />
     )}
+      </main>
     </div>
   )
 }
 
-function DiaryTab({ days, loading, error, latestWeight, avgSleep, stepPct, weightSeries, sleepSeries, stepSeries, tabs, onSelectTab, onOpenActivityLog, onOpenPhotos, onOpenSupport, onBackToJohnny, onUpdateMeal }) {
+function DiaryTab({ days, loading, error, weightSeries, sleepSeries, stepSeries, onUpdateMeal, onOpenActivityLog }) {
   const mealCount = days.reduce((sum, day) => sum + day.meals.length, 0)
 
   return (
-    <div className="body-tab progress-diary-tab progress-observatory-shell">
-      <div className="progress-observatory-ambient" aria-hidden="true">
-        <span className="progress-observatory-glow glow-one" />
-        <span className="progress-observatory-glow glow-two" />
-      </div>
-
-      <header className="progress-observatory-header support-icon-anchor">
-        <div className="progress-observatory-title">
-          <button type="button" className="progress-observatory-back" onClick={onBackToJohnny}>
-            <span aria-hidden="true">←</span>
-            Back to Johnny
-          </button>
-          <span className="progress-observatory-kicker">Progress observatory</span>
-          <h1>Progress Diary</h1>
-          <p>Your body, recovery, fuel, and training—assembled by day.</p>
-        </div>
-        <div className="progress-observatory-actions">
-          <button type="button" className="progress-observatory-icon-button" onClick={onOpenSupport} aria-label="Get help with progress tracking">?</button>
-          <button type="button" className="progress-observatory-action" onClick={onOpenPhotos}>Photos</button>
-          <button type="button" className="progress-observatory-action primary" onClick={onOpenActivityLog}>Activity log</button>
-        </div>
-
-        <div className="progress-observatory-vitals" aria-label="Current progress snapshot">
-          <div><span>Current weight</span><strong>{latestWeight !== '—' ? `${latestWeight} lb` : '—'}</strong></div>
-          <div><span>Average sleep</span><strong>{avgSleep ? `${avgSleep.toFixed(1)} h` : '—'}</strong></div>
-          <div><span>Movement pace</span><strong>{stepPct}%</strong></div>
-          <div><span>Diary signal</span><strong>{days.length ? `${days.length} days` : 'Waiting'}</strong></div>
-        </div>
-      </header>
-
-      <nav className="progress-observatory-tabs" aria-label="Progress views">
-        {tabs.map(([key, label]) => (
-          <button key={key} type="button" className={key === 'diary' ? 'active' : ''} onClick={() => onSelectTab(key)}>
-            {label}
-          </button>
-        ))}
-      </nav>
-
-      <main className="progress-observatory-scroll">
-        <NutritionDiaryLedger days={days} loading={loading} onUpdateMeal={onUpdateMeal} />
+    <>
+      <NutritionDiaryLedger days={days} loading={loading} onUpdateMeal={onUpdateMeal} />
 
         <section className="progress-observatory-trends" aria-labelledby="progress-signals-title">
           <div className="progress-observatory-section-heading">
@@ -1260,8 +1245,7 @@ function DiaryTab({ days, loading, error, latestWeight, avgSleep, stepPct, weigh
             </div>
           </section>
         ) : null}
-      </main>
-    </div>
+    </>
   )
 }
 

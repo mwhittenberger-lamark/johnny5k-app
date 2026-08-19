@@ -83,6 +83,14 @@ async function renderScreen() {
   await act(async () => { await Promise.resolve() })
 }
 
+async function renderScreenWithState(state) {
+  await act(async () => {
+    root.render(<MemoryRouter initialEntries={[{ pathname: '/dashboard', state }]}><JohnnyHomeScreen /></MemoryRouter>)
+    await Promise.resolve()
+  })
+  await act(async () => { await Promise.resolve() })
+}
+
 describe('JohnnyHomeScreen', () => {
   beforeEach(() => {
     container = document.createElement('div')
@@ -855,6 +863,44 @@ describe('JohnnyHomeScreen', () => {
     expect(container.textContent).toContain('Plan another workout for today.')
   })
 
+  it('has Johnny celebrate a workout just completed on the live workout screen', async () => {
+    aiApiMock.getThread.mockResolvedValue({ messages: [] })
+    dashboardApiMock.snapshot.mockResolvedValue({ training_status: { scheduled_day_type: 'push', recorded: true } })
+    await renderScreenWithState({ workoutJustCompleted: true })
+
+    expect(container.textContent).toMatch(/brick in the wall|session.s in the books|Logged and locked in/)
+  })
+
+  it('has Johnny celebrate a weight log made on the progress screen', async () => {
+    aiApiMock.getThread.mockResolvedValue({ messages: [] })
+    dashboardApiMock.snapshot.mockResolvedValue({ training_status: { scheduled_day_type: 'push', recorded: false } })
+    await renderScreenWithState({ loggedActivity: 'weight' })
+
+    expect(container.textContent).toMatch(/Weigh-in logged|Got your weight|Weight logged/)
+  })
+
+  it('shows every active streak when the streak badge is tapped', async () => {
+    aiApiMock.getThread.mockResolvedValue({ messages: [] })
+    dashboardApiMock.snapshot.mockResolvedValue({
+      training_status: { scheduled_day_type: 'push', recorded: false },
+      streaks: { training_days: 5, logging_days: 3, sleep_days: 0 },
+    })
+    await renderScreen()
+
+    const streakButton = container.querySelector('.johnny-streak-badge')
+    expect(streakButton).toBeTruthy()
+    expect(streakButton.textContent).toContain('5')
+
+    await act(async () => {
+      streakButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).toContain('5-day training streak')
+    expect(container.textContent).toContain('3-day meal logging streak')
+    expect(container.textContent).not.toContain('sleep streak')
+  })
+
   it('opens the inline cardio form and saves the entry without another AI request', async () => {
     aiApiMock.getThread.mockResolvedValue({ messages: [] })
     dashboardApiMock.snapshot.mockResolvedValue({ training_status: { scheduled_day_type: 'cardio', recorded: false } })
@@ -1057,6 +1103,11 @@ describe('JohnnyHomeScreen', () => {
     await act(async () => { acceptButton.click(); await Promise.resolve() })
     expect(confirmGlobalActionMock).not.toHaveBeenCalled()
     expect(nutritionApiMock.logMeal).toHaveBeenCalledWith(expect.objectContaining({ meal_type: 'breakfast' }))
+
+    const closedDialog = document.querySelector('[role="dialog"][aria-label="Daily nutrition log"]')
+    const closeButton = closedDialog.querySelector('[aria-label="Close daily nutrition log"]')
+    await act(async () => { closeButton.click(); await Promise.resolve() })
+    expect(container.textContent).toMatch(/Fueling the machine|Staying dialed in on nutrition|Small choices like this stack up/)
   })
 
   it('confirms with the user before logging breakfast at or after 11am', async () => {

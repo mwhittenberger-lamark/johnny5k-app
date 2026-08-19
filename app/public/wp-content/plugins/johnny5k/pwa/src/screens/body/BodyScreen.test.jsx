@@ -245,7 +245,7 @@ describe('BodyScreen progress diary', () => {
     expect(container.textContent).toContain('Set 1 135 lb 8 reps')
     expect(container.textContent).toContain('Progress photos')
     expect(container.querySelector('.body-screen')?.classList.contains('progress-observatory')).toBe(true)
-    expect(container.querySelector('.progress-observatory-shell')).toBeTruthy()
+    expect(container.querySelector('.progress-observatory-scroll')).toBeTruthy()
     expect(container.querySelector('.progress-nutrition-ledger')?.compareDocumentPosition(container.querySelector('.progress-observatory-trends')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(container.querySelector('[aria-label="Progress views"]')?.textContent).toContain('Diary')
     expect(container.querySelector('[aria-label="Diary dates"]')).toBeTruthy()

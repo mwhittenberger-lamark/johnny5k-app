@@ -164,13 +164,33 @@ export default function JohnnyHomeScreen() {
     }
   }, [helpfulSuggestion])
 
+  const runConfettiBurst = useCallback(() => {
+    confettiTimeoutsRef.current.forEach(id => window.clearTimeout(id))
+    setConfettiMode('active')
+    confettiTimeoutsRef.current = [
+      window.setTimeout(() => setConfettiMode('exiting'), CONFETTI_ACTIVE_MS),
+      window.setTimeout(() => setConfettiMode('idle'), CONFETTI_ACTIVE_MS + CONFETTI_EXIT_MS),
+    ]
+  }, [])
+
+  const celebrateLoggedActivity = useCallback((type) => {
+    const line = pickRandomPhrase(CELEBRATION_LINES[type] || CELEBRATION_LINES.default)
+    setMessages(current => [...current, { role: 'assistant', message_text: line }])
+    setBrandMood('celebrating')
+    runConfettiBurst()
+  }, [runConfettiBurst])
+
   const openDailyCheckIn = useCallback(() => { setActivityLabel('daily check-in open'); setDailyCheckInOpen(true) }, [])
   const openDailyBriefing = useCallback(() => { setActivityLabel('daily briefing open'); setDailyCheckInOpen(true) }, [])
   const startDailyBriefing = useCallback(() => { setDailyCheckInOpen(false); setDailyBriefingOpen(true) }, [])
   const closeDailyBriefing = useCallback(() => { setDailyBriefingOpen(false); setActivityLabel('ready') }, [])
   const closeDailyCheckIn = useCallback(() => { setDailyCheckInOpen(false); setActivityLabel('ready') }, [])
   const openNutritionLog = useCallback(() => { setActivityLabel('nutrition log open'); setNutritionLogOpen(true) }, [])
-  const closeNutritionLog = useCallback(() => { setNutritionLogOpen(false); setActivityLabel('ready') }, [])
+  const closeNutritionLog = useCallback((loggedMeal) => {
+    setNutritionLogOpen(false)
+    setActivityLabel('ready')
+    if (loggedMeal) celebrateLoggedActivity('meal')
+  }, [celebrateLoggedActivity])
   const openProgressDiary = useCallback(() => {
     setActivityLabel('opening progress diary')
     navigate('/body', {
@@ -182,6 +202,22 @@ export default function JohnnyHomeScreen() {
   }, [navigate])
   const openProfile = useCallback(() => { setActivityLabel('profile open'); setProfileOpen(true) }, [])
   const closeProfile = useCallback(() => { setProfileOpen(false); setActivityLabel('ready') }, [])
+
+  const showStreakDetails = useCallback(() => {
+    const entries = Object.entries(streaks || {})
+      .map(([key, days]) => [key, Number(days) || 0])
+      .filter(([, days]) => days >= 1)
+      .sort((a, b) => b[1] - a[1])
+    if (!entries.length) return
+    const lines = entries.map(([key, days]) => `${STREAK_ICONS[key] || '🔥'} ${days}-day ${STREAK_LABELS[key] || key.replace(/_/g, ' ')} streak`)
+    setMessages(current => [...current,
+      { role: 'user', message_text: 'Show me my streaks.' },
+      {
+        role: 'assistant',
+        message_text: `🔥 Your streak board:\n\n${lines.join('\n')}\n\n${entries.length > 1 ? 'Keep every chain alive — that’s the whole game.' : 'One streak lit. Let’s stack more.'}`,
+      },
+    ])
+  }, [streaks])
 
   suggestionSuppressedRef.current = initialising || loading || dailyCheckInOpen || nutritionLogOpen || profileOpen
 
@@ -260,15 +296,6 @@ export default function JohnnyHomeScreen() {
     ]
   }, [])
 
-  const runConfettiBurst = useCallback(() => {
-    confettiTimeoutsRef.current.forEach(id => window.clearTimeout(id))
-    setConfettiMode('active')
-    confettiTimeoutsRef.current = [
-      window.setTimeout(() => setConfettiMode('exiting'), CONFETTI_ACTIVE_MS),
-      window.setTimeout(() => setConfettiMode('idle'), CONFETTI_ACTIVE_MS + CONFETTI_EXIT_MS),
-    ]
-  }, [])
-
   useEffect(() => {
     let active = true
     Promise.allSettled([aiApi.getThread(THREAD_KEY), bootstrapSession(), dashboardApi.snapshot(), aiApi.dailyBrief()]).then(([threadResult, , snapshotResult, briefResult]) => {
@@ -288,8 +315,16 @@ export default function JohnnyHomeScreen() {
       }
       setActivityLabel('ready')
       setInitialising(false)
+      if (location.state?.workoutJustCompleted) {
+        celebrateLoggedActivity('workout')
+      } else if (location.state?.loggedActivity) {
+        celebrateLoggedActivity(location.state.loggedActivity)
+      }
     })
     return () => { active = false }
+  // Only meant to run once for the load that brought the user here — location.state
+  // is read for a one-time celebration cue, not tracked as an ongoing dependency.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bootstrapSession])
 
   useEffect(() => {
@@ -759,11 +794,11 @@ export default function JohnnyHomeScreen() {
   }
 
   const navChips = [
-    { key: 'checkin', label: 'Briefing', onClick: openDailyBriefing },
-    { key: 'progress-log', label: 'Log Progress', onClick: openDailyCheckIn, stacked: true },
-    { key: 'nutrition', label: 'Log Nutrition', onClick: openNutritionLog, stacked: true },
+    { key: 'checkin', label: 'Briefing', onClick: openDailyBriefing, active: dailyBriefingOpen || (dailyCheckInOpen && activityLabel === 'daily briefing open') },
+    { key: 'progress-log', label: 'Log Progress', onClick: openDailyCheckIn, stacked: true, active: dailyCheckInOpen && activityLabel === 'daily check-in open' },
+    { key: 'nutrition', label: 'Log Nutrition', onClick: openNutritionLog, stacked: true, active: nutritionLogOpen },
     { key: 'diary', label: 'Progress Diary', onClick: openProgressDiary, stacked: true },
-    { key: 'profile', label: 'Profile', onClick: openProfile },
+    { key: 'profile', label: 'Profile', onClick: openProfile, active: profileOpen },
   ]
 
   return (
@@ -786,9 +821,15 @@ export default function JohnnyHomeScreen() {
             </div>
           </div>
           {headlineStreak ? (
-            <div className="johnny-streak-badge" title={`${headlineStreak.days}-day ${headlineStreak.label} streak`}>
+            <button
+              type="button"
+              className="johnny-streak-badge"
+              onClick={showStreakDetails}
+              aria-label={`${headlineStreak.days}-day ${headlineStreak.label} streak. Tap to see all your streaks.`}
+              title={`${headlineStreak.days}-day ${headlineStreak.label} streak`}
+            >
               <span aria-hidden="true">🔥</span> {headlineStreak.days}
-            </div>
+            </button>
           ) : null}
           <button type="button" className="johnny-clear-chat" onClick={() => { void handleClearChat() }} disabled={loading || clearingChat}>
             {clearingChat ? 'Clearing…' : 'Clear chat'}
@@ -851,7 +892,7 @@ export default function JohnnyHomeScreen() {
               clearLabel={primaryActionSlide.clearLabel}
             />
             <div className="quick-nav-chips">
-              {navChips.map(chip => <QuickNavChip key={chip.key} label={chip.label} onClick={chip.onClick} stacked={chip.stacked} />)}
+              {navChips.map(chip => <QuickNavChip key={chip.key} label={chip.label} onClick={chip.onClick} stacked={chip.stacked} active={chip.active} />)}
             </div>
           </nav>
 
@@ -947,12 +988,40 @@ const BRIEF_TAIL_PHRASES = [
   'Here’s today’s rundown.',
   'Got your brief ready.',
 ]
+const CELEBRATION_LINES = {
+  workout: [
+    '🔥 Workout logged! That’s another brick in the wall — nice work today.',
+    'Boom — session’s in the books. Recovery starts now, champ.',
+    'Logged and locked in. That’s the kind of consistency that adds up.',
+  ],
+  meal: [
+    'Nice, meal logged! Fueling the machine the right way.',
+    'Got it — that meal’s in your log. Staying dialed in on nutrition pays off.',
+    'Meal logged. Small choices like this stack up fast.',
+  ],
+  weight: [
+    'Weigh-in logged. Thanks for staying honest with the scale — that’s how trends get real.',
+    'Got your weight. One more data point on the way to your goal.',
+    'Weight logged. Consistency here is what makes the trend line mean something.',
+  ],
+  sleep: [
+    'Sleep logged. Recovery is training too — nice job tracking it.',
+    'Got your sleep entry. That’s the recovery half of the equation handled.',
+  ],
+  steps: [
+    'Steps logged. Movement adds up — nice work keeping tabs on it.',
+  ],
+  default: [
+    'Logged! Nice work staying on top of your tracking.',
+  ],
+}
 
 function pickRandomPhrase(phrases) {
   return phrases[Math.floor(Math.random() * phrases.length)]
 }
 
 const STREAK_LABELS = { logging_days: 'meal logging', training_days: 'training', sleep_days: 'sleep', cardio_days: 'cardio' }
+const STREAK_ICONS = { logging_days: '🍽️', training_days: '🏋️', sleep_days: '😴', cardio_days: '🏃' }
 
 function pickHeadlineStreak(streaks) {
   if (!streaks || typeof streaks !== 'object') return null
@@ -1205,8 +1274,17 @@ function JohnnyConfettiBurst({ phase }) {
   )
 }
 
-function QuickNavChip({ label, onClick, stacked = false }) {
-  return <button type="button" className={`quick-nav-chip${stacked ? ' stacked' : ''}`} onClick={onClick}>{label}</button>
+function QuickNavChip({ label, onClick, stacked = false, active = false }) {
+  return (
+    <button
+      type="button"
+      className={`quick-nav-chip${stacked ? ' stacked' : ''}${active ? ' active' : ''}`}
+      aria-pressed={active}
+      onClick={onClick}
+    >
+      {label}
+    </button>
+  )
 }
 
 function JohnnyFireOverlay({ phase }) {
