@@ -213,29 +213,11 @@ class IronQuestNarrativeService {
 		$fallback_latest_beat = '' !== (string) ( $story_engine_bundle['latest_beat'] ?? '' )
 			? (string) $story_engine_bundle['latest_beat']
 			: self::build_set_story_text( $state_with_scene, $exercise_name, $set_number, $sets_total, $set_result, $event_type, $completed_exercise, $encounter_type, $beat_context );
-		$set_beat_bundle   = ! $completed_exercise
-			? IronQuestAiNarrativeService::build_set_beat_bundle(
-				$user_id,
-				$profile,
-				$location,
-				$mission,
-				$state_with_scene,
-				[
-					'exercise_name'  => $exercise_name,
-					'exercise_order' => $exercise_order,
-					'exercise_count' => $exercise_count,
-					'set_number'     => $set_number,
-					'sets_total'     => $sets_total,
-					'set_result'     => $set_result,
-					'gear_effects'   => self::resolve_story_effects_for_ai_prompt( $state, $run, $exercise_name, 'gear' ),
-					'spell_effects'  => self::resolve_story_effects_for_ai_prompt( $state, $run, $exercise_name, 'spell' ),
-					'encounter_type' => $encounter_type,
-					'story_engine_draft' => (array) ( $story_engine_bundle['draft'] ?? [] ),
-					'story_engine_template' => (array) ( $story_engine_bundle['template'] ?? [] ),
-				],
-				$beat_context
-			)
-			: [];
+		// Rest-time beats are read on the clock, so they come from the pre-written
+		// story engine bank (fast, deterministic) rather than a live AI call —
+		// a synchronous AI request here was the source of the rest-screen lag.
+		// Pre-writing/varying this content is the story workbench's job, offline.
+		$set_beat_bundle   = [];
 		$latest_beat       = '' !== (string) ( $set_beat_bundle['latest_beat'] ?? '' )
 			? (string) $set_beat_bundle['latest_beat']
 			: $fallback_latest_beat;
@@ -338,23 +320,9 @@ class IronQuestNarrativeService {
 			$transition_state['encounter_type'] = $next_encounter_type;
 			$transition_state['encounter_seed'] = $next_encounter_seed;
 			$transition_state['scene_state']    = $next_scene_state;
-			$transition_bundle        = IronQuestAiNarrativeService::build_transition_bundle(
-				$user_id,
-				$profile,
-				$location,
-				$mission,
-				$transition_state,
-				$state['exercise_context'],
-				[
-					'exercise_name'  => $next_exercise_name,
-					'exercise_order' => $next_encounter_index,
-					'exercise_count' => $exercise_count,
-					'encounter_type' => $next_encounter_type,
-					'encounter_seed' => $next_encounter_seed,
-					'story_engine_draft' => (array) ( $transition_story_engine_bundle['draft'] ?? [] ),
-					'story_engine_template' => (array) ( $transition_story_engine_bundle['template'] ?? [] ),
-				]
-			);
+			// Same reasoning as the set-progression beat above: the between-exercise
+			// rest beat comes from the pre-written story engine, not a live AI call.
+			$transition_bundle        = [];
 			$next_choices             = ! empty( $transition_bundle['choices'] )
 				? (array) $transition_bundle['choices']
 				: self::build_next_encounter_choices( $transition_state, $next_exercise_name, $next_encounter_type );
@@ -1591,39 +1559,6 @@ class IronQuestNarrativeService {
 		}
 
 		return 'engaged';
-	}
-
-	private static function resolve_story_effects_for_ai_prompt( array $state, array $run, string $exercise_name, string $effect_type ): array {
-		$effect_type   = 'spell' === $effect_type ? 'spell' : 'gear';
-		$effects_key   = $effect_type . '_effects';
-		$candidate_sets = [
-			$state[ $effects_key ] ?? null,
-			$run[ $effects_key ] ?? null,
-			$run['ironquest_' . $effects_key ] ?? null,
-		];
-
-		foreach ( $candidate_sets as $candidate ) {
-			if ( ! is_array( $candidate ) ) {
-				continue;
-			}
-
-			$clean = array_values(
-				array_filter(
-					array_map(
-						static function ( $effect ): string {
-							return is_scalar( $effect ) ? sanitize_text_field( (string) $effect ) : '';
-						},
-						$candidate
-					)
-				)
-			);
-
-			if ( $clean ) {
-				return $clean;
-			}
-		}
-
-		return apply_filters( 'johnny5k_ironquest_story_effects', [], $effect_type, $state, $run, $exercise_name );
 	}
 
 	private static function resolve_default_encounter_type( string $run_type, array $mission ): string {

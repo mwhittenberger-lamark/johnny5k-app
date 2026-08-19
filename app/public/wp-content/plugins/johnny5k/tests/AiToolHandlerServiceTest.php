@@ -884,6 +884,66 @@ class AiToolHandlerServiceTest extends ServiceTestCase {
 		$this->assertTrue( $queued['ok'] ?? false );
 	}
 
+	public function test_activate_ironquest_mission_attaches_to_an_active_workout(): void {
+		$mission_request = null;
+		$result = AiToolHandlerService::execute( 42, 'activate_ironquest_mission', [], [
+			'workout_current' => static fn(): \WP_REST_Response => new \WP_REST_Response( [ 'session' => [ 'id' => 51, 'planned_day_type' => 'push' ] ], 200 ),
+			'ironquest_enable' => static fn( \WP_REST_Request $request ): \WP_REST_Response => new \WP_REST_Response( [ 'enabled' => true ], 200 ),
+			'ironquest_start_mission' => static function( \WP_REST_Request $request ) use ( &$mission_request ): \WP_REST_Response {
+				$mission_request = $request;
+				return new \WP_REST_Response( [ 'run' => [ 'id' => 7 ], 'mission' => [ 'name' => 'Form Check' ] ], 201 );
+			},
+		] );
+
+		$this->assertTrue( $result['ok'] ?? false );
+		$this->assertSame( '51', $mission_request?->get_param( 'source_session_id' ) );
+		$this->assertSame( 'workout', $mission_request?->get_param( 'run_type' ) );
+		$this->assertStringContainsString( "Attached Form Check to today's workout.", $result['summary'] ?? '' );
+	}
+
+	public function test_activate_ironquest_mission_without_an_active_workout_attaches_next_time(): void {
+		$mission_request = null;
+		$result = AiToolHandlerService::execute( 42, 'activate_ironquest_mission', [], [
+			'workout_current' => static fn(): \WP_REST_Response => new \WP_REST_Response( [ 'session' => null ], 200 ),
+			'ironquest_enable' => static fn( \WP_REST_Request $request ): \WP_REST_Response => new \WP_REST_Response( [ 'enabled' => true ], 200 ),
+			'ironquest_start_mission' => static function( \WP_REST_Request $request ) use ( &$mission_request ): \WP_REST_Response {
+				$mission_request = $request;
+				return new \WP_REST_Response( [ 'run' => [ 'id' => 8 ], 'mission' => [ 'name' => 'Form Check' ] ], 201 );
+			},
+		] );
+
+		$this->assertTrue( $result['ok'] ?? false );
+		$this->assertNull( $mission_request?->get_param( 'source_session_id' ) );
+		$this->assertStringContainsString( 'Started Form Check.', $result['summary'] ?? '' );
+	}
+
+	public function test_activate_ironquest_mission_can_also_start_the_workout_first(): void {
+		$mission_request = null;
+		$workout_started = false;
+		$result = AiToolHandlerService::execute( 42, 'activate_ironquest_mission', [ 'start_workout' => true ], [
+			'workout_current' => static function () use ( &$workout_started ): \WP_REST_Response {
+				return $workout_started
+					? new \WP_REST_Response( [ 'session' => [ 'id' => 60, 'planned_day_type' => 'push' ] ], 200 )
+					: new \WP_REST_Response( [ 'session' => null, 'custom_workout_draft' => [ 'id' => 'draft-9' ] ], 200 );
+			},
+			'today' => static fn( int $user_id ): string => '2026-08-07',
+			'load_workout_approval' => static fn( int $user_id ): array => [ 'date' => '2026-08-07', 'workout_id' => 'draft-9' ],
+			'workout_start' => static function ( \WP_REST_Request $request ) use ( &$workout_started ): \WP_REST_Response {
+				$workout_started = true;
+				return new \WP_REST_Response( [ 'session_id' => 60 ], 201 );
+			},
+			'ironquest_enable' => static fn( \WP_REST_Request $request ): \WP_REST_Response => new \WP_REST_Response( [ 'enabled' => true ], 200 ),
+			'ironquest_start_mission' => static function( \WP_REST_Request $request ) use ( &$mission_request ): \WP_REST_Response {
+				$mission_request = $request;
+				return new \WP_REST_Response( [ 'run' => [ 'id' => 9 ], 'mission' => [ 'name' => 'Form Check' ] ], 201 );
+			},
+		] );
+
+		$this->assertTrue( $result['ok'] ?? false );
+		$this->assertSame( '60', $mission_request?->get_param( 'source_session_id' ) );
+		$this->assertStringContainsString( "Attached Form Check to today's workout.", $result['summary'] ?? '' );
+	}
+
 	public function test_health_water_and_correction_tools_route_every_log_type(): void {
 		$body = AiToolHandlerService::execute( 42, 'log_body_measurement', [ 'weight_lb' => 198.5, 'waist_in' => 37, 'body_fat_pct' => 22.5, 'resting_hr' => 64 ], [
 			'body_log_weight' => static fn( \WP_REST_Request $request ): \WP_REST_Response => new \WP_REST_Response( [

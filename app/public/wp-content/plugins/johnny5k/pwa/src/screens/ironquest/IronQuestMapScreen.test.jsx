@@ -13,6 +13,9 @@ const travelToLocationMock = vi.hoisted(() => vi.fn())
 const fastTravelMock = vi.hoisted(() => vi.fn())
 const generateWorldArtMock = vi.hoisted(() => vi.fn())
 const useIronQuestWorldArtMock = vi.hoisted(() => vi.fn())
+const activeMissionMock = vi.hoisted(() => vi.fn())
+const startMissionMock = vi.hoisted(() => vi.fn())
+const workoutStoreState = vi.hoisted(() => ({ session: null }))
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
@@ -24,8 +27,18 @@ vi.mock('../../api/modules/ironquest', () => ({
     travelToLocation: travelToLocationMock,
     fastTravel: fastTravelMock,
     generateWorldArt: generateWorldArtMock,
+    activeMission: activeMissionMock,
+    startMission: startMissionMock,
   },
 }))
+
+vi.mock('../../store/workoutStore', async () => {
+  const actual = await vi.importActual('../../store/workoutStore')
+  return {
+    ...actual,
+    useWorkoutStore: (selector) => selector(workoutStoreState),
+  }
+})
 
 vi.mock('../../hooks/useIronQuestWorldArt', () => ({
   useIronQuestWorldArt: (...args) => useIronQuestWorldArtMock(...args),
@@ -253,6 +266,9 @@ describe('IronQuestMapScreen', () => {
     travelToLocationMock.mockReset()
     fastTravelMock.mockReset()
     generateWorldArtMock.mockReset()
+    activeMissionMock.mockReset()
+    startMissionMock.mockReset()
+    workoutStoreState.session = null
     useIronQuestWorldArtMock.mockReset()
     useIronQuestWorldArtMock.mockImplementation((artKey) => (
       artKey === 'mission_card_grim_hollow_village_grave_bell'
@@ -379,5 +395,38 @@ describe('IronQuestMapScreen', () => {
 
     expect(travelToLocationMock).toHaveBeenCalledWith({ location_slug: 'grim_hollow_village' })
     expect(container.textContent).toContain('Traveled to Grim Hollow Village.')
+  })
+
+  it('attaches the mission to the active workout session when Start mission is clicked', async () => {
+    profileMock.mockResolvedValue(buildProfilePayload())
+    configMock.mockResolvedValue(buildConfigPayload())
+    workoutStoreState.session = { session: { id: 91, planned_day_type: 'push' } }
+    activeMissionMock.mockResolvedValue({ active_run: null })
+    startMissionMock.mockResolvedValue({ run: { id: 5 }, mission: { name: 'Form Check' } })
+
+    await renderScreen()
+
+    const startButton = Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.trim() === 'Start mission')
+    expect(startButton).toBeTruthy()
+    await click(startButton)
+    await flushPromises()
+
+    expect(activeMissionMock).toHaveBeenCalled()
+    expect(startMissionMock).toHaveBeenCalledWith({ run_type: 'workout', source_session_id: '91' })
+  })
+
+  it('just navigates to the workout screen when Start mission is clicked with no active session', async () => {
+    profileMock.mockResolvedValue(buildProfilePayload())
+    configMock.mockResolvedValue(buildConfigPayload())
+    workoutStoreState.session = null
+
+    await renderScreen()
+
+    const startButton = Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.trim() === 'Start mission')
+    await click(startButton)
+    await flushPromises()
+
+    expect(startMissionMock).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('Workout')
   })
 })

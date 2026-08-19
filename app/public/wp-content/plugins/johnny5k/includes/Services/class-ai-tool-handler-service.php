@@ -5,6 +5,7 @@ defined( 'ABSPATH' ) || exit;
 
 use Johnny5k\REST\BodyMetricsController;
 use Johnny5k\REST\DashboardController;
+use Johnny5k\REST\IronQuestController;
 use Johnny5k\REST\NutritionController;
 use Johnny5k\REST\NutritionRecipeController;
 use Johnny5k\REST\OnboardingController;
@@ -64,6 +65,7 @@ class AiToolHandlerService {
 			'search_exercises'            => self::tool_search_exercises( $arguments, $deps ),
 			'modify_workout'              => self::tool_modify_workout( $user_id, $arguments, $deps ),
 			'start_workout'               => self::tool_start_workout( $user_id, $arguments, $deps ),
+			'activate_ironquest_mission'  => self::tool_activate_ironquest_mission( $user_id, $arguments, $deps ),
 			'manage_workout_set'          => self::tool_manage_workout_set( $arguments, $deps ),
 			'cancel_workout'              => self::tool_cancel_workout( $user_id, $deps ),
 			'restart_workout_timer'       => self::tool_restart_workout_timer( $deps ),
@@ -1996,6 +1998,47 @@ class AiToolHandlerService {
 		$result = self::rest_result( self::rest_call( $deps, 'workout_start', [ WorkoutController::class, 'start' ], $request ), 'start_workout', 'Could not start the workout.' );
 		if ( ! empty( $result['ok'] ) ) $result['summary'] = 'Activated today’s workout.';
 		return $result;
+	}
+
+	private static function tool_activate_ironquest_mission( int $user_id, array $arguments, array $deps ): array {
+		$enable_request = new \WP_REST_Request( 'POST', '/ironquest/enable' );
+		$enable_result  = self::rest_result( self::rest_call( $deps, 'ironquest_enable', [ IronQuestController::class, 'enable' ], $enable_request ), 'ironquest_enable', 'Could not turn on IronQuest mode.' );
+		if ( empty( $enable_result['ok'] ) ) {
+			return $enable_result;
+		}
+
+		$current    = self::active_workout_data( $deps );
+		$session    = self::array_value( $current['session'] ?? [] );
+		$session_id = (int) ( $session['id'] ?? 0 );
+
+		if ( $session_id <= 0 && ! empty( $arguments['start_workout'] ) ) {
+			$start_result = self::tool_start_workout( $user_id, [], $deps );
+			if ( empty( $start_result['ok'] ) ) {
+				return $start_result;
+			}
+			$current    = self::active_workout_data( $deps );
+			$session    = self::array_value( $current['session'] ?? [] );
+			$session_id = (int) ( $session['id'] ?? 0 );
+		}
+
+		$day_type = sanitize_key( (string) ( $session['actual_day_type'] ?? $session['planned_day_type'] ?? '' ) );
+		$run_type = 'cardio' === $day_type ? 'cardio' : 'workout';
+
+		$mission_request = new \WP_REST_Request( 'POST', '/ironquest/missions/start' );
+		$mission_request->set_param( 'run_type', $run_type );
+		if ( $session_id > 0 ) {
+			$mission_request->set_param( 'source_session_id', (string) $session_id );
+		}
+
+		$mission_result = self::rest_result( self::rest_call( $deps, 'ironquest_start_mission', [ IronQuestController::class, 'start_mission' ], $mission_request ), 'activate_ironquest_mission', 'Could not start an IronQuest mission.' );
+		if ( ! empty( $mission_result['ok'] ) ) {
+			$mission_name = sanitize_text_field( (string) ( $mission_result['data']['mission']['name'] ?? 'a new mission' ) );
+			$mission_result['summary'] = $session_id > 0
+				? "Attached {$mission_name} to today's workout."
+				: "Started {$mission_name}. It will attach the next time you start a workout.";
+		}
+
+		return $mission_result;
 	}
 
 	private static function active_workout_data( array $deps ): array {

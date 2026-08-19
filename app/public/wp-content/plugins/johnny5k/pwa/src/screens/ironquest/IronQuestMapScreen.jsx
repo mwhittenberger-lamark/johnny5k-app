@@ -8,9 +8,11 @@ import EmptyState from '../../components/ui/EmptyState'
 import { useIronQuestWorldArt } from '../../hooks/useIronQuestWorldArt'
 import { useIronQuestRecentMissionUpdate } from '../../hooks/useIronQuestRecentMissionUpdate'
 import { dispatchIronQuestStateChanged, subscribeIronQuestStateChanged } from '../../lib/ironquestSync'
+import { startIronQuestMissionForSession, useWorkoutStore } from '../../store/workoutStore'
 
 export default function IronQuestMapScreen() {
   const navigate = useNavigate()
+  const activeWorkoutSession = useWorkoutStore(state => state.session)
   const [hub, setHub] = useState(null)
   const [config, setConfig] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -18,6 +20,19 @@ export default function IronQuestMapScreen() {
   const [travelingLocationSlug, setTravelingLocationSlug] = useState('')
   const [fastTraveling, setFastTraveling] = useState(false)
   const [openNodeSlug, setOpenNodeSlug] = useState('')
+  const [startingMission, setStartingMission] = useState(false)
+
+  async function handleStartMission() {
+    if (activeWorkoutSession?.session?.id) {
+      setStartingMission(true)
+      try {
+        await startIronQuestMissionForSession(activeWorkoutSession)
+      } finally {
+        setStartingMission(false)
+      }
+    }
+    navigate('/workout')
+  }
   const [loadingPreviewSlug, setLoadingPreviewSlug] = useState('')
   const [locationDetailsBySlug, setLocationDetailsBySlug] = useState({})
   const [routeNotice, setRouteNotice] = useState(null)
@@ -444,8 +459,8 @@ export default function IronQuestMapScreen() {
                       </button>
                     ) : null}
                     {node.current ? (
-                      <button type="button" className="btn-outline small" onClick={() => navigate('/workout')}>
-                        Start mission
+                      <button type="button" className="btn-outline small" onClick={() => { void handleStartMission() }} disabled={startingMission}>
+                        {startingMission ? 'Starting…' : 'Start mission'}
                       </button>
                     ) : null}
                     {!node.unlocked && node.nextUnlock ? (

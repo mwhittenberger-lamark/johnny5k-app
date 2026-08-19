@@ -153,7 +153,7 @@ class IronQuestMissionStoryServiceTest extends ServiceTestCase {
 		$this->assertNotSame( '', $progressed['latest_beat'] );
 	}
 
-	public function test_set_progression_payload_matches_premium_prompt_contract(): void {
+	public function test_set_progression_does_not_call_ai_and_still_produces_a_beat(): void {
 		$user_id = 42;
 		$profile = [
 			'id'                    => 7,
@@ -178,6 +178,9 @@ class IronQuestMissionStoryServiceTest extends ServiceTestCase {
 			]
 		);
 
+		// Rest-time set-progression beats must come from the pre-written story
+		// engine bank, never a live AI call — this filter would fire if one
+		// slipped back in.
 		$captured_payload = null;
 		add_filter( 'johnny5k_ironquest_ai_response', static function ( $response, string $prompt_type, array $payload ) use ( &$captured_payload ) {
 			if ( 'set_progression' !== $prompt_type ) {
@@ -186,11 +189,7 @@ class IronQuestMissionStoryServiceTest extends ServiceTestCase {
 
 			$captured_payload = $payload;
 
-			return [
-				'latest_beat'       => 'The lane holds for one more breath while you gather yourself for the next effort.',
-				'current_situation' => 'The undead line tightens, but you still have room to drive the next action.',
-				'decision_prompt'   => 'Drive the next set before the gap closes.',
-			];
+			return $response;
 		}, 10, 3 );
 
 		$run = [
@@ -204,7 +203,7 @@ class IronQuestMissionStoryServiceTest extends ServiceTestCase {
 		];
 
 		IronQuestNarrativeService::choose_opening_action( $user_id, $run, 'steady_approach', 'steady' );
-		IronQuestNarrativeService::advance_story_after_set(
+		$progressed = IronQuestNarrativeService::advance_story_after_set(
 			$user_id,
 			$run,
 			[
@@ -222,33 +221,8 @@ class IronQuestMissionStoryServiceTest extends ServiceTestCase {
 			]
 		);
 
-		$this->assertIsArray( $captured_payload );
-		$this->assertSame( '', $captured_payload['encounter']['exercise_name'] );
-		$this->assertArrayNotHasKey( 'opening_choice', $captured_payload['story_state'] );
-		$this->assertArrayNotHasKey( 'enemy', $captured_payload['story_state'] );
-		$this->assertArrayNotHasKey( 'name', $captured_payload['mission'] );
-		$this->assertArrayNotHasKey( 'objective', $captured_payload['mission'] );
-		$this->assertArrayNotHasKey( 'narrative', $captured_payload['mission'] );
-		$this->assertArrayNotHasKey( 'subclass', $captured_payload['user'] );
-		$this->assertArrayNotHasKey( 'level', $captured_payload['user'] );
-		$this->assertNotSame( '', $captured_payload['encounter_seed']['objective'] ?? '' );
-		$this->assertNotSame( '', $captured_payload['encounter_seed']['landmark'] ?? '' );
-		$this->assertNotSame( '', $captured_payload['encounter_seed']['hazard'] ?? '' );
-		$this->assertNotSame( '', $captured_payload['encounter_seed']['stakes'] ?? '' );
-		$this->assertNotSame( '', $captured_payload['encounter_seed']['enemy_posture'] ?? '' );
-		$this->assertNotSame( '', $captured_payload['encounter_seed']['sensory_detail'] ?? '' );
-		$this->assertNotSame( '', $captured_payload['scene_state']['current_visual'] ?? '' );
-		$this->assertNotSame( '', $captured_payload['scene_state']['stakes_now'] ?? '' );
-		$this->assertArrayNotHasKey( 'slug', $captured_payload['encounter_seed'] );
-		$this->assertArrayNotHasKey( 'success_turn', $captured_payload['encounter_seed'] );
-		$this->assertArrayNotHasKey( 'advance_turn', $captured_payload['encounter_seed'] );
-		$this->assertArrayNotHasKey( 'prop', $captured_payload['scene_state'] );
-		$this->assertContains( $captured_payload['mechanics']['roll_band'], [ 'dominant_success', 'strong_success', 'moderate_success', 'low_success', 'struggle', 'failure' ] );
-		$this->assertSame( 'near_miss', $captured_payload['mechanics']['set_result'] );
-		$this->assertSame( 'close_call', $captured_payload['mechanics']['set_result_detail'] );
-		$this->assertSame( 1, $captured_payload['mechanics']['hp_loss_this_set'] );
-		$this->assertSame( [ 'Runed gauntlets steady the bar path' ], $captured_payload['mechanics']['gear_effects'] );
-		$this->assertSame( [ 'Ember ward hardens your breathing' ], $captured_payload['mechanics']['spell_effects'] );
+		$this->assertNull( $captured_payload, 'set_progression must not trigger a live AI call.' );
+		$this->assertNotSame( '', $progressed['latest_beat'] );
 	}
 
 	public function test_advance_story_after_set_applies_real_hp_loss_to_profile_and_story_state(): void {
@@ -426,7 +400,7 @@ class IronQuestMissionStoryServiceTest extends ServiceTestCase {
 		$this->assertStringContainsString( 'what new landmark is ahead', $transition );
 	}
 
-	public function test_set_progression_payload_includes_story_engine_draft_for_pilot_mission(): void {
+	public function test_set_progression_uses_story_engine_draft_for_pilot_mission(): void {
 		$user_id = 42;
 		$profile = [
 			'id'                    => 7,
@@ -444,21 +418,6 @@ class IronQuestMissionStoryServiceTest extends ServiceTestCase {
 		];
 		$this->queueProfileLookups( $user_id, $profile, 12 );
 
-		$captured_payload = null;
-		add_filter( 'johnny5k_ironquest_ai_response', static function ( $response, string $prompt_type, array $payload ) use ( &$captured_payload ) {
-			if ( 'set_progression' !== $prompt_type ) {
-				return $response;
-			}
-
-			$captured_payload = $payload;
-
-			return [
-				'latest_beat' => 'The captain has to work harder for the next read.',
-				'current_situation' => 'The lane is still live and the captain has not lost interest.',
-				'decision_prompt' => 'Keep the lane honest before he resets it.',
-			];
-		}, 10, 3 );
-
 		$run = [
 			'id'             => 69,
 			'mission_slug'   => 'captain_of_the_yard',
@@ -468,7 +427,7 @@ class IronQuestMissionStoryServiceTest extends ServiceTestCase {
 		];
 
 		IronQuestNarrativeService::choose_opening_action( $user_id, $run, 'steady_approach', 'steady' );
-		IronQuestNarrativeService::advance_story_after_set(
+		$progressed = IronQuestNarrativeService::advance_story_after_set(
 			$user_id,
 			$run,
 			[
@@ -485,14 +444,11 @@ class IronQuestMissionStoryServiceTest extends ServiceTestCase {
 			]
 		);
 
-		$this->assertIsArray( $captured_payload );
-		$this->assertSame( 'captain_progression_control_01', $captured_payload['story_engine']['template']['id'] ?? '' );
-		$this->assertContains( 'advance', $captured_payload['story_engine']['template']['tags'] ?? [] );
-		$this->assertStringContainsString( 'begin taking control of the exchange', strtolower( (string) ( $captured_payload['story_engine']['draft']['summary'] ?? '' ) ) );
-		$this->assertStringContainsString( 'losing the clean read', strtolower( (string) ( $captured_payload['story_engine']['draft']['follow_up'] ?? '' ) ) );
+		$this->assertStringContainsString( 'begin taking control of the exchange', strtolower( (string) $progressed['latest_beat'] ) );
+		$this->assertStringContainsString( 'losing the clean read', strtolower( (string) $progressed['current_situation'] ) );
 	}
 
-	public function test_transition_payload_includes_story_engine_draft_for_pilot_mission(): void {
+	public function test_transition_uses_story_engine_draft_for_pilot_mission(): void {
 		$user_id = 42;
 		$profile = [
 			'id'                    => 7,
@@ -510,26 +466,14 @@ class IronQuestMissionStoryServiceTest extends ServiceTestCase {
 		];
 		$this->queueProfileLookups( $user_id, $profile, 12 );
 
-		$captured_transition_payload = null;
-		add_filter( 'johnny5k_ironquest_ai_response', static function ( $response, string $prompt_type, array $payload ) use ( &$captured_transition_payload ) {
+		// Between-exercise rest beats must come from the pre-written story
+		// engine bank, never a live AI call — this filter would fire if one
+		// slipped back in. (choice_generation is excluded: the opening move's
+		// choice set is a separate, still-AI-assisted step out of scope here.)
+		$ai_called = false;
+		add_filter( 'johnny5k_ironquest_ai_response', static function ( $response, string $prompt_type ) use ( &$ai_called ) {
 			if ( 'exercise_transition' === $prompt_type ) {
-				$captured_transition_payload = $payload;
-
-				return [
-					'latest_beat' => 'The lane gives way and the painted mark becomes the only ground that matters.',
-					'current_situation' => 'The captain is already shaping the final exchange around the mark.',
-					'decision_prompt' => 'Choose how you take the mark before he names it for you.',
-				];
-			}
-
-			if ( 'choice_generation' === $prompt_type ) {
-				return [
-					'choices' => [
-						[ 'tone' => 'aggressive', 'label' => 'Crash straight onto the mark.' ],
-						[ 'tone' => 'cautious', 'label' => 'Enter the mark under guard.' ],
-						[ 'tone' => 'creative', 'label' => 'Fake the lane and steal the center.' ],
-					],
-				];
+				$ai_called = true;
 			}
 
 			return $response;
@@ -544,7 +488,7 @@ class IronQuestMissionStoryServiceTest extends ServiceTestCase {
 		];
 
 		IronQuestNarrativeService::choose_opening_action( $user_id, $run, 'steady_approach', 'steady' );
-		IronQuestNarrativeService::advance_story_after_set(
+		$progressed = IronQuestNarrativeService::advance_story_after_set(
 			$user_id,
 			$run,
 			[
@@ -565,11 +509,9 @@ class IronQuestMissionStoryServiceTest extends ServiceTestCase {
 			]
 		);
 
-		$this->assertIsArray( $captured_transition_payload );
-		$this->assertSame( 'captain_transition_control_01', $captured_transition_payload['story_engine']['template']['id'] ?? '' );
-		$this->assertSame( 'transition_setup', $captured_transition_payload['story_engine']['template']['slot'] ?? '' );
-		$this->assertStringContainsString( 'the mark is yours', strtolower( (string) ( $captured_transition_payload['story_engine']['draft']['summary'] ?? '' ) ) );
-		$this->assertStringContainsString( 'painted mark', strtolower( (string) ( $captured_transition_payload['story_engine']['draft']['follow_up'] ?? '' ) ) );
+		$this->assertFalse( $ai_called, 'exercise_transition must not trigger a live AI call.' );
+		$this->assertStringContainsString( 'the mark is yours', strtolower( (string) $progressed['latest_beat'] ) );
+		$this->assertStringContainsString( 'painted mark', strtolower( (string) $progressed['current_situation'] ) );
 	}
 
 	public function test_ai_failures_fall_back_to_deterministic_story_generation(): void {

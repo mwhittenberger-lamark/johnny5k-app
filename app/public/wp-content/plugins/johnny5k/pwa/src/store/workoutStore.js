@@ -853,7 +853,7 @@ export const useWorkoutStore = create(persist((set, get) => ({
   }),
 }))
 
-async function startIronQuestMissionForSession(sessionData) {
+export async function startIronQuestMissionForSession(sessionData) {
   const sessionId = Number(sessionData?.session?.id || 0)
   const runType = normalizeIronQuestRunType(
     sessionData?.session?.actual_day_type

@@ -14,6 +14,7 @@ import { useIronQuestRecentMissionUpdate } from '../../hooks/useIronQuestRecentM
 import { useIronQuestStarterPortrait } from '../../hooks/useIronQuestStarterPortrait'
 import { useIronQuestWorldArt } from '../../hooks/useIronQuestWorldArt'
 import { useAuthStore } from '../../store/authStore'
+import { startIronQuestMissionForSession, useWorkoutStore } from '../../store/workoutStore'
 
 const DAILY_OBJECTIVES = [
   { key: 'workout_quest_complete', label: 'Workout mission', description: 'Complete today\'s training mission.' },
@@ -26,11 +27,13 @@ const DAILY_OBJECTIVES = [
 export default function IronQuestScreen() {
   const navigate = useNavigate()
   const setExperienceMode = useAuthStore(state => state.setExperienceMode)
+  const activeWorkoutSession = useWorkoutStore(state => state.session)
   const [hub, setHub] = useState(null)
   const [config, setConfig] = useState(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [activating, setActivating] = useState(false)
+  const [startingMission, setStartingMission] = useState(false)
   const [selectingMissionSlug, setSelectingMissionSlug] = useState('')
   const [fastTraveling, setFastTraveling] = useState(false)
   const [travelingLocationSlug, setTravelingLocationSlug] = useState('')
@@ -235,6 +238,18 @@ export default function IronQuestScreen() {
   const nextIncompleteObjective = dailyObjectives.find(item => !item.complete) ?? null
   const primaryMissionCta = activeRun ? 'Continue mission' : currentMission ? 'Start mission' : 'Open workout'
   const currentMissionSummary = currentMission?.goal || currentMission?.threat || currentMission?.narrative || 'Pick the next objective to frame your next session.'
+
+  async function handlePrimaryMissionCta() {
+    if (!activeRun && currentMission && activeWorkoutSession?.session?.id) {
+      setStartingMission(true)
+      try {
+        await startIronQuestMissionForSession(activeWorkoutSession)
+      } finally {
+        setStartingMission(false)
+      }
+    }
+    navigate('/workout')
+  }
   const nextUnlockSummary = nextUnlock
     ? `${nextUnlockLocation?.name || humanizeSlug(nextUnlock.location_slug)}${typeof nextUnlock.travel_remaining === 'number' ? ` in ${nextUnlock.travel_remaining} point${nextUnlock.travel_remaining === 1 ? '' : 's'}` : ''}`
     : 'All seeded route unlocks are open.'
@@ -465,8 +480,8 @@ export default function IronQuestScreen() {
                   </div>
                 </div>
                 <div className="ironquest-actions ironquest-hero-actions">
-                  <button type="button" className="btn-primary small" onClick={() => navigate('/workout')}>
-                    {primaryMissionCta}
+                  <button type="button" className="btn-primary small" onClick={() => { void handlePrimaryMissionCta() }} disabled={startingMission}>
+                    {startingMission ? 'Starting…' : primaryMissionCta}
                   </button>
                   <button type="button" className="btn-secondary small" onClick={() => navigate('/ironquest/map')}>
                     World map

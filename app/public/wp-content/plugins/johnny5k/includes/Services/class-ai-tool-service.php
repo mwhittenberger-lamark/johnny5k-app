@@ -537,6 +537,11 @@ class AiToolService {
 				'description' => 'Activate the approved queued workout when the user explicitly asks to begin or start it.',
 				'parameters' => [ 'type' => 'object', 'properties' => [ 'readiness_score' => [ 'type' => 'integer', 'minimum' => 1, 'maximum' => 10 ] ], 'additionalProperties' => false ],
 			],
+			'activate_ironquest_mission' => [
+				'read_only' => false, 'enabled' => true,
+				'description' => 'Turn on IronQuest mode for this account and start (or attach) an IronQuest mission — only when the user explicitly asks to start, activate, or turn on a quest or mission, never proactively. A mission is recommended automatically; you never need to know or choose a mission or location slug. If a workout is already active, the mission attaches to it immediately. If not, set start_workout to true when the user also wants today\'s workout started right now; otherwise the mission attaches automatically the next time a workout starts.',
+				'parameters' => [ 'type' => 'object', 'properties' => [ 'start_workout' => [ 'type' => 'boolean', 'description' => 'Set true if the user also wants to begin today\'s workout right now.' ] ], 'additionalProperties' => false ],
+			],
 			'manage_workout_set' => [
 				'read_only' => false, 'enabled' => true,
 				'description' => 'Create, correct, or delete a logged workout set. Resolve the active session and exercise from live workout data; require a set id for update/delete.',

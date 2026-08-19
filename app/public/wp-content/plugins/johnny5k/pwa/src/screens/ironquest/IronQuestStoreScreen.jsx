@@ -9,15 +9,30 @@ import EmptyState from '../../components/ui/EmptyState'
 import { useIronQuestRecentMissionUpdate } from '../../hooks/useIronQuestRecentMissionUpdate'
 import { useIronQuestWorldArt } from '../../hooks/useIronQuestWorldArt'
 import { subscribeIronQuestStateChanged } from '../../lib/ironquestSync'
+import { startIronQuestMissionForSession, useWorkoutStore } from '../../store/workoutStore'
 
 export default function IronQuestStoreScreen() {
   const navigate = useNavigate()
+  const activeWorkoutSession = useWorkoutStore(state => state.session)
   const [hub, setHub] = useState(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [purchasingItemId, setPurchasingItemId] = useState('')
   const [sellingItemId, setSellingItemId] = useState('')
   const [purchaseNotice, setPurchaseNotice] = useState('')
+  const [startingMission, setStartingMission] = useState(false)
+
+  async function handleStartMission() {
+    if (activeWorkoutSession?.session?.id) {
+      setStartingMission(true)
+      try {
+        await startIronQuestMissionForSession(activeWorkoutSession)
+      } finally {
+        setStartingMission(false)
+      }
+    }
+    navigate('/workout')
+  }
   const [error, setError] = useState('')
   const [generatingArt, setGeneratingArt] = useState(false)
 
@@ -252,8 +267,8 @@ export default function IronQuestStoreScreen() {
         {recentMissionUpdate ? <IronQuestRecentMissionUpdate update={recentMissionUpdate} compact /> : null}
         {purchaseNotice ? <p className="ironquest-panel-copy">{purchaseNotice}</p> : null}
         <div className="ironquest-actions">
-          <button type="button" className="btn-primary small" onClick={() => navigate('/workout')}>
-            Start mission
+          <button type="button" className="btn-primary small" onClick={() => { void handleStartMission() }} disabled={startingMission}>
+            {startingMission ? 'Starting…' : 'Start mission'}
           </button>
           <button type="button" className="btn-secondary small" onClick={() => navigate('/ironquest/character')}>
             View character sheet

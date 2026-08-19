@@ -353,6 +353,90 @@ describe('JohnnyDemoLiveWorkout', () => {
     delete navigator.wakeLock
   })
 
+  it('shows the IronQuest story beat and a timed stance choice during rest, and progresses the story after logging a set', async () => {
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    const onProgressIronQuestStory = vi.fn().mockResolvedValue({})
+    const onSetIronQuestStance = vi.fn()
+    await act(async () => root.render(
+      <JohnnyDemoLiveWorkout
+        isOpen
+        session={{ session: { id: 60, planned_day_type: 'push' } }}
+        exercises={[
+          { id: 30, exercise_name: 'Bench Press', slot_type: 'main', planned_sets: 1, planned_rep_min: 8, planned_rep_max: 10, sets: [] },
+          { id: 31, exercise_name: 'Incline Press', slot_type: 'main', planned_sets: 3, planned_rep_min: 8, planned_rep_max: 10, sets: [] },
+        ]}
+        activeExerciseIdx={0}
+        onSetActiveExerciseIdx={vi.fn()}
+        onCreateSet={vi.fn().mockResolvedValue({ id: 97 })}
+        onUpdateSet={vi.fn()}
+        onClose={vi.fn()}
+        onComplete={vi.fn()}
+        ironQuestOverlay={{ latestBeat: 'The lane holds while you gather yourself for the next effort.' }}
+        ironQuestLivePrefs={{ stance: 'steady', beatsEnabled: true }}
+        onProgressIronQuestStory={onProgressIronQuestStory}
+        onSetIronQuestStance={onSetIronQuestStance}
+      />,
+    ))
+
+    const logButton = [...container.querySelectorAll('button')].find(button => button.textContent.includes('Log & Next'))
+    await act(async () => { logButton.click(); await Promise.resolve() })
+
+    expect(onProgressIronQuestStory).toHaveBeenCalledWith(expect.objectContaining({
+      event_type: 'exercise_completed',
+      exercise_name: 'Bench Press',
+      completed_exercise: true,
+      has_next_exercise: true,
+      next_exercise_name: 'Incline Press',
+    }))
+    expect(container.textContent).toContain('The lane holds while you gather yourself')
+    expect(container.textContent).toContain('How do you want to approach the next set?')
+
+    const pushButton = [...container.querySelectorAll('button')].find(button => button.textContent === 'Push hard')
+    await act(async () => pushButton.click())
+
+    expect(onSetIronQuestStance).toHaveBeenCalledWith('aggressive')
+    expect(container.textContent).not.toContain('How do you want to approach the next set?')
+  })
+
+  it('auto-resolves the IronQuest stance choice to steady if the user never answers', async () => {
+    vi.useFakeTimers()
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    const onSetIronQuestStance = vi.fn()
+    await act(async () => root.render(
+      <JohnnyDemoLiveWorkout
+        isOpen
+        session={{ session: { id: 61, planned_day_type: 'push' } }}
+        exercises={[{ id: 32, exercise_name: 'Squat', slot_type: 'main', planned_sets: 3, planned_rep_min: 8, planned_rep_max: 10, sets: [] }]}
+        activeExerciseIdx={0}
+        onSetActiveExerciseIdx={vi.fn()}
+        onCreateSet={vi.fn().mockResolvedValue({ id: 98 })}
+        onUpdateSet={vi.fn()}
+        onClose={vi.fn()}
+        onComplete={vi.fn()}
+        ironQuestOverlay={{ latestBeat: 'The bar feels heavier than the last set.' }}
+        ironQuestLivePrefs={{ stance: 'steady', beatsEnabled: true }}
+        onProgressIronQuestStory={vi.fn().mockResolvedValue({})}
+        onSetIronQuestStance={onSetIronQuestStance}
+      />,
+    ))
+
+    const logButton = [...container.querySelectorAll('button')].find(button => button.textContent.includes('Log & Next'))
+    await act(async () => { logButton.click(); await Promise.resolve() })
+    expect(container.textContent).toContain('How do you want to approach the next set?')
+
+    for (let tick = 0; tick < 9; tick += 1) {
+      await act(async () => { await vi.advanceTimersByTimeAsync(1000) })
+    }
+
+    expect(onSetIronQuestStance).toHaveBeenCalledWith('steady')
+    expect(container.textContent).not.toContain('How do you want to approach the next set?')
+    vi.useRealTimers()
+  })
+
   it('keeps the workout visible when paused and offers Johnny or resume', async () => {
     container = document.createElement('div')
     document.body.appendChild(container)

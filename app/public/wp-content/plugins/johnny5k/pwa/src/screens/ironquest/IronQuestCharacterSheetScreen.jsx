@@ -9,10 +9,12 @@ import { useIronQuestGeneratedImage } from '../../hooks/useIronQuestGeneratedIma
 import { formatUsFriendlyDate } from '../../lib/dateFormat'
 import { subscribeIronQuestStateChanged } from '../../lib/ironquestSync'
 import { useIronQuestStarterPortrait } from '../../hooks/useIronQuestStarterPortrait'
+import { startIronQuestMissionForSession, useWorkoutStore } from '../../store/workoutStore'
 
 export default function IronQuestCharacterSheetScreen() {
   const navigate = useNavigate()
   const locationState = useLocation()
+  const activeWorkoutSession = useWorkoutStore(state => state.session)
   const [hub, setHub] = useState(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -20,7 +22,20 @@ export default function IronQuestCharacterSheetScreen() {
   const [inventoryNotice, setInventoryNotice] = useState('')
   const [portraitNotice, setPortraitNotice] = useState('')
   const [generatingPortrait, setGeneratingPortrait] = useState(false)
+  const [startingMission, setStartingMission] = useState(false)
   const [error, setError] = useState('')
+
+  async function handleStartMission() {
+    if (activeWorkoutSession?.session?.id) {
+      setStartingMission(true)
+      try {
+        await startIronQuestMissionForSession(activeWorkoutSession)
+      } finally {
+        setStartingMission(false)
+      }
+    }
+    navigate('/workout')
+  }
 
   const loadCharacterSheet = useCallback(async ({ background = false } = {}) => {
     if (background) {
@@ -237,8 +252,8 @@ export default function IronQuestCharacterSheetScreen() {
           <StatCard icon="award" label="Gold" value={characterSheet?.progression?.gold || profile?.gold || 0} />
         </div>
         <div className="ironquest-actions">
-          <button type="button" className="btn-primary small" onClick={() => navigate('/workout')}>
-            Start mission
+          <button type="button" className="btn-primary small" onClick={() => { void handleStartMission() }} disabled={startingMission}>
+            {startingMission ? 'Starting…' : 'Start mission'}
           </button>
           {characterSheet?.campaign?.tavern_name ? (
             <button type="button" className="btn-secondary small" onClick={() => navigate('/workout', { state: { enterTavern: true } })}>

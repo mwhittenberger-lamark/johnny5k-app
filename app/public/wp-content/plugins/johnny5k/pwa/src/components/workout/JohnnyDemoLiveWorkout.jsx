@@ -5,10 +5,18 @@ import johnnyPortrait from '../../assets/8CD0AD13-4C88-49C7-A455-4B180A3F732B.we
 import AnnouncementTicker from '../layout/AnnouncementTicker'
 import { formatExerciseTarget } from './liveWorkoutCoachHelpers'
 
+const IRONQUEST_STANCE_OPTIONS = [
+  { value: 'aggressive', label: 'Push hard' },
+  { value: 'steady', label: 'Stay steady' },
+  { value: 'cautious', label: 'Play it safe' },
+]
+const IRONQUEST_CHOICE_SECONDS = 8
+
 export default function JohnnyDemoLiveWorkout({
   isOpen, session, exercises, activeExerciseIdx, onSetActiveExerciseIdx,
   onCreateSet, onUpdateSet, onClose, onComplete, completing = false, onSaveWorkout, onResetWorkout, onAskJohnny,
   pauseSessionTimer, resumeSessionTimer, timerLabel, displayDayType,
+  ironQuestOverlay, ironQuestLivePrefs, onProgressIronQuestStory, onSetIronQuestStance,
 }) {
   const exercise = exercises[activeExerciseIdx]
   const totalExercises = exercises.length
@@ -51,6 +59,9 @@ export default function JohnnyDemoLiveWorkout({
   const [optionsStatus, setOptionsStatus] = useState('')
   const [confirmingReset, setConfirmingReset] = useState(false)
   const [workoutSaved, setWorkoutSaved] = useState(false)
+  const [questChoicePending, setQuestChoicePending] = useState(false)
+  const [questCountdown, setQuestCountdown] = useState(0)
+  const beatsEnabled = ironQuestOverlay && ironQuestLivePrefs?.beatsEnabled !== false
 
   useEffect(() => {
     setWorkoutSaved(false)
@@ -166,6 +177,55 @@ export default function JohnnyDemoLiveWorkout({
     return () => resumeSessionTimer?.()
   }, [timersPaused, pauseSessionTimer, resumeSessionTimer])
 
+  useEffect(() => {
+    if (!rest?.eyebrow || !rest?.next || !beatsEnabled) {
+      setQuestChoicePending(false)
+      return undefined
+    }
+    setQuestChoicePending(true)
+    setQuestCountdown(IRONQUEST_CHOICE_SECONDS)
+    return undefined
+  // Only re-arm the timed choice when a new rest cycle actually starts.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rest?.eyebrow, rest?.next, beatsEnabled])
+
+  useEffect(() => {
+    if (!questChoicePending || timersPaused || restPaused) return undefined
+    if (questCountdown <= 0) {
+      resolveQuestStance(null)
+      return undefined
+    }
+    const timeoutId = window.setTimeout(() => setQuestCountdown(current => current - 1), 1000)
+    return () => window.clearTimeout(timeoutId)
+  }, [questChoicePending, questCountdown, restPaused, timersPaused])
+
+  function resolveQuestStance(stance) {
+    setQuestChoicePending(false)
+    onSetIronQuestStance?.(stance || ironQuestLivePrefs?.stance || 'steady')
+  }
+
+  function pushIronQuestBeat({ completedExerciseFlag, nextExerciseName, nextSlotType }) {
+    if (!ironQuestOverlay || !beatsEnabled || typeof onProgressIronQuestStory !== 'function') return
+    void onProgressIronQuestStory({
+      event_type: completedExerciseFlag ? 'exercise_completed' : 'set_saved',
+      exercise_name: exercise?.exercise_name || '',
+      slot_type: exercise?.slot_type || '',
+      exercise_order: activeExerciseIdx + 1,
+      exercise_count: totalExercises,
+      set_number: currentSetNumber,
+      sets_total: plannedSets,
+      rep_target_min: Number(exercise?.planned_rep_min || 0),
+      rep_target_max: Number(exercise?.planned_rep_max || 0),
+      reps_completed: timed ? Math.max(0, targetSeconds - seconds) : reps,
+      completed_exercise: Boolean(completedExerciseFlag),
+      has_next_exercise: Boolean(nextExerciseName),
+      next_exercise_name: nextExerciseName || '',
+      next_slot_type: nextSlotType || '',
+    }).catch(() => {
+      // Story progress is a bonus layer — never let it interrupt logging a set.
+    })
+  }
+
   // Keeps the screen awake for the duration of a live workout so the rest
   // timer and set timer keep visibly ticking instead of being interrupted by
   // the OS idle timeout. Best-effort only — denial or lack of support should
@@ -276,6 +336,15 @@ export default function JohnnyDemoLiveWorkout({
       const existing = exercise.sets?.find(set => !set.completed)
       if (existing?.id) await onUpdateSet(existing.id, payload)
       else await onCreateSet(exercise.id, { ...payload, set_number: currentSetNumber }, { exerciseId: exercise.id, exerciseName: exercise.exercise_name, trackActivity: true })
+
+      if (!finishedWorkout && (!isCircuit || isLastStation)) {
+        const nextExercise = isCircuit ? exercises[0] : (finishedExercise ? exercises[activeExerciseIdx + 1] : null)
+        pushIronQuestBeat({
+          completedExerciseFlag: isCircuit || finishedExercise,
+          nextExerciseName: nextExercise?.exercise_name || '',
+          nextSlotType: nextExercise?.slot_type || '',
+        })
+      }
     } catch (saveError) {
       setRest(null)
       setDone(false)
@@ -512,6 +581,21 @@ export default function JohnnyDemoLiveWorkout({
               <div><span>Target</span><strong>{formatExerciseTarget(restNextExercise)}</strong></div>
               <div><span>Suggested weight</span><strong>{restNextSuggestedWeight > 0 ? `${formatWeight(restNextSuggestedWeight)} lb` : '—'}</strong></div>
               {restNextExercise.equipment ? <div><span>Equipment</span><strong>{restNextExercise.equipment}</strong></div> : null}
+            </div>
+          ) : null}
+          {beatsEnabled ? (
+            <div className="demo-live-quest-beat">
+              {questChoicePending ? (
+                <div className="demo-live-quest-choice">
+                  <span>How do you want to approach the next set? <b>{questCountdown}s</b></span>
+                  <div>
+                    {IRONQUEST_STANCE_OPTIONS.map(option => (
+                      <button key={option.value} type="button" onClick={() => resolveQuestStance(option.value)}>{option.label}</button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+              {ironQuestOverlay.latestBeat ? <p className="demo-live-quest-story">{ironQuestOverlay.latestBeat}</p> : null}
             </div>
           ) : null}
           <div className="demo-live-rest-adjust" aria-label="Adjust rest timer">
