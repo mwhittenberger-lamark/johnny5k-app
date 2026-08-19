@@ -44,6 +44,7 @@ class AiToolHandlerService {
 			'set_ambient_color'          => self::tool_set_ambient_color( $arguments ),
 			'activate_fire_mode'         => self::tool_activate_fire_mode(),
 			'trigger_confetti_burst'     => self::tool_trigger_confetti_burst(),
+			'set_text_size'              => self::tool_set_text_size( $arguments ),
 			'search_gif'                 => self::tool_search_gif( $arguments ),
 			'generate_image'              => JohnnyGeneratedImageService::generate( $user_id, $arguments ),
 			'log_steps'                  => self::tool_log_steps( $user_id, $arguments, $deps ),
@@ -136,6 +137,21 @@ class AiToolHandlerService {
 			'ok'      => true,
 			'action'  => 'trigger_confetti_burst',
 			'summary' => 'Confetti time!',
+		];
+	}
+
+	private static function tool_set_text_size( array $arguments ): array {
+		$allowed = [ 'default', 'large' ];
+		$size    = sanitize_key( (string) ( $arguments['size'] ?? 'default' ) );
+		if ( ! in_array( $size, $allowed, true ) ) {
+			$size = 'default';
+		}
+
+		return [
+			'ok'      => true,
+			'action'  => 'set_text_size',
+			'size'    => $size,
+			'summary' => 'large' === $size ? 'Bumped up the text size.' : 'Text size back to normal.',
 		];
 	}
 

@@ -423,6 +423,46 @@ describe('JohnnyHomeScreen', () => {
     expect(container.textContent).toContain('Chat cleared.')
   })
 
+  it('enlarges and restores chat text size when Johnny uses the set_text_size tool', async () => {
+    aiApiMock.getThread.mockResolvedValue({ messages: [] })
+    await renderScreen()
+    const phone = container.querySelector('.johnny-prototype-phone')
+    expect(phone.style.getPropertyValue('--johnny-chat-font-scale')).toBe('1')
+
+    aiApiMock.chat.mockResolvedValueOnce({
+      reply: 'Bumped up the text size.',
+      used_tools: ['set_text_size'],
+      action_results: [{ action: 'set_text_size', ok: true, size: 'large' }],
+    })
+    const input = container.querySelector('#johnny-message')
+    await act(async () => {
+      const valueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set
+      valueSetter.call(input, 'Make the text bigger.')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await act(async () => {
+      container.querySelector('.input-bar').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+      await Promise.resolve()
+    })
+    expect(phone.style.getPropertyValue('--johnny-chat-font-scale')).toBe('1.25')
+
+    aiApiMock.chat.mockResolvedValueOnce({
+      reply: 'Text size back to normal.',
+      used_tools: ['set_text_size'],
+      action_results: [{ action: 'set_text_size', ok: true, size: 'default' }],
+    })
+    await act(async () => {
+      const valueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set
+      valueSetter.call(input, 'Put it back to normal.')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await act(async () => {
+      container.querySelector('.input-bar').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+      await Promise.resolve()
+    })
+    expect(phone.style.getPropertyValue('--johnny-chat-font-scale')).toBe('1')
+  })
+
   it('does not show the plan card unless a chat action created or loaded the workout', async () => {
     aiApiMock.getThread.mockResolvedValue({
       messages: [{ role: 'assistant', message_text: 'How are you feeling?' }],

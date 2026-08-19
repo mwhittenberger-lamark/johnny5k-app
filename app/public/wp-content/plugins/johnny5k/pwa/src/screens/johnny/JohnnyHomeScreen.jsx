@@ -76,6 +76,7 @@ export default function JohnnyHomeScreen() {
   const [activityLabel, setActivityLabel] = useState('loading your conversation')
   const [brandMood, setBrandMood] = useState('ready')
   const [accentColor, setAccentColor] = useState(DEFAULT_ACCENT_COLOR)
+  const [chatFontScale, setChatFontScale] = useState(1)
   const [streaks, setStreaks] = useState(null)
   const [greetingTail] = useState(() => pickRandomPhrase(GREETING_TAIL_PHRASES))
   const [briefTail] = useState(() => pickRandomPhrase(BRIEF_TAIL_PHRASES))
@@ -405,8 +406,12 @@ export default function JohnnyHomeScreen() {
 	  const confettiResult = actionResults.find(result => (
 	    result?.ok !== false && !result?.error && String(result?.action || result?.tool_name || '') === 'trigger_confetti_burst'
 	  ))
+	  const textSizeResult = [...actionResults].reverse().find(result => (
+	    result?.ok !== false && !result?.error && String(result?.action || result?.tool_name || '') === 'set_text_size'
+	  ))
 	  if (fireModeResult) runFireMode()
 	  if (confettiResult) runConfettiBurst()
+	  if (textSizeResult) setChatFontScale(textSizeResult.size === 'large' ? 1.25 : 1)
 	  if (ambientColorResult?.color === 'dance') {
 	    runColorDance()
 	  } else if (ambientColorResult && ACCENT_PRESETS[ambientColorResult.color]) {
@@ -803,7 +808,7 @@ export default function JohnnyHomeScreen() {
 
   return (
     <main className="johnny-prototype-stage">
-      <div className="johnny-prototype-phone" style={{ '--johnny-primary-dock-height': `${primaryDockHeight}px`, '--johnny-accent-rgb': resolveAccentRgb(accentColor) }}>
+      <div className="johnny-prototype-phone" style={{ '--johnny-primary-dock-height': `${primaryDockHeight}px`, '--johnny-accent-rgb': resolveAccentRgb(accentColor), '--johnny-chat-font-scale': chatFontScale }}>
         <AmbientField />
         <JohnnyFireOverlay phase={fireMode} />
         <JohnnyConfettiBurst phase={confettiMode} />

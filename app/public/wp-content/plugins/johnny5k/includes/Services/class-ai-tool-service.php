@@ -220,6 +220,19 @@ class AiToolService {
 					'additionalProperties' => false,
 				],
 			],
+			'set_text_size' => [
+				'read_only'   => true,
+				'enabled'     => true,
+				'description' => 'Change the size of Johnny\'s chat text. Use only when the user explicitly asks to make the text bigger, larger, or easier to read, or asks to undo that and go back to normal — never proactively and never as part of a celebration. "large" enlarges the chat text; "default" restores the original size.',
+				'parameters'  => [
+					'type'                 => 'object',
+					'properties'           => [
+						'size' => [ 'type' => 'string', 'enum' => [ 'default', 'large' ], 'description' => '"default" restores the original chat text size. "large" enlarges it.' ],
+					],
+					'required'             => [ 'size' ],
+					'additionalProperties' => false,
+				],
+			],
 			'activate_fire_mode' => [
 				'read_only'   => true,
 				'enabled'     => true,
