@@ -149,7 +149,7 @@ input[type="time"]::-webkit-date-and-time-value {
 }
 
 .field-label-food-name > .field-label-text {
-  color: #0b4d72;
+  color: var(--whistle);
   font-size: 0.88rem;
   font-weight: 800;
   letter-spacing: 0.04em;

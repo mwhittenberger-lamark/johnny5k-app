@@ -16,7 +16,9 @@ class RecipeImageService {
 		$cache = get_option( self::CACHE_OPTION, [] );
 		$cache = is_array( $cache ) ? $cache : [];
 		if ( ! empty( $cache[ $key ]['image_url'] ) ) {
-			return [ 'image_url' => esc_url_raw( (string) $cache[ $key ]['image_url'] ), 'cached' => true ];
+			$image_url = esc_url_raw( (string) $cache[ $key ]['image_url'] );
+			self::persist_recipe_image_url( $user_id, $recipe, $image_url );
+			return [ 'image_url' => $image_url, 'cached' => true ];
 		}
 
 		$result = GeminiImageService::generate_image( $user_id, self::prompt( $recipe ), [], [
@@ -44,8 +46,31 @@ class RecipeImageService {
 		$image_url       = trailingslashit( $url ) . $filename;
 		$cache[ $key ]   = [ 'image_url' => $image_url, 'generated_at' => current_time( 'mysql', true ) ];
 		update_option( self::CACHE_OPTION, $cache, false );
+		self::persist_recipe_image_url( $user_id, $recipe, $image_url );
 
 		return [ 'image_url' => $image_url, 'cached' => false ];
+	}
+
+	public static function existing_image_url( array $recipe ): string {
+		$cache = get_option( self::CACHE_OPTION, [] );
+		$cache = is_array( $cache ) ? $cache : [];
+		$key   = self::cache_key( $recipe );
+
+		return esc_url_raw( (string) ( $cache[ $key ]['image_url'] ?? '' ) );
+	}
+
+	private static function persist_recipe_image_url( int $user_id, array $recipe, string $image_url ): void {
+		$recipe_key = sanitize_title( (string) ( $recipe['key'] ?? '' ) );
+		if ( $user_id <= 0 || '' === $recipe_key || '' === $image_url ) {
+			return;
+		}
+
+		global $wpdb;
+		$wpdb->update(
+			$wpdb->prefix . 'fit_recipe_suggestions',
+			[ 'image_url' => $image_url ],
+			[ 'user_id' => $user_id, 'recipe_key' => $recipe_key ]
+		);
 	}
 
 	private static function cache_key( array $recipe ): string {

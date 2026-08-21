@@ -66,8 +66,7 @@ export function useNutritionPlanningViewState({
 }) {
   const storedRecipeFilters = loadStoredRecipeFilterState()
   const [checkedGapItems, setCheckedGapItems] = useState(() => loadStoredCheckedGapItems())
-  const [activeView, setActiveView] = useState('today')
-  const [showMicros, setShowMicros] = useState(false)
+  const [activeView, setActiveView] = useState('recentFoods')
   const [recipeMealFilter, setRecipeMealFilter] = useState(() => storedRecipeFilters.mealFilter)
   const [recipeCollectionFilter, setRecipeCollectionFilter] = useState(() => storedRecipeFilters.collectionFilter)
   const [recipeDietaryFilter, setRecipeDietaryFilter] = useState(() => storedRecipeFilters.dietaryFilter)
@@ -85,7 +84,6 @@ export function useNutritionPlanningViewState({
   const [savedFoodMacroFilter, setSavedFoodMacroFilter] = useState('all')
   const [collapsedPantryCategories, setCollapsedPantryCategories] = useState({})
   const [expandedSections, setExpandedSections] = useState({
-    meals: false,
     recentFoods: false,
     savedFoods: false,
     savedMeals: false,
@@ -137,9 +135,7 @@ export function useNutritionPlanningViewState({
     setRecipeSearchQuery,
     setSavedFoodCategoryFilter,
     setSavedFoodMacroFilter,
-    setShowMicros,
     savedFoodCategoryFilter,
     savedFoodMacroFilter,
-    showMicros,
   }
 }

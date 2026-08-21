@@ -33,6 +33,36 @@
   align-items: center;
   gap: var(--space-3);
 }
+.app-shell-header-main-focused {
+  justify-content: flex-end;
+}
+.app-shell-focused-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 1px solid var(--glass-border);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ink) 55%, transparent);
+  color: var(--chalk);
+  cursor: pointer;
+  transition: transform 0.18s ease, border-color 0.18s ease, color 0.18s ease;
+}
+.app-shell-focused-close:hover {
+  border-color: var(--whistle);
+  color: var(--whistle);
+  transform: translateY(-1px);
+}
+.app-shell-focused-close:focus-visible {
+  outline: 2px solid var(--whistle);
+  outline-offset: 3px;
+}
+.app-shell-focused-close .app-icon {
+  width: 20px;
+  height: 20px;
+}
 .app-shell-push-notice {
   display: flex;
   align-items: center;

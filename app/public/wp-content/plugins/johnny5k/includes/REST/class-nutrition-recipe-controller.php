@@ -66,6 +66,7 @@ class NutritionRecipeController extends RestController {
 		$p             = $wpdb->prefix;
 		$user_id       = get_current_user_id();
 		$refresh_token = sanitize_text_field( (string) ( $req->get_param( 'refresh_token' ) ?: '' ) );
+		$stored_images = self::get_stored_recipe_image_urls( $user_id );
 
 		$pantry_rows = $wpdb->get_results( $wpdb->prepare(
 			"SELECT item_name FROM {$p}fit_pantry_items WHERE user_id = %d ORDER BY updated_at DESC, id DESC LIMIT 12",
@@ -85,12 +86,46 @@ class NutritionRecipeController extends RestController {
 			}
 		}
 
+		$suggestions = array_map( static function( array $suggestion ) use ( $stored_images ): array {
+			if ( ! empty( $suggestion['image_url'] ) ) {
+				return $suggestion;
+			}
+
+			$recipe_key = sanitize_title( (string) ( $suggestion['key'] ?? '' ) );
+			$image_url  = esc_url_raw( (string) ( $stored_images[ $recipe_key ] ?? '' ) );
+			if ( '' === $image_url ) {
+				$image_url = RecipeImageService::existing_image_url( $suggestion );
+			}
+			$suggestion['image_url'] = $image_url;
+			return $suggestion;
+		}, $suggestions );
+
 		$wpdb->delete( $p . 'fit_recipe_suggestions', [ 'user_id' => $user_id, 'is_cookbook' => 0 ] );
 		foreach ( $suggestions as $suggestion ) {
 			$wpdb->insert( $p . 'fit_recipe_suggestions', self::recipe_suggestion_db_payload( $user_id, $suggestion, 0 ) );
 		}
 
 		return new \WP_REST_Response( $suggestions );
+	}
+
+	private static function get_stored_recipe_image_urls( int $user_id ): array {
+		global $wpdb;
+		$table = $wpdb->prefix . 'fit_recipe_suggestions';
+		$rows  = $wpdb->get_results( $wpdb->prepare(
+			"SELECT recipe_key, image_url FROM {$table} WHERE user_id = %d AND image_url IS NOT NULL AND image_url <> ''",
+			$user_id
+		), ARRAY_A );
+
+		$images = [];
+		foreach ( $rows as $row ) {
+			$key = sanitize_title( (string) ( $row['recipe_key'] ?? '' ) );
+			$url = esc_url_raw( (string) ( $row['image_url'] ?? '' ) );
+			if ( '' !== $key && '' !== $url ) {
+				$images[ $key ] = $url;
+			}
+		}
+
+		return $images;
 	}
 
 	public static function get_recipe_cookbook( \WP_REST_Request $req ): \WP_REST_Response {

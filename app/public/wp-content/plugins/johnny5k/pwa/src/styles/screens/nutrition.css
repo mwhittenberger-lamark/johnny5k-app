@@ -598,18 +598,12 @@
   flex-direction: column;
   gap: var(--space-4);
 }
-.nutrition-section-shell-today {
-  padding: var(--space-1) 0 0;
-}
-.nutrition-section-shell-library,
+.nutrition-section-shell-tab,
 .nutrition-section-shell-plan {
   gap: var(--space-3-5);
 }
 .nutrition-section-intro-card {
   background: linear-gradient(180deg, rgba(255, 252, 247, 0.98), rgba(246, 249, 251, 0.98));
-}
-.nutrition-section-intro-plan {
-  background: linear-gradient(180deg, rgba(244, 250, 255, 0.98), rgba(250, 252, 255, 0.98));
 }
 .nutrition-section-intro-card h2,
 .nutrition-today-hero-head h2 {
@@ -1153,40 +1147,125 @@
   color: var(--text-muted);
   font-size: 0.76rem;
 }
-.nutrition-header {
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--space-3-5);
+.nutrition-screen.upgraded-nutrition-screen > .nutrition-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(145deg, color-mix(in srgb, var(--track) 92%, transparent), var(--ink));
+  box-shadow: 0 20px 46px rgba(0, 0, 0, 0.28);
+  margin-bottom: 0;
 }
 .nutrition-screen .support-icon-anchor {
   padding-right: var(--space-2);
 }
-.nutrition-header > :nth-child(2) {
-  width: 100%;
+.nutrition-screen > .nutrition-header .support-icon-button {
+  z-index: 2;
 }
-.nutrition-header > :nth-child(2) h1 {
-  max-width: 250px;
-  line-height: 1.1;
+.nutrition-header-main {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
 }
-.nutrition-header-actions {
+.nutrition-header-monogram {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: var(--space-2-5);
-  width: 100%;
-  align-self: stretch;
+  flex: 0 0 56px;
+  height: 56px;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: linear-gradient(145deg, color-mix(in srgb, var(--whistle) 16%, var(--track)), var(--ink));
+  color: var(--whistle);
 }
-.nutrition-header-actions > .header-action-button {
-  grid-column: 1 / -1;
-  justify-self: stretch;
-  width: 100%;
-  min-inline-size: 0;
-  min-height: 50px;
-  padding: 10px 8px;
-  font-size: 0.94rem;
+.nutrition-header-monogram .app-icon {
+  width: 26px;
+  height: 26px;
+}
+.nutrition-header-copy {
+  min-width: 0;
+}
+.nutrition-header-copy > span {
+  display: block;
+  color: var(--whistle);
+  font: 600 10px 'JetBrains Mono', monospace;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+}
+.nutrition-screen .nutrition-header .nutrition-header-copy h1 {
+  margin: 3px 0 4px;
+  max-width: none;
+  color: var(--chalk);
+  font: 700 clamp(1.5rem, 4vw, 2rem) 'Oswald', sans-serif;
   line-height: 1.1;
 }
-.nutrition-primary-header-action {
-  min-inline-size: 0;
+.nutrition-header-copy p {
+  max-width: 46ch;
+  margin: 0;
+  color: var(--mist);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+.nutrition-header-status {
+  display: grid;
+  gap: 6px;
+  min-width: 190px;
+  padding: 48px 0 0 var(--space-3);
+  border-left: 1px solid var(--border);
+  text-align: left;
+}
+.nutrition-header-status > span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--mist);
+  font: 600 9px 'JetBrains Mono', monospace;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+}
+.nutrition-header-status > span > i {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--good);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--good) 16%, transparent);
+}
+.nutrition-header-status > strong {
+  color: var(--chalk);
+  font: 700 15px 'Oswald', sans-serif;
+}
+.nutrition-header-scan-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--whistle);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--whistle) 14%, transparent);
+  color: var(--whistle);
+  font: 700 12px 'Oswald', sans-serif;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: transform 0.18s ease, background 0.18s ease;
+}
+.nutrition-header-scan-action:hover {
+  background: color-mix(in srgb, var(--whistle) 22%, transparent);
+  transform: translateY(-1px);
+}
+.nutrition-header-scan-action:focus-visible {
+  outline: 2px solid var(--whistle);
+  outline-offset: 3px;
+}
+.nutrition-header-scan-action .app-icon {
+  width: 16px;
+  height: 16px;
 }
 .nutrition-meals-card {
   order: -1;
@@ -1201,7 +1280,7 @@
   align-items: flex-start;
 }
 .saved-food-row {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(247, 250, 252, 0.94));
+  background: linear-gradient(180deg, color-mix(in srgb, var(--track) 92%, transparent), var(--track));
 }
 .saved-food-tags {
   display: flex;
@@ -1212,38 +1291,60 @@
 .saved-food-tag {
   padding: 2px 8px;
   border-radius: 999px;
-  border: 1px solid rgba(15, 31, 85, 0.14);
-  background: rgba(15, 31, 85, 0.06);
-  color: var(--text-muted);
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--track) 70%, var(--deep));
+  color: var(--mist);
   font-size: 10px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.4px;
 }
 .saved-food-tag-macro {
-  border-color: rgba(0, 188, 222, 0.28);
-  background: rgba(0, 188, 222, 0.1);
-  color: #0b7285;
+  border-color: color-mix(in srgb, var(--whistle) 34%, var(--border));
+  background: color-mix(in srgb, var(--whistle) 16%, var(--ink));
+  color: var(--whistle);
 }
 .nutrition-saved-food-filter-chips {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
 }
-.nutrition-saved-food-filter-chips .onboarding-chip {
+/* Unified dark/gold filter-chip look across the Nutrition screen, replacing the light onboarding-flow chip styling. */
+.nutrition-saved-food-filter-chips .onboarding-chip,
+.nutrition-pantry-filter-chips .onboarding-chip,
+.nutrition-recipe-filter-scope .onboarding-chip,
+.nutrition-recipe-filter-recommended-chips .onboarding-chip,
+.nutrition-gap-list .onboarding-chip {
   width: auto;
   min-height: 34px;
   padding: 6px 14px;
-  border: 1px solid rgba(15, 31, 85, 0.12);
+  border: 1px solid var(--border);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.78);
+  background: var(--track);
+  color: var(--mist);
   font-size: 0.82rem;
   font-weight: 700;
   box-shadow: none;
+  transition: border-color 0.18s ease, background 0.18s ease, color 0.18s ease;
 }
-.nutrition-saved-food-filter-chips .onboarding-chip.active {
-  border-color: rgba(0, 188, 222, 0.55);
-  background: linear-gradient(160deg, rgba(0, 188, 222, 0.2), rgba(255, 255, 255, 0.9));
+.nutrition-saved-food-filter-chips .onboarding-chip:hover,
+.nutrition-pantry-filter-chips .onboarding-chip:hover,
+.nutrition-recipe-filter-scope .onboarding-chip:hover,
+.nutrition-recipe-filter-recommended-chips .onboarding-chip:hover,
+.nutrition-gap-list .onboarding-chip:hover {
+  border-color: color-mix(in srgb, var(--whistle) 34%, var(--border));
+  color: var(--chalk);
+  transform: none;
+  box-shadow: none;
+}
+.nutrition-saved-food-filter-chips .onboarding-chip.active,
+.nutrition-pantry-filter-chips .onboarding-chip.active,
+.nutrition-recipe-filter-scope .onboarding-chip.active,
+.nutrition-recipe-filter-recommended-chips .onboarding-chip.active,
+.nutrition-gap-list .onboarding-chip.active {
+  border-color: var(--whistle);
+  background: color-mix(in srgb, var(--whistle) 16%, var(--ink));
+  color: var(--whistle);
 }
 .nutrition-item-row strong,
 .nutrition-recipe-card strong {
@@ -1256,8 +1357,8 @@
 .saved-food-form {
   border-style: solid;
   border-width: 1px;
-  border-color: rgba(0, 188, 222, 0.22);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(245, 250, 252, 0.98));
+  border-color: var(--border);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--track) 94%, transparent), var(--track));
 }
 .saved-food-ai-block {
   display: flex;
@@ -1266,8 +1367,8 @@
   margin-bottom: var(--space-2);
   padding: var(--space-3) var(--space-3-5);
   border-radius: 14px;
-  border: 1px solid rgba(0, 188, 222, 0.18);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(240, 249, 252, 0.98));
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--track) 80%, var(--deep));
 }
 .nutrition-inline-state {
   margin: 0;
@@ -1518,18 +1619,18 @@ label.field-label.nutrition-saved-food-field {
   gap: var(--space-2);
   padding: var(--space-2-5);
   border-radius: 16px;
-  border: 1px solid rgba(0, 188, 222, 0.18);
-  background: linear-gradient(180deg, rgba(240, 252, 255, 0.78), rgba(248, 253, 255, 0.92));
+  border: 1px solid var(--border);
+  background: var(--track);
 }
 .nutrition-recipe-filter-recommended-copy {
   display: grid;
   gap: 2px;
 }
 .nutrition-recipe-filter-recommended-copy strong {
-  color: #09324d;
+  color: var(--chalk);
 }
 .nutrition-recipe-filter-recommended-copy span {
-  color: var(--text-muted);
+  color: var(--mist);
   font-size: 0.8rem;
   font-weight: 700;
 }
@@ -1967,10 +2068,6 @@ label.field-label.nutrition-saved-food-field {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
-}
-.nutrition-pantry-filter-chips .onboarding-chip {
-  border: 1px solid rgba(15, 31, 85, 0.12);
-  background: rgba(255, 255, 255, 0.78);
 }
 .nutrition-pantry-empty-state-card {
   gap: var(--space-3);
@@ -2488,17 +2585,28 @@ label.field-label.nutrition-saved-food-field {
     width: 100%;
     align-items: stretch;
   }
-  .nutrition-header-actions {
-    grid-template-columns: minmax(0, 1fr);
-    gap: var(--space-2);
+  .nutrition-screen.upgraded-nutrition-screen > .nutrition-header {
+    grid-template-columns: 1fr;
+    align-items: start;
+    padding: var(--space-3);
   }
-  .nutrition-header-secondary-action {
-    display: none;
+  .nutrition-header-status {
+    min-width: 0;
+    padding: var(--space-2) 0 0;
+    border-left: 0;
+    border-top: 1px solid var(--border);
   }
-  .nutrition-header-actions > .header-action-button {
-    min-height: 48px;
-    padding: 10px 6px;
-    font-size: 0.9rem;
+  .nutrition-header-status .nutrition-header-scan-action {
+    width: 100%;
+  }
+  .nutrition-header-monogram {
+    flex-basis: 48px;
+    height: 48px;
+    border-radius: 13px;
+  }
+  .nutrition-header-monogram .app-icon {
+    width: 22px;
+    height: 22px;
   }
   .nutrition-meal-accordion-trigger {
     align-items: flex-start;

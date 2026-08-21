@@ -1,11 +1,14 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { useNavigate } from 'react-router-dom'
 import { aiApi } from '../../api/modules/ai'
 import { nutritionApi } from '../../api/modules/nutrition'
 import AppDialog from '../ui/AppDialog'
 import LabelScanPromptPanel from '../nutrition/LabelScanPromptPanel'
 import { confirmGlobalAction } from '../../lib/uiFeedback'
 import { useSpinRef } from '../../hooks/useSpinRef'
+import { buildEmptyWeeklyCaloriesReview, buildWeeklyCaloriesReview, getRecentLocalDateStrings } from '../../lib/nutrition/weeklyCaloriesReview'
+import { buildHighlightedMicros, formatMicroAmount, formatMicroTargetMeta } from '../../lib/nutrition/micronutrients'
 
 const LATE_BREAKFAST_HOUR = 11
 
@@ -23,6 +26,7 @@ function formatHour(hour) {
 }
 
 export default function JohnnyNutritionLogModal({ onClose }) {
+  const navigate = useNavigate()
   const closeRef = useRef(null)
   const loggedMealRef = useRef(false)
   const handleClose = () => onClose(loggedMealRef.current)
@@ -68,7 +72,10 @@ export default function JohnnyNutritionLogModal({ onClose }) {
   const [savingDrink, setSavingDrink] = useState(false)
   const [status, setStatus] = useState('')
   const [error, setError] = useState('')
+  const [weeklyCaloriesReview, setWeeklyCaloriesReview] = useState(() => buildEmptyWeeklyCaloriesReview())
+  const [showMicros, setShowMicros] = useState(false)
   const drinkServingOptions = buildDrinkServingOptions(selectedDrink)
+  const highlightedMicros = useMemo(() => buildHighlightedMicros(meals, summary), [meals, summary])
 
   useEffect(() => {
     let active = true
@@ -94,6 +101,17 @@ export default function JohnnyNutritionLogModal({ onClose }) {
     }).finally(() => {
       if (active) setLoading(false)
     })
+    return () => { active = false }
+  }, [])
+
+  useEffect(() => {
+    let active = true
+    const lastSevenDates = getRecentLocalDateStrings(today(), 7)
+    Promise.all(lastSevenDates.map(date => nutritionApi.getSummary(date).catch(() => null)))
+      .then(weeklyRows => {
+        if (!active) return
+        setWeeklyCaloriesReview(buildWeeklyCaloriesReview(weeklyRows, lastSevenDates))
+      })
     return () => { active = false }
   }, [])
 
@@ -394,6 +412,29 @@ export default function JohnnyNutritionLogModal({ onClose }) {
     setPlanSlots(current => ({ ...current, [slot]: current[slot].filter(tile => tile.instanceId !== instanceId) }))
   }
 
+  async function quickLogTile(tile) {
+    setError('')
+    setStatus('')
+    try {
+      await nutritionApi.logMeal({
+        meal_datetime: `${today()}T${new Date().toTimeString().slice(0, 8)}`,
+        meal_type: mealType,
+        source: 'tile_quick_add',
+        items: tile.items,
+      })
+      await refreshFuelData(setSummary, setMeals)
+      loggedMealRef.current = true
+      setStatus(`${tile.name} added to today’s log.`)
+    } catch (quickAddError) {
+      setError(quickAddError?.message || `${tile.name} could not be added. Try again.`)
+    }
+  }
+
+  function goToTileLibrary() {
+    handleClose()
+    navigate('/nutrition', { state: { focusSection: 'savedFoods' } })
+  }
+
   async function createManualTile(event) {
     event.preventDefault()
     setTileBusy(true)
@@ -510,6 +551,42 @@ export default function JohnnyNutritionLogModal({ onClose }) {
         {activePanel === 'today' ? (
           <section className="johnny-nutrition-fuel-panel" aria-labelledby="johnny-food-log-heading">
             <FuelSummary summary={summary} meals={meals} loading={loading} />
+            <details className="johnny-micro-accordion" open={showMicros} onToggle={event => setShowMicros(event.currentTarget.open)}>
+              <summary>
+                <span>Micronutrients</span>
+                <strong>{highlightedMicros.length ? 'Nutrition breakdown ready' : 'No micronutrient or fiber data yet'}</strong>
+              </summary>
+              <div className="johnny-micro-body">
+                <p>Combined from logged foods and scaled meal-template servings, with fiber and sodium pulled in from today’s totals.</p>
+                {highlightedMicros.length ? (
+                  <div className="johnny-micro-grid">
+                    {highlightedMicros.map(micro => (
+                      <div key={micro.key || micro.label} className="johnny-micro-stat">
+                        <strong>{micro.label}</strong>
+                        <span>{formatMicroAmount(micro)}</span>
+                        <p>{formatMicroTargetMeta(micro)}</p>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="johnny-micro-empty">AI-filled foods, label-based foods, and saved foods with vitamin or mineral data will show up here once logged.</p>
+                )}
+              </div>
+            </details>
+            <details className="johnny-weekly-cal-accordion">
+              <summary>
+                <span>Weekly calories</span>
+                <strong>{weeklyCaloriesReview.headline}</strong>
+              </summary>
+              <div className="johnny-weekly-cal-body">
+                <p>{weeklyCaloriesReview.review}</p>
+                <div className="johnny-weekly-cal-stats">
+                  <span className="active">Logged {weeklyCaloriesReview.totalCalories.toLocaleString()}</span>
+                  <span>Target {weeklyCaloriesReview.targetCalories.toLocaleString()}</span>
+                  <span>{weeklyCaloriesReview.loggedDays}/7 days</span>
+                </div>
+              </div>
+            </details>
             <div className="johnny-nutrition-meal-log">
               <div className="johnny-nutrition-section-heading"><div><span>Meal log</span><h3 id="johnny-food-log-heading">Capture what you ate</h3></div><strong>{meals.length} logged</strong></div>
               <div className="johnny-nutrition-meal-type" role="group" aria-label="Meal type">
@@ -535,6 +612,12 @@ export default function JohnnyNutritionLogModal({ onClose }) {
               )}
               {(mealPhoto || mealEntryMode === 'describe') ? <button type="button" className="johnny-nutrition-analyze" disabled={analyzingMeal || transcribingVoice || (!mealPhoto && !mealDescription.trim())} onClick={() => { stopVoiceCapture(); void analyzeMealEntry() }}>Analyze meal</button> : null}
             </div>
+            <TileShelf
+              idPrefix="today"
+              kicker={`Quick add to ${formatMealType(mealType)}`}
+              tiles={planningTiles}
+              onAction={tile => { void quickLogTile(tile) }}
+            />
           </section>
         ) : (
           <MealPlanningWorkbench
@@ -553,6 +636,7 @@ export default function JohnnyNutritionLogModal({ onClose }) {
             onCreate={createManualTile}
             onLockAll={() => { void lockWholePlan() }}
             onLockMeal={slot => { void lockMealPlan(slot) }}
+            onManage={goToTileLibrary}
             onOpenManual={() => { setTileForm(emptyTileForm()); setTileCreator('manual') }}
             onRemove={removePlanTile}
             onOpenScan={() => setTileCreator('scan')}
@@ -574,7 +658,7 @@ export default function JohnnyNutritionLogModal({ onClose }) {
             <div className="johnny-nutrition-drink-heading"><strong>Log a drink</strong><span>Saved + recent beverages</span></div>
             <div className="johnny-nutrition-drink-search">
               <input type="search" aria-label="Find a drink" placeholder="Latte, Gatorade, iced tea…" value={drinkQuery} onChange={event => { setDrinkQuery(event.target.value); setSelectedDrink(null) }} />
-              <button type="button" disabled={!drinkQuery.trim() || lookingUpDrink} onClick={() => { void lookupDrink() }}>{lookingUpDrink ? 'Looking…' : 'Ask Johnny'}</button>
+              <button type="button" disabled={!drinkQuery.trim() || lookingUpDrink} onClick={() => { void lookupDrink() }}>{lookingUpDrink ? 'Looking…' : 'Search Drinks'}</button>
             </div>
             {searchingDrinks ? <p role="status">Checking your saved and recent drinks…</p> : null}
             {drinkSuggestions.length ? <div className="johnny-nutrition-drink-results">{drinkSuggestions.map((drink, index) => <button key={`${drink.id || drink.food_id || 'drink'}-${index}`} type="button" onClick={() => chooseDrink(drink)}><strong>{drinkLabel(normalizeDrink(drink))}</strong><span>{drink.serving_size || '1 serving'} · {Math.round(Number(drink.calories) || 0)} cal</span></button>)}</div> : null}
@@ -598,9 +682,7 @@ export default function JohnnyNutritionLogModal({ onClose }) {
   )
 }
 
-function MealPlanningWorkbench({ activeSlot, busy, creator, form, locking, planSlots, targets, tiles, totals, onAdd, onChangeForm, onCloseCreator, onCreate, onLockAll, onLockMeal, onOpenManual, onOpenScan, onRemove, onSelectSlot }) {
-  const [tileFilter, setTileFilter] = useState('all')
-  const [tileQuery, setTileQuery] = useState('')
+function MealPlanningWorkbench({ activeSlot, busy, creator, form, locking, planSlots, targets, tiles, totals, onAdd, onChangeForm, onCloseCreator, onCreate, onLockAll, onLockMeal, onManage, onOpenManual, onOpenScan, onRemove, onSelectSlot }) {
   const targetRows = [
     ['Calories', totals.calories, Number(targets.target_calories || 0), 'calories', ''],
     ['Protein', totals.protein_g, Number(targets.target_protein_g || 0), 'protein', 'g'],
@@ -608,11 +690,6 @@ function MealPlanningWorkbench({ activeSlot, busy, creator, form, locking, planS
     ['Fat', totals.fat_g, Number(targets.target_fat_g || 0), 'fat', 'g'],
   ]
   const occupiedMeals = Object.values(planSlots).filter(items => items.length).length
-  const normalizedTileQuery = tileQuery.trim().toLowerCase()
-  const typeFilteredTiles = tileFilter === 'all' ? tiles : tiles.filter(tile => tile.kind === tileFilter)
-  const visibleTiles = normalizedTileQuery
-    ? typeFilteredTiles.filter(tile => [tile.name, tile.category, tile.serving, tile.kind].some(value => String(value || '').toLowerCase().includes(normalizedTileQuery)))
-    : typeFilteredTiles
 
   return (
     <section className="johnny-plan-workbench" aria-labelledby="johnny-meal-plan-heading">
@@ -648,26 +725,52 @@ function MealPlanningWorkbench({ activeSlot, busy, creator, form, locking, planS
         })}
       </div>
 
-      <section className="johnny-plan-shelf">
-        <header><div><span>Add to {formatMealType(activeSlot)}</span><h4>Tile shelf</h4></div><div><button type="button" disabled={busy} onClick={onOpenScan}>{busy ? 'Reading…' : 'Scan label'}</button><button type="button" onClick={onOpenManual}>＋ New tile</button></div></header>
-        <div className="johnny-plan-shelf-filters" role="group" aria-label="Filter planning tiles">
-          {[['all', 'All'], ['food', 'Foods'], ['meal', 'Meals'], ['recipe', 'Recipes']].map(([value, label]) => <button key={value} type="button" className={tileFilter === value ? 'active' : ''} aria-pressed={tileFilter === value} onClick={() => setTileFilter(value)}>{label}<small>{value === 'all' ? tiles.length : tiles.filter(tile => tile.kind === value).length}</small></button>)}
-        </div>
-        <div className="johnny-plan-shelf-search">
-          <label htmlFor="johnny-tile-search">Find a tile</label>
-          <input id="johnny-tile-search" type="search" list="johnny-tile-suggestions" value={tileQuery} onChange={event => setTileQuery(event.target.value)} placeholder="Start typing a food, meal, or recipe…" autoComplete="off" />
-          {tileQuery ? <button type="button" onClick={() => setTileQuery('')} aria-label="Clear tile search">×</button> : null}
-          <datalist id="johnny-tile-suggestions">{typeFilteredTiles.slice(0, 30).map(tile => <option key={tile.key} value={tile.name} />)}</datalist>
-        </div>
-        <div className="johnny-plan-tile-row">
-          {visibleTiles.map(tile => <FoodPlanTile key={tile.key} tile={tile} onAction={() => onAdd(tile)} />)}
-          {!visibleTiles.length ? <div className="johnny-plan-no-tiles"><strong>{tileQuery ? `No tiles match “${tileQuery}”` : `No ${tileFilter === 'all' ? 'tiles' : tileFilter + ' tiles'} yet`}</strong><span>{tileQuery ? 'Keep typing or clear the search to see everything.' : 'Scan a label or make a tile manually.'}</span></div> : null}
-        </div>
-      </section>
+      <TileShelf
+        idPrefix="plan"
+        kicker={`Add to ${formatMealType(activeSlot)}`}
+        tiles={tiles}
+        onAction={onAdd}
+        headerActions={<>
+          <button type="button" disabled={busy} onClick={onOpenScan}>{busy ? 'Reading…' : 'Scan label'}</button>
+          <button type="button" onClick={onOpenManual}>＋ New tile</button>
+          <button type="button" className="tile-shelf-manage" onClick={onManage}>Manage tiles</button>
+        </>}
+      />
 
       {creator === 'manual' ? <TileCreator form={form} busy={busy} onChange={onChangeForm} onClose={onCloseCreator} onCreate={onCreate} /> : null}
 
       <footer className="johnny-plan-lockbar"><div><strong>{occupiedMeals ? `${occupiedMeals} meal${occupiedMeals === 1 ? '' : 's'} ready` : 'Build your plan'}</strong><span>{occupiedMeals ? 'Locking adds every planned tile to today’s food log.' : 'Your planning board is a sandbox until you lock it in.'}</span></div><button type="button" disabled={!occupiedMeals || Boolean(locking)} onClick={onLockAll}>{locking === 'all' ? 'Locking plan…' : 'Lock in whole plan'}</button></footer>
+    </section>
+  )
+}
+
+function TileShelf({ headerActions, idPrefix, kicker, tiles, onAction }) {
+  const [tileFilter, setTileFilter] = useState('all')
+  const [tileQuery, setTileQuery] = useState('')
+  const normalizedTileQuery = tileQuery.trim().toLowerCase()
+  const typeFilteredTiles = tileFilter === 'all' ? tiles : tiles.filter(tile => tile.kind === tileFilter)
+  const visibleTiles = normalizedTileQuery
+    ? typeFilteredTiles.filter(tile => [tile.name, tile.category, tile.serving, tile.kind].some(value => String(value || '').toLowerCase().includes(normalizedTileQuery)))
+    : typeFilteredTiles
+  const searchInputId = `johnny-tile-search-${idPrefix}`
+  const suggestionsId = `johnny-tile-suggestions-${idPrefix}`
+
+  return (
+    <section className="johnny-plan-shelf">
+      <header><div><span>{kicker}</span><h4>Tile shelf</h4></div><div>{headerActions}</div></header>
+      <div className="johnny-plan-shelf-filters" role="group" aria-label="Filter tiles">
+        {[['all', 'All'], ['food', 'Foods'], ['meal', 'Meals'], ['recipe', 'Recipes']].map(([value, label]) => <button key={value} type="button" className={tileFilter === value ? 'active' : ''} aria-pressed={tileFilter === value} onClick={() => setTileFilter(value)}>{label}<small>{value === 'all' ? tiles.length : tiles.filter(tile => tile.kind === value).length}</small></button>)}
+      </div>
+      <div className="johnny-plan-shelf-search">
+        <label htmlFor={searchInputId}>Find a tile</label>
+        <input id={searchInputId} type="search" list={suggestionsId} value={tileQuery} onChange={event => setTileQuery(event.target.value)} placeholder="Start typing a food, meal, or recipe…" autoComplete="off" />
+        {tileQuery ? <button type="button" onClick={() => setTileQuery('')} aria-label="Clear tile search">×</button> : null}
+        <datalist id={suggestionsId}>{typeFilteredTiles.slice(0, 30).map(tile => <option key={tile.key} value={tile.name} />)}</datalist>
+      </div>
+      <div className="johnny-plan-tile-row">
+        {visibleTiles.map(tile => <FoodPlanTile key={tile.key} tile={tile} onAction={() => onAction(tile)} />)}
+        {!visibleTiles.length ? <div className="johnny-plan-no-tiles"><strong>{tileQuery ? `No tiles match “${tileQuery}”` : `No ${tileFilter === 'all' ? 'tiles' : tileFilter + ' tiles'} yet`}</strong><span>{tileQuery ? 'Keep typing or clear the search to see everything.' : 'Save a food or meal to your library first.'}</span></div> : null}
+      </div>
     </section>
   )
 }

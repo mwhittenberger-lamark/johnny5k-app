@@ -90,6 +90,7 @@ export default function AppShell({ children }) {
   const showConnectivityNotice = !isOnline || pendingOfflineWrites > 0
   const hideMobileAdminLink = MOBILE_ADMIN_LINK_HIDDEN_EMAILS.has(String(email || '').trim().toLowerCase())
   const isIronQuestExperience = experienceMode === 'ironquest'
+  const isFocusedNutrition = location.pathname.startsWith('/nutrition')
   const shellTabs = isIronQuestExperience
     ? [
         tabs[0],
@@ -578,59 +579,72 @@ export default function AppShell({ children }) {
           </button>
         ) : null}
 
-        <div className="app-shell-header-main">
-          <NavLink to="/dashboard" className="app-shell-brand" aria-label="Johnny5k home">
-            <span className="app-shell-brand-mark">
-              <img src={brandmarkImage} alt="Johnny5k brandmark" />
-            </span>
-            <span className="app-shell-brand-copy">
-              <strong>{isIronQuestExperience ? 'Johnny5k: IronQuest' : 'Johnny5k'}</strong>
-              <small>
-                <i aria-hidden="true" />
-                {isIronQuestExperience ? 'Quest system · active' : 'Johnny · ready'}
-              </small>
-            </span>
-          </NavLink>
-
-          <nav className="app-shell-desktop-nav" aria-label="Primary">
-            {shellTabs.map(tab => (
-              <NavLink key={`${tab.to}:${tab.label}`} to={tab.to} state={tab.state} className={({ isActive }) => `app-shell-desktop-link ${isActive ? 'active' : ''}`}>
-                <AppIcon name={tab.icon} />
-                <span>{tab.label}</span>
-              </NavLink>
-            ))}
-            {canAccessPwaAdmin ? (
-              <NavLink to="/admin" className={({ isActive }) => `app-shell-desktop-link ${isActive ? 'active' : ''}`}>
-                <AppIcon name="admin" />
-                <span>Admin</span>
-              </NavLink>
-            ) : null}
-          </nav>
-
-          <div className="app-shell-actions">
-            <button className="btn-secondary app-shell-coach" onClick={() => openDrawer()} type="button">
-              <AppIcon name="coach" />
-              <span>Ask Johnny</span>
-            </button>
+        {isFocusedNutrition ? (
+          <div className="app-shell-header-main app-shell-header-main-focused">
             <button
-              ref={menuButtonRef}
               type="button"
-              className={`app-shell-menu-toggle ${menuOpen ? 'open' : ''}`}
-              onClick={() => setMenuOpen(open => !open)}
-              aria-expanded={menuOpen}
-              aria-controls="app-shell-mobile-nav"
-              aria-label={menuOpen ? 'Close navigation menu' : 'Open navigation menu'}
+              className="app-shell-focused-close"
+              onClick={() => navigate('/dashboard')}
+              aria-label="Close and return to Johnny"
             >
-              <span className="app-shell-menu-lines" aria-hidden="true">
-                <span />
-                <span />
-                <span />
-              </span>
-              <span className="app-shell-menu-label">Menu</span>
+              <AppIcon name="close" />
             </button>
           </div>
-        </div>
-        {location.pathname !== '/workout/live' ? <AnnouncementTicker messages={tickerMessages} /> : null}
+        ) : (
+          <div className="app-shell-header-main">
+            <NavLink to="/dashboard" className="app-shell-brand" aria-label="Johnny5k home">
+              <span className="app-shell-brand-mark">
+                <img src={brandmarkImage} alt="Johnny5k brandmark" />
+              </span>
+              <span className="app-shell-brand-copy">
+                <strong>{isIronQuestExperience ? 'Johnny5k: IronQuest' : 'Johnny5k'}</strong>
+                <small>
+                  <i aria-hidden="true" />
+                  {isIronQuestExperience ? 'Quest system · active' : 'Johnny · ready'}
+                </small>
+              </span>
+            </NavLink>
+
+            <nav className="app-shell-desktop-nav" aria-label="Primary">
+              {shellTabs.map(tab => (
+                <NavLink key={`${tab.to}:${tab.label}`} to={tab.to} state={tab.state} className={({ isActive }) => `app-shell-desktop-link ${isActive ? 'active' : ''}`}>
+                  <AppIcon name={tab.icon} />
+                  <span>{tab.label}</span>
+                </NavLink>
+              ))}
+              {canAccessPwaAdmin ? (
+                <NavLink to="/admin" className={({ isActive }) => `app-shell-desktop-link ${isActive ? 'active' : ''}`}>
+                  <AppIcon name="admin" />
+                  <span>Admin</span>
+                </NavLink>
+              ) : null}
+            </nav>
+
+            <div className="app-shell-actions">
+              <button className="btn-secondary app-shell-coach" onClick={() => openDrawer()} type="button">
+                <AppIcon name="coach" />
+                <span>Ask Johnny</span>
+              </button>
+              <button
+                ref={menuButtonRef}
+                type="button"
+                className={`app-shell-menu-toggle ${menuOpen ? 'open' : ''}`}
+                onClick={() => setMenuOpen(open => !open)}
+                aria-expanded={menuOpen}
+                aria-controls="app-shell-mobile-nav"
+                aria-label={menuOpen ? 'Close navigation menu' : 'Open navigation menu'}
+              >
+                <span className="app-shell-menu-lines" aria-hidden="true">
+                  <span />
+                  <span />
+                  <span />
+                </span>
+                <span className="app-shell-menu-label">Menu</span>
+              </button>
+            </div>
+          </div>
+        )}
+        {location.pathname !== '/workout/live' && !isFocusedNutrition ? <AnnouncementTicker messages={tickerMessages} /> : null}
       </header>
 
       {menuOpen ? (

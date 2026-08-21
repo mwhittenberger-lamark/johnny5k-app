@@ -1,4 +1,4 @@
-import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { aiApi } from '../../api/modules/ai'
 import { ironquestApi } from '../../api/modules/ironquest'
@@ -6,7 +6,6 @@ import { nutritionApi } from '../../api/modules/nutrition'
 import AppIcon from '../../components/ui/AppIcon'
 import AppDialog from '../../components/ui/AppDialog'
 import AppToast from '../../components/ui/AppToast'
-import CoachingSummaryPanel from '../../components/ui/CoachingSummaryPanel'
 import ClearableInput from '../../components/ui/ClearableInput'
 import EmptyState from '../../components/ui/EmptyState'
 import ErrorState from '../../components/ui/ErrorState'
@@ -15,9 +14,8 @@ import OfflineState from '../../components/ui/OfflineState'
 import SupportIconButton from '../../components/ui/SupportIconButton'
 import LabelScanPromptPanel from '../../components/nutrition/LabelScanPromptPanel'
 import { getAccessibleScrollBehavior } from '../../lib/accessibility'
-import { buildCoachingPromptOptions, buildCoachingSummary, runCoachingAction } from '../../lib/coachingSummary'
-import { trackCoachingPromptOpen } from '../../lib/coaching/coachingAnalytics'
 import { buildIronQuestDailyToast } from '../../lib/ironquestFeedback'
+import { formatMicroAmount } from '../../lib/nutrition/micronutrients'
 import { scrollAppToTop } from '../../lib/scrollAppToTop'
 import { openSupportGuide } from '../../lib/supportHelp'
 import { useOnlineStatus } from '../../lib/useOnlineStatus'
@@ -25,12 +23,14 @@ import { useDashboardStore } from '../../store/dashboardStore'
 import { useJohnnyAssistantStore } from '../../store/johnnyAssistantStore'
 import {
   LabelReviewCard,
-  LibraryNutritionView,
   NutritionAiReviewPanels,
   NutritionModeTabs,
   PantryPageContent,
-  PlanningNutritionView,
-  TodayNutritionView,
+  RecentFoodsView,
+  RecipesView,
+  SavedFoodsView,
+  SavedMealsView,
+  ShoppingView,
 } from './components/NutritionFeatureViews'
 import {
   useNutritionPlanningViewState,
@@ -133,35 +133,6 @@ const DRAWER_NUTRITION_ACTION_TOOLS = new Set([
   'add_recipe_to_cookbook',
 ])
 const SCROLL_BEHAVIOR = getAccessibleScrollBehavior()
-const MICRO_TARGETS = {
-  calcium: { amount: 1300, unit: 'mg' },
-  choline: { amount: 550, unit: 'mg' },
-  chromium: { amount: 35, unit: 'mcg' },
-  copper: { amount: 0.9, unit: 'mg' },
-  fiber: { amount: 28, unit: 'g' },
-  folate: { amount: 400, unit: 'mcg' },
-  iodine: { amount: 150, unit: 'mcg' },
-  iron: { amount: 18, unit: 'mg' },
-  magnesium: { amount: 420, unit: 'mg' },
-  manganese: { amount: 2.3, unit: 'mg' },
-  molybdenum: { amount: 45, unit: 'mcg' },
-  niacin: { amount: 16, unit: 'mg' },
-  pantothenic_acid: { amount: 5, unit: 'mg' },
-  phosphorus: { amount: 1250, unit: 'mg' },
-  potassium: { amount: 4700, unit: 'mg' },
-  riboflavin: { amount: 1.3, unit: 'mg' },
-  selenium: { amount: 55, unit: 'mcg' },
-  sodium: { amount: 2300, unit: 'mg' },
-  thiamin: { amount: 1.2, unit: 'mg' },
-  vitamin_a: { amount: 900, unit: 'mcg' },
-  vitamin_b12: { amount: 2.4, unit: 'mcg' },
-  vitamin_b6: { amount: 1.7, unit: 'mg' },
-  vitamin_c: { amount: 90, unit: 'mg' },
-  vitamin_d: { amount: 20, unit: 'mcg' },
-  vitamin_e: { amount: 15, unit: 'mg' },
-  vitamin_k: { amount: 120, unit: 'mcg' },
-  zinc: { amount: 11, unit: 'mg' },
-}
 
 function useAutoScrollWhenActive(active) {
   const ref = useRef(null)
@@ -244,8 +215,6 @@ export default function NutritionScreen() {
     setRecipeSearchQuery,
     setSavedFoodCategoryFilter,
     setSavedFoodMacroFilter,
-    setShowMicros,
-    showMicros,
   } = useNutritionPlanningViewState({
     loadStoredCheckedGapItems,
     loadStoredRecipeFilterState,
@@ -261,12 +230,8 @@ export default function NutritionScreen() {
   const [pantry, setPantry] = useState([])
   const [recipes, setRecipes] = useState([])
   const [groceryGap, setGroceryGap] = useState(null)
-  const [showAddMethodPicker, setShowAddMethodPicker] = useState(false)
-  const [showAddForm, setShowAddForm] = useState(false)
-  const [addMealInitialMode, setAddMealInitialMode] = useState('manual')
-  const [showMealPhotoPrompt, setShowMealPhotoPrompt] = useState(false)
   const [showLabelScanPrompt, setShowLabelScanPrompt] = useState(false)
-  const [labelScanContext, setLabelScanContext] = useState('today')
+  const [labelScanContext, setLabelScanContext] = useState('general')
   const [showSavedMealForm, setShowSavedMealForm] = useState(false)
   const [showSavedFoodForm, setShowSavedFoodForm] = useState(false)
   const [showPantryForm, setShowPantryForm] = useState(false)
@@ -274,32 +239,20 @@ export default function NutritionScreen() {
   const [showGroceryGapForm, setShowGroceryGapForm] = useState(false)
   const [showGroceryGapVoice, setShowGroceryGapVoice] = useState(false)
   const [analyzing, setAnalyzing] = useState(false)
-  const [aiMealDraft, setAiMealDraft] = useState(null)
-  const [mealPhotoNote, setMealPhotoNote] = useState('')
   const [labelScanNote, setLabelScanNote] = useState('')
   const [labelScanImages, setLabelScanImages] = useState({ front: '', back: '' })
   const [labelReview, setLabelReview] = useState(null)
   const [labelReviewAction, setLabelReviewAction] = useState('')
-  const [loadingMeals, setLoadingMeals] = useState(true)
   const [loadingExtras, setLoadingExtras] = useState(false)
   const [syncingGapToPantry, setSyncingGapToPantry] = useState(false)
   const [error, setError] = useState('')
   const [cookbookRecipes, setCookbookRecipes] = useState([])
   const [selectedRecipeKeys, setSelectedRecipeKeys] = useState([])
-  const [weeklyCaloriesReview, setWeeklyCaloriesReview] = useState(() => buildEmptyWeeklyCaloriesReview())
-  const [beverageBoard, setBeverageBoard] = useState(() => buildEmptyBeverageBoard(today))
-  const [todayAccordions, setTodayAccordions] = useState(() => ({
-    beverageBoard: true,
-    coachingRead: true,
-  }))
-  const mealInputRef = useRef()
   const labelFrontInputRef = useRef()
   const labelBackInputRef = useRef()
-  const mealsSectionRef = useRef(null)
   const recentFoodsSectionRef = useRef(null)
   const savedFoodsSectionRef = useRef(null)
   const planningSectionRef = useRef(null)
-  const addMealFormRef = useAutoScrollWhenActive(showAddMethodPicker || showAddForm)
   const labelScanPromptRef = useAutoScrollWhenActive(showLabelScanPrompt)
   const savedFoodFormRef = useAutoScrollWhenActive(showSavedFoodForm)
   const savedMealFormRef = useAutoScrollWhenActive(showSavedMealForm)
@@ -311,34 +264,34 @@ export default function NutritionScreen() {
   const recipesSectionRef = useRef(null)
   const pantrySectionRef = useRef(null)
   const groceryGapSectionRef = useRef(null)
-  const beverageBoardSectionRef = useRef(null)
-  const beverageBoardRef = useRef(buildEmptyBeverageBoard(today))
   const invalidate = useDashboardStore(state => state.invalidate)
-  const dashboardSnapshot = useDashboardStore(state => state.snapshot)
-  const loadDashboardSnapshot = useDashboardStore(state => state.loadSnapshot)
   const openDrawer = useJohnnyAssistantStore(state => state.openDrawer)
-
-  useEffect(() => {
-    beverageBoardRef.current = beverageBoard
-  }, [beverageBoard])
 
   function handleOpenNutritionSupport() {
     const supportConfigByView = {
-      today: {
-        guideId: 'log-meal',
-        prompt: 'Show me exactly how to log a meal here and what to do if the food is not easy to find.',
-      },
-      library: {
+      recentFoods: {
         guideId: 'save-meal',
-        prompt: 'Show me where saved meals and saved foods live and how to reuse them fast.',
+        prompt: 'Show me how recent foods work and how to reuse them fast.',
       },
-      plan: {
+      savedFoods: {
+        guideId: 'save-meal',
+        prompt: 'Show me where saved foods live and how to reuse them fast.',
+      },
+      savedMeals: {
+        guideId: 'save-meal',
+        prompt: 'Show me where saved meals live and how to reuse them fast.',
+      },
+      recipes: {
         guideId: 'plan-recipes',
-        prompt: 'Show me how to plan my next meal here using recipes, pantry, and grocery gap.',
+        prompt: 'Show me how to plan my next meal here using recipe ideas.',
+      },
+      shopping: {
+        guideId: 'plan-recipes',
+        prompt: 'Show me how pantry and grocery gap work together for shopping.',
       },
     }
 
-    const config = supportConfigByView[activeView] || supportConfigByView.today
+    const config = supportConfigByView[activeView] || supportConfigByView.recentFoods
     openSupportGuide(openDrawer, {
       screen: 'nutrition',
       surface: `nutrition_${activeView}`,
@@ -358,23 +311,6 @@ export default function NutritionScreen() {
     })
   }
 
-  useEffect(() => {
-    void loadDashboardSnapshot()
-  }, [loadDashboardSnapshot])
-
-  const latestMeal = meals[0] ?? null
-  const latestMealLabel = useMemo(() => formatMealTimeLabel(latestMeal?.meal_datetime), [latestMeal?.meal_datetime])
-  const summaryMicros = useMemo(() => {
-    if (Array.isArray(summary?.micros) && summary.micros.length) {
-      return summary.micros
-    }
-
-    return aggregateMealMicros(meals)
-  }, [meals, summary])
-  const highlightedMicros = useMemo(
-    () => buildHighlightedNutritionStats(summaryMicros, summary?.totals).map(enrichMicroWithTarget).slice(0, 8),
-    [summary?.totals, summaryMicros],
-  )
   const displayedGroceryGap = useMemo(
     () => buildRecipeAwareGroceryGap(groceryGap, recipes, pantry, selectedRecipeKeys),
     [groceryGap, pantry, recipes, selectedRecipeKeys],
@@ -384,7 +320,6 @@ export default function NutritionScreen() {
     () => sortGroceryGapItems(displayedGroceryGap.missing_items, checkedGapItemSet),
     [checkedGapItemSet, displayedGroceryGap.missing_items],
   )
-  const mergedMeals = useMemo(() => mergeDailyMealsByType(meals), [meals])
   const orderedRecentFoods = useMemo(() => sortSavedFoodsAlphabetically(recentFoods), [recentFoods])
   const orderedSavedFoods = useMemo(() => sortSavedFoodsAlphabetically(savedFoods), [savedFoods])
   const savedFoodCategoryOptions = useMemo(() => getSavedFoodCategoryOptions(savedFoods), [savedFoods])
@@ -393,7 +328,6 @@ export default function NutritionScreen() {
     [orderedSavedFoods, savedFoodCategoryFilter, savedFoodMacroFilter],
   )
   const orderedSavedMeals = useMemo(() => sortSavedMealsAlphabetically(savedMeals), [savedMeals])
-  const visibleMeals = useMemo(() => getVisibleItems(mergedMeals, expandedSections.meals, 4), [expandedSections.meals, mergedMeals])
   const visibleRecentFoods = useMemo(() => getVisibleItems(orderedRecentFoods, expandedSections.recentFoods, 4), [expandedSections.recentFoods, orderedRecentFoods])
   const visibleSavedFoods = useMemo(() => getVisibleItems(filteredSavedFoods, expandedSections.savedFoods, 4), [expandedSections.savedFoods, filteredSavedFoods])
   const visibleSavedMeals = useMemo(() => getVisibleItems(orderedSavedMeals, expandedSections.savedMeals, 4), [expandedSections.savedMeals, orderedSavedMeals])
@@ -426,18 +360,10 @@ export default function NutritionScreen() {
     () => getVisibleItems(orderedGapItems, expandedSections.groceryGap, 10),
     [expandedSections.groceryGap, orderedGapItems],
   )
-  const libraryItemCount = recentFoods.length + savedFoods.length + savedMeals.length
   const checkedRecentFoodIdSet = useMemo(() => new Set(checkedRecentFoodIds), [checkedRecentFoodIds])
   const allRecentFoodsChecked = recentFoods.length > 0 && checkedRecentFoodIds.length === recentFoods.length
-  const planningItemCount = recipes.length + displayedGroceryGap.missing_items.length + pantry.length
   const allGapItemsChecked = displayedGroceryGap.missing_items.length > 0
     && checkedGapItems.length === displayedGroceryGap.missing_items.length
-  const macroCards = useMemo(
-    () => buildNutritionMacroCards(summary),
-    [summary],
-  )
-  const proteinMacroCard = macroCards.find(card => card.priority === 'primary') || null
-  const secondaryMacroCards = macroCards.filter(card => card.priority !== 'primary')
   const labelReviewTotals = useMemo(() => getLabelReviewQuantityTotals(labelReview), [labelReview])
 
   useEffect(() => {
@@ -501,17 +427,10 @@ export default function NutritionScreen() {
     return match ? match[1] : today
   }
 
-  const loadWeeklyCaloriesReview = useCallback(async (anchorDate) => {
-    const lastSevenDates = getRecentLocalDateStrings(anchorDate, 7)
-    const weeklyRows = await Promise.all(lastSevenDates.map(date => nutritionApi.getSummary(date).catch(() => null)))
-    setWeeklyCaloriesReview(buildWeeklyCaloriesReview(weeklyRows, lastSevenDates))
-  }, [])
-
   const loadData = useCallback(async () => {
     setError('')
-    setLoadingMeals(true)
     try {
-      const [mealRows, summaryRow, recentFoodRows, savedMealRows, savedFoodRows, pantryRows, recipeRows, groceryGapRow, cookbookRows, beverageBoardRow] = await Promise.all([
+      const [mealRows, summaryRow, recentFoodRows, savedMealRows, savedFoodRows, pantryRows, recipeRows, groceryGapRow, cookbookRows] = await Promise.all([
         nutritionApi.getMeals(today),
         nutritionApi.getSummary(today),
         nutritionApi.getRecentFoods(),
@@ -521,7 +440,6 @@ export default function NutritionScreen() {
         nutritionApi.getRecipes(),
         nutritionApi.getGroceryGap(),
         nutritionApi.getRecipeCookbook(),
-        nutritionApi.getBeverageBoard(today).catch(() => beverageBoardRef.current || buildEmptyBeverageBoard(today)),
       ])
       setMeals(mealRows)
       setSummary(summaryRow)
@@ -534,16 +452,12 @@ export default function NutritionScreen() {
       setCookbookRecipes(nextCookbookRecipes)
       setSelectedRecipeKeys(nextCookbookRecipes.map(recipe => getRecipeKey(recipe)))
       setGroceryGap(groceryGapRow)
-      setBeverageBoard(current => normaliseBeverageBoardPayload(beverageBoardRow, current || buildEmptyBeverageBoard(today), today))
       FOOD_SEARCH_CACHE.clear()
-      await loadWeeklyCaloriesReview(today)
     } catch (err) {
       setError(err.message)
       showErrorToast(err, 'Could not load nutrition data.')
-    } finally {
-      setLoadingMeals(false)
     }
-  }, [loadWeeklyCaloriesReview, showErrorToast, today])
+  }, [showErrorToast, today])
 
   useEffect(() => {
     loadData()
@@ -555,11 +469,13 @@ export default function NutritionScreen() {
       return undefined
     }
 
-    const nextView = ['savedMeals', 'savedFoods'].includes(focusSection)
-      ? 'library'
-      : ['pantry', 'recipes', 'groceryGap'].includes(focusSection)
-        ? 'plan'
-        : 'today'
+    const nextView = focusSection === 'savedMeals'
+      ? 'savedMeals'
+      : focusSection === 'recipes'
+        ? 'recipes'
+        : ['pantry', 'groceryGap'].includes(focusSection)
+          ? 'shopping'
+          : 'savedFoods'
     setActiveView(nextView)
 
     if (['savedMeals', 'pantry', 'recipes', 'groceryGap'].includes(focusSection)) {
@@ -582,13 +498,15 @@ export default function NutritionScreen() {
 
     const targetRef = focusSection === 'savedMeals'
       ? savedMealsSectionRef
-      : focusSection === 'pantry'
-        ? pantrySectionRef
-        : focusSection === 'recipes'
-          ? recipesSectionRef
-          : focusSection === 'groceryGap'
-            ? groceryGapSectionRef
-            : null
+      : focusSection === 'savedFoods'
+        ? savedFoodsSectionRef
+        : focusSection === 'pantry'
+          ? pantrySectionRef
+          : focusSection === 'recipes'
+            ? recipesSectionRef
+            : focusSection === 'groceryGap'
+              ? groceryGapSectionRef
+              : null
     const frameId = window.requestAnimationFrame(() => {
       targetRef?.current?.scrollIntoView({ behavior: SCROLL_BEHAVIOR, block: 'start' })
     })
@@ -604,6 +522,7 @@ export default function NutritionScreen() {
     location.state?.savedMealDraft,
     pantrySectionRef,
     recipesSectionRef,
+    savedFoodsSectionRef,
     savedMealsSectionRef,
     setActiveView,
     setExpandedSections,
@@ -730,37 +649,6 @@ export default function NutritionScreen() {
     }
   }
 
-  async function handlePhotoAnalyse(event) {
-    const file = event.target.files?.[0]
-    if (!file) return
-    setActiveView('today')
-    setShowAddMethodPicker(false)
-    setShowAddForm(false)
-    setAnalyzing(true)
-    setAiMealDraft(null)
-    setLabelReview(null)
-    setShowMealPhotoPrompt(false)
-    const reader = new FileReader()
-    reader.onload = async () => {
-      try {
-        const result = await aiApi.analyseMeal(reader.result, mealPhotoNote.trim())
-        setAiMealDraft({
-          mealType: 'lunch',
-          items: normaliseMealItems(result?.items ?? []),
-        })
-        setMealPhotoNote('')
-        showToast(buildAiMealValidationToast(result))
-      } catch (err) {
-        setError(err.message)
-        showErrorToast(err, 'Photo analysis failed.')
-      } finally {
-        setAnalyzing(false)
-        event.target.value = ''
-      }
-    }
-    reader.readAsDataURL(file)
-  }
-
   function resetLabelScanFlow() {
     setLabelScanImages({ front: '', back: '' })
     setLabelScanNote('')
@@ -772,14 +660,12 @@ export default function NutritionScreen() {
     }
   }
 
-  function openLabelScanPrompt(context = 'today') {
-    const nextContext = context === 'saved-foods' ? 'saved-foods' : 'today'
+  function openLabelScanPrompt(context = 'general') {
+    const nextContext = context === 'saved-foods' ? 'saved-foods' : 'general'
     setLabelScanContext(nextContext)
-    setActiveView(nextContext === 'saved-foods' ? 'library' : 'today')
-    setShowAddMethodPicker(false)
-    setShowAddForm(false)
-    setAiMealDraft(null)
-    setShowMealPhotoPrompt(false)
+    if (nextContext === 'saved-foods') {
+      setActiveView('savedFoods')
+    }
     setLabelReview(null)
     resetLabelScanFlow()
     setShowLabelScanPrompt(true)
@@ -808,9 +694,10 @@ export default function NutritionScreen() {
       return
     }
 
-    setActiveView(labelScanContext === 'saved-foods' ? 'library' : 'today')
+    if (labelScanContext === 'saved-foods') {
+      setActiveView('savedFoods')
+    }
     setAnalyzing(true)
-    setAiMealDraft(null)
     setLabelReview(null)
 
     try {
@@ -860,51 +747,6 @@ export default function NutritionScreen() {
     })
   }
 
-  async function handleConfirmAiMeal() {
-    if (!aiMealDraft?.items?.length) return
-    await runAction(
-      () => nutritionApi.logMeal({ meal_type: aiMealDraft.mealType, source: 'ai_photo', items: aiMealDraft.items }),
-      'Meal logged.',
-      {
-        onSuccess: async () => {
-          const ironquestProgress = await syncIronQuestDailyProgress({ quest_key: 'meal', state_date: today })
-          revealIronQuestProgress(ironquestProgress, 'Meal logged')
-          setAiMealDraft(null)
-          invalidate()
-          await loadData()
-          scrollNodeIntoView(mealsSectionRef.current)
-        },
-      },
-    )
-  }
-
-  async function handleSaveAiItemAsFood(item) {
-    await runAction(
-      () => nutritionApi.createSavedFood({
-        canonical_name: item.food_name,
-        serving_size: item.serving_unit,
-        serving_grams: Number(item.estimated_grams) || null,
-        calories: item.calories,
-        protein_g: item.protein_g,
-        carbs_g: item.carbs_g,
-        fat_g: item.fat_g,
-        fiber_g: item.fiber_g,
-        sugar_g: item.sugar_g,
-        sodium_mg: item.sodium_mg,
-        micros: item.micros,
-        source: item.source?.provider === 'usda' ? 'usda_ai_photo' : 'ai_photo',
-        source_details: item.source || null,
-      }),
-      'Saved food added.',
-      {
-        onSuccess: async () => {
-          await refreshPlanning()
-          scrollNodeIntoView(savedFoodsSectionRef.current)
-        },
-      },
-    )
-  }
-
   async function handleSaveLabelFood() {
     if (!labelReview) return
     if (labelReviewAction) return
@@ -939,7 +781,6 @@ export default function NutritionScreen() {
           handleCancelLabelReview()
           invalidate()
           await loadData()
-          scrollNodeIntoView(mealsSectionRef.current)
         },
       },
     )
@@ -956,7 +797,6 @@ export default function NutritionScreen() {
           revealIronQuestProgress(ironquestProgress, 'Meal logged')
           invalidate()
           await loadData()
-          changeActiveView('today', mealsSectionRef)
         },
       },
     )
@@ -1295,97 +1135,18 @@ export default function NutritionScreen() {
   }
 
   function openPantryPage() {
-    setActiveView('plan')
+    setActiveView('shopping')
     navigate('/nutrition/pantry')
-  }
-
-  function closeAddMealFlow() {
-    setShowAddMethodPicker(false)
-    setShowAddForm(false)
-  }
-
-  function toggleAddMealFlow() {
-    startTransition(() => {
-      setActiveView('today')
-    })
-
-    setShowLabelScanPrompt(false)
-    setShowMealPhotoPrompt(false)
-    setAiMealDraft(null)
-    setLabelReview(null)
-
-    if (showAddMethodPicker || showAddForm) {
-      closeAddMealFlow()
-      return
-    }
-
-    setAddMealInitialMode('manual')
-    setShowAddMethodPicker(true)
-  }
-
-  function handleAddMealMethodSelect(mode) {
-    if (mode === 'photo') {
-      closeAddMealFlow()
-      setShowLabelScanPrompt(false)
-      setShowMealPhotoPrompt(true)
-      return
-    }
-
-    setAddMealInitialMode(mode === 'saved' || mode === 'voice' ? mode : 'manual')
-    setShowAddMethodPicker(false)
-    setShowAddForm(true)
-  }
-
-  function openBeverageBoard() {
-    setActiveView('today')
-    closeAddMealFlow()
-    setShowLabelScanPrompt(false)
-    setShowMealPhotoPrompt(false)
-    setTodayAccordions(current => ({ ...current, beverageBoard: true }))
-    window.requestAnimationFrame(() => {
-      window.requestAnimationFrame(() => {
-        scrollNodeIntoView(beverageBoardSectionRef.current)
-      })
-    })
   }
 
   function closePantryPage() {
     navigate('/nutrition', { state: { focusSection: 'pantry' } })
   }
 
-  const coachingSummary = useMemo(() => {
-    if (!weeklyCaloriesReview?.isLoaded) {
-      return null
-    }
-
-    return buildCoachingSummary({
-      surface: 'nutrition',
-      snapshot: dashboardSnapshot,
-      nutritionSummary: summary,
-      weeklyCaloriesReview,
-      meals,
-    })
-  }, [dashboardSnapshot, meals, summary, weeklyCaloriesReview])
-  const coachPrompts = useMemo(
-    () => coachingSummary?.followUpPrompts?.length
-      ? coachingSummary.followUpPrompts
-      : buildNutritionCoachPrompts(summary),
-    [coachingSummary, summary],
-  )
-
   const featureViewDeps = {
-    AddMealForm,
-    AddMealMethodPicker,
-    AiMealReviewCard,
     AppToast,
-    BeverageBoard,
-    CoachingSummaryPanel,
-    buildNutritionCoachBody,
-    buildNutritionCoachHeadline,
     formatGroceryGapAmount,
     formatMealTypeLabel,
-    formatMicroAmount,
-    formatMicroTargetMeta,
     getRecipeKey,
     GroceryGapForm,
     GroceryGapVoiceCapture,
@@ -1416,20 +1177,13 @@ export default function NutritionScreen() {
     navigate,
     activeToast,
     activeView,
-    addMealFormAnchor: addMealFormRef,
-    aiMealDraft,
     allGapItemsChecked,
     analyzing,
-    beverageBoard,
-    beverageBoardSectionAnchor: beverageBoardSectionRef,
-    setBeverageBoard,
     caloriesRemaining,
     changeActiveView,
     checkedGapItemSet,
     checkedGapItems,
     closePantryPage,
-    coachPrompts,
-    coachingSummary,
     collapsedPantryCategories,
     displayedGroceryGap,
     dismissToast,
@@ -1445,7 +1199,6 @@ export default function NutritionScreen() {
     handleBulkPantryImport,
     handleClearCheckedGapItems,
     handleClearSelectedRecipes,
-    handleConfirmAiMeal,
     handleCreateGroceryGapItem,
     handleCreatePantryItem,
     handleDeleteCheckedGapItems,
@@ -1457,45 +1210,15 @@ export default function NutritionScreen() {
     handleCancelLabelReview,
     handleFormCancel,
     handleClearCheckedRecentFoods,
-    handleCoachingAction: (action, summaryOverride) => runCoachingAction(
-      action,
-      { navigate, openDrawer },
-      (summaryOverride || coachingSummary) ? buildCoachingPromptOptions(summaryOverride || coachingSummary, {
-        screen: 'nutrition',
-        surface: 'nutrition_coaching_summary',
-        promptKind: 'next_action_prompt',
-      }) : null,
-    ),
-    handleCoachingPromptOpen: prompt => {
-      const text = String(prompt?.prompt || '').trim()
-      if (!text) return
-      if (coachingSummary) {
-        trackCoachingPromptOpen(coachingSummary, text, {
-          screen: 'nutrition',
-          surface: 'nutrition_coach_prompt_grid',
-          promptKind: 'follow_up_prompt',
-          promptId: String(prompt?.id || '').trim(),
-        })
-      }
-      openDrawer(text, coachingSummary ? buildCoachingPromptOptions(coachingSummary, {
-        screen: 'nutrition',
-        surface: 'nutrition_coach_prompt_grid',
-        promptKind: 'follow_up_prompt',
-        promptId: String(prompt?.id || '').trim(),
-        promptLabel: String(prompt?.label || '').trim(),
-      }) : undefined)
-    },
     handleLogSavedFood,
     handleLogSavedMeal,
     handleMoveGapToPantry,
     handleQuickLogLabelFood,
-    handleSaveAiItemAsFood,
     handleSaveLabelFood,
     handleSubmitLabelScan,
     handleSelectAllGapItems,
     handleUpdatePantryItem,
     handleUpdateLabelReviewField,
-    highlightedMicros,
     invalidate,
     labelReview,
     labelReviewAction,
@@ -1504,17 +1227,11 @@ export default function NutritionScreen() {
     labelScanImages,
     labelScanPromptAnchor: labelScanPromptRef,
     labelScanNote,
-    latestMealLabel,
-    libraryItemCount,
     loadData,
-    loadingMeals,
     loadingExtras,
     location,
     meals,
-    mealsSectionAnchor: mealsSectionRef,
-    mergedMeals,
     openDrawer,
-    openBeverageBoard,
     openSavedFoodsLabelScanPrompt: () => openLabelScanPrompt('saved-foods'),
     openPantrySupport: handleOpenPantrySupport,
     openPantryPage,
@@ -1531,9 +1248,7 @@ export default function NutritionScreen() {
     pickLabelScanBack: () => labelBackInputRef.current?.click(),
     pickLabelScanFront: () => labelFrontInputRef.current?.click(),
     planningAccordions,
-    planningItemCount,
     planningSectionAnchor: planningSectionRef,
-    proteinMacroCard,
     checkedRecentFoodIdSet,
     allRecentFoodsChecked,
     recentFoods,
@@ -1561,9 +1276,7 @@ export default function NutritionScreen() {
     savedMealFormAnchor: savedMealFormRef,
     savedMeals,
     savedMealsSectionAnchor: savedMealsSectionRef,
-    secondaryMacroCards,
     selectedRecipeKeys,
-    setAiMealDraft,
     setCollapsedPantryCategories,
     setLabelScanNote,
     setPantryCategoryFilter,
@@ -1574,26 +1287,19 @@ export default function NutritionScreen() {
     setRecipeFiltersOpen,
     setRecipeMealFilter,
     setRecipeSearchQuery,
-    setShowAddMethodPicker,
-    setShowAddForm,
     setShowGroceryGapForm,
     setShowGroceryGapVoice,
     setShowLabelScanPrompt,
-    setShowMicros,
     setShowPantryForm,
     setShowPantryVoice,
-    setShowMealPhotoPrompt,
     setShowSavedFoodForm,
     setShowSavedMealForm,
-    showAddMethodPicker,
     showGlobalLabelReview: Boolean(labelReview) && labelScanContext !== 'saved-foods',
     showGlobalLabelScanPrompt: showLabelScanPrompt && labelScanContext !== 'saved-foods',
-    showAddForm,
     showErrorToast,
     showGroceryGapForm,
     showGroceryGapVoice,
     showLabelScanPrompt,
-    showMicros,
     showPantryForm,
     showPantryVoice,
     showSavedFoodsLabelReview: Boolean(labelReview) && labelScanContext === 'saved-foods',
@@ -1603,20 +1309,8 @@ export default function NutritionScreen() {
     showToast,
     syncIronQuestDailyProgress,
     summary,
-    toggleAddMealFlow,
-    handleAddMealMethodSelect,
-    closeAddMealFlow,
-    addMealInitialMode,
-    todayAccordions,
     today,
     resolveIronQuestStateDate,
-    toggleTodayAccordion: key => {
-      setTodayAccordions(current => ({ ...current, [key]: !current[key] }))
-    },
-    setTodayAccordionOpen: (key, open) => {
-      setTodayAccordions(current => ({ ...current, [key]: Boolean(open) }))
-    },
-    weeklyCaloriesReview,
     syncingGapToPantry,
     handleSavedFoodsLabelScanCancel: () => {
       resetLabelScanFlow()
@@ -1628,7 +1322,6 @@ export default function NutritionScreen() {
     toggleRecipeSelection,
     toggleSection,
     visibleGapItems,
-    visibleMeals,
     visibleRecentFoods,
     visibleRecipes,
     visibleSavedFoods,
@@ -1656,53 +1349,25 @@ export default function NutritionScreen() {
     <div className="screen nutrition-screen upgraded-nutrition-screen">
       <header className="screen-header nutrition-header support-icon-anchor">
         <SupportIconButton label="Get help with nutrition" onClick={handleOpenNutritionSupport} />
-        <div>
-          <p className="dashboard-eyebrow">Nutrition</p>
-            <h1>Stay on top of today&apos;s food</h1>
-            <p className="settings-subtitle">Log what you eat without losing the bigger picture. Saved foods, meal planning, and pantry tools are here when you need them.</p>
+        <div className="nutrition-header-main">
+          <div className="nutrition-header-monogram" aria-hidden="true"><AppIcon name="nutrition" /></div>
+          <div className="nutrition-header-copy">
+            <span>Nutrition</span>
+            <h1>Food Database</h1>
+          </div>
         </div>
-        <div className="header-actions nutrition-header-actions">
-          <button className="btn-primary header-action-button nutrition-primary-header-action" title="Add manually" onClick={() => {
-            toggleAddMealFlow()
-          }} type="button">
-            <AppIcon name="plus" />
-            <span>{showAddMethodPicker || showAddForm ? 'Close add meal' : 'Add meal'}</span>
-          </button>
-          <button className="btn-secondary header-action-button nutrition-header-secondary-action" title="Snap meal photo" onClick={() => {
-            setActiveView('today')
-            closeAddMealFlow()
-            setShowLabelScanPrompt(false)
-            setShowMealPhotoPrompt(current => !current)
-          }} type="button">
-            <AppIcon name="camera" />
-            <span>{showMealPhotoPrompt ? 'Close meal pic' : 'Snap a meal pic'}</span>
-          </button>
-          <button className="btn-secondary header-action-button nutrition-header-secondary-action" title="Scan nutrition label" onClick={() => {
-            openLabelScanPrompt()
-          }} type="button">
+        <div className="nutrition-header-status">
+          <button type="button" className="nutrition-header-scan-action" title="Scan nutrition label" onClick={() => openLabelScanPrompt()}>
             <AppIcon name="label" />
             <span>Scan label</span>
           </button>
-          <button className="btn-secondary header-action-button nutrition-header-secondary-action" title="Jump to Beverage Board" onClick={openBeverageBoard} type="button">
-            <AppIcon name="water" />
-            <span>Beverage Board</span>
-          </button>
+          <span><i /> {meals.length ? `${meals.length} meal${meals.length === 1 ? '' : 's'} logged today` : 'Nothing logged yet today'}</span>
+          <strong>{caloriesRemaining != null ? `${Math.round(caloriesRemaining).toLocaleString()} cal left today` : 'Set a calorie target to track'}</strong>
         </div>
       </header>
 
-      <input ref={mealInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handlePhotoAnalyse} />
       <input ref={labelFrontInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={(event) => { void handleLabelImageSelected('front', event) }} />
       <input ref={labelBackInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={(event) => { void handleLabelImageSelected('back', event) }} />
-
-      {showMealPhotoPrompt ? (
-        <MealPhotoPromptPanel
-          note={mealPhotoNote}
-          onChangeNote={setMealPhotoNote}
-          onPickImage={() => mealInputRef.current?.click()}
-          onCancel={() => handleFormCancel(() => setShowMealPhotoPrompt(false))}
-          busy={analyzing}
-        />
-      ) : null}
 
       {screen.showGlobalLabelScanPrompt ? (
         <LabelScanPromptPanel
@@ -1725,44 +1390,26 @@ export default function NutritionScreen() {
 
       <NutritionModeTabs screen={screen} />
       <NutritionAiReviewPanels screen={screen} deps={featureViewDeps} />
-      <div id="nutrition-view-panel-today" role="tabpanel" aria-labelledby="nutrition-mode-tab-today" hidden={activeView !== 'today'}>
-        {activeView === 'today' ? <TodayNutritionView screen={screen} deps={featureViewDeps} /> : null}
+      <div id="nutrition-view-panel-recentFoods" role="tabpanel" aria-labelledby="nutrition-mode-tab-recentFoods" hidden={activeView !== 'recentFoods'}>
+        {activeView === 'recentFoods' ? <RecentFoodsView screen={screen} deps={featureViewDeps} /> : null}
       </div>
-      <div id="nutrition-view-panel-library" role="tabpanel" aria-labelledby="nutrition-mode-tab-library" hidden={activeView !== 'library'}>
-        {activeView === 'library' ? <LibraryNutritionView screen={screen} deps={featureViewDeps} /> : null}
+      <div id="nutrition-view-panel-savedFoods" role="tabpanel" aria-labelledby="nutrition-mode-tab-savedFoods" hidden={activeView !== 'savedFoods'}>
+        {activeView === 'savedFoods' ? <SavedFoodsView screen={screen} deps={featureViewDeps} /> : null}
       </div>
-      <div id="nutrition-view-panel-plan" role="tabpanel" aria-labelledby="nutrition-mode-tab-plan" hidden={activeView !== 'plan'}>
-        {activeView === 'plan' ? <PlanningNutritionView screen={screen} deps={featureViewDeps} /> : null}
+      <div id="nutrition-view-panel-savedMeals" role="tabpanel" aria-labelledby="nutrition-mode-tab-savedMeals" hidden={activeView !== 'savedMeals'}>
+        {activeView === 'savedMeals' ? <SavedMealsView screen={screen} deps={featureViewDeps} /> : null}
+      </div>
+      <div id="nutrition-view-panel-recipes" role="tabpanel" aria-labelledby="nutrition-mode-tab-recipes" hidden={activeView !== 'recipes'}>
+        {activeView === 'recipes' ? <RecipesView screen={screen} deps={featureViewDeps} /> : null}
+      </div>
+      <div id="nutrition-view-panel-shopping" role="tabpanel" aria-labelledby="nutrition-mode-tab-shopping" hidden={activeView !== 'shopping'}>
+        {activeView === 'shopping' ? <ShoppingView screen={screen} deps={featureViewDeps} /> : null}
       </div>
 
       {activeToast ? <AppToast toast={activeToast} onDismiss={() => dismissToast(activeToast.id)} /> : null}
     </div>
   )
 }
-function MealPhotoPromptPanel({ note, onChangeNote, onPickImage, onCancel, busy }) {
-  return (
-    <div className="dash-card nutrition-planning-card nutrition-meal-photo-panel">
-      <div className="dashboard-card-head">
-        <span className="dashboard-chip nutrition">Meal photo</span>
-        <span className="dashboard-chip subtle">Optional AI hint</span>
-      </div>
-      <h3>Send extra context with the photo</h3>
-      <p className="settings-subtitle">Add a short note if the image needs clarification, like “the meat is ground turkey” or “the rice is brown rice.”</p>
-      <FieldLabel label="Message to Johnny" className="field-label-food-note">
-        <textarea
-          placeholder="Example: the meat is ground turkey, and the rice is brown rice."
-          value={note}
-          onChange={event => onChangeNote(event.target.value)}
-        />
-      </FieldLabel>
-      <div className="nutrition-row-actions nutrition-row-actions-full-width">
-        <button type="button" className="btn-primary" onClick={onPickImage} disabled={busy}>{busy ? 'Analyzing…' : 'Take or choose photo'}</button>
-        <button type="button" className="btn-secondary" onClick={onCancel} disabled={busy}>Cancel</button>
-      </div>
-    </div>
-  )
-}
-
 function FieldLabel({ label, children, className = '' }) {
   return (
     <Field label={label} className={`field-label${className ? ` ${className}` : ''}`}>
@@ -2149,163 +1796,6 @@ function RecipeIdeaCard({ recipe, selected, onToggle }) {
         </div>
       </details>
     </div>
-  )
-}
-
-function AiMealReviewCard({ draft, caloriesRemaining, onChange, onConfirm, onCancel, onSaveFood }) {
-  const [pendingAction, setPendingAction] = useState('')
-
-  function updateItem(index, field, value) {
-    onChange(current => {
-      const nextItems = current.items.map((item, itemIndex) => {
-        if (itemIndex !== index) return item
-        const nextItem = { ...item, [field]: numericField(field) ? Number(value) || 0 : value }
-        return recomputeMealDraftItem(item, nextItem, field)
-      })
-
-      return {
-        ...current,
-        items: nextItems,
-      }
-    })
-  }
-
-  async function handleConfirm() {
-    if (pendingAction) return
-    setPendingAction('confirm')
-    try {
-      await onConfirm()
-    } finally {
-      setPendingAction('')
-    }
-  }
-
-  async function handleSaveFood(item, index) {
-    if (pendingAction) return
-    setPendingAction(`food-${index}`)
-    try {
-      await onSaveFood(item)
-    } finally {
-      setPendingAction('')
-    }
-  }
-
-  return (
-    <div className="dash-card ai-result-card">
-      <div className="dashboard-card-head">
-        <span className="dashboard-chip ai">Meal review required</span>
-        {caloriesRemaining != null ? <span className="dashboard-chip subtle">{Math.round(caloriesRemaining)} Calories remaining</span> : null}
-      </div>
-      <h3>Confirm the meal before it logs</h3>
-      <FieldLabel label="Meal type">
-        <select value={draft.mealType} onChange={event => onChange(current => ({ ...current, mealType: event.target.value }))}>
-          {MEAL_TYPES.map(value => <option key={value} value={value}>{value}</option>)}
-        </select>
-      </FieldLabel>
-      <div className="nutrition-stack-list">
-        {draft.items.map((item, index) => (
-          <div key={index} className="nutrition-item-row editing">
-            <div className="macro-inputs nutrition-item-editor">
-              <FieldLabel label="Food name" className="field-label-food-name"><ClearableInput value={item.food_name} onChange={event => updateItem(index, 'food_name', event.target.value)} /></FieldLabel>
-              <FieldLabel label="Portion count"><input type="number" min="0" step="0.01" inputMode="decimal" value={item.serving_amount} onChange={event => updateItem(index, 'serving_amount', event.target.value)} placeholder="1" /></FieldLabel>
-              <FieldLabel label="Unit / size"><ClearableInput value={item.serving_unit} onChange={event => updateItem(index, 'serving_unit', event.target.value)} placeholder="bowl" /></FieldLabel>
-              <FieldLabel label="Estimated grams"><input type="number" min="0" step="0.01" inputMode="decimal" value={item.estimated_grams} onChange={event => updateItem(index, 'estimated_grams', event.target.value)} placeholder="0" /></FieldLabel>
-              <FieldLabel label="Ounces"><input type="number" min="0" step="0.01" inputMode="decimal" value={formatOuncesInputValue(item.estimated_grams)} onChange={event => updateItem(index, 'estimated_grams', convertOuncesInputToGrams(event.target.value))} placeholder="0" /></FieldLabel>
-              <FieldLabel label="Calories"><input type="number" value={item.calories} onChange={event => updateItem(index, 'calories', event.target.value)} placeholder="0" /></FieldLabel>
-              <FieldLabel label="Protein"><input type="number" min="0" step="0.01" inputMode="decimal" value={item.protein_g} onChange={event => updateItem(index, 'protein_g', event.target.value)} placeholder="0" /></FieldLabel>
-              <FieldLabel label="Carbs"><input type="number" min="0" step="0.01" inputMode="decimal" value={item.carbs_g} onChange={event => updateItem(index, 'carbs_g', event.target.value)} placeholder="0" /></FieldLabel>
-              <FieldLabel label="Fat"><input type="number" min="0" step="0.01" inputMode="decimal" value={item.fat_g} onChange={event => updateItem(index, 'fat_g', event.target.value)} placeholder="0" /></FieldLabel>
-            </div>
-            <div className="nutrition-item-meta">
-              {Number(item.estimated_grams) > 0 ? <p className="settings-subtitle">Weight: {formatWeightHelperText(item.estimated_grams)}</p> : null}
-              {item.portion_description ? <p className="settings-subtitle">{item.portion_description}</p> : null}
-              {item.source?.provider === 'usda' ? (
-                <p className="settings-subtitle">
-                  USDA match: {item.source.matched_name || item.food_name}
-                  {item.source.data_type ? ` · ${item.source.data_type}` : ''}
-                </p>
-              ) : (
-                <p className="settings-subtitle">Using AI estimate only. Adjust grams if the portion looks off.</p>
-              )}
-            </div>
-            <div className="nutrition-row-actions">
-              <button className="btn-secondary small" type="button" onClick={() => handleSaveFood(item, index)} disabled={Boolean(pendingAction)}>{pendingAction === `food-${index}` ? 'Saving…' : 'Save food'}</button>
-            </div>
-          </div>
-        ))}
-      </div>
-      {pendingAction ? <p className="settings-subtitle">Working on your request…</p> : null}
-      <div className="ai-result-actions">
-        <button className="btn-primary" onClick={handleConfirm} disabled={Boolean(pendingAction)}>{pendingAction === 'confirm' ? 'Logging…' : 'Confirm and log'}</button>
-        <button className="btn-secondary" onClick={onCancel} disabled={Boolean(pendingAction)}>Cancel</button>
-      </div>
-    </div>
-  )
-}
-
-function AddMealMethodPicker({ onSelectMethod, onCancel }) {
-  const options = [
-    {
-      key: 'manual',
-      title: 'Manual',
-      description: 'Type foods in yourself and build the draft one item at a time.',
-    },
-    {
-      key: 'saved',
-      title: 'Saved food',
-      description: 'Start with foods already in your library so logging stays fast.',
-    },
-    {
-      key: 'voice',
-      title: 'Voice',
-      description: 'Say the meal out loud and let Johnny turn it into a draft.',
-    },
-    {
-      key: 'photo',
-      title: 'Photo',
-      description: 'Use a meal photo when typing is slower than snapping it.',
-    },
-  ]
-
-  return (
-    <section className="add-meal-form nutrition-add-method-picker">
-      <div className="nutrition-add-method-copy">
-        <span className="nutrition-composer-status-eyebrow">Add meal</span>
-        <h3>Choose how you want to start</h3>
-        <p className="settings-subtitle">Pick the fastest input method first. You can still switch after the draft opens.</p>
-      </div>
-      <div className="nutrition-add-method-grid">
-        {options.map(option => (
-          <button key={option.key} type="button" className="nutrition-add-method-card" onClick={() => onSelectMethod(option.key)}>
-            <strong>{option.title}</strong>
-            <span>{option.description}</span>
-          </button>
-        ))}
-      </div>
-      <div className="nutrition-row-actions nutrition-row-actions-full-width nutrition-add-method-actions">
-        <button type="button" className="btn-ghost" onClick={onCancel}>Cancel</button>
-      </div>
-    </section>
-  )
-}
-
-function AddMealForm({ savedFoods, onSave, onSaveAsTemplate, onCancel, onError, onToast, onOpenPhoto, initialEntryMode = 'manual' }) {
-  return (
-    <MealComposerForm
-      title="Log meal"
-      submitLabel="Log meal"
-      savedFoods={savedFoods}
-      includeMealDateTime
-      allowQuickEntryModes
-      initialEntryMode={initialEntryMode}
-      onError={onError}
-      onToast={onToast}
-      onOpenPhoto={onOpenPhoto}
-      onSubmit={payload => onSave({ meal_datetime: payload.meal_datetime, meal_type: payload.meal_type, source: 'manual', items: payload.items })}
-      onSecondaryAction={payload => onSaveAsTemplate(payload)}
-      secondaryLabel="Save this draft as a template"
-      onCancel={onCancel}
-    />
   )
 }
 
@@ -3206,262 +2696,6 @@ function PlanningAccordionCard({ innerRef = null, open, onToggle, chip, title, d
   )
 }
 
-function BeverageBoard({ screen, showHeader = true, showShell = true }) {
-  const [query, setQuery] = useState('')
-  const [selectedDrink, setSelectedDrink] = useState(null)
-  const [suggestions, setSuggestions] = useState([])
-  const [loadingSuggestions, setLoadingSuggestions] = useState(false)
-  const [lookingUp, setLookingUp] = useState(false)
-  const [servingMultiplier, setServingMultiplier] = useState(1)
-  const trimmedQuery = query.trim()
-  const fallbackBoard = buildEmptyBeverageBoard(screen.today)
-  const review = screen.beverageBoard?.review || fallbackBoard.review
-  const water = screen.beverageBoard?.water || fallbackBoard.water
-  const metrics = review?.metrics || {}
-  const servingOptions = useMemo(() => buildBeverageServingOptions(selectedDrink), [selectedDrink])
-  const scaledDrink = useMemo(() => scaleBeverageSelection(selectedDrink, servingMultiplier), [selectedDrink, servingMultiplier])
-
-  useEffect(() => {
-    if (trimmedQuery.length < 2) {
-      setSuggestions([])
-      return undefined
-    }
-
-    let cancelled = false
-    const timeoutId = window.setTimeout(async () => {
-      setLoadingSuggestions(true)
-      try {
-        const results = dedupeFoodSearchSuggestions(await nutritionApi.searchFoods(trimmedQuery, { beverageOnly: true }))
-        if (!cancelled) {
-          setSuggestions(Array.isArray(results) ? results : [])
-        }
-      } catch {
-        if (!cancelled) {
-          setSuggestions([])
-        }
-      } finally {
-        if (!cancelled) {
-          setLoadingSuggestions(false)
-        }
-      }
-    }, 120)
-
-    return () => {
-      cancelled = true
-      window.clearTimeout(timeoutId)
-    }
-  }, [trimmedQuery])
-
-  function applyDrinkSelection(selection) {
-    setSelectedDrink(normaliseBeverageSelection(selection))
-    setServingMultiplier(1)
-    setSuggestions([])
-    setQuery(buildBeverageSelectionLabel(selection))
-  }
-
-  async function handleLookupDrink() {
-    if (!trimmedQuery) {
-      screen.showErrorToast('Type a drink first.')
-      return
-    }
-
-    setLookingUp(true)
-    try {
-      const result = await aiApi.analyseFoodText(trimmedQuery)
-      applyDrinkSelection(buildBeverageLookupSelection(result, trimmedQuery))
-      if (result?.used_web_search || (Array.isArray(result?.sources) && result.sources.length)) {
-        screen.showToast(buildAiSourceToast('Drink lookup', result?.notes || 'Johnny checked this drink against online nutrition data.', result?.sources || []))
-      }
-    } catch (err) {
-      screen.showErrorToast(err, 'Johnny could not look up that drink.')
-    } finally {
-      setLookingUp(false)
-    }
-  }
-
-  async function handleSaveDrink() {
-    if (!selectedDrink) {
-      screen.showErrorToast('Choose or look up a drink first.')
-      return
-    }
-
-    await screen.runAction(
-      () => nutritionApi.logMeal(buildBeverageMealPayload(selectedDrink, servingMultiplier, screen.today)),
-      'Drink logged.',
-      {
-        onSuccess: async () => {
-          const ironquestProgress = await screen.syncIronQuestDailyProgress({ quest_key: 'meal', state_date: screen.today })
-          screen.revealIronQuestProgress(ironquestProgress, 'Meal logged')
-          screen.invalidate()
-          await screen.loadData()
-          setQuery('')
-          setSelectedDrink(null)
-          setServingMultiplier(1)
-          setSuggestions([])
-        },
-      },
-    )
-  }
-
-  async function handleWaterTap(index) {
-    const previousBoard = screen.beverageBoard || fallbackBoard
-    const nextCount = water.glasses === index + 1 ? index : index + 1
-    screen.setBeverageBoard(current => {
-      const baseBoard = current || fallbackBoard
-
-      return {
-        ...baseBoard,
-        water: {
-          ...baseBoard.water,
-          glasses: nextCount,
-        },
-      }
-    })
-
-    await screen.runAction(
-      () => nutritionApi.setWaterIntake(screen.today, nextCount),
-      nextCount ? `Water set to ${nextCount}/${water.target_glasses} glasses.` : 'Water cleared for today.',
-      {
-        onSuccess: result => {
-          screen.setBeverageBoard(current => normaliseBeverageBoardPayload(result, current || previousBoard, screen.today))
-        },
-        onError: () => {
-          screen.setBeverageBoard(previousBoard)
-        },
-      },
-    )
-  }
-
-  const content = (
-    <>
-      {showHeader ? (
-        <div className="dashboard-card-head">
-          <span className="dashboard-chip nutrition">Beverage Board</span>
-          <span className="dashboard-chip subtle">Track the hidden calories</span>
-        </div>
-      ) : null}
-      <div className="beverage-board-grid">
-        <div className="beverage-board-panel beverage-board-panel-search">
-          <h3>Log drinks fast</h3>
-          <p>Search recent or saved beverages first. If nothing matches, let Johnny look up the drink and pull in a serving to save.</p>
-          <div className="beverage-board-search">
-            <ClearableInput
-              type="search"
-              placeholder="Coke Zero, latte, Gatorade, iced tea..."
-              value={query}
-              onChange={event => setQuery(event.target.value)}
-            />
-            <button type="button" className="btn-secondary" onClick={handleLookupDrink} disabled={!trimmedQuery || lookingUp}>
-              {lookingUp ? 'Looking up…' : 'Find drink'}
-            </button>
-          </div>
-          {loadingSuggestions ? <p className="settings-subtitle">Checking saved and recent beverage matches…</p> : null}
-          {suggestions.length ? (
-            <div className="nutrition-stack-list beverage-board-suggestions">
-              {suggestions.map(suggestion => (
-                <button
-                  key={`${suggestion.match_type}-${suggestion.id}-${suggestion.canonical_name}`}
-                  type="button"
-                  className="nutrition-item-row nutrition-suggestion-row beverage-board-suggestion"
-                  onClick={() => applyDrinkSelection(suggestion)}
-                >
-                  <div>
-                    <strong>{buildBeverageSelectionLabel(suggestion)}</strong>
-                    <p>{suggestion.match_type === 'saved_food' ? 'Saved beverage' : 'Recent beverage'} · {suggestion.serving_size || '1 serving'} · {Math.round(Number(suggestion.calories) || 0)} Calories</p>
-                  </div>
-                </button>
-              ))}
-            </div>
-          ) : trimmedQuery.length >= 2 && !loadingSuggestions ? <p className="settings-subtitle">No saved or recent beverage matches yet. Use the lookup button to resolve this one.</p> : null}
-
-          {selectedDrink ? (
-            <div className="beverage-board-selection">
-              <div className="beverage-board-selection-head">
-                <div>
-                  <strong>{buildBeverageSelectionLabel(selectedDrink)}</strong>
-                  <p>{selectedDrink.serving_size || '1 serving'} · {Math.round(Number(selectedDrink.calories) || 0)} Calories per serving</p>
-                </div>
-                <button type="button" className="btn-ghost small" onClick={() => { setSelectedDrink(null); setServingMultiplier(1) }}>Clear</button>
-              </div>
-              <div className="nutrition-gap-list nutrition-quick-picks beverage-board-size-picks">
-                {servingOptions.map(option => (
-                  <button
-                    key={option.multiplier}
-                    type="button"
-                    className={`onboarding-chip${Math.abs(servingMultiplier - option.multiplier) < 0.001 ? ' active' : ''}`}
-                    onClick={() => setServingMultiplier(option.multiplier)}
-                  >
-                    {option.label}
-                  </button>
-                ))}
-              </div>
-              <div className="beverage-board-selection-stats">
-                <span className="onboarding-chip active">{Math.round(Number(scaledDrink?.calories) || 0)} Calories</span>
-                <span className="onboarding-chip">{formatMealMacroValue(scaledDrink?.carbs_g)}g carbs</span>
-                <span className="onboarding-chip">{formatMealMacroValue(scaledDrink?.sugar_g)}g sugar</span>
-              </div>
-              <div className="form-actions">
-                <button type="button" className="btn-primary" onClick={handleSaveDrink}>Save drink</button>
-              </div>
-            </div>
-          ) : null}
-        </div>
-
-        <div className="beverage-board-panel beverage-board-panel-water">
-          <h3>Water first</h3>
-          <p>Tap the glasses as you go. Water stays separate from calories, but Johnny still checks the 7-day hydration pattern.</p>
-          <div className="beverage-board-water-grid" role="group" aria-label="Daily water glasses">
-            {Array.from({ length: water.target_glasses || 6 }, (_, index) => {
-              const filled = index < water.glasses
-              return (
-                <button
-                  key={index}
-                  type="button"
-                  className={`beverage-water-glass${filled ? ' filled' : ''}`}
-                  onClick={() => { void handleWaterTap(index) }}
-                  aria-pressed={filled}
-                  aria-label={`Water glass ${index + 1}`}
-                >
-                  <AppIcon name="water" className="beverage-water-glass-icon" />
-                </button>
-              )
-            })}
-          </div>
-          <div className="beverage-board-selection-stats">
-            <span className="onboarding-chip active">Today: {water.glasses}/{water.target_glasses}</span>
-            <span className="onboarding-chip">7-day water: {metrics.water_glasses || 0}</span>
-            <span className="onboarding-chip">Days logged: {metrics.water_logged_days || 0}/7</span>
-          </div>
-        </div>
-      </div>
-
-      <div className="beverage-board-review">
-        <div className="dashboard-card-head">
-          <span className="dashboard-chip ai">Johnny</span>
-          <span className="dashboard-chip subtle">{review.period_label || 'Last 7 days'}</span>
-        </div>
-        <h3>{review.headline}</h3>
-        <p>{review.review}</p>
-        <div className="beverage-board-selection-stats">
-          <span className="onboarding-chip active">Drink calories: {metrics.total_beverage_calories || 0}</span>
-          <span className="onboarding-chip">Drinks logged: {metrics.drink_count || 0}</span>
-          <span className="onboarding-chip">Days with drinks: {metrics.logged_days || 0}/7</span>
-        </div>
-      </div>
-    </>
-  )
-
-  if (!showShell) {
-    return content
-  }
-
-  return (
-    <div className="nutrition-coach-card beverage-board-card">
-      {content}
-    </div>
-  )
-}
-
 function PantryDisplayRow({ item, categoryLabel = '', detailText = '', actionLabel, secondaryAction = null, onAction }) {
   const resolvedCategory = categoryLabel || getPantryCategoryLabel(item)
   const detail = detailText || `${item.quantity != null || item.unit ? formatGroceryGapAmount(item.quantity, item.unit) : 'No quantity set'}${item.notes ? ` · ${item.notes}` : ''}`
@@ -4323,237 +3557,6 @@ function normaliseMealItems(items) {
   }))
 }
 
-function numericField(field) {
-  return ['serving_amount', 'estimated_grams', 'calories', 'protein_g', 'carbs_g', 'fat_g', 'fiber_g', 'sugar_g', 'sodium_mg'].includes(field)
-}
-
-function buildNutritionMacroCards(summary) {
-  const totals = summary?.totals ?? {}
-  const targets = summary?.targets ?? {}
-  const exerciseCalories = Number(summary?.exercise_calories?.total_calories ?? 0)
-
-  return [
-    buildNutritionMacroCard('protein', 'Protein', Number(totals.protein_g ?? 0), Number(targets.target_protein_g ?? 0), 'g', 'primary'),
-    buildNutritionMacroCard('calories', 'Calories', Number(totals.calories ?? 0), Number(targets.target_calories ?? 0), '', 'secondary'),
-    buildNutritionMacroCard('carbs', 'Carbs', Number(totals.carbs_g ?? 0), Number(targets.target_carbs_g ?? 0), 'g', 'tertiary'),
-    buildNutritionMacroCard('fat', 'Fat', Number(totals.fat_g ?? 0), Number(targets.target_fat_g ?? 0), 'g', 'tertiary'),
-    buildNutritionBurnedCard(summary, exerciseCalories),
-  ]
-}
-
-function buildNutritionBurnedCard(summary, exerciseCalories) {
-  const workoutCalories = Number(summary?.exercise_calories?.workout_calories ?? 0)
-  const cardioCalories = Number(summary?.exercise_calories?.cardio_calories ?? 0)
-  const sources = [
-    workoutCalories > 0 ? `${Math.round(workoutCalories)} workout` : '',
-    cardioCalories > 0 ? `${Math.round(cardioCalories)} cardio` : '',
-  ].filter(Boolean)
-
-  return {
-    label: 'Burned',
-    val: Math.round(exerciseCalories || 0),
-    target: null,
-    targetDisplay: exerciseCalories > 0 ? '' : 'No exercise logged',
-    unit: '',
-    priority: 'tertiary',
-    tone: 'green',
-    detail: 'today',
-    actionLabel: sources.length ? sources.join(' · ') : '',
-    callout: '',
-    warning: '',
-    prompt: 'Show me the calories I burned today from workouts and cardio.',
-  }
-}
-
-function buildNutritionMacroCard(key, label, val, target, unit, priority) {
-  const tone = getNutritionMacroTone(key, val, target)
-  const delta = Math.round((target || 0) - val)
-
-  return {
-    label,
-    val: Math.round(val || 0),
-    target: target || 0,
-    unit,
-    priority,
-    tone,
-    detail: getNutritionMacroDetail(key, tone),
-    actionLabel: getNutritionMacroActionLabel(key, delta, unit, tone),
-    callout: getNutritionMacroCallout(key, delta, unit, tone),
-    warning: getNutritionMacroWarning(key, delta, unit, tone),
-    prompt: buildNutritionMacroPrompt(key, label, delta, target, val, unit),
-  }
-}
-
-function getNutritionMacroTone(key, current, target) {
-  if (!target) {
-    return 'green'
-  }
-
-  const ratio = current / target
-
-  if (key === 'protein') {
-    if (ratio >= 1) return 'green'
-    if (ratio >= 0.7) return 'yellow'
-    return 'red'
-  }
-
-  if (ratio > 1) return 'red'
-  if (ratio >= 0.85) return 'yellow'
-  return 'green'
-}
-
-function getNutritionMacroDetail(key, tone) {
-  if (key === 'protein') {
-    if (tone === 'green') return 'on track'
-    if (tone === 'yellow') return 'close'
-    return 'low'
-  }
-
-  if (tone === 'green') return 'on track'
-  if (tone === 'yellow') return 'approaching limit'
-  return 'exceeded'
-}
-
-function getNutritionMacroActionLabel(key, delta, unit, tone) {
-  if (key === 'protein') {
-    if (delta > 0) return `Need ${delta}${unit} more`
-    return tone === 'green' ? 'Target hit' : `${Math.abs(delta)}${unit} over`
-  }
-
-  if (delta > 0) return `${delta}${unit} left`
-  if (delta < 0) return `${Math.abs(delta)}${unit} over`
-  return 'Right on target'
-}
-
-function getNutritionMacroCallout(key, delta, unit, tone) {
-  if (key === 'protein') {
-    if (delta > 0) {
-      return `Still need ${delta}${unit} to land the day.`
-    }
-
-    return tone === 'green' ? 'Protein target is covered.' : `Protein is ${Math.abs(delta)}${unit} over target.`
-  }
-
-  if (delta > 0) {
-    return `${delta}${unit} still available.`
-  }
-
-  if (delta < 0) {
-    return `${Math.abs(delta)}${unit} above target.`
-  }
-
-  return 'Exactly on target.'
-}
-
-function getNutritionMacroWarning(key, delta, unit, tone) {
-  if (key === 'protein') {
-    return delta > 0 ? 'Tap for fast meal ideas that raise protein without wasting calories.' : 'Tap for help using the rest of the day cleanly.'
-  }
-
-  if (tone === 'red') {
-    return key === 'carbs'
-      ? `Carbs are already high. Keep the next meal lean and lower-carb.`
-      : `Fat is already high. Keep the next meal lighter and protein-led.`
-  }
-
-  if (tone === 'yellow') {
-    return key === 'calories'
-      ? `You are close to the ceiling. Place the rest carefully.`
-      : `Approaching the limit. Keep the rest of the day tighter.`
-  }
-
-  return ''
-}
-
-function buildNutritionMacroPrompt(key, label, delta, target, current, unit) {
-  if (key === 'protein') {
-    if (delta > 0) {
-      return `I am at ${Math.round(current)}${unit} of ${Math.round(target)}${unit} protein today, so I need about ${delta}${unit} more. Give me 3 quick high-protein meal ideas that fit the rest of my day.`
-    }
-
-    return `I already hit ${Math.round(current)}${unit} protein today. Based on that, help me finish the rest of my calories cleanly without drifting off plan.`
-  }
-
-  if (delta > 0) {
-    return `I have about ${delta}${unit} ${label.toLowerCase()} left today. Based on my current nutrition board, what should my next meal look like?`
-  }
-
-  return `I am about ${Math.abs(delta)}${unit} over my ${label.toLowerCase()} target today. Help me adjust the rest of today and set up tomorrow better.`
-}
-
-function buildNutritionCoachHeadline(summary) {
-  const proteinTarget = Number(summary?.targets?.target_protein_g ?? 0)
-  const protein = Number(summary?.totals?.protein_g ?? 0)
-  const caloriesTarget = Number(summary?.targets?.target_calories ?? 0)
-  const calories = Number(summary?.totals?.calories ?? 0)
-  const proteinGap = Math.max(0, Math.round(proteinTarget - protein))
-  const calorieGap = Math.round(caloriesTarget - calories)
-
-  if (proteinGap > 0) {
-    return `You still need about ${proteinGap}g of protein.`
-  }
-
-  if (calorieGap > 0) {
-    return `You have about ${calorieGap} calories left to place well.`
-  }
-
-  return 'Johnny can help tighten the rest of the board.'
-}
-
-function buildNutritionCoachBody(summary) {
-  const carbsTarget = Number(summary?.targets?.target_carbs_g ?? 0)
-  const carbs = Number(summary?.totals?.carbs_g ?? 0)
-  const fatTarget = Number(summary?.targets?.target_fat_g ?? 0)
-  const fat = Number(summary?.totals?.fat_g ?? 0)
-
-  if (carbsTarget > 0 && carbs > carbsTarget) {
-    return 'Carbs are already over target, so the next move should be lean protein and low-friction calories.'
-  }
-
-  if (fatTarget > 0 && fat > fatTarget) {
-    return 'Fat is already running high, so Johnny should steer the next meal toward leaner choices.'
-  }
-
-  return 'Use Johnny in context instead of starting from a blank chat. He already has today’s intake board.'
-}
-
-function buildNutritionCoachPrompts(summary) {
-  const totals = summary?.totals ?? {}
-  const targets = summary?.targets ?? {}
-  const proteinGap = Math.max(0, Math.round(Number(targets.target_protein_g ?? 0) - Number(totals.protein_g ?? 0)))
-  const calorieGap = Math.round(Number(targets.target_calories ?? 0) - Number(totals.calories ?? 0))
-  const planningPrompt = getNutritionPlanningPrompt()
-
-  return [
-    {
-      label: planningPrompt.label,
-      meta: calorieGap > 0 ? `${calorieGap} calories left` : planningPrompt.meta,
-      prompt: planningPrompt.prompt,
-    },
-    {
-      label: 'Fix my macros',
-      meta: proteinGap > 0 ? `${proteinGap}g protein to go` : 'Rebalance the board',
-      prompt: `Look at my current nutrition board and tell me exactly how to fix my macros for the rest of today.`,
-    },
-    {
-      label: 'Adjust tomorrow',
-      meta: 'Carry today forward',
-      prompt: `Based on how today’s nutrition is shaping up, how should I adjust tomorrow so the week stays on track?`,
-    },
-    proteinGap > 0
-      ? {
-          label: 'You’re low on protein',
-          meta: `Need ${proteinGap}g more`,
-          prompt: `I am low on protein today and still need about ${proteinGap}g. Give me fast options that fit the rest of my calories.`,
-        }
-      : {
-          label: 'Use the remaining calories well',
-          meta: calorieGap > 0 ? `${calorieGap} left` : 'Tomorrow setup',
-          prompt: `I am close on protein. Help me use the rest of my calories intelligently without overshooting carbs or fat.`,
-        },
-  ]
-}
-
 function createEmptyMealItem() {
   return {
     food_id: null,
@@ -4864,24 +3867,6 @@ function formatWeightHelperText(value) {
   return `${grams} g · ${ounces} oz`
 }
 
-function buildAiMealValidationToast(result) {
-  const items = Array.isArray(result?.items) ? result.items : []
-  const unresolvedCount = items.filter(item => item?.source?.provider !== 'usda').length
-  const sourceTitles = collectSourceTitles(result?.sources)
-
-  return {
-    kind: 'ai-meal-validation',
-    title: 'Meal Scan Validation',
-    message: `Parsed ${items.length} item${items.length === 1 ? '' : 's'} for ${Math.round(Number(result?.total_calories) || 0)} Calories.`,
-    details: [
-      unresolvedCount ? `${unresolvedCount} item${unresolvedCount === 1 ? '' : 's'} used estimate or web fallback.` : 'All items resolved through structured matches.',
-      sourceTitles.length ? `Sources: ${sourceTitles.join(' | ')}` : '',
-    ].filter(Boolean),
-    tone: unresolvedCount ? 'info' : 'success',
-    persistent: true,
-  }
-}
-
 function buildAiSourceToast(title, message, sources = []) {
   const sourceTitles = collectSourceTitles(sources)
 
@@ -4963,36 +3948,6 @@ function formatAiDataType(value) {
     .replace(/_/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
-}
-
-function aggregateMealMicros(meals) {
-  const totals = new Map()
-
-  ;(Array.isArray(meals) ? meals : []).forEach(meal => {
-    ;(Array.isArray(meal?.items) ? meal.items : []).forEach(item => {
-      ;(Array.isArray(item?.micros) ? item.micros : []).forEach(micro => {
-        const key = String(micro?.key || micro?.label || '').trim().toLowerCase()
-        if (!key) {
-          return
-        }
-
-        const current = totals.get(key) || {
-          key,
-          label: micro?.label || micro?.key || key,
-          amount: 0,
-          unit: micro?.unit || '',
-        }
-
-        current.amount += Number(micro?.amount ?? 0)
-        totals.set(key, current)
-      })
-    })
-  })
-
-  return Array.from(totals.values()).map(micro => ({
-    ...micro,
-    amount: Math.round(Number(micro.amount) * 100) / 100,
-  }))
 }
 
 function buildDefaultMealName(items) {
@@ -5724,12 +4679,6 @@ function buildSavedFoodOptionLabel(food) {
   return name
 }
 
-function formatMicroAmount(micro) {
-  const amount = Number(micro?.amount ?? 0)
-  const rounded = amount >= 100 ? Math.round(amount) : amount >= 1 ? Math.round(amount * 10) / 10 : Math.round(amount * 100) / 100
-  return `${rounded}${micro?.unit || ''}`
-}
-
 function formatMicroList(micros, limit = 4) {
   return prioritiseMicros(micros)
     .slice(0, limit)
@@ -5743,24 +4692,6 @@ function prioritiseMicros(micros) {
     .sort((left, right) => Number(right?.amount ?? 0) - Number(left?.amount ?? 0))
 }
 
-function buildHighlightedNutritionStats(micros, totals) {
-  const stats = [...(Array.isArray(micros) ? micros : [])]
-  const seenKeys = new Set(stats.map(normaliseMicroKey).filter(Boolean))
-  const fiber = Number(totals?.fiber_g ?? 0)
-  const sodium = Number(totals?.sodium_mg ?? 0)
-
-  if (fiber > 0 && !seenKeys.has('fiber')) {
-    stats.push({ key: 'fiber', label: 'Fiber', amount: fiber, unit: 'g' })
-    seenKeys.add('fiber')
-  }
-
-  if (sodium > 0 && !seenKeys.has('sodium')) {
-    stats.push({ key: 'sodium', label: 'Sodium', amount: sodium, unit: 'mg' })
-  }
-
-  return prioritiseMicros(stats)
-}
-
 function scaleMicrosClient(micros, multiplier) {
   return (Array.isArray(micros) ? micros : []).map(micro => ({
     ...micro,
@@ -5770,31 +4701,6 @@ function scaleMicrosClient(micros, multiplier) {
 
 function roundMicroAmount(value) {
   return Math.round(Number(value ?? 0) * 100) / 100
-}
-
-function enrichMicroWithTarget(micro) {
-  const normalisedKey = normaliseMicroKey(micro)
-  const target = MICRO_TARGETS[normalisedKey] || null
-  if (!target) {
-    return { ...micro, targetAmount: null, targetUnit: null, targetPct: null }
-  }
-
-  const amountInTargetUnit = convertMicroUnits(Number(micro?.amount ?? 0), micro?.unit || '', target.unit)
-  const targetPct = amountInTargetUnit == null ? null : Math.round((amountInTargetUnit / target.amount) * 100)
-
-  return {
-    ...micro,
-    targetAmount: target.amount,
-    targetUnit: target.unit,
-    targetPct,
-  }
-}
-
-function formatMicroTargetMeta(micro) {
-  if (micro?.targetPct != null) {
-    return `${micro.targetPct}% of daily target`
-  }
-  return 'Tracked total'
 }
 
 function buildSavedFoodFormState(food) {
@@ -5867,41 +4773,6 @@ function getDefaultMealTypeForCurrentTime() {
   return 'snack'
 }
 
-function getNutritionPlanningPrompt() {
-  const [hours, minutes] = getCurrentLocalTimeString().split(':').map(value => Number(value) || 0)
-  const currentMinutes = (hours * 60) + minutes
-
-  if (currentMinutes >= (22 * 60) || currentMinutes < (5 * 60)) {
-    return {
-      label: 'Close tonight cleanly',
-      meta: 'Bedtime beats drift',
-      prompt: 'It is late here. Based on my current nutrition board, should I eat anything else tonight or just shut the day down and set up tomorrow morning?',
-    }
-  }
-
-  if (currentMinutes < ((10 * 60) + 30)) {
-    return {
-      label: 'Plan my breakfast',
-      meta: 'Start the day cleanly',
-      prompt: 'Plan my breakfast from my current nutrition board. Keep it realistic and explain how it fits my calories and macros for today.',
-    }
-  }
-
-  if (currentMinutes < (15 * 60)) {
-    return {
-      label: 'Plan my lunch',
-      meta: 'Keep the day on track',
-      prompt: 'Plan my lunch from my current nutrition board. Keep it realistic and explain how it fits my remaining calories and macros.',
-    }
-  }
-
-  return {
-    label: 'Plan my dinner',
-    meta: 'Close the day cleanly',
-    prompt: 'Plan my dinner from my current nutrition board. Keep it realistic and explain how it fits my remaining calories and macros.',
-  }
-}
-
 function combineMealDateTime(date, time) {
   const safeDate = date || getCurrentLocalDateString()
   const safeTime = time || '12:00'
@@ -5921,258 +4792,6 @@ function formatMealTimeLabel(mealDateTime) {
   }
 
   return parsed.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }).toLowerCase()
-}
-
-function buildEmptyBeverageBoard(date = '') {
-  return {
-    date,
-    water: {
-      glasses: 0,
-      target_glasses: 6,
-      seven_day_glasses: 0,
-      logged_days: 0,
-    },
-    review: {
-      period_label: 'Last 7 days',
-      headline: 'Beverage Board is ready',
-      review: 'Log drinks and tap your water glasses so Johnny can catch hidden calories before they stack.',
-      metrics: {
-        total_beverage_calories: 0,
-        drink_count: 0,
-        logged_days: 0,
-        water_glasses: 0,
-        water_logged_days: 0,
-      },
-    },
-  }
-}
-
-function normaliseBeverageBoardPayload(payload, fallback, date = '') {
-  const baseBoard = fallback || buildEmptyBeverageBoard(date)
-
-  if (!payload || typeof payload !== 'object') {
-    return baseBoard
-  }
-
-  const nextWater = payload.water && typeof payload.water === 'object'
-    ? {
-        ...baseBoard.water,
-        ...payload.water,
-      }
-    : baseBoard.water
-  const nextReview = payload.review && typeof payload.review === 'object'
-    ? {
-        ...baseBoard.review,
-        ...payload.review,
-        metrics: {
-          ...(baseBoard.review?.metrics || {}),
-          ...(payload.review?.metrics && typeof payload.review.metrics === 'object' ? payload.review.metrics : {}),
-        },
-      }
-    : baseBoard.review
-
-  return {
-    ...baseBoard,
-    ...payload,
-    date: payload.date || baseBoard.date || date,
-    water: nextWater,
-    review: nextReview,
-  }
-}
-
-function normaliseBeverageSelection(selection) {
-  if (!selection) {
-    return null
-  }
-
-  return {
-    food_id: selection.food_id ?? selection.id ?? null,
-    canonical_name: String(selection.canonical_name || selection.food_name || '').trim() || 'Drink',
-    brand: String(selection.brand || '').trim(),
-    serving_size: normaliseRawServingUnitLabel(selection.serving_size || selection.serving_unit || '1 serving'),
-    calories: Number(selection.calories ?? 0) || 0,
-    protein_g: Number(selection.protein_g ?? 0) || 0,
-    carbs_g: Number(selection.carbs_g ?? 0) || 0,
-    fat_g: Number(selection.fat_g ?? 0) || 0,
-    fiber_g: Number(selection.fiber_g ?? 0) || 0,
-    sugar_g: Number(selection.sugar_g ?? 0) || 0,
-    sodium_mg: Number(selection.sodium_mg ?? 0) || 0,
-    micros: Array.isArray(selection.micros) ? selection.micros : [],
-    is_beverage: true,
-    source: typeof selection.source === 'object' && selection.source
-      ? { ...selection.source, is_beverage: true }
-      : { type: selection.match_type || 'manual', is_beverage: true },
-  }
-}
-
-function buildBeverageLookupSelection(result, fallbackQuery) {
-  return normaliseBeverageSelection({
-    food_name: result?.food_name || fallbackQuery,
-    brand: result?.brand || '',
-    serving_size: result?.serving_size || '1 serving',
-    calories: result?.calories ?? 0,
-    protein_g: result?.protein_g ?? 0,
-    carbs_g: result?.carbs_g ?? 0,
-    fat_g: result?.fat_g ?? 0,
-    fiber_g: result?.fiber_g ?? 0,
-    sugar_g: result?.sugar_g ?? 0,
-    sodium_mg: result?.sodium_mg ?? 0,
-    micros: Array.isArray(result?.micros) ? result.micros : [],
-    source: typeof result?.source === 'object'
-      ? { ...result.source, is_beverage: true }
-      : { provider: result?.used_web_search ? 'web_search' : 'manual', is_beverage: true },
-  })
-}
-
-function buildBeverageSelectionLabel(selection) {
-  const name = formatFoodDisplayName(selection)
-  const brand = String(selection?.brand || '').trim()
-  if (brand && brand.toLowerCase() !== name.toLowerCase()) {
-    return `${name} (${brand})`
-  }
-  return name
-}
-
-function buildBeverageServingOptions(selection) {
-  const servingSize = String(selection?.serving_size || '1 serving').trim() || '1 serving'
-  return [0.5, 1, 1.5, 2, 2.5, 3].map(multiplier => ({
-    multiplier,
-    label: multiplier === 1 ? servingSize : `${formatMealMacroValue(multiplier)} x ${servingSize}`,
-  }))
-}
-
-function scaleBeverageSelection(selection, multiplier = 1) {
-  if (!selection) {
-    return null
-  }
-
-  return {
-    ...selection,
-    calories: Math.round((Number(selection.calories) || 0) * multiplier),
-    protein_g: roundTo((Number(selection.protein_g) || 0) * multiplier, 2),
-    carbs_g: roundTo((Number(selection.carbs_g) || 0) * multiplier, 2),
-    fat_g: roundTo((Number(selection.fat_g) || 0) * multiplier, 2),
-    fiber_g: roundTo((Number(selection.fiber_g) || 0) * multiplier, 2),
-    sugar_g: roundTo((Number(selection.sugar_g) || 0) * multiplier, 2),
-    sodium_mg: roundTo((Number(selection.sodium_mg) || 0) * multiplier, 2),
-    micros: scaleMicrosClient(selection.micros, multiplier),
-  }
-}
-
-function buildBeverageMealPayload(selection, multiplier, date) {
-  const scaled = scaleBeverageSelection(selection, multiplier)
-  return {
-    meal_datetime: combineMealDateTime(date, getCurrentLocalTimeString()),
-    meal_type: 'beverage',
-    source: scaled?.source?.type === 'label' ? 'label' : 'manual',
-    items: [
-      {
-        food_id: scaled?.food_id || null,
-        food_name: scaled?.canonical_name || 'Drink',
-        serving_amount: roundTo(multiplier, multiplier % 1 === 0 ? 0 : 2),
-        serving_unit: scaled?.serving_size || 'serving',
-        calories: scaled?.calories || 0,
-        protein_g: scaled?.protein_g || 0,
-        carbs_g: scaled?.carbs_g || 0,
-        fat_g: scaled?.fat_g || 0,
-        fiber_g: scaled?.fiber_g || 0,
-        sugar_g: scaled?.sugar_g || 0,
-        sodium_mg: scaled?.sodium_mg || 0,
-        micros: Array.isArray(scaled?.micros) ? scaled.micros : [],
-        is_beverage: true,
-        source: {
-          ...(typeof scaled?.source === 'object' && scaled.source ? scaled.source : {}),
-          brand: scaled?.brand || '',
-          is_beverage: true,
-        },
-      },
-    ],
-  }
-}
-
-function buildEmptyWeeklyCaloriesReview() {
-  return {
-    isLoaded: false,
-    totalCalories: 0,
-    targetCalories: 0,
-    loggedDays: 0,
-    periodLabel: '',
-    headline: 'Seven-day calorie trend',
-    review: 'Log a full week to get a stronger calorie-target readout.',
-  }
-}
-
-function buildWeeklyCaloriesReview(rows, dateRange) {
-  const safeRows = (Array.isArray(rows) ? rows : []).filter(row => row && typeof row === 'object')
-  const totalCalories = Math.round(safeRows.reduce((sum, row) => sum + Number(row?.totals?.calories ?? 0), 0))
-  const targetCalories = Math.round(safeRows.reduce((sum, row) => sum + Number(row?.targets?.target_calories ?? 0), 0))
-  const loggedDays = safeRows.filter(row => Number(row?.totals?.calories ?? 0) > 0).length
-  const periodLabel = formatDateRangeLabel(dateRange)
-
-  return {
-    isLoaded: true,
-    totalCalories,
-    targetCalories,
-    loggedDays,
-    periodLabel,
-    headline: `Last 7 days: ${totalCalories.toLocaleString()} calories logged`,
-    review: buildWeeklyCaloriesCoachReview(totalCalories, targetCalories, loggedDays),
-  }
-}
-
-function buildWeeklyCaloriesCoachReview(totalCalories, targetCalories, loggedDays) {
-  if (targetCalories <= 0) {
-    return 'Set your calorie target in onboarding so Johnny can compare your weekly total against goal.'
-  }
-
-  const delta = Math.round(totalCalories - targetCalories)
-  const threshold = Math.round(targetCalories * 0.05)
-  if (Math.abs(delta) <= threshold) {
-    return `Johnny: You were right on target this week, within about 5% of your goal. Keep this pace.`
-  }
-
-  if (delta > 0) {
-    return `Johnny: You finished about ${delta.toLocaleString()} calories above target this week. Tighten portions or trim one snack most days next week.`
-  }
-
-  if (loggedDays <= 3) {
-    return `Johnny: You are below target by about ${Math.abs(delta).toLocaleString()} calories, but only ${loggedDays} day${loggedDays === 1 ? '' : 's'} are logged. Log consistently to dial this in.`
-  }
-
-  return `Johnny: You finished about ${Math.abs(delta).toLocaleString()} calories below target this week. Add a small protein-forward meal on training days.`
-}
-
-function formatDateRangeLabel(dateRange) {
-  const values = Array.isArray(dateRange) ? dateRange.filter(Boolean) : []
-  if (!values.length) {
-    return ''
-  }
-
-  const sorted = [...values].sort()
-  const start = new Date(`${sorted[0]}T12:00:00`)
-  const end = new Date(`${sorted[sorted.length - 1]}T12:00:00`)
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
-    return ''
-  }
-
-  return `${start.toLocaleDateString([], { month: 'short', day: 'numeric' })} - ${end.toLocaleDateString([], { month: 'short', day: 'numeric' })}`
-}
-
-function getRecentLocalDateStrings(anchorDate, days) {
-  const safeDays = Math.max(1, Number(days) || 1)
-  const anchor = new Date(`${anchorDate || getCurrentLocalDateString()}T12:00:00`)
-  if (Number.isNaN(anchor.getTime())) {
-    return [getCurrentLocalDateString()]
-  }
-
-  return Array.from({ length: safeDays }, (_, index) => {
-    const value = new Date(anchor)
-    value.setDate(anchor.getDate() - index)
-    const year = value.getFullYear()
-    const month = String(value.getMonth() + 1).padStart(2, '0')
-    const day = String(value.getDate()).padStart(2, '0')
-    return `${year}-${month}-${day}`
-  })
 }
 
 function getCurrentLocalDateString() {
@@ -6277,34 +4896,3 @@ function normaliseFoodMatchText(value) {
     .trim()
 }
 
-function normaliseMicroKey(micro) {
-  const raw = String(micro?.key || micro?.label || '').trim().toLowerCase()
-  return raw
-    .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^vitamin_b_6$/, 'vitamin_b6')
-    .replace(/^vitamin_b_12$/, 'vitamin_b12')
-    .replace(/^b6$/, 'vitamin_b6')
-    .replace(/^b12$/, 'vitamin_b12')
-    .replace(/^vitamin_a_iu$/, 'vitamin_a')
-}
-
-function convertMicroUnits(amount, fromUnit, toUnit) {
-  const from = String(fromUnit || '').toLowerCase()
-  const to = String(toUnit || '').toLowerCase()
-  if (!to) return amount
-  if (!from || from === to) return amount
-
-  const unitScale = {
-    mcg: 1,
-    'µg': 1,
-    ug: 1,
-    mg: 1000,
-    g: 1000000,
-  }
-
-  if (!(from in unitScale) || !(to in unitScale)) {
-    return null
-  }
-
-  return (amount * unitScale[from]) / unitScale[to]
-}

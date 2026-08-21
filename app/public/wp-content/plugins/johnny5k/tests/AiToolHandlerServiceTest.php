@@ -550,6 +550,12 @@ class AiToolHandlerServiceTest extends ServiceTestCase {
 				'image_url' => '',
 			],
 		] );
+		$db->expectGetResults( 'SELECT recipe_key, image_url FROM wp_fit_recipe_suggestions', [
+			[
+				'recipe_key' => 'admin-library-dinner-chicken-rice-bowl',
+				'image_url' => 'https://example.test/chicken-rice-bowl.jpg',
+			],
+		] );
 		$db->expectGetResults( 'SELECT item_name FROM wp_fit_pantry_items WHERE user_id = 7 ORDER BY updated_at DESC, id DESC LIMIT 12', [
 			(object) [ 'item_name' => 'Chicken' ],
 			(object) [ 'item_name' => 'Rice' ],
@@ -579,6 +585,7 @@ class AiToolHandlerServiceTest extends ServiceTestCase {
 		}
 		$this->assertIsArray( $matched_recipe );
 		$this->assertTrue( $matched_recipe['is_in_cookbook'] ?? false );
+		$this->assertSame( 'https://example.test/chicken-rice-bowl.jpg', $matched_recipe['image_url'] ?? '' );
 		$catalog_inserts = array_values( array_filter( $db->inserted, static fn( array $row ): bool => 0 === (int) ( $row['data']['is_cookbook'] ?? -1 ) ) );
 		$this->assertNotEmpty( $catalog_inserts );
 		$this->assertSame( 'admin_library', $catalog_inserts[0]['data']['source'] ?? null );
@@ -603,6 +610,7 @@ class AiToolHandlerServiceTest extends ServiceTestCase {
 
 		$db = $this->wpdb();
 		$db->expectGetResults( 'FROM wp_fit_recipe_suggestions', [] );
+		$db->expectGetResults( 'SELECT recipe_key, image_url FROM wp_fit_recipe_suggestions', [] );
 		$db->expectGetVar( "SELECT id FROM wp_fit_recipe_suggestions WHERE user_id = 7 AND recipe_key = 'admin-library-dinner-salmon-couscous-bowl' AND is_cookbook = 1", 0 );
 		$db->expectGetResults( 'SELECT item_name FROM wp_fit_pantry_items WHERE user_id = 7 ORDER BY updated_at DESC, id DESC LIMIT 12', [
 			(object) [ 'item_name' => 'Salmon' ],
