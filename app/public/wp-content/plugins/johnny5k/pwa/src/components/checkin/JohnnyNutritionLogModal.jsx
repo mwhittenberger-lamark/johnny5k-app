@@ -9,6 +9,7 @@ import { confirmGlobalAction } from '../../lib/uiFeedback'
 import { useSpinRef } from '../../hooks/useSpinRef'
 import { buildEmptyWeeklyCaloriesReview, buildWeeklyCaloriesReview, getRecentLocalDateStrings } from '../../lib/nutrition/weeklyCaloriesReview'
 import { buildHighlightedMicros, formatMicroAmount, formatMicroTargetMeta } from '../../lib/nutrition/micronutrients'
+import { normaliseRawServingUnitLabel } from '../../screens/nutrition/servingUtils'
 
 const LATE_BREAKFAST_HOUR = 11
 
@@ -733,8 +734,8 @@ function MealPlanningWorkbench({ activeSlot, busy, creator, form, locking, planS
         headerActions={<>
           <button type="button" disabled={busy} onClick={onOpenScan}>{busy ? 'Reading…' : 'Scan label'}</button>
           <button type="button" onClick={onOpenManual}>＋ New tile</button>
-          <button type="button" className="tile-shelf-manage" onClick={onManage}>Manage tiles</button>
         </>}
+        manageAction={<button type="button" className="tile-shelf-manage" onClick={onManage}>Food Database / Shopping Tools</button>}
       />
 
       {creator === 'manual' ? <TileCreator form={form} busy={busy} onChange={onChangeForm} onClose={onCloseCreator} onCreate={onCreate} /> : null}
@@ -744,7 +745,7 @@ function MealPlanningWorkbench({ activeSlot, busy, creator, form, locking, planS
   )
 }
 
-function TileShelf({ headerActions, idPrefix, kicker, tiles, onAction }) {
+function TileShelf({ headerActions, idPrefix, kicker, manageAction, tiles, onAction }) {
   const [tileFilter, setTileFilter] = useState('all')
   const [tileQuery, setTileQuery] = useState('')
   const normalizedTileQuery = tileQuery.trim().toLowerCase()
@@ -758,6 +759,7 @@ function TileShelf({ headerActions, idPrefix, kicker, tiles, onAction }) {
   return (
     <section className="johnny-plan-shelf">
       <header><div><span>{kicker}</span><h4>Tile shelf</h4></div><div>{headerActions}</div></header>
+      {manageAction}
       <div className="johnny-plan-shelf-filters" role="group" aria-label="Filter tiles">
         {[['all', 'All'], ['food', 'Foods'], ['meal', 'Meals'], ['recipe', 'Recipes']].map(([value, label]) => <button key={value} type="button" className={tileFilter === value ? 'active' : ''} aria-pressed={tileFilter === value} onClick={() => setTileFilter(value)}>{label}<small>{value === 'all' ? tiles.length : tiles.filter(tile => tile.kind === value).length}</small></button>)}
       </div>
@@ -790,7 +792,38 @@ function FoodPlanTile({ tile, removable = false, onAction }) {
 }
 
 function TileCreator({ form, busy, onChange, onClose, onCreate }) {
+  const [aiBusy, setAiBusy] = useState(false)
+  const [aiError, setAiError] = useState('')
   const update = (field, value) => onChange(current => ({ ...current, [field]: value }))
+
+  async function handleAiComplete() {
+    const name = form.name.trim()
+    if (!name) {
+      setAiError('Add a name first.')
+      return
+    }
+    setAiBusy(true)
+    setAiError('')
+    try {
+      const serving = form.serving.trim()
+      const query = serving ? `${serving} ${name}` : name
+      const result = await aiApi.analyseFoodText(query)
+      onChange(current => ({
+        ...current,
+        name: result?.food_name || current.name,
+        serving: result?.serving_size ? normaliseRawServingUnitLabel(result.serving_size) : current.serving,
+        calories: result?.calories ?? current.calories,
+        protein: result?.protein_g ?? current.protein,
+        carbs: result?.carbs_g ?? current.carbs,
+        fat: result?.fat_g ?? current.fat,
+      }))
+    } catch (err) {
+      setAiError(err?.message || 'Johnny could not complete that tile.')
+    } finally {
+      setAiBusy(false)
+    }
+  }
+
   return createPortal(
     <div className="johnny-tile-workflow" role="dialog" aria-modal="true" aria-label="Create a new food tile">
       <div className="johnny-tile-workflow-scroll">
@@ -799,6 +832,11 @@ function TileCreator({ form, busy, onChange, onClose, onCreate }) {
           <div className="johnny-tile-creator-fields">
             <label className="wide"><span>Name</span><input autoFocus required value={form.name} onChange={event => update('name', event.target.value)} placeholder="Greek yogurt" /></label>
             <label className="wide"><span>Unit / serving</span><input required value={form.serving} onChange={event => update('serving', event.target.value)} placeholder="1 cup" /></label>
+            <button type="button" className="wide johnny-tile-ai-complete" disabled={aiBusy || busy} onClick={() => { void handleAiComplete() }}>
+              <span className="johnny-tile-ai-complete-icon" aria-hidden="true">✦</span>
+              {aiBusy ? 'Johnny is calculating…' : 'Have Johnny Complete Below'}
+            </button>
+            {aiError ? <p className="johnny-tile-ai-error wide" role="alert">{aiError}</p> : null}
             {['calories', 'protein', 'carbs', 'fat'].map(field => <label key={field}><span>{field}</span><input required type="number" min="0" step={field === 'calories' ? 1 : 0.1} value={form[field]} onChange={event => update(field, event.target.value)} /></label>)}
           </div>
           <aside className="johnny-tile-creator-preview"><span>Live tile preview</span><strong>{form.name || 'Your food tile'}</strong><p>{form.serving || 'Add a serving size'}</p><div><b>{Math.round(Number(form.calories) || 0)} cal</b><b>P {formatNumber(form.protein)}g</b><b>C {formatNumber(form.carbs)}g</b><b>F {formatNumber(form.fat)}g</b></div></aside>

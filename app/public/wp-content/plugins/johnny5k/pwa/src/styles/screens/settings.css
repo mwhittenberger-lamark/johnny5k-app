@@ -4,7 +4,7 @@
 }
 
 .settings-screen .settings-subtitle {
-  max-width: 200px;
+  max-width: 60ch;
 }
 
 .settings-accordion-stack {
@@ -1066,23 +1066,6 @@
 .settings-actions-stack > * {
   width: 100%;
 }
-.settings-save-button {
-  display: flex;
-  width: 100%;
-}
-.settings-primary-action-block {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1-5);
-}
-.settings-action-note {
-  margin: 0;
-  padding: 0 4px;
-  color: var(--text-muted);
-  font-size: 0.8rem;
-  line-height: 1.4;
-  text-align: center;
-}
 .settings-onboarding-section {
   margin-bottom: 0;
 }
@@ -1158,10 +1141,6 @@
 
   .settings-identity-copy h2 {
     font-size: 1.3rem;
-  }
-
-  .settings-identity-stats {
-    grid-template-columns: 1fr;
   }
 
   .settings-trend-head {
@@ -1397,6 +1376,18 @@
 :root:not([data-experience-mode='ironquest']) .johnny-profile-screen .settings-identity-stat strong,
 :root:not([data-experience-mode='ironquest']) .johnny-profile-screen .settings-prediction-stat strong { color:var(--profile-ink);font-family:'Oswald',sans-serif; }
 :root:not([data-experience-mode='ironquest']) .johnny-profile-screen .settings-trend-card { border-color:#41483c;background:linear-gradient(180deg,#111713,#1d261f); }
+:root:not([data-experience-mode='ironquest']) .johnny-profile-screen .reminder-setting-card { border-color:#41483c;background:linear-gradient(180deg,#111713,#1d261f); }
+:root:not([data-experience-mode='ironquest']) .johnny-profile-screen .settings-diagnostics-card,
+:root:not([data-experience-mode='ironquest']) .johnny-profile-screen .settings-diagnostics-list-row { border-color:#364139;background:#131916; }
+:root:not([data-experience-mode='ironquest']) .johnny-profile-screen .settings-diagnostics-card strong { color:var(--profile-ink); }
+:root:not([data-experience-mode='ironquest']) .johnny-profile-screen .settings-diagnostics-card span,
+:root:not([data-experience-mode='ironquest']) .johnny-profile-screen .settings-diagnostics-list-row small { color:var(--profile-muted); }
+:root:not([data-experience-mode='ironquest']) .johnny-profile-screen .settings-push-refusal { border-color:#5c4326;background:linear-gradient(180deg,#241c10,#1b160e); }
+:root:not([data-experience-mode='ironquest']) .johnny-profile-screen .settings-push-refusal p { color:var(--profile-muted); }
+:root:not([data-experience-mode='ironquest']) .johnny-profile-screen .reminder-card-head strong,
+:root:not([data-experience-mode='ironquest']) .johnny-profile-screen .settings-reminder-intro strong { color:var(--profile-ink); }
+:root:not([data-experience-mode='ironquest']) .johnny-profile-screen .reminder-card-head p,
+:root:not([data-experience-mode='ironquest']) .johnny-profile-screen .settings-reminder-intro p { color:var(--profile-muted); }
 :root:not([data-experience-mode='ironquest']) .johnny-profile-screen .settings-trend-bar-fill { background:linear-gradient(180deg,var(--johnny-home-gold-soft),#9f8b31); }
 :root:not([data-experience-mode='ironquest']) .johnny-profile-screen .settings-trend-bar-track { background:#29312c; }
 :root:not([data-experience-mode='ironquest']) .johnny-profile-screen .settings-field-label,
@@ -1416,7 +1407,6 @@
 :root:not([data-experience-mode='ironquest']) .johnny-profile-screen>.settings-onboarding-section { margin-top:10px; }
 :root:not([data-experience-mode='ironquest']) .johnny-profile-screen { padding-bottom: 190px; }
 :root:not([data-experience-mode='ironquest']) .johnny-profile-screen>.settings-actions-stack { position:sticky;bottom:12px;z-index:8;margin-top:14px;padding:10px;border:1px solid #41493f;border-radius:16px;background:rgba(15,20,17,.92);box-shadow:0 16px 40px rgba(0,0,0,.42);backdrop-filter:blur(12px); }
-:root:not([data-experience-mode='ironquest']) .johnny-profile-screen .settings-action-note { color:#89948d; }
 @media(max-width:720px){
   :root:not([data-experience-mode='ironquest']) .johnny-profile-header{grid-template-columns:1fr;align-items:start;padding:17px;}
   :root:not([data-experience-mode='ironquest']) .johnny-profile-status{min-width:0;padding:10px 0 0;border-left:0;border-top:1px solid var(--profile-border);}

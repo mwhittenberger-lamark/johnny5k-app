@@ -6,7 +6,6 @@ import { bodyApi } from '../../api/modules/body'
 import { ironquestApi } from '../../api/modules/ironquest'
 import { onboardingApi } from '../../api/modules/onboarding'
 import { pushApi } from '../../api/modules/push'
-import AppDialog from '../../components/ui/AppDialog'
 import AppLoadingScreen from '../../components/ui/AppLoadingScreen'
 import ClearableInput from '../../components/ui/ClearableInput'
 import ErrorState from '../../components/ui/ErrorState'
@@ -20,12 +19,9 @@ import { useDashboardStore } from '../../store/dashboardStore'
 import { useAuthStore } from '../../store/authStore'
 import { useJohnnyAssistantStore } from '../../store/johnnyAssistantStore'
 import { formatLiveWorkoutNativeAudioModeLabel, formatOpenAiVoiceLabel, getDefaultLiveWorkoutVoicePrefs, LIVE_WORKOUT_NATIVE_AUDIO_MODE_OPTIONS, LIVE_WORKOUT_VOICE_RATE_OPTIONS, OPENAI_TTS_VOICE_OPTIONS, readLiveWorkoutVoicePrefs, writeLiveWorkoutVoicePrefs } from '../../lib/liveWorkoutVoice'
-import { DAILY_CHECK_IN_QUESTIONS, normalizeDailyCheckInEntry } from '../../lib/dailyCheckIn'
 import { resolveExperienceModeFromIronQuestPayload } from '../../lib/experienceMode'
 import { buildHeightCm, buildPushPromptSnoozedUntil, formatPhoneInput, formatReminderHour, formatMissingFields, getTimezoneRegion, getTimezoneRegions, getTimezonesForRegion, isPushPromptSnoozed, normalizePhoneNumber, normalizePushPromptStatus, normalizeTargets, PUSH_PROMPT_SNOOZE_DAYS, reminderHourOptions, settingsFormFromState } from '../../lib/onboarding'
-import { buildThirtyDayPrediction } from '../../lib/thirtyDayPrediction'
 import { DAY_TYPE_OPTIONS } from '../../lib/trainingDayTypes'
-import { formatUsChartDate, formatUsShortDate } from '../../lib/dateFormat'
 import { openSupportGuide } from '../../lib/supportHelp'
 import { confirmGlobalAction } from '../../lib/uiFeedback'
 
@@ -58,7 +54,6 @@ export default function SettingsScreen() {
   const loadSnapshot = useDashboardStore(s => s.loadSnapshot)
   const snapshot = useDashboardStore(s => s.snapshot)
   const authEmail = useAuthStore(s => s.email)
-  const dailyCheckInEntry = useAuthStore(s => s.dailyCheckInEntry)
   const setAuth = useAuthStore(s => s.setAuth)
   const setExperienceMode = useAuthStore(s => s.setExperienceMode)
   const setNotificationPrefs = useAuthStore(s => s.setNotificationPrefs)
@@ -76,13 +71,8 @@ export default function SettingsScreen() {
   const [johnnyMemory, setJohnnyMemory] = useState([])
   const [johnnyMemoryDraft, setJohnnyMemoryDraft] = useState([])
   const [savingJohnnyMemory, setSavingJohnnyMemory] = useState(false)
-  const [johnnyOverview, setJohnnyOverview] = useState(null)
   const [johnnyError, setJohnnyError] = useState('')
   const [johnnyMessage, setJohnnyMessage] = useState('')
-  const [smsReminders, setSmsReminders] = useState({ timezone: '', scheduled: [], history: [] })
-  const [smsReminderLoading, setSmsReminderLoading] = useState(true)
-  const [smsReminderError, setSmsReminderError] = useState('')
-  const [smsReminderMessage, setSmsReminderMessage] = useState('')
   const [pushStatus, setPushStatus] = useState({
     supported: initialPushSupport.supported,
     supportReason: initialPushSupport.reason,
@@ -99,7 +89,6 @@ export default function SettingsScreen() {
   const [pushError, setPushError] = useState('')
   const [pushMessage, setPushMessage] = useState('')
   const [showPushRefusalChoice, setShowPushRefusalChoice] = useState(false)
-  const [cancelingReminderId, setCancelingReminderId] = useState('')
   const [accordionSections, setAccordionSections] = useState(() => readStoredProfileAccordionSections(buildProfileAccordionStorageKey(authEmail)))
   const [liveVoicePrefs, setLiveVoicePrefs] = useState(() => readLiveWorkoutVoicePrefs())
   const [voicePreviewBusy, setVoicePreviewBusy] = useState(false)
@@ -109,21 +98,11 @@ export default function SettingsScreen() {
   const [headshotUploading, setHeadshotUploading] = useState(false)
   const [headshotError, setHeadshotError] = useState('')
   const [headshotMessage, setHeadshotMessage] = useState('')
-  const [generatedImages, setGeneratedImages] = useState([])
-  const [generatedImageSrcs, setGeneratedImageSrcs] = useState({})
-  const [generatedImageActionBusyId, setGeneratedImageActionBusyId] = useState('')
-  const [generatingImages, setGeneratingImages] = useState(false)
-  const [generationCount, setGenerationCount] = useState(2)
-  const [generationPrompt, setGenerationPrompt] = useState('')
-  const [generationError, setGenerationError] = useState('')
-  const [generationMessage, setGenerationMessage] = useState('')
   const [ironQuest, setIronQuest] = useState(null)
   const [ironQuestLoading, setIronQuestLoading] = useState(true)
   const [ironQuestError, setIronQuestError] = useState('')
   const [ironQuestSubmitting, setIronQuestSubmitting] = useState(false)
   const [ironQuestResetting, setIronQuestResetting] = useState(false)
-  const [zoomedImageId, setZoomedImageId] = useState('')
-  const [zoomScale, setZoomScale] = useState(1)
   const pushPanelRef = useRef(null)
   const pushEnableButtonRef = useRef(null)
   const accordionStorageKey = useMemo(() => buildProfileAccordionStorageKey(authEmail), [authEmail])
@@ -177,7 +156,6 @@ export default function SettingsScreen() {
           pushPromptStatus: normalizePushPromptStatus(nextForm.push_prompt_status),
         })
         setHeadshot(data?.headshot ?? { configured: false })
-        setGeneratedImages(Array.isArray(data?.generated_images) ? data.generated_images : [])
         setTimezoneRegion(getTimezoneRegion(nextForm.timezone))
         setTargets(normalizeTargets(data.goal))
         setMissingFields(formatMissingFields(data.missing_profile_fields))
@@ -246,35 +224,6 @@ export default function SettingsScreen() {
 
   useEffect(() => {
     let active = true
-    const createdUrls = []
-
-    if (!Array.isArray(generatedImages) || generatedImages.length === 0) {
-      setGeneratedImageSrcs({})
-      return () => {}
-    }
-
-    Promise.all(generatedImages.map(async image => {
-      const blob = await onboardingApi.generatedImageBlob(image.id)
-      const url = URL.createObjectURL(blob)
-      createdUrls.push(url)
-      return [image.id, url]
-    }))
-      .then(entries => {
-        if (!active) return
-        setGeneratedImageSrcs(Object.fromEntries(entries))
-      })
-      .catch(err => {
-        if (active) setGenerationError(err.message)
-      })
-
-    return () => {
-      active = false
-      createdUrls.forEach(url => URL.revokeObjectURL(url))
-    }
-  }, [generatedImages])
-
-  useEffect(() => {
-    let active = true
 
     aiApi.getMemory()
       .then(data => {
@@ -282,33 +231,9 @@ export default function SettingsScreen() {
         const bullets = Array.isArray(data.durable_memory?.bullets) ? data.durable_memory.bullets : []
         setJohnnyMemory(bullets)
         setJohnnyMemoryDraft(bullets.length ? bullets : [''])
-        setJohnnyOverview(data.follow_up_overview ?? null)
       })
       .catch(err => {
         if (active) setJohnnyError(err.message)
-      })
-
-    return () => { active = false }
-  }, [setNotificationPrefs])
-
-  useEffect(() => {
-    let active = true
-
-    onboardingApi.getSmsReminders()
-      .then(data => {
-        if (!active) return
-        setSmsReminders({
-          timezone: data?.timezone ?? '',
-          scheduled: Array.isArray(data?.scheduled) ? data.scheduled : [],
-          history: Array.isArray(data?.history) ? data.history : [],
-        })
-        setSmsReminderError('')
-      })
-      .catch(err => {
-        if (active) setSmsReminderError(err.message)
-      })
-      .finally(() => {
-        if (active) setSmsReminderLoading(false)
       })
 
     return () => { active = false }
@@ -474,7 +399,7 @@ export default function SettingsScreen() {
     }
   }
 
-  async function persist({ recalculate = false }) {
+  async function persist() {
     setSaving(true)
     setError('')
     setMessage('')
@@ -530,15 +455,11 @@ export default function SettingsScreen() {
         preferred_workout_days_json: form.weekly_schedule,
       })
 
-      if (recalculate) {
-        const data = await onboardingApi.recalculate()
-        const nextTargets = normalizeTargets(data)
-        setTargets(nextTargets)
-        setMessage('Profile saved and daily targets recalculated.')
-        navigate('/dashboard', { state: { targetsUpdated: nextTargets } })
-      } else {
-        setMessage('Profile saved.')
-      }
+      const data = await onboardingApi.recalculate()
+      const nextTargets = normalizeTargets(data)
+      setTargets(nextTargets)
+      setMessage('Profile saved and daily targets recalculated.')
+      navigate('/dashboard', { state: { targetsUpdated: nextTargets } })
 
       const state = await onboardingApi.getState()
       const nextPreferenceMeta = state?.prefs?.exercise_preferences_json ?? {}
@@ -549,7 +470,6 @@ export default function SettingsScreen() {
       }))
       setMissingFields(formatMissingFields(state.missing_profile_fields))
       setHeadshot(state?.headshot ?? { configured: false })
-      setGeneratedImages(Array.isArray(state?.generated_images) ? state.generated_images : [])
       invalidate()
       await loadSnapshot(true)
     } catch (err) {
@@ -601,75 +521,6 @@ export default function SettingsScreen() {
       setHeadshotError(err.message)
     } finally {
       setHeadshotUploading(false)
-    }
-  }
-
-  async function handleGenerateImages() {
-    if (!headshot?.configured) return
-    setGeneratingImages(true)
-    setGenerationError('')
-    setGenerationMessage('')
-
-    try {
-      const data = await onboardingApi.generateImages({
-        prompt: generationPrompt.trim(),
-        count: generationCount,
-      })
-      const nextImages = Array.isArray(data?.generated_images) ? data.generated_images : []
-      setGeneratedImages(nextImages)
-      setGenerationMessage(`Generated ${generationCount} personalized image${generationCount === 1 ? '' : 's'}.`)
-    } catch (err) {
-      setGenerationError(err.message)
-    } finally {
-      setGeneratingImages(false)
-    }
-  }
-
-  async function handleToggleGeneratedImageFavorite(imageId, favorited) {
-    if (!imageId || generatedImageActionBusyId) return
-    setGeneratedImageActionBusyId(imageId)
-    setGenerationError('')
-    setGenerationMessage('')
-
-    try {
-      const data = await onboardingApi.updateGeneratedImage(imageId, { favorited: !favorited })
-      const nextImages = Array.isArray(data?.generated_images) ? data.generated_images : []
-      setGeneratedImages(nextImages)
-      setGenerationMessage(!favorited ? 'Added to Live Workout rotation.' : 'Removed from Live Workout rotation.')
-    } catch (err) {
-      setGenerationError(err.message)
-    } finally {
-      setGeneratedImageActionBusyId('')
-    }
-  }
-
-  async function handleDeleteGeneratedImage(imageId) {
-    if (!imageId || generatedImageActionBusyId) return
-    const confirmed = await confirmGlobalAction({
-      title: 'Delete generated image?',
-      message: 'This removes the generated image from your profile library.',
-      confirmLabel: 'Delete image',
-      tone: 'danger',
-    })
-    if (!confirmed) return
-
-    setGeneratedImageActionBusyId(imageId)
-    setGenerationError('')
-    setGenerationMessage('')
-
-    try {
-      const data = await onboardingApi.deleteGeneratedImage(imageId)
-      const nextImages = Array.isArray(data?.generated_images) ? data.generated_images : []
-      setGeneratedImages(nextImages)
-      setGenerationMessage('Generated image deleted.')
-      if (zoomedImageId === imageId) {
-        setZoomedImageId('')
-        setZoomScale(1)
-      }
-    } catch (err) {
-      setGenerationError(err.message)
-    } finally {
-      setGeneratedImageActionBusyId('')
     }
   }
 
@@ -767,53 +618,11 @@ export default function SettingsScreen() {
       const nextBullets = Array.isArray(data.durable_memory?.bullets) ? data.durable_memory.bullets : bullets
       setJohnnyMemory(nextBullets)
       setJohnnyMemoryDraft(nextBullets.length ? nextBullets : [''])
-      setJohnnyOverview(data.follow_up_overview ?? johnnyOverview)
       setJohnnyMessage('Johnny memory updated.')
     } catch (err) {
       setJohnnyError(err.message)
     } finally {
       setSavingJohnnyMemory(false)
-    }
-  }
-
-  async function cancelSmsReminder(reminderId) {
-    if (!reminderId || cancelingReminderId) return
-
-    const confirmed = await confirmGlobalAction({
-      title: 'Cancel scheduled SMS reminder?',
-      message: 'This removes the reminder from your upcoming SMS schedule.',
-      confirmLabel: 'Cancel reminder',
-      tone: 'danger',
-    })
-    if (!confirmed) return
-
-    setCancelingReminderId(reminderId)
-    setSmsReminderError('')
-    setSmsReminderMessage('')
-
-    try {
-      const data = await onboardingApi.cancelSmsReminder(reminderId)
-      const canceledReminder = data?.reminder ?? null
-
-      setSmsReminders(current => {
-        const nextScheduled = Array.isArray(current.scheduled)
-          ? current.scheduled.filter(item => item.id !== reminderId)
-          : []
-        const nextHistory = canceledReminder
-          ? [canceledReminder, ...(Array.isArray(current.history) ? current.history : []).filter(item => item.id !== reminderId)].slice(0, 8)
-          : (Array.isArray(current.history) ? current.history : [])
-
-        return {
-          ...current,
-          scheduled: nextScheduled,
-          history: nextHistory,
-        }
-      })
-      setSmsReminderMessage('Scheduled SMS reminder canceled.')
-    } catch (err) {
-      setSmsReminderError(err.message)
-    } finally {
-      setCancelingReminderId('')
     }
   }
 
@@ -1060,33 +869,6 @@ export default function SettingsScreen() {
     if (!first || !last) return null
     return Math.round((last - first) * 10) / 10
   }, [weeklyWeights])
-  const thirtyDayPrediction = useMemo(() => buildThirtyDayPrediction({
-    latestWeight,
-    targetCalories: targets?.target_calories,
-    loggedCalories: snapshot?.nutrition_totals?.calories,
-    goal: form.current_goal,
-    pace: form.goal_rate,
-    timezone: form.timezone,
-  }), [form.current_goal, form.goal_rate, form.timezone, latestWeight, snapshot?.nutrition_totals?.calories, targets?.target_calories])
-  const currentDailyCheckIn = useMemo(() => normalizeDailyCheckInEntry(dailyCheckInEntry), [dailyCheckInEntry])
-  const dailyCheckInResponses = useMemo(() => DAILY_CHECK_IN_QUESTIONS
-    .map(question => ({
-      key: question.key,
-      label: question.label,
-      value: currentDailyCheckIn.answers?.[question.key] || '',
-    }))
-    .filter(question => question.value), [currentDailyCheckIn])
-  const zoomedImage = generatedImages.find(image => image.id === zoomedImageId) || null
-  const favoritedImageCount = generatedImages.filter(image => image?.favorited).length
-
-  function handleOpenDailyCheckIn() {
-    if (typeof window === 'undefined') {
-      return
-    }
-
-    window.dispatchEvent(new CustomEvent('johnny5k:open-daily-checkin'))
-  }
-
   function handleOpenSettingsSupport() {
     openSupportGuide(openDrawer, {
       screen: 'settings',
@@ -1130,8 +912,8 @@ export default function SettingsScreen() {
           sectionKey="overview"
           eyebrow="At a glance"
           title="Overview"
-          description="Goal snapshot, weekly weight trend, and the 30-day pace projection."
-          itemCountLabel="2 cards"
+          description="Goal snapshot and current targets."
+          itemCountLabel="1 card"
           open={accordionSections.overview}
           onToggle={toggleAccordionSection}
         >
@@ -1140,7 +922,6 @@ export default function SettingsScreen() {
               <div className="settings-identity-copy">
                 <span className="dashboard-chip ai">Identity</span>
                 <h2>{buildProfileGoalHeadline(form.current_goal, form.goal_rate)}</h2>
-                <p>{buildProfileGoalSummary(form, latestWeight, targets)}</p>
                 <div className="settings-identity-stats">
                   <div className="settings-identity-stat">
                     <span>Current weight</span>
@@ -1160,62 +941,7 @@ export default function SettingsScreen() {
                   </div>
                 </div>
               </div>
-              <div className="settings-trend-card">
-                <div className="settings-trend-head">
-                  <strong>Weekly trend</strong>
-                  <button type="button" className="btn-outline small" onClick={() => navigate('/body', { state: { focusTab: 'weight' } })}>Open progress</button>
-                </div>
-                {weeklyWeights.length ? (
-                  <div className="settings-trend-bars" aria-label="Weekly weight trend">
-                    {buildProfileTrendBars(weeklyWeights).map(point => (
-                      <div key={`${point.date}-${point.label}`} className="settings-trend-bar-group">
-                        <span className="settings-trend-bar-value">{point.valueLabel}</span>
-                        <div className="settings-trend-bar-track">
-                          <span className="settings-trend-bar-fill" style={{ height: `${point.height}%` }} />
-                        </div>
-                        <span className="settings-trend-bar-label">{point.label}</span>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="settings-subtitle">Log a few weigh-ins on Progress to see your weekly trajectory here.</p>
-                )}
-              </div>
             </div>
-          </section>
-
-          <section className="dash-card settings-prediction-card">
-            <div className="settings-prediction-head">
-              <div>
-                <span className="dashboard-chip awards">30-day prediction</span>
-                <h3>If every day looked like today</h3>
-              </div>
-              <button type="button" className="btn-outline small" onClick={() => navigate('/nutrition')}>
-                Open nutrition
-              </button>
-            </div>
-            {thirtyDayPrediction ? (
-              <>
-                <p className="settings-prediction-summary">{thirtyDayPrediction.summary}</p>
-                <div className="settings-prediction-stats">
-                  <div className="settings-prediction-stat">
-                    <span>Projected weight</span>
-                    <strong>{thirtyDayPrediction.projectedWeightLabel}</strong>
-                  </div>
-                  <div className="settings-prediction-stat">
-                    <span>30-day change</span>
-                    <strong>{thirtyDayPrediction.changeLabel}</strong>
-                  </div>
-                  <div className="settings-prediction-stat">
-                    <span>Daily pace</span>
-                    <strong>{thirtyDayPrediction.dailyDeltaLabel}</strong>
-                  </div>
-                </div>
-                <p className="settings-subtitle">{thirtyDayPrediction.note}</p>
-              </>
-            ) : (
-              <p className="settings-subtitle">Log at least one meal today to unlock a 30-day pace projection. This card uses today&apos;s calorie pace against your current maintenance estimate.</p>
-            )}
           </section>
         </SettingsAccordionSection>
 
@@ -1223,39 +949,11 @@ export default function SettingsScreen() {
           sectionKey="personal"
           eyebrow="Profile"
           title="Personal Info"
-          description="Daily check-in, identity, body stats, and the goal inputs Johnny uses as your baseline."
-          itemCountLabel="3 cards"
+          description="Identity, body stats, and the goal inputs Johnny uses as your baseline."
+          itemCountLabel="2 cards"
           open={accordionSections.personal}
           onToggle={toggleAccordionSection}
         >
-          <section className="settings-section dash-card settings-checkin-card">
-            <div className="settings-checkin-head">
-              <div>
-                <span className="dashboard-chip subtle">Daily check-in</span>
-                <h3>Reopen today&apos;s check-in</h3>
-                <p className="settings-subtitle">Use this from Profile whenever you want to update the water-first check-in answers Johnny will use later.</p>
-              </div>
-            </div>
-            <div className="settings-checkin-actions">
-              <button type="button" className="btn-secondary small settings-checkin-button" onClick={handleOpenDailyCheckIn}>Open check-in</button>
-            </div>
-            {dailyCheckInResponses.length ? (
-              <div className="settings-checkin-summary">
-                <div className="settings-checkin-answer-list">
-                  {dailyCheckInResponses.map(response => (
-                    <div key={response.key} className="settings-checkin-answer">
-                      <span>{response.label}</span>
-                      <strong>{response.value}</strong>
-                    </div>
-                  ))}
-                </div>
-                <p className="settings-checkin-meta">Saved for {currentDailyCheckIn.day_key || 'today'}.</p>
-              </div>
-            ) : (
-              <p className="settings-checkin-meta">No answers saved yet for today. Open the check-in to log them.</p>
-            )}
-          </section>
-
           <section className="settings-section dash-card">
             <h3>About You</h3>
             <div className="settings-grid">
@@ -1379,27 +1077,11 @@ export default function SettingsScreen() {
           sectionKey="notifications"
           eyebrow="Reach me"
           title="Notifications & Reminders"
-          description="SMS, browser notifications, and reminder schedules for how Johnny reaches you."
-          itemCountLabel="3 cards"
+          description="Browser notifications and reminder schedules for how Johnny reaches you."
+          itemCountLabel="2 cards"
           open={accordionSections.notifications}
           onToggle={toggleAccordionSection}
         >
-          <section className="settings-section dash-card settings-reminders-panel">
-            <label className="switch-field">
-              <span className="switch-copy">
-                <span className="settings-field-label">SMS reminders</span>
-                <span className="settings-field-hint">Enable text reminders and the weekly Monday summary.</span>
-              </span>
-              <span className="switch-control">
-                <input className="switch-input" type="checkbox" checked={form.notifications_enabled} onChange={e => update('notifications_enabled', e.target.checked)} />
-                <span className="switch-track" aria-hidden="true" />
-              </span>
-            </label>
-            <Field className="settings-field notification-phone-field" hint="Only used for reminder texts." label="Phone">
-              <ClearableInput type="tel" inputMode="tel" value={form.phone} onChange={e => updatePhone(e.target.value)} placeholder="(555) 123-4567" disabled={!form.notifications_enabled} />
-            </Field>
-          </section>
-
           <section className="settings-section dash-card settings-reminders-panel">
             <div ref={pushPanelRef} className="settings-push-anchor" aria-hidden="true" />
             <div className="switch-copy">
@@ -1455,8 +1137,7 @@ export default function SettingsScreen() {
             {pushMessage ? <p className="success-message">{pushMessage}</p> : null}
           </section>
 
-          {form.notifications_enabled ? (
-            <section className="settings-section dash-card">
+          <section className="settings-section dash-card">
               <div className="settings-reminder-intro">
                 <strong>Reminder schedule</strong>
                 <p>All reminder times use your saved timezone. Weekly summary sends Mondays at {formatReminderHour(form.weekly_summary_hour)}.</p>
@@ -1530,254 +1211,15 @@ export default function SettingsScreen() {
                   </label>
                 </div>
               </div>
-              <div className="settings-scheduled-reminders-card">
-                <div className="settings-scheduled-reminders-head">
-                  <div>
-                    <strong>Scheduled by Johnny</strong>
-                    <p>One-off SMS reminders Johnny creates for you appear here. Cancel anything that has not fired yet.</p>
-                  </div>
-                  <button type="button" className="btn-outline small" onClick={() => openDrawer('Show me my scheduled SMS reminders and help me manage them.')}>Ask Johnny</button>
-                </div>
-
-                {smsReminderLoading ? (
-                  <AppLoadingScreen
-                    eyebrow="Reminders"
-                    title="Loading scheduled reminders"
-                    message="Johnny is checking upcoming SMS sends and recent reminder history."
-                    compact
-                    variant="list"
-                    copyStyle="inline"
-                  />
-                ) : null}
-                {smsReminderError ? <ErrorState className="settings-inline-error" message={smsReminderError} title="Could not load scheduled reminders" /> : null}
-                {smsReminderMessage ? <p className="success-message">{smsReminderMessage}</p> : null}
-
-                {!smsReminderLoading && !smsReminderError ? (
-                  <>
-                    <div className="settings-reminder-collection">
-                      <div className="settings-reminder-collection-head">
-                        <strong>Upcoming</strong>
-                        <span>{smsReminders.scheduled?.length ?? 0}</span>
-                      </div>
-                      {Array.isArray(smsReminders.scheduled) && smsReminders.scheduled.length > 0 ? (
-                        <div className="settings-scheduled-reminder-list">
-                          {smsReminders.scheduled.map(reminder => (
-                            <div key={reminder.id} className="settings-scheduled-reminder-row">
-                              <div className="settings-scheduled-reminder-copy">
-                                <strong>{formatReminderDateTime(reminder.send_at_local)}</strong>
-                                <p>{reminder.message}</p>
-                                <span>{smsReminders.timezone || reminder.timezone || form.timezone}</span>
-                              </div>
-                              <button
-                                type="button"
-                                className="btn-outline small"
-                                onClick={() => cancelSmsReminder(reminder.id)}
-                                disabled={cancelingReminderId === reminder.id}
-                              >
-                                {cancelingReminderId === reminder.id ? 'Canceling…' : 'Cancel'}
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <p className="settings-subtitle">No one-off SMS reminders are queued right now.</p>
-                      )}
-                    </div>
-
-                    <div className="settings-reminder-collection">
-                      <div className="settings-reminder-collection-head">
-                        <strong>Recent activity</strong>
-                        <span>{smsReminders.history?.length ?? 0}</span>
-                      </div>
-                      {Array.isArray(smsReminders.history) && smsReminders.history.length > 0 ? (
-                        <div className="settings-scheduled-reminder-list history">
-                          {smsReminders.history.map(reminder => (
-                            <div key={reminder.id} className="settings-scheduled-reminder-row history">
-                              <div className="settings-scheduled-reminder-copy">
-                                <strong>{formatReminderDateTime(reminder.send_at_local)}</strong>
-                                <p>{reminder.message}</p>
-                                <span>{formatReminderHistoryMeta(reminder, smsReminders.timezone || reminder.timezone || form.timezone)}</span>
-                              </div>
-                              <span className={`settings-reminder-status ${reminder.status}`}>{formatReminderStatus(reminder.status)}</span>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <p className="settings-subtitle">Sent, failed, or canceled reminder history will appear here.</p>
-                      )}
-                    </div>
-                  </>
-                ) : null}
-              </div>
             </section>
-          ) : null}
-        </SettingsAccordionSection>
-
-        <SettingsAccordionSection
-          sectionKey="liveCoaching"
-          eyebrow="Live training"
-          title="Live Coaching"
-          description="Rest timing and spoken coaching behavior for Live Workout Mode on this device."
-          itemCountLabel="2 cards"
-          open={accordionSections.liveCoaching}
-          onToggle={toggleAccordionSection}
-        >
-          <section className="settings-section dash-card">
-            <h3>Rest Timing</h3>
-            <p className="settings-subtitle">Johnny uses these ranges for live coach timing toasts, the intro modal, and the rest window card during live workout mode.</p>
-            <div className="settings-grid settings-grid-compact">
-              <label className="settings-subfield">
-                <span>Set rest min</span>
-                <div className="settings-input-suffix">
-                  <input
-                    type="number"
-                    min="5"
-                    max="900"
-                    step="5"
-                    value={form.rest_between_sets_min_seconds}
-                    onChange={e => update('rest_between_sets_min_seconds', Number(e.target.value))}
-                  />
-                  <span>sec</span>
-                </div>
-              </label>
-              <label className="settings-subfield">
-                <span>Set rest max</span>
-                <div className="settings-input-suffix">
-                  <input
-                    type="number"
-                    min="5"
-                    max="900"
-                    step="5"
-                    value={form.rest_between_sets_max_seconds}
-                    onChange={e => update('rest_between_sets_max_seconds', Number(e.target.value))}
-                  />
-                  <span>sec</span>
-                </div>
-              </label>
-              <label className="settings-subfield">
-                <span>Exercise rest min</span>
-                <div className="settings-input-suffix">
-                  <input
-                    type="number"
-                    min="0.5"
-                    max="15"
-                    step="0.5"
-                    value={formatExerciseRestMinutes(form.rest_between_exercises_min_seconds)}
-                    onChange={e => update('rest_between_exercises_min_seconds', Math.round(Number(e.target.value || 0) * 60))}
-                  />
-                  <span>min</span>
-                </div>
-              </label>
-              <label className="settings-subfield">
-                <span>Exercise rest max</span>
-                <div className="settings-input-suffix">
-                  <input
-                    type="number"
-                    min="0.5"
-                    max="15"
-                    step="0.5"
-                    value={formatExerciseRestMinutes(form.rest_between_exercises_max_seconds)}
-                    onChange={e => update('rest_between_exercises_max_seconds', Math.round(Number(e.target.value || 0) * 60))}
-                  />
-                  <span>min</span>
-                </div>
-              </label>
-            </div>
-          </section>
-
-          <section className="settings-ai-grid">
-            <div className="dash-card settings-ai-card">
-              <div className="settings-ai-head">
-                <div>
-                  <span className="dashboard-chip coach">Live workout voice</span>
-                  <h3>Johnny spoken coaching</h3>
-                </div>
-              </div>
-              {!speechPlaybackSupported ? (
-                <p className="settings-subtitle">This browser cannot play inline audio, so spoken live-workout coaching is unavailable here.</p>
-              ) : (
-                <>
-                  <p className="settings-subtitle">These settings control OpenAI voice playback for Live Workout Mode on this device.</p>
-                  <div className="settings-grid settings-grid-compact">
-                    <div className="settings-inline-panel">
-                      <label className="switch-field">
-                        <span className="switch-copy">
-                          <span className="settings-field-label">Auto-speak Johnny</span>
-                          <span className="settings-field-hint">Speak each new live coaching reply automatically.</span>
-                        </span>
-                        <span className="switch-control">
-                          <input className="switch-input" type="checkbox" checked={liveVoicePrefs.autoSpeak} onChange={event => updateLiveVoicePref('autoSpeak', event.target.checked)} />
-                          <span className="switch-track" aria-hidden="true" />
-                        </span>
-                      </label>
-                    </div>
-                    <div className="settings-inline-panel">
-                      <label className="switch-field">
-                        <span className="switch-copy">
-                          <span className="settings-field-label">Auto-speak drawer replies</span>
-                          <span className="settings-field-hint">Read new Johnny Assistant drawer replies out loud automatically.</span>
-                        </span>
-                        <span className="switch-control">
-                          <input className="switch-input" type="checkbox" checked={liveVoicePrefs.assistantAutoSpeak} onChange={event => updateLiveVoicePref('assistantAutoSpeak', event.target.checked)} />
-                          <span className="switch-track" aria-hidden="true" />
-                        </span>
-                      </label>
-                    </div>
-                    <div className="settings-inline-panel">
-                      <label className="switch-field">
-                        <span className="switch-copy">
-                          <span className="settings-field-label">Use native voice when available</span>
-                          <span className="settings-field-hint">Inside the native shell, let Johnny request music ducking or pause behavior before speaking.</span>
-                        </span>
-                        <span className="switch-control">
-                          <input className="switch-input" type="checkbox" checked={liveVoicePrefs.preferNativeSpeech} onChange={event => updateLiveVoicePref('preferNativeSpeech', event.target.checked)} />
-                          <span className="switch-track" aria-hidden="true" />
-                        </span>
-                      </label>
-                    </div>
-                    <Field className="settings-field settings-field-span-2" hint="Voice is generated by OpenAI instead of browser-native speech synthesis." label="Voice">
-                      <select value={liveVoicePrefs.openAiVoice} onChange={event => updateLiveVoicePref('openAiVoice', event.target.value)}>
-                        {OPENAI_TTS_VOICE_OPTIONS.map(voice => (
-                          <option key={voice} value={voice}>{formatOpenAiVoiceLabel(voice)}</option>
-                        ))}
-                      </select>
-                    </Field>
-                    <Field className="settings-field settings-field-span-2" hint="These modes only take effect inside the native Capacitor shell. Ducking is the most reliable behavior across devices." label="When Johnny speaks during a workout">
-                      <select value={liveVoicePrefs.nativeAudioMode} onChange={event => updateLiveVoicePref('nativeAudioMode', event.target.value)}>
-                        {LIVE_WORKOUT_NATIVE_AUDIO_MODE_OPTIONS.map(mode => (
-                          <option key={mode} value={mode}>{formatLiveWorkoutNativeAudioModeLabel(mode)}</option>
-                        ))}
-                      </select>
-                    </Field>
-                    <Field className="settings-field" label="Playback speed">
-                      <select value={String(liveVoicePrefs.rate)} onChange={event => updateLiveVoicePref('rate', Number(event.target.value))}>
-                        {LIVE_WORKOUT_VOICE_RATE_OPTIONS.map(rate => (
-                          <option key={rate} value={rate}>{rate.toFixed(rate % 1 === 0 ? 0 : 2)}x</option>
-                        ))}
-                      </select>
-                    </Field>
-                    <div className="settings-inline-panel settings-live-voice-preview-card">
-                      <strong>Preview</strong>
-                      <p className="settings-subtitle">Play a short sample with the current voice settings, or reset this device back to Johnny’s defaults.</p>
-                      <div className="settings-ai-actions">
-                        <button type="button" className="btn-outline small" onClick={previewLiveVoice} disabled={voicePreviewBusy}>{voicePreviewBusy ? 'Playing…' : 'Play sample'}</button>
-                        <button type="button" className="btn-secondary small" onClick={() => setLiveVoicePrefs(getDefaultLiveWorkoutVoicePrefs())}>Reset defaults</button>
-                      </div>
-                      {voicePreviewError ? <ErrorState className="settings-inline-error" message={voicePreviewError} title="Could not preview this voice" /> : null}
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
-          </section>
         </SettingsAccordionSection>
 
         <SettingsAccordionSection
           sectionKey="johnny"
           eyebrow="Johnny"
           title="Johnny"
-          description="Personality, coaching memory, follow-through health, and advanced proactive delivery controls."
-          itemCountLabel="5 cards"
+          description="Personality, coaching memory, and advanced proactive delivery controls."
+          itemCountLabel="4 cards"
           open={accordionSections.johnny}
           onToggle={toggleAccordionSection}
         >
@@ -1820,60 +1262,6 @@ export default function SettingsScreen() {
               {!johnnyError && johnnyMemory.length > 0 ? <p className="settings-ai-note">Saved {johnnyMemory.length} long-term coaching notes.</p> : null}
             </div>
 
-            <div className="dash-card settings-ai-card">
-              <div className="settings-ai-head">
-                <div>
-                  <span className="dashboard-chip subtle">Johnny follow-through</span>
-                  <h3>Coaching loop health</h3>
-                </div>
-                <button type="button" className="btn-outline small" onClick={() => openDrawer('Show me my current Johnny follow-ups and what I have been ignoring lately.')}>Open Johnny</button>
-              </div>
-              <p className="settings-subtitle">This gives Johnny a memory of what you finish, punt, or let slide.</p>
-              <div className="settings-ai-stats">
-                <div className="settings-ai-stat"><span>Pending</span><strong>{johnnyOverview?.pending_count ?? 0}</strong></div>
-                <div className="settings-ai-stat"><span>Missed</span><strong>{johnnyOverview?.missed_count ?? 0}</strong></div>
-                <div className="settings-ai-stat"><span>Overdue</span><strong>{johnnyOverview?.overdue_count ?? 0}</strong></div>
-                <div className="settings-ai-stat"><span>Completed 14d</span><strong>{johnnyOverview?.completed_last_14_days ?? 0}</strong></div>
-                <div className="settings-ai-stat"><span>Dismissed 14d</span><strong>{johnnyOverview?.dismissed_last_14_days ?? 0}</strong></div>
-              </div>
-              {johnnyOverview?.recent_summary ? <p className="settings-ai-note">Recent pattern: {johnnyOverview.recent_summary}.</p> : null}
-              {Array.isArray(johnnyOverview?.missed_items) && johnnyOverview.missed_items.length > 0 ? (
-                <div className="settings-ai-history-block">
-                  <strong>Missed commitments</strong>
-                  <ul className="settings-ai-history-list">
-                    {johnnyOverview.missed_items.slice(0, 3).map(item => (
-                      <li key={item.id}>{item.prompt}</li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-              {Array.isArray(johnnyOverview?.overdue_items) && johnnyOverview.overdue_items.length > 0 ? (
-                <div className="settings-ai-history-block">
-                  <strong>Overdue</strong>
-                  <ul className="settings-ai-history-list">
-                    {johnnyOverview.overdue_items.slice(0, 3).map(item => (
-                      <li key={item.id}>{item.prompt}</li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-              {Array.isArray(johnnyOverview?.history) && johnnyOverview.history.length > 0 ? (
-                <div className="settings-ai-history-block">
-                  <strong>Recent outcomes</strong>
-                  <ul className="settings-ai-history-list">
-                    {johnnyOverview.history.slice(0, 5).map(item => (
-                      <li key={`${item.id}-${item.changed_at}`}>
-                        <span className={`settings-ai-history-state ${item.state}`}>{formatFollowUpState(item.state)}</span>
-                        <span>{item.prompt}</span>
-                        <small>{formatUsShortDate(item.changed_at, item.changed_at)}</small>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ) : (
-                <p className="settings-subtitle">Johnny will start building a visible history here as you complete or dismiss follow-ups.</p>
-              )}
-            </div>
           </section>
 
           <section className="settings-section dash-card settings-ai-card settings-personality-panel">
@@ -1993,15 +1381,6 @@ export default function SettingsScreen() {
             </div>
             <div className="settings-diagnostics-grid">
               <div className="settings-diagnostics-card">
-                <strong>Local status</strong>
-                <span>Permission: {pushStatus.permission}</span>
-                <span>Supported: {pushStatus.supported ? 'yes' : 'no'}</span>
-                <span>Subscribed on this device: {pushStatus.subscribed ? 'yes' : 'no'}</span>
-                <span>Account devices: {pushStatus.activeCount}</span>
-                <span>Origin: {pushStatus.origin || '—'}</span>
-                <span>Service worker: {pushStatus.serviceWorkerRegistered ? 'registered' : 'missing'}</span>
-              </div>
-              <div className="settings-diagnostics-card">
                 <strong>Coach delivery</strong>
                 <span>Pending follow-ups: {deliveryDiagnostics?.follow_up_overview?.pending_count ?? 0}</span>
                 <span>Overdue: {deliveryDiagnostics?.follow_up_overview?.overdue_count ?? 0}</span>
@@ -2033,8 +1412,8 @@ export default function SettingsScreen() {
         <SettingsAccordionSection
           sectionKey="images"
           eyebrow="Photos"
-          title="Photos & Image Generation"
-          description="Upload your headshot, generate Johnny scenes, and manage the image gallery used in live workout rotation."
+          title="Photo"
+          description="Upload the headshot Johnny uses as a private likeness reference."
           itemCountLabel="1 workspace"
           open={accordionSections.images}
           onToggle={toggleAccordionSection}
@@ -2042,16 +1421,16 @@ export default function SettingsScreen() {
           <section className="settings-section dash-card settings-headshot-section">
             <div className="settings-headshot-head">
               <div>
-                <h3>Your Headshot + Johnny Image Generation</h3>
+                <h3>Your Headshot</h3>
                 <p className="settings-subtitle">Upload a clear face photo. Johnny can use it as a private likeness reference when you explicitly ask him to create a realistic image of you.</p>
               </div>
               <div className="settings-headshot-actions">
                 <label className="btn-secondary settings-upload-trigger">
-                  <input type="file" accept="image/*" onChange={handleHeadshotUpload} disabled={headshotUploading || generatingImages} />
+                  <input type="file" accept="image/*" onChange={handleHeadshotUpload} disabled={headshotUploading} />
                   {headshotUploading ? 'Uploading…' : headshot?.configured ? 'Replace Headshot' : 'Upload Headshot'}
                 </label>
                 {headshot?.configured ? (
-                  <button type="button" className="btn-outline small" onClick={handleHeadshotDelete} disabled={headshotUploading || generatingImages}>
+                  <button type="button" className="btn-outline small" onClick={handleHeadshotDelete} disabled={headshotUploading}>
                     Remove
                   </button>
                 ) : null}
@@ -2068,87 +1447,9 @@ export default function SettingsScreen() {
               </div>
 
               <div className="settings-headshot-controls">
-                <Field className="settings-field settings-field-span-2" label="Extra image direction">
-                  <textarea
-                    rows="4"
-                    value={generationPrompt}
-                    onChange={event => setGenerationPrompt(event.target.value)}
-                    placeholder="Optional: add scene direction like rainy marathon training, heavy barbell work, or bright early-morning track energy."
-                  />
-                </Field>
-                <div className="settings-inline-panel settings-field-span-2">
-                  <strong>Generate Johnny scenes</strong>
-                  <p className="settings-subtitle">Pick 1 or 2 images per run, with a max of 2 generated images per day. Hearts add images into Live Workout coach rotation.</p>
-                  <div className="settings-grid settings-grid-compact">
-                    <Field className="settings-field" label="How many to generate">
-                      <select value={generationCount} onChange={event => setGenerationCount(Number(event.target.value))} disabled={generatingImages}>
-                        <option value={1}>1 image</option>
-                        <option value={2}>2 images</option>
-                      </select>
-                    </Field>
-                  </div>
-                  <div className="settings-ai-actions">
-                    <button type="button" className="btn-primary small" onClick={handleGenerateImages} disabled={!headshot?.configured || generatingImages || headshotUploading}>
-                      {generatingImages ? 'Generating…' : `Generate ${generationCount} Image${generationCount === 1 ? '' : 's'}`}
-                    </button>
-                  </div>
-                </div>
                 {headshotError ? <ErrorState className="settings-inline-error" message={headshotError} title="Could not update your headshot" /> : null}
                 {headshotMessage ? <p className="success-message">{headshotMessage}</p> : null}
-                {generationError ? <ErrorState className="settings-inline-error" message={generationError} title="Could not generate images" /> : null}
-                {generationMessage ? <p className="success-message">{generationMessage}</p> : null}
               </div>
-            </div>
-
-            <div className="settings-generated-gallery">
-              <div className="settings-generated-gallery-head">
-                <strong>Generated Images</strong>
-                <span>{generatedImages.length} total • {favoritedImageCount} in live rotation</span>
-              </div>
-              {generatedImages.length > 0 ? (
-                <div className="settings-generated-grid">
-                  {generatedImages.map(image => (
-                    <article key={image.id} className="settings-generated-card">
-                      {generatedImageSrcs[image.id] ? (
-                        <button type="button" className="settings-generated-image-trigger" onClick={() => { setZoomedImageId(image.id); setZoomScale(1) }}>
-                          <img src={generatedImageSrcs[image.id]} alt={image.scenario || 'Generated workout scene'} />
-                        </button>
-                      ) : (
-                      <AppLoadingScreen compact variant="tile" copyStyle="hidden" />
-                      )}
-                      <div className="settings-generated-copy">
-                        <strong>{image.scenario || 'Generated scene'}</strong>
-                        <span>{image.created_at ? formatUsShortDate(image.created_at, image.created_at) : 'Just now'}</span>
-                      </div>
-                      <div className="settings-ai-actions settings-generated-card-actions">
-                        <button
-                          type="button"
-                          className={`btn-outline small ${image.favorited ? 'active-toggle' : ''}`}
-                          onClick={() => handleToggleGeneratedImageFavorite(image.id, Boolean(image.favorited))}
-                          disabled={generatedImageActionBusyId === image.id}
-                        >
-                          {image.favorited ? '♥ Hearted' : '♡ Heart'}
-                        </button>
-                        {generatedImageSrcs[image.id] ? (
-                          <a className="btn-secondary small" href={generatedImageSrcs[image.id]} download={`johnny-scene-${image.id}.png`}>
-                            Download
-                          </a>
-                        ) : null}
-                        <button
-                          type="button"
-                          className="btn-danger small"
-                          onClick={() => handleDeleteGeneratedImage(image.id)}
-                          disabled={generatedImageActionBusyId === image.id}
-                        >
-                          Remove
-                        </button>
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              ) : (
-                <p className="settings-subtitle">Generated images will appear here after your first run.</p>
-              )}
             </div>
           </section>
         </SettingsAccordionSection>
@@ -2251,42 +1552,10 @@ export default function SettingsScreen() {
         </div>
       </section>
 
-      {zoomedImage && generatedImageSrcs[zoomedImage.id] ? (
-        <AppDialog
-          ariaLabel="Generated image preview"
-          className="settings-image-zoom-panel"
-          onClose={() => setZoomedImageId('')}
-          open
-          overlayClassName="settings-image-zoom-modal"
-          size="lg"
-        >
-            <div className="settings-image-zoom-head">
-              <strong>{zoomedImage.scenario || 'Generated scene'}</strong>
-              <button type="button" className="btn-secondary small" onClick={() => setZoomedImageId('')}>Close</button>
-            </div>
-            <div className="settings-image-zoom-canvas">
-              <img
-                src={generatedImageSrcs[zoomedImage.id]}
-                alt={zoomedImage.scenario || 'Generated workout scene'}
-                style={{ transform: `scale(${zoomScale})` }}
-              />
-            </div>
-            <Field className="settings-field" label="Zoom">
-              <input type="range" min="1" max="2.5" step="0.1" value={zoomScale} onChange={event => setZoomScale(Number(event.target.value))} />
-            </Field>
-        </AppDialog>
-      ) : null}
-
       <div className="settings-actions settings-actions-stack">
-        <button className="btn-secondary settings-save-button" onClick={() => persist({ recalculate: false })} disabled={saving}>
+        <button className="btn-primary" onClick={() => persist()} disabled={saving}>
           {saving ? 'Saving…' : 'Save Changes'}
         </button>
-        <div className="settings-primary-action-block">
-          <button className="btn-primary" onClick={() => persist({ recalculate: true })} disabled={saving}>
-            {saving ? 'Saving…' : 'Save + Recalculate Targets'}
-          </button>
-          <p className="settings-action-note">Use recalculation when your body stats or goal pace changed and you want new calorie targets immediately.</p>
-        </div>
       </div>
     </div>
   )
@@ -2329,63 +1598,6 @@ function SettingsAccordionSection({ sectionKey, eyebrow, title, description, ite
 function buildProfileInitials(firstName, lastName) {
   const initials = [firstName, lastName].map(value => String(value || '').trim().charAt(0)).filter(Boolean).join('')
   return initials.toUpperCase() || 'J5'
-}
-
-function formatFollowUpState(state) {
-  switch (state) {
-    case 'missed':
-      return 'Missed'
-    case 'completed':
-      return 'Done'
-    case 'dismissed':
-      return 'Dismissed'
-    case 'snoozed':
-      return 'Snoozed'
-    default:
-      return 'Open'
-  }
-}
-
-function formatReminderDateTime(value) {
-  if (!value) return 'Scheduled time unavailable'
-
-  const parsed = new Date(String(value).replace(' ', 'T'))
-  if (Number.isNaN(parsed.getTime())) return String(value)
-
-  return parsed.toLocaleString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  })
-}
-
-function formatReminderStatus(status) {
-  switch (status) {
-    case 'sent':
-      return 'Sent'
-    case 'queued':
-      return 'Queued'
-    case 'failed':
-      return 'Failed'
-    case 'canceled':
-      return 'Canceled'
-    default:
-      return 'Scheduled'
-  }
-}
-
-function formatReminderHistoryMeta(reminder, timezoneLabel) {
-  const statusLabel = formatReminderStatus(reminder?.status).toLowerCase()
-
-  if (reminder?.status === 'sent' && reminder?.sent_at) {
-    return `${statusLabel} • ${formatUsShortDate(reminder.sent_at, reminder.sent_at)} • ${timezoneLabel}`
-  }
-  if (reminder?.status === 'canceled' && reminder?.canceled_at) {
-    return `${statusLabel} • ${formatUsShortDate(reminder.canceled_at, reminder.canceled_at)} • ${timezoneLabel}`
-  }
-
-  return `${statusLabel} • ${timezoneLabel}`
 }
 
 function buildProfileAccordionStorageKey(email) {
@@ -2469,36 +1681,9 @@ function buildProfileGoalHeadline(goal, pace) {
   return `${goalLabel} · ${paceLabel}`
 }
 
-function buildProfileGoalSummary(form, latestWeight, targets) {
-  const weightLabel = latestWeight ? `${latestWeight} lbs current weight` : 'Current weight still being established'
-  const calories = targets?.target_calories ? `${targets.target_calories} daily calories` : 'daily calories pending'
-  const protein = targets?.target_protein_g != null ? `${targets.target_protein_g}g protein target` : 'protein target pending'
-  return `${weightLabel}. ${calories} with ${protein}.`
-}
-
 function formatWeightDelta(delta) {
   if (delta == null) return 'No trend yet'
   if (delta === 0) return 'Flat this week'
   return `${delta > 0 ? '+' : ''}${delta.toFixed(1)} lbs`
 }
 
-function buildProfileTrendBars(weights) {
-  const points = (Array.isArray(weights) ? weights : []).map(entry => ({
-    date: entry.metric_date || entry.date || '',
-    value: Number(entry.weight_lb ?? 0),
-  })).filter(point => point.value > 0)
-
-  if (!points.length) return []
-
-  const values = points.map(point => point.value)
-  const min = Math.min(...values)
-  const max = Math.max(...values)
-  const range = Math.max(max - min, 0.5)
-
-  return points.map(point => ({
-    ...point,
-    height: 24 + (((point.value - min) / range) * 76),
-    label: formatUsChartDate(point.date, point.date),
-    valueLabel: point.value % 1 === 0 ? `${point.value}` : point.value.toFixed(1),
-  }))
-}
