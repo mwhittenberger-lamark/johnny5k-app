@@ -88,6 +88,7 @@ class AiToolHandlerService {
 			'schedule_sms_reminder'      => self::tool_schedule_sms_reminder( $user_id, $arguments, $deps ),
 			'clear_follow_ups'          => self::tool_clear_follow_ups( $user_id, $arguments, $deps ),
 			'clear_conversation'        => self::tool_clear_conversation(),
+			'activate_onboarding'       => self::tool_activate_onboarding( $user_id ),
 			'clear_sms_reminders'       => self::tool_clear_sms_reminders( $user_id, $arguments, $deps ),
 			default                      => [ 'error' => 'Tool not available.' ],
 		};
@@ -112,6 +113,10 @@ class AiToolHandlerService {
 			'action'  => 'clear_conversation',
 			'summary' => 'Chat cleared.',
 		];
+	}
+
+	private static function tool_activate_onboarding( int $user_id ): array {
+		return OnboardingController::activate_chat_onboarding_for_user( $user_id );
 	}
 
 	private static function tool_set_ambient_color( array $arguments ): array {

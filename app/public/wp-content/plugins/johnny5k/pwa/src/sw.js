@@ -27,7 +27,6 @@ const APP_SHELL_ALLOWLIST = [
   /^\/register$/,
   /^\/forgot-password$/,
   /^\/reset-password$/,
-  /^\/onboarding(?:\/.*)?$/,
 ]
 
 const navigationHandler = createHandlerBoundToURL('/index.html')

@@ -6,15 +6,19 @@ import { registerSW } from 'virtual:pwa-register'
 import AppErrorBoundary from './components/resilience/AppErrorBoundary'
 import { initOfflineWriteQueue } from './api/core/restClient'
 import { queryClient } from './lib/queryClient'
+import { applyBrand, resolveInitialBrandId } from './brands/registry'
 import { router } from './router'
 import './index.css'
 
-const LOCAL_SW_RESET_KEY = 'jf-local-sw-reset-v1'
+const LOCAL_SW_RESET_KEY = 'jf-local-sw-reset-v2'
+const localRuntime = isLocalRuntime()
 
-void resetLocalServiceWorkerCaches()
+applyBrand(resolveInitialBrandId())
+
+await resetLocalServiceWorkerCaches()
 initOfflineWriteQueue()
 
-const updateServiceWorker = registerSW({
+const updateServiceWorker = localRuntime ? async () => {} : registerSW({
   immediate: true,
   onOfflineReady() {
     if (typeof window !== 'undefined') {
@@ -50,10 +54,7 @@ async function resetLocalServiceWorkerCaches() {
     return
   }
 
-  const hostname = String(window.location.hostname || '').toLowerCase()
-  const isLocalHost = hostname === 'localhost' || hostname === '127.0.0.1' || hostname.endsWith('.local')
-
-  if (!isLocalHost || !('serviceWorker' in navigator) || !('caches' in window)) {
+  if (!localRuntime || !('serviceWorker' in navigator) || !('caches' in window)) {
     return
   }
 
@@ -73,5 +74,10 @@ async function resetLocalServiceWorkerCaches() {
   await Promise.all(cacheKeys.map(cacheKey => window.caches.delete(cacheKey)))
 
   window.sessionStorage.setItem(LOCAL_SW_RESET_KEY, 'done')
-  window.location.reload()
+}
+
+function isLocalRuntime() {
+  if (typeof window === 'undefined') return false
+  const hostname = String(window.location.hostname || '').toLowerCase()
+  return hostname === 'localhost' || hostname === '127.0.0.1' || hostname.endsWith('.local')
 }

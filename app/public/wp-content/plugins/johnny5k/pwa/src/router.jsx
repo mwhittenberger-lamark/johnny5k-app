@@ -5,7 +5,6 @@ import { AppBootstrapLayout } from './App'
 import { AppShellErrorElement } from './app/routing/AppShellErrorElement'
 import { LazyRoute } from './app/routing/LazyRoute'
 import { RequireAdminLayout } from './app/routing/RequireAdminLayout'
-import { RequireAuthLayout } from './app/routing/RequireAuthLayout'
 import { RequireOnboardedLayout } from './app/routing/RequireOnboardedLayout'
 import { RootLayout } from './app/routing/RootLayout'
 import { ShellLayout } from './app/routing/ShellLayout'
@@ -15,8 +14,8 @@ const LoginScreen = lazy(() => import('./screens/auth/LoginScreen'))
 const RegisterScreen = lazy(() => import('./screens/auth/RegisterScreen'))
 const ForgotPasswordScreen = lazy(() => import('./screens/auth/ForgotPasswordScreen'))
 const ResetPasswordScreen = lazy(() => import('./screens/auth/ResetPasswordScreen'))
-const OnboardingRoutes = lazy(() => import('./screens/onboarding/OnboardingRoutes'))
-const JohnnyHomeScreen = lazy(() => import('./screens/johnny/JohnnyHomeScreen'))
+const HomeScreen = lazy(() => import('./screens/HomeScreen'))
+const Nat20HomeScreen = lazy(() => import('./screens/nat20/Nat20HomeScreen'))
 const WorkoutScreen = lazy(() => import('./screens/workout/WorkoutScreen'))
 const ExerciseLibraryScreen = lazy(() => import('./screens/workout/ExerciseLibraryScreen'))
 const NutritionScreen = lazy(() => import('./screens/nutrition/NutritionScreen'))
@@ -29,9 +28,11 @@ const SettingsScreen = lazy(() => import('./screens/settings/SettingsScreen'))
 const ProgressPhotosScreen = lazy(() => import('./screens/progress/ProgressPhotosScreen'))
 const RewardsScreen = lazy(() => import('./screens/rewards/RewardsScreen'))
 const IronQuestScreen = lazy(() => import('./screens/ironquest/IronQuestScreen'))
+const IronQuestOnboardingFlow = lazy(() => import('./screens/onboarding/IronQuestOnboardingFlow'))
 const IronQuestMapScreen = lazy(() => import('./screens/ironquest/IronQuestMapScreen'))
 const IronQuestCharacterSheetScreen = lazy(() => import('./screens/ironquest/IronQuestCharacterSheetScreen'))
 const IronQuestStoreScreen = lazy(() => import('./screens/ironquest/IronQuestStoreScreen'))
+const Nat20SetupScreen = lazy(() => import('./screens/nat20/Nat20SetupScreen'))
 
 function lazyElement(routeComponent) {
   const RouteComponent = routeComponent
@@ -75,31 +76,31 @@ export const router = createBrowserRouter([
             ],
           },
           {
-            element: <RequireAuthLayout />,
-            errorElement: <RouteErrorScreen area="onboarding" />,
-            children: [
-              {
-                path: '/onboarding/*',
-                element: lazyElement(OnboardingRoutes),
-              },
-            ],
-          },
-          {
             element: <RequireOnboardedLayout />,
             errorElement: <AppShellErrorElement />,
             children: [
+              {
+                path: '/nat20',
+                element: lazyElement(Nat20HomeScreen),
+                errorElement: <RouteErrorScreen area="Nat20 dashboard" />,
+              },
+              {
+                path: '/nat20/setup',
+                element: lazyElement(Nat20SetupScreen),
+                errorElement: <RouteErrorScreen area="Nat20 setup" />,
+              },
               {
                 element: <ShellLayout />,
                 errorElement: <AppShellErrorElement />,
                 children: [
                   {
                     index: true,
-                    element: lazyElement(JohnnyHomeScreen),
+                    element: lazyElement(HomeScreen),
                     errorElement: <RouteErrorScreen area="dashboard" />,
                   },
                   {
                     path: '/dashboard',
-                    element: lazyElement(JohnnyHomeScreen),
+                    element: lazyElement(HomeScreen),
                     errorElement: <RouteErrorScreen area="dashboard" />,
                   },
                   {
@@ -150,6 +151,11 @@ export const router = createBrowserRouter([
                   {
                     path: '/ironquest',
                     element: lazyElement(IronQuestScreen),
+                    errorElement: <RouteErrorScreen area="dashboard" />,
+                  },
+                  {
+                    path: '/ironquest/setup/*',
+                    element: lazyElement(IronQuestOnboardingFlow),
                     errorElement: <RouteErrorScreen area="dashboard" />,
                   },
                   {

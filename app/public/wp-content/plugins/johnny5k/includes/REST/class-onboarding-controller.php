@@ -37,6 +37,10 @@ class OnboardingController {
 			'callback'            => [ __CLASS__, 'get_state' ],
 			'permission_callback' => $auth,
 		] );
+		register_rest_route( $ns, '/onboarding/chat', [
+			[ 'methods' => 'GET', 'callback' => [ __CLASS__, 'get_chat_state' ], 'permission_callback' => static fn() => is_user_logged_in() ],
+			[ 'methods' => 'POST', 'callback' => [ __CLASS__, 'save_chat_state' ], 'permission_callback' => static fn() => is_user_logged_in() ],
+		] );
 
 		register_rest_route( $ns, '/onboarding/profile', [
 			'methods'             => 'POST',
@@ -153,6 +157,194 @@ class OnboardingController {
 			'callback'            => [ __CLASS__, 'get_generated_image_data' ],
 			'permission_callback' => $auth,
 		] );
+	}
+
+	public static function get_chat_state(): \WP_REST_Response {
+		$state = get_user_meta( get_current_user_id(), '_jf_chat_onboarding_v2', true );
+		$state = is_array( $state ) ? $state : [ 'version' => '2.0', 'status' => 'not_started', 'current_node' => 'welcome', 'answers' => [], 'classification' => [] ];
+		if ( 'in_progress' === ( $state['status'] ?? '' ) ) {
+			$state['onboarding'] = self::chat_onboarding_prompt( $state );
+		}
+		return new \WP_REST_Response( $state, 200 );
+	}
+
+	public static function answer_chat_onboarding( int $user_id, array $answer ): array {
+		$state = get_user_meta( $user_id, '_jf_chat_onboarding_v2', true );
+		if ( ! is_array( $state ) || 'in_progress' !== ( $state['status'] ?? '' ) ) {
+			return [ 'error' => 'Onboarding is not active.' ];
+		}
+
+		$current = sanitize_key( (string) ( $state['current_node'] ?? 'welcome' ) );
+		$node_id = sanitize_key( (string) ( $answer['node_id'] ?? '' ) );
+		$value   = sanitize_key( (string) ( $answer['value'] ?? '' ) );
+		$nodes   = self::chat_onboarding_nodes( $state['answers'] ?? [] );
+		$node    = $nodes[ $current ] ?? null;
+		if ( ! is_array( $node ) || $node_id !== $current ) {
+			return [ 'error' => 'That onboarding question is no longer current.' ];
+		}
+
+		$valid = [];
+		foreach ( $node['options'] ?? [] as $option ) {
+			$valid[ $option['value'] ] = $option['label'];
+		}
+		if ( ! isset( $valid[ $value ] ) ) {
+			return [ 'error' => 'Choose one of the available onboarding answers.' ];
+		}
+
+		$answers = is_array( $state['answers'] ?? null ) ? $state['answers'] : [];
+		$answers[ $current ] = $value;
+		$answers[ $current . '_label' ] = $valid[ $value ];
+		$classification = self::infer_chat_onboarding_profile( $answers );
+		$next = self::next_chat_onboarding_node( $current, $classification['primary_profile'] );
+		$state = [
+			'version'        => '2.0',
+			'status'         => 'complete' === $next ? 'complete' : 'in_progress',
+			'current_node'   => $next,
+			'answers'        => $answers,
+			'classification' => $classification,
+			'updated_at'     => current_time( 'mysql', true ),
+		];
+		update_user_meta( $user_id, '_jf_chat_onboarding_v2', $state );
+
+		if ( 'complete' === $next ) {
+			self::store_chat_coaching_profile( $user_id, $answers, $classification );
+			return [
+				'ok' => true,
+				'completed' => true,
+				'reply' => 'All set. I updated how I’ll coach you, and we can keep going right here.',
+				'onboarding' => [ 'status' => 'complete' ],
+			];
+		}
+
+		return [
+			'ok' => true,
+			'completed' => false,
+			'reply' => self::chat_onboarding_acknowledgement( $current, $value, $classification['primary_profile'] ),
+			'onboarding' => self::chat_onboarding_prompt( $state ),
+		];
+	}
+
+	public static function match_chat_onboarding_answer( int $user_id, string $message ): ?array {
+		$state = get_user_meta( $user_id, '_jf_chat_onboarding_v2', true );
+		if ( ! is_array( $state ) || 'in_progress' !== ( $state['status'] ?? '' ) ) return null;
+		$prompt = self::chat_onboarding_prompt( $state );
+		$normalize = static function ( string $value ): string {
+			$value = strtolower( remove_accents( str_replace( [ '’', '‘' ], "'", $value ) ) );
+			return trim( (string) preg_replace( '/[^a-z0-9]+/', ' ', $value ) );
+		};
+		$needle = $normalize( $message );
+		foreach ( $prompt['options'] as $option ) {
+			if ( $needle === $normalize( $option['label'] ) || $needle === $normalize( $option['value'] ) ) {
+				return self::answer_chat_onboarding( $user_id, [
+					'node_id' => $prompt['node_id'],
+					'value' => $option['value'],
+					'label' => $option['label'],
+				] );
+			}
+		}
+		return null;
+	}
+
+	private static function chat_onboarding_prompt( array $state ): array {
+		$node_id = sanitize_key( (string) ( $state['current_node'] ?? 'welcome' ) );
+		$nodes = self::chat_onboarding_nodes( $state['answers'] ?? [] );
+		$node = $nodes[ $node_id ] ?? $nodes['welcome'];
+		return [
+			'status' => 'in_progress',
+			'node_id' => $node_id,
+			'prompt' => $node['prompt'],
+			'support' => $node['support'] ?? '',
+			'options' => $node['options'],
+			'progress' => $node['progress'] ?? 0,
+		];
+	}
+
+	private static function chat_onboarding_nodes( array $answers ): array {
+		$option = static fn( string $value, string $label ): array => [ 'value' => $value, 'label' => $label ];
+		return [
+			'welcome' => [ 'prompt' => "Hey—I’m Johnny. I want to learn what you actually want from me.", 'progress' => 8, 'options' => [ $option( 'start', 'Let’s do it' ) ] ],
+			'relationship' => [ 'prompt' => 'Where are you at with fitness right now?', 'progress' => 20, 'options' => [ $option( 'gym_home', 'Gym is basically my second home' ), $option( 'regular', 'I work out pretty regularly' ), $option( 'returning', 'I’m getting back into it' ), $option( 'new', 'I’m pretty new to this' ), $option( 'health', 'I’m mostly focused on my health' ), $option( 'specific', 'I have a specific goal' ) ] ],
+			'help' => [ 'prompt' => 'How much help do you actually want?', 'progress' => 34, 'options' => [ $option( 'track', 'Just track my stuff' ), $option( 'suggest', 'Give me suggestions sometimes' ), $option( 'plan', 'Help me build a plan' ), $option( 'coach', 'Coach me through everything' ) ] ],
+			'focus' => [ 'prompt' => 'What matters most right now?', 'progress' => 48, 'options' => [ $option( 'cut', 'Lose fat / weight' ), $option( 'gain', 'Build muscle' ), $option( 'strength', 'Get stronger' ), $option( 'health', 'Feel healthier' ), $option( 'consistency', 'Build consistency' ), $option( 'nutrition', 'Track food / macros' ), $option( 'recovery', 'Sleep / recovery' ), $option( 'maintain', 'Maintain where I am' ) ] ],
+			'experienced_setup' => [ 'prompt' => 'How should I handle your training?', 'progress' => 62, 'options' => [ $option( 'track_existing', 'Track what I already do' ), $option( 'suggest_stuck', 'Suggest workouts when I’m stuck' ), $option( 'collaborate', 'Help me adjust my program' ) ] ],
+			'beginner_setup' => [ 'prompt' => 'What kind of starting point feels realistic?', 'support' => 'A plan you can repeat beats a perfect plan you abandon.', 'progress' => 62, 'options' => [ $option( 'two_short', '2 short days a week' ), $option( 'three_days', '3 days a week' ), $option( 'guide_me', 'Help me choose' ) ] ],
+			'returning_setup' => [ 'prompt' => 'How should the first couple of weeks feel?', 'progress' => 62, 'options' => [ $option( 'ease_in', 'Ease me back in' ), $option( 'moderate', 'Moderate' ), $option( 'ready', 'I’m ready to work' ) ] ],
+			'goal_setup' => [ 'prompt' => 'How should we measure progress toward your goal?', 'progress' => 62, 'options' => [ $option( 'weight', 'Weight or measurements' ), $option( 'strength', 'Strength progress' ), $option( 'workouts', 'Workouts completed' ), $option( 'habits', 'Habit streaks' ) ] ],
+			'lifestyle_setup' => [ 'prompt' => 'What should I keep tabs on most?', 'progress' => 62, 'options' => [ $option( 'food', 'Food / calories' ), $option( 'sleep', 'Sleep and recovery' ), $option( 'movement', 'Steps / movement' ), $option( 'habits', 'Healthy habits' ) ] ],
+			'accountability_setup' => [ 'prompt' => 'What should I do when you fall off track?', 'progress' => 62, 'options' => [ $option( 'nudge', 'Nudge me' ), $option( 'reschedule', 'Help me reschedule' ), $option( 'minimum', 'Give me the minimum version' ), $option( 'reset', 'Help me reset without guilt' ) ] ],
+			'tone' => [ 'prompt' => 'How should I talk to you?', 'progress' => 78, 'options' => [ $option( 'gentle', 'Gentle' ), $option( 'casual', 'Casual' ), $option( 'straightforward', 'Straightforward' ), $option( 'push', 'Push me' ) ] ],
+			'cadence' => [ 'prompt' => 'How often should I check in?', 'progress' => 92, 'options' => [ $option( 'daily', 'Daily' ), $option( 'workout_days', 'Workout days' ), $option( 'weekly', 'Weekly' ), $option( 'on_request', 'Only when I ask' ) ] ],
+		];
+	}
+
+	private static function infer_chat_onboarding_profile( array $answers ): array {
+		$relationship = $answers['relationship'] ?? '';
+		$focus = $answers['focus'] ?? '';
+		$help = $answers['help'] ?? '';
+		$primary = match ( true ) {
+			'returning' === $relationship => 'returning',
+			'new' === $relationship => 'beginner',
+			'health' === $relationship || in_array( $focus, [ 'health', 'recovery' ], true ) => 'lifestyle',
+			'specific' === $relationship || in_array( $focus, [ 'cut', 'gain', 'strength' ], true ) => 'goal_driven',
+			'consistency' === $focus || 'coach' === $help => 'accountability',
+			default => 'experienced',
+		};
+		return [ 'primary_profile' => $primary, 'secondary_traits' => [] ];
+	}
+
+	private static function next_chat_onboarding_node( string $current, string $profile ): string {
+		return match ( $current ) {
+			'welcome' => 'relationship', 'relationship' => 'help', 'help' => 'focus',
+			'focus' => match ( $profile ) { 'beginner' => 'beginner_setup', 'returning' => 'returning_setup', 'goal_driven' => 'goal_setup', 'lifestyle' => 'lifestyle_setup', 'accountability' => 'accountability_setup', default => 'experienced_setup' },
+			'experienced_setup', 'beginner_setup', 'returning_setup', 'goal_setup', 'lifestyle_setup', 'accountability_setup' => 'tone',
+			'tone' => 'cadence', default => 'complete',
+		};
+	}
+
+	private static function chat_onboarding_acknowledgement( string $node, string $value, string $profile ): string {
+		if ( 'focus' !== $node ) return 'Got it.';
+		return match ( $profile ) {
+			'beginner' => 'Good. I’ll explain the important parts without overwhelming you.',
+			'returning' => 'You know the basics. Let’s build the smartest way back.',
+			'goal_driven' => 'We’ve got a target. Let’s make it measurable.',
+			'lifestyle' => 'Got it. We’ll focus on the health signals you actually care about.',
+			'accountability' => 'We’ll build something you can keep doing.',
+			default => 'Perfect. I’ll skip Fitness 101 and respect what you already know.',
+		};
+	}
+
+	private static function store_chat_coaching_profile( int $user_id, array $answers, array $classification ): void {
+		global $wpdb;
+		$prefs = $wpdb->get_var( $wpdb->prepare( "SELECT exercise_preferences_json FROM {$wpdb->prefix}fit_user_preferences WHERE user_id = %d", $user_id ) );
+		$exercise_preferences = json_decode( (string) $prefs, true );
+		$exercise_preferences = is_array( $exercise_preferences ) ? $exercise_preferences : [];
+		$exercise_preferences = array_merge( $exercise_preferences, $answers, [ 'coaching_profile' => $classification['primary_profile'], 'secondary_traits' => $classification['secondary_traits'], 'onboarding_version' => '2.0' ] );
+		$wpdb->query( $wpdb->prepare( "INSERT INTO {$wpdb->prefix}fit_user_preferences (user_id, exercise_preferences_json) VALUES (%d, %s) ON DUPLICATE KEY UPDATE exercise_preferences_json = VALUES(exercise_preferences_json)", $user_id, wp_json_encode( $exercise_preferences ) ) );
+		$wpdb->update( $wpdb->prefix . 'fit_user_profiles', [ 'onboarding_complete' => 1 ], [ 'user_id' => $user_id ] );
+	}
+
+	public static function save_chat_state( \WP_REST_Request $req ): \WP_REST_Response {
+		$raw = $req->get_json_params();
+		$state = [
+			'version' => '2.0',
+			'status' => in_array( $raw['status'] ?? '', [ 'not_started', 'in_progress', 'complete' ], true ) ? $raw['status'] : 'in_progress',
+			'current_node' => sanitize_key( (string) ( $raw['current_node'] ?? 'welcome' ) ),
+			'answers' => self::sanitize_chat_onboarding_value( $raw['answers'] ?? [] ),
+			'classification' => self::sanitize_chat_onboarding_value( $raw['classification'] ?? [] ),
+			'updated_at' => current_time( 'mysql', true ),
+		];
+		update_user_meta( get_current_user_id(), '_jf_chat_onboarding_v2', $state );
+		return new \WP_REST_Response( $state, 200 );
+	}
+
+	private static function sanitize_chat_onboarding_value( $value ) {
+		if ( is_array( $value ) ) {
+			$clean = [];
+			foreach ( $value as $key => $item ) $clean[ sanitize_key( (string) $key ) ] = self::sanitize_chat_onboarding_value( $item );
+			return $clean;
+		}
+		if ( is_bool( $value ) || is_numeric( $value ) ) return $value;
+		return sanitize_textarea_field( (string) $value );
 	}
 
 	// ── GET /onboarding ───────────────────────────────────────────────────────
@@ -818,8 +1010,12 @@ class OnboardingController {
 		$profile = $result['profile'];
 		$targets = $result['targets'];
 
-		// Seed a default training plan from PPL template
-		self::seed_training_plan( $user_id, $profile );
+		$chat_state = get_user_meta( $user_id, '_jf_chat_onboarding_v2', true );
+		$coaching_profile = sanitize_key( (string) ( $chat_state['classification']['primary_profile'] ?? '' ) );
+		// Experienced users keep their routines; lifestyle users are never forced into a gym plan.
+		if ( ! in_array( $coaching_profile, [ 'experienced', 'lifestyle' ], true ) ) {
+			self::seed_training_plan( $user_id, $profile );
+		}
 
 		// Mark onboarding complete
 		$wpdb->update(
@@ -1298,6 +1494,11 @@ class OnboardingController {
 
 	public static function restart( \WP_REST_Request $req ): \WP_REST_Response {
 		$user_id = get_current_user_id();
+		$result = self::activate_chat_onboarding_for_user( $user_id, true );
+		return new \WP_REST_Response( $result, ! empty( $result['error'] ) ? 404 : 200 );
+	}
+
+	public static function activate_chat_onboarding_for_user( int $user_id, bool $mark_incomplete = false ): array {
 		global $wpdb;
 		$p = $wpdb->prefix;
 
@@ -1307,19 +1508,31 @@ class OnboardingController {
 		) );
 
 		if ( ! $profile_exists ) {
-			return new \WP_REST_Response( [ 'message' => 'Profile not found.' ], 404 );
+			return [ 'error' => 'Profile not found.' ];
 		}
 
-		$wpdb->update(
-			$p . 'fit_user_profiles',
-			[ 'onboarding_complete' => 0 ],
-			[ 'user_id' => $user_id ]
-		);
+		if ( $mark_incomplete ) {
+			$wpdb->update( $p . 'fit_user_profiles', [ 'onboarding_complete' => 0 ], [ 'user_id' => $user_id ] );
+		}
+		$state = [
+			'version'        => '2.0',
+			'status'         => 'in_progress',
+			'current_node'   => 'welcome',
+			'answers'        => [],
+			'classification' => [],
+			'updated_at'     => current_time( 'mysql', true ),
+		];
+		update_user_meta( $user_id, '_jf_chat_onboarding_v2', $state );
 
-		return new \WP_REST_Response( [
+		return [
+			'ok'                  => true,
+			'action'              => 'activate_onboarding',
+			'summary'             => "Onboarding is ready. Let's rebuild your coaching setup.",
 			'restarted'           => true,
-			'onboarding_complete' => false,
-		], 200 );
+			'onboarding_complete' => ! $mark_incomplete,
+			'presentation'        => 'inline_chat',
+			'onboarding'          => self::chat_onboarding_prompt( $state ),
+		];
 	}
 
 	public static function update_training_schedule( \WP_REST_Request $req ): \WP_REST_Response {

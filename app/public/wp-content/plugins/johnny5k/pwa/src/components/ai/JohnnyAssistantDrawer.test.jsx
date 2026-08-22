@@ -46,12 +46,22 @@ const nutritionApiMock = vi.hoisted(() => ({
   getRecipeCookbook: vi.fn(async () => ({ recipes: [] })),
   updateRecipeCookbook: vi.fn(async recipes => ({ recipes })),
 }))
+const onboardingApiMock = vi.hoisted(() => ({
+  getChatState: vi.fn(async () => ({ answers: {}, current_node: 'welcome' })),
+  getState: vi.fn(async () => ({ profile: {} })),
+  saveChatState: vi.fn(async () => ({})),
+  saveProfile: vi.fn(async () => ({})),
+  savePrefs: vi.fn(async () => ({})),
+  complete: vi.fn(async () => ({})),
+}))
 
 vi.mock('../../api/modules/ai', () => ({
   aiApi: aiApiMock,
 }))
 
 vi.mock('../../api/modules/nutrition', () => ({ nutritionApi: nutritionApiMock }))
+
+vi.mock('../../api/modules/onboarding', () => ({ onboardingApi: onboardingApiMock }))
 
 vi.mock('../../api/modules/analytics', () => ({
   analyticsApi: {
@@ -144,6 +154,19 @@ function LocationProbe() {
   )
 }
 
+function welcomeOnboardingResult(action = 'answer_onboarding') {
+  return {
+    action,
+    onboarding: {
+      status: 'in_progress',
+      node_id: 'welcome',
+      prompt: "Hey—I'm Johnny. I want to learn what you actually want from me.",
+      progress: 8,
+      options: [{ value: 'start', label: "Let's do it" }],
+    },
+  }
+}
+
 describe('JohnnyAssistantDrawer', () => {
   beforeEach(() => {
     vi.useFakeTimers()
@@ -160,6 +183,9 @@ describe('JohnnyAssistantDrawer', () => {
     workoutState.exitSession.mockReset()
     aiApiMock.getThread.mockClear()
     aiApiMock.chat.mockClear()
+    onboardingApiMock.getChatState.mockReset()
+    onboardingApiMock.getChatState.mockResolvedValue({ answers: {}, current_node: 'welcome' })
+    onboardingApiMock.getState.mockClear()
     nutritionApiMock.getRecipeCookbook.mockClear()
     nutritionApiMock.updateRecipeCookbook.mockClear()
     document.body.innerHTML = ''
@@ -234,6 +260,102 @@ describe('JohnnyAssistantDrawer', () => {
 
     expect(document.querySelector('[data-testid="location-probe"]')?.getAttribute('data-pathname')).toBe('/shopping-list')
     expect(johnnyState.closeDrawer).toHaveBeenCalledTimes(1)
+  })
+
+  it('starts the onboarding questions when the chat response activates onboarding', async () => {
+    aiApiMock.chat.mockResolvedValueOnce({
+      reply: 'Onboarding restarted. Let’s rebuild your coaching setup.',
+      actions: [],
+      used_tools: [],
+      action_results: [welcomeOnboardingResult('activate_onboarding')],
+      onboarding_active: true,
+    })
+    aiApiMock.chat.mockResolvedValueOnce({
+      reply: 'Got it.',
+      actions: [],
+      used_tools: ['answer_onboarding'],
+      action_results: [{
+        action: 'answer_onboarding',
+        onboarding: {
+          status: 'in_progress',
+          node_id: 'relationship',
+          prompt: 'Where are you at with fitness right now?',
+          progress: 20,
+          options: [{ value: 'new', label: "I'm pretty new to this" }],
+        },
+      }],
+    })
+    await renderComponent(
+      <MemoryRouter initialEntries={['/dashboard']}>
+        <JohnnyAssistantDrawer />
+      </MemoryRouter>,
+    )
+    await flushPendingWork()
+
+    const field = document.querySelector('textarea[aria-label="Message Johnny"]')
+    await typeInTextarea(field, 'Restart onboarding')
+    await click(document.querySelector('button[aria-label="Send message to Johnny"]'))
+    await flushPendingWork()
+
+    expect(document.body.textContent).toContain("Hey—I'm Johnny. I want to learn what you actually want from me.")
+    expect(document.body.textContent).toContain("Let's do it")
+    expect(document.querySelector('textarea[aria-label="Message Johnny"]')).not.toBeNull()
+
+    const startButton = Array.from(document.querySelectorAll('button')).find(button => button.textContent?.includes("Let's do it"))
+    await click(startButton)
+    await flushPendingWork()
+
+    expect(aiApiMock.chat).toHaveBeenLastCalledWith("Let's do it", 'main', expect.any(String), expect.objectContaining({
+      chatOptions: {
+        onboarding_answer: {
+          node_id: 'welcome',
+          value: 'start',
+          label: "Let's do it",
+        },
+      },
+    }))
+    expect(document.body.textContent).toContain('Where are you at with fitness right now?')
+  })
+
+  it('starts requested onboarding even when the model omits activation metadata', async () => {
+    aiApiMock.chat.mockResolvedValueOnce({
+      reply: 'Onboarding is open. Follow the in-app prompts to rebuild your coaching setup.',
+      actions: [],
+      used_tools: [],
+      action_results: [welcomeOnboardingResult('activate_onboarding')],
+    })
+    await renderComponent(
+      <MemoryRouter initialEntries={['/dashboard']}>
+        <JohnnyAssistantDrawer />
+      </MemoryRouter>,
+    )
+    await flushPendingWork()
+
+    const field = document.querySelector('textarea[aria-label="Message Johnny"]')
+    await typeInTextarea(field, 'Can you restart onboarding?')
+    await click(document.querySelector('button[aria-label="Send message to Johnny"]'))
+    await flushPendingWork()
+
+    expect(document.body.textContent).toContain("Hey—I'm Johnny. I want to learn what you actually want from me.")
+    expect(document.body.textContent).toContain("Let's do it")
+  })
+
+  it('recovers persisted onboarding when the Johnny drawer opens', async () => {
+    onboardingApiMock.getChatState.mockResolvedValueOnce({
+      status: 'in_progress',
+      answers: {},
+      current_node: 'welcome',
+      onboarding: welcomeOnboardingResult().onboarding,
+    })
+
+    await renderComponent(
+      <MemoryRouter initialEntries={['/dashboard']}>
+        <JohnnyAssistantDrawer />
+      </MemoryRouter>,
+    )
+    await flushPendingWork()
+
+    expect(document.body.textContent).toContain("Hey—I'm Johnny. I want to learn what you actually want from me.")
   })
 
   it('renders recipe recommendations with image and details in action cards', async () => {

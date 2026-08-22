@@ -2,6 +2,8 @@ import { api, refreshNonce } from '../core/restClient'
 
 export const onboardingApi = {
   getState: () => api.get('/onboarding'),
+  getChatState: () => api.get('/onboarding/chat'),
+  saveChatState: (data) => api.post('/onboarding/chat', data),
   saveProfile: (data) => api.post('/onboarding/profile', data),
   savePrefs: (data) => api.post('/onboarding/prefs', data),
   saveHealthFlags: (data) => api.post('/onboarding/health-flags', data),

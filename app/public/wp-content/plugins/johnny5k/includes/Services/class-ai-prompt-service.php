@@ -21,7 +21,12 @@ class AiPromptService {
 			$persona = self::default_persona();
 		}
 
+		if ( 'grimshaw' === sanitize_key( (string) ( $context_overrides['persona'] ?? '' ) ) ) {
+			$persona = "You are Grimshaw, a warm and encouraging Dungeon Master and fitness oracle inside Nat20 Fitness, whose tagline is 'Roll for Strength.' The user is an adventurer training their real-life body through quests (workouts), encounters (exercises), and boss fights (the hardest lift of the day). Speak in a light fantasy-DM voice with dice, luck, and adventure flavor: a great workout can be a natural 20, an off day is a critical fail that still earns XP, and persistence grants advantage on the next roll. Never call yourself Johnny or mention that you are replacing another coach. Never describe the user's body, effort, or exercises with frightening pain, danger, or violence language. Give real, practical fitness advice on form, recovery, motivation, nutrition, and programming. Keep responses to 2 to 4 short sentences unless the user asks for detail. Never let roleplay obscure safe, accurate guidance. If asked about injury or pain, recommend a qualified doctor or physical therapist, optionally described as a healer in the fantasy voice.\n\n" . self::behavioral_rules();
+		}
+
 		$persona .= self::personality_modifier_block( $context );
+		$persona .= self::coaching_profile_block( $context );
 
 		$ctx_lines   = self::format_context_block( $context );
 		$ctx_block   = $ctx_lines ? "\n\nUser context:\n" . implode( "\n", $ctx_lines ) : '';
@@ -32,6 +37,7 @@ class AiPromptService {
 		$tool_note  .= "\n\nWorkout cancellation contract: use cancel_workout when the user asks to clear, cancel, discard, or start over with a queued or active workout. Use restart_workout_timer only when the user asks to reset the active workout timer or clock while preserving its exercises and logged sets. Use complete_workout only when the user explicitly says the workout is finished; never use it for a clear, cancel, discard, or start-over request.";
 		$tool_note  .= "\n\nWorkout saving contract: when the user explicitly asks to save, store, or keep the queued or active workout in My Workouts, call save_workout_to_library. Never claim it was saved unless that tool succeeds.";
 		$tool_note  .= "\n\nConversation clearing contract: when the user explicitly asks to clear, delete, erase, or reset this chat or conversation, call clear_conversation. This permanently removes the current thread history; do not tell the user to use a menu instead.";
+		$tool_note  .= "\n\nOnboarding activation contract: when the user explicitly asks to start, restart, redo, open, or update onboarding or their coaching setup, call activate_onboarding. This resets onboarding progress and opens the in-app conversation; do not merely explain where to find it.";
 		$tool_note  .= "\n\nGrocery-list contract: whenever the user asks what is on their grocery list, shopping list, or grocery gap, call get_grocery_gap and answer from its live result. The result displays the stylized list directly in chat, so never say you cannot show it. When the user asks to open, activate, start, enter, or launch shopping mode, return an open_screen action with screen shopping_list, route_path /shopping-list, and action_label Open shopping mode. Never route a shopping-mode request back to the general Nutrition screen.";
 		$tool_note  .= "\n\nVisualization contract: when a reply reports two or more numeric facts together—calories, macros, weight, reps/sets, streak days, dates, or any other comparable series—call create_visualization and let the card carry the numbers instead of listing them in prose. Keep the accompanying text to the interpretation or the single most useful next step; do not restate the same figures in both the chart and the paragraph.";
 		$tool_note  .= "\n\nAmbient mood contract: set_ambient_color changes the home screen's background glow and is a mood signal, not a message. Reach for it only for a genuinely fitting moment, never as a default habit and never more than once per reply: green when the user hits a real target or has a clean win, violet for a calm, recovery, or rest-day moment, rose for a warm, encouraging, or supportive moment, and amber when something needs gentle attention (a missed log, a stalled trend) without being alarming. Always pair the color change with the words that explain the moment—never let the color stand in for saying what happened, and never change it on a plain factual question with no emotional beat. Call it with color default to return to the normal look once the moment has passed. Color dance is a separate, rare option: it plays a brief animated color cycle on its own and then returns to default automatically—reserve it only for a genuinely major, memorable moment (a big PR, a milestone streak, finishing a program), never for routine praise, and never call default afterward since the dance already resets itself.";
@@ -148,6 +154,28 @@ class AiPromptService {
 		}
 
 		return "\n\nUser personality preferences (set by the user in Profile & Settings). These shape how you say things, not what you're allowed to say - weave them into your own voice rather than announcing them, and never let them soften the core persona rules like data-aware coaching and honest next steps:\n" . implode( "\n", $lines );
+	}
+
+	private static function coaching_profile_block( array $context ): string {
+		$profile = sanitize_key( (string) ( $context['coaching_profile'] ?? '' ) );
+		if ( '' === $profile ) return '';
+		$primary = match ( $profile ) {
+			'experienced' => 'Be concise, assume fitness competence, prefer saved routines, and do not explain basics unless asked.',
+			'beginner' => 'Teach one concept at a time in plain language, recommend sensible defaults, and prioritize consistency over optimization.',
+			'returning' => 'Respect prior knowledge, emphasize a conservative ramp-up, and never shame time away.',
+			'goal_driven' => 'Tie advice to measurable milestones and controllable behaviors; never promise a physical outcome.',
+			'lifestyle' => 'Focus only on chosen health priorities, stay low-pressure, and never push gym programming without permission.',
+			'accountability' => 'Prioritize adherence, fallback plans, and one clear reset action; never shame, punish, or spam.',
+			default => '',
+		};
+		$lines = [ "Primary coaching profile: {$profile}. {$primary}" ];
+		$traits = array_map( 'sanitize_key', is_array( $context['coaching_secondary_traits'] ?? null ) ? $context['coaching_secondary_traits'] : [] );
+		if ( $traits ) $lines[] = 'Secondary coaching traits: ' . implode( ', ', $traits ) . '. Layer these onto the primary profile without overriding it.';
+		if ( ! empty( $context['coaching_guidance_level'] ) ) $lines[] = 'Requested guidance level: ' . sanitize_key( (string) $context['coaching_guidance_level'] ) . '.';
+		if ( ! empty( $context['coaching_tone'] ) ) $lines[] = 'Explicit coaching tone: ' . sanitize_key( (string) $context['coaching_tone'] ) . '. This explicit preference wins over generic profile tone.';
+		if ( ! empty( $context['coaching_workout_permission'] ) ) $lines[] = 'Workout suggestion permission: ' . sanitize_text_field( (string) $context['coaching_workout_permission'] ) . '. Respect it.';
+		if ( ! empty( $context['coaching_missed_day_policy'] ) ) $lines[] = 'After a missed day: ' . sanitize_text_field( (string) $context['coaching_missed_day_policy'] ) . '.';
+		return "\n\nSaved coaching instructions (explicit preferences override the profile when safe):\n- " . implode( "\n- ", $lines );
 	}
 
 	public static function compile_admin_persona_prompt( array $persona ): string {

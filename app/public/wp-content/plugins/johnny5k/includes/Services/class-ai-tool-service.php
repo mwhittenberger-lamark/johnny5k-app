@@ -777,6 +777,11 @@ class AiToolService {
 					'additionalProperties' => false,
 				],
 			],
+			'activate_onboarding' => [
+				'read_only' => false, 'enabled' => true,
+				'description' => 'Start or restart in-app coaching onboarding only when the user explicitly asks to begin, redo, restart, or update onboarding or their coaching setup.',
+				'parameters' => [ 'type' => 'object', 'properties' => new \stdClass(), 'additionalProperties' => false ],
+			],
 			'clear_sms_reminders' => [
 				'read_only'   => false,
 				'enabled'     => true,
@@ -826,6 +831,9 @@ class AiToolService {
 		if ( '' === $tool_name && self::conversation_clear_requested( $user_message ) ) {
 			$tool_name = 'clear_conversation';
 		}
+		if ( '' === $tool_name && self::onboarding_activation_requested( $user_message ) ) {
+			$tool_name = 'activate_onboarding';
+		}
 		if ( '' === $tool_name && self::concrete_workout_creation_requested( $user_message ) ) {
 			$tool_name = 'create_custom_workout';
 		}
@@ -857,6 +865,13 @@ class AiToolService {
 		}
 
 		return self::message_contains_any( $message, [ 'clear', 'delete', 'erase', 'reset', 'remove', 'start over' ] );
+	}
+
+	private static function onboarding_activation_requested( string $user_message ): bool {
+		$message = strtolower( trim( $user_message ) );
+		if ( '' === $message || ! self::message_contains_any( $message, [ 'onboarding', 'on-board me', 'onboard me', 'coaching setup', 'coach setup' ] ) ) return false;
+		if ( self::message_contains_any( $message, [ "don't", 'do not', 'not now', 'what is', 'explain' ] ) ) return false;
+		return self::message_contains_any( $message, [ 'start', 'begin', 'launch', 'open', 'activate', 'restart', 'redo', 'do again', 'set up', 'update' ] );
 	}
 
 	private static function concrete_workout_creation_requested( string $user_message ): bool {
@@ -922,6 +937,7 @@ class AiToolService {
 				'set_training_schedule'    => 'I updated your weekly training schedule.',
 				'clear_follow_ups'        => 'I cleared those follow-ups.',
 				'clear_conversation'      => self::pick_fallback_phrase( [ 'Chat cleared.', 'Clean slate.', 'Thread cleared.' ] ),
+				'activate_onboarding'     => "Onboarding is ready. Let's rebuild your coaching setup.",
 				'clear_sms_reminders'     => 'I canceled those text reminders.',
 				'swap_workout_exercise'    => 'I updated the current workout.',
 				default                    => 'I checked that, but I haven’t made a change yet.',

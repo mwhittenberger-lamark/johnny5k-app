@@ -58,13 +58,13 @@ describe('route guards', () => {
     expect(markup).toContain('<outlet')
   })
 
-  it('redirects not-yet-onboarded users to onboarding', async () => {
+  it('allows not-yet-onboarded users into the app shell for in-chat onboarding', async () => {
     authState.isAuthenticated = true
 
     const { RequireOnboardedLayout } = await loadGuards()
     const markup = renderToStaticMarkup(<RequireOnboardedLayout />)
 
-    expect(markup).toContain('/onboarding/welcome')
+    expect(markup).toContain('<outlet')
   })
 
   it('redirects non-admin users away from admin routes', async () => {

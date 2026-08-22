@@ -2,6 +2,7 @@ import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { aiApi } from '../../api/modules/ai'
 import { analyticsApi } from '../../api/modules/analytics'
+import { onboardingApi } from '../../api/modules/onboarding'
 import { getAccessibleScrollBehavior, useOverlayAccessibility } from '../../lib/accessibility'
 import { formatUsShortDate } from '../../lib/dateFormat'
 import { getAppImageUrl } from '../../lib/appImages'
@@ -20,6 +21,8 @@ import ClearableInput from '../ui/ClearableInput'
 
 const THREAD_KEY = 'main'
 const ACTION_TOOLS = new Set([
+	'activate_onboarding',
+	'answer_onboarding',
   'log_steps',
   'log_sleep',
   'log_food_from_description',
@@ -87,7 +90,7 @@ const AUTO_EXECUTABLE_MODEL_ACTIONS = new Set([
   'suggest_recipe_plan',
 ])
 
-export default function JohnnyAssistantDrawer() {
+export default function JohnnyAssistantDrawer({ variant = 'johnny', origin = null }) {
   const navigate = useNavigate()
   const location = useLocation()
   const appImages = useAuthStore(state => state.appImages)
@@ -120,7 +123,15 @@ export default function JohnnyAssistantDrawer() {
   const playbackSupported = typeof window !== 'undefined' && typeof window.Audio !== 'undefined'
   const chatMode = deriveJohnnyMode(location.pathname, messages)
   const johnnyDrawerImage = getAppImageUrl(appImages, 'johnny_drawer')
-  const starterSuggestions = getStarterSuggestionsForCurrentTime()
+  const isGrimshaw = variant === 'grimshaw'
+  const threadKey = isGrimshaw ? 'nat20_grimshaw_v1' : THREAD_KEY
+  const assistantName = isGrimshaw ? 'Grimshaw' : 'Johnny'
+  const oracleOriginStyle = isGrimshaw && origin ? { '--oracle-origin-x': origin.x, '--oracle-origin-y': origin.y } : undefined
+  const starterSuggestions = isGrimshaw ? [
+    'Read today’s omens and name my best next move.',
+    'Help me prepare for today’s adventure.',
+    'What should I do for recovery today?',
+  ] : getStarterSuggestionsForCurrentTime()
   const drawerTitleId = useId()
   const drawerDescriptionId = useId()
   const scrollBehavior = getAccessibleScrollBehavior()
@@ -134,8 +145,20 @@ export default function JohnnyAssistantDrawer() {
 
   async function hydrateThread() {
     try {
-      const data = await aiApi.getThread(THREAD_KEY)
-      setMessages(data.messages ?? [])
+      const [data, onboardingState] = await Promise.all([
+        aiApi.getThread(threadKey),
+        onboardingApi.getChatState().catch(() => null),
+      ])
+      const hydratedMessages = data.messages ?? []
+      const resumedOnboarding = !isGrimshaw && onboardingState?.status === 'in_progress' && onboardingState?.onboarding
+        ? [{
+            role: 'assistant',
+            message_text: 'Let’s continue your coaching setup.',
+            action_results: [{ action: 'answer_onboarding', onboarding: onboardingState.onboarding }],
+            used_tools: ['answer_onboarding'],
+          }]
+        : []
+      setMessages([...hydratedMessages, ...resumedOnboarding])
       setFollowUps(Array.isArray(data.follow_ups) ? data.follow_ups : [])
       const bullets = Array.isArray(data.durable_memory?.bullets) ? data.durable_memory.bullets : []
       setDurableMemory(bullets)
@@ -146,10 +169,10 @@ export default function JohnnyAssistantDrawer() {
         message: 'Johnny assistant history failed to load.',
         error,
         context: {
-          thread_key: THREAD_KEY,
+          thread_key: threadKey,
         },
       })
-      setStatusMessage('Johnny opened, but earlier chat history did not load. You can still start a new conversation.')
+      setStatusMessage(`${assistantName} opened, but earlier chat history did not load. You can still start a new conversation.`)
     } finally {
       setInitialising(false)
     }
@@ -272,6 +295,7 @@ export default function JohnnyAssistantDrawer() {
     const nextMessage = message.trim()
     if (!nextMessage || loading) return
     const shoppingModeRequested = isShoppingModeNavigationRequest(nextMessage)
+    const onboardingRequested = isOnboardingActivationRequest(nextMessage)
 
     const supportMeta = normalizeSupportStarterMeta(options.meta)
 
@@ -292,13 +316,20 @@ export default function JohnnyAssistantDrawer() {
     setLoading(true)
 
     try {
-      const data = await aiApi.chat(nextMessage, THREAD_KEY, chatMode, {
-        context: buildJohnnyChatContext(location.pathname, chatMode, options.context),
+      const data = await aiApi.chat(nextMessage, threadKey, chatMode, {
+        context: buildJohnnyChatContext(location.pathname, chatMode, {
+          ...(isGrimshaw ? { persona: 'grimshaw', surface: 'nat20_oracle', brand: 'nat20' } : {}),
+          ...options.context,
+        }),
+        chatOptions: options.chatOptions,
       })
       const modelActions = normalizeModelActions(data.actions)
       const usedTools = Array.isArray(data.used_tools) ? data.used_tools : []
       const actionResults = Array.isArray(data.action_results) ? data.action_results : []
       const actionTools = getActionTools(usedTools, actionResults)
+      const onboardingActivated = onboardingRequested || data.onboarding_active === true || usedTools.includes('activate_onboarding') || actionResults.some(result => (
+        getActionName(result) === 'activate_onboarding'
+      ))
       const autoAction = !actionTools.length && !shoppingModeRequested ? getAutoExecutableModelAction(modelActions) : null
 
       setMessages(current => [...current, {
@@ -320,6 +351,16 @@ export default function JohnnyAssistantDrawer() {
         setStatusMessage('Shopping mode is ready.')
         closeDrawer()
         navigate('/shopping-list', { state: { johnnyActionNotice: 'Johnny opened shopping mode with your current grocery gap.' } })
+        return
+      }
+
+      if (onboardingActivated || actionTools.includes('answer_onboarding')) {
+        const onboardingCompleted = actionResults.some(result => result?.onboarding?.status === 'complete' || result?.completed === true)
+        setStatusMessage(onboardingCompleted ? 'Coaching setup updated.' : 'Coaching setup is active in this conversation.')
+        if (onboardingCompleted) {
+          invalidate()
+          loadSnapshot(true)
+        }
         return
       }
 
@@ -358,8 +399,8 @@ export default function JohnnyAssistantDrawer() {
             setStatusMessage('Johnny made the change, but the workout screen needs a refresh to show it.')
           })
         }
-        setStatusMessage(buildActionStatus(actionResults, actionTools))
-        window.dispatchEvent(new CustomEvent('johnny-assistant-action', { detail: { usedTools: actionTools, actionResults } }))
+		setStatusMessage(buildActionStatus(actionResults, actionTools))
+		window.dispatchEvent(new CustomEvent('johnny-assistant-action', { detail: { usedTools: actionTools, actionResults } }))
       } else if (modelActions.length) {
         if (autoAction) {
           const destination = getModelActionDestination(autoAction)
@@ -421,7 +462,7 @@ export default function JohnnyAssistantDrawer() {
     } finally {
       setLoading(false)
     }
-  }, [bootstrapWorkoutSession, chatMode, closeDrawer, invalidate, loadSnapshot, loading, location.pathname, navigate, reloadWorkoutSession])
+  }, [bootstrapWorkoutSession, chatMode, closeDrawer, invalidate, isGrimshaw, loadSnapshot, loading, location.pathname, navigate, reloadWorkoutSession, threadKey])
 
   useEffect(() => {
     if (!isOpen || initialising || loading) return
@@ -501,10 +542,10 @@ export default function JohnnyAssistantDrawer() {
     if (loading) return
 
     try {
-      await aiApi.clearThread(THREAD_KEY)
+      await aiApi.clearThread(threadKey)
       setMessages([])
       setFollowUps([])
-      setStatusMessage('Johnny chat cleared.')
+      setStatusMessage(`${assistantName} chat cleared.`)
     } catch (err) {
       setStatusMessage(err?.message || 'Could not clear the chat.')
     }
@@ -592,10 +633,11 @@ export default function JohnnyAssistantDrawer() {
 
   return (
     <>
-      <div className="johnny-drawer-backdrop open" onClick={closeDrawer} aria-hidden="true" />
+      <div className={`johnny-drawer-backdrop open ${isGrimshaw ? 'grimshaw-oracle-backdrop' : ''}`} style={oracleOriginStyle} onClick={closeDrawer} aria-hidden="true" />
       <aside
         ref={drawerRef}
-        className="johnny-drawer open"
+        className={`johnny-drawer open ${isGrimshaw ? 'grimshaw-oracle' : ''}`}
+        style={oracleOriginStyle}
         role="dialog"
         aria-modal="true"
         aria-labelledby={drawerTitleId}
@@ -605,14 +647,13 @@ export default function JohnnyAssistantDrawer() {
         <div className="johnny-drawer-shell">
           <header className="johnny-drawer-header">
             <div className="johnny-drawer-header-main">
-              <div>
-                <span className="dashboard-chip ai">Coach</span>
-                <h2 id={drawerTitleId}>Johnny5k</h2>
-                <p id={drawerDescriptionId}>Ask Johnny for health advice or have him log an entry for you.</p>
-              </div>
-              <span className="johnny-drawer-header-art" aria-hidden="true">
-                <img src={johnnyDrawerImage} alt="" />
-              </span>
+              {isGrimshaw ? <>
+                <span className="grimshaw-oracle-avatar" aria-hidden="true"><GrimshawEyeIcon /><i className="spark one"/><i className="spark two"/><i className="spark three"/><i className="spark four"/></span>
+                <div className="grimshaw-oracle-title"><h2 id={drawerTitleId}>Grimshaw the Oracle</h2><p id={drawerDescriptionId}>Keeper of gains, dispenser of prophecy</p></div>
+              </> : <>
+                <div><span className="dashboard-chip ai">Coach</span><h2 id={drawerTitleId}>Johnny5k</h2><p id={drawerDescriptionId}>Ask Johnny for health advice, logging help, or coaching setup.</p></div>
+                <span className="johnny-drawer-header-art" aria-hidden="true"><img src={johnnyDrawerImage} alt="" /></span>
+              </>}
             </div>
             <div className="johnny-drawer-actions johnny-drawer-actions-chat">
               {workoutSession?.session?.id && !workoutSession?.session?.completed ? (
@@ -625,8 +666,8 @@ export default function JohnnyAssistantDrawer() {
                 <AppIcon name="trash" />
                 <span>Clear</span>
               </button>
-              <button type="button" className="btn-secondary small johnny-drawer-action-button" title="Close Johnny" onClick={closeDrawer}>
-                <AppIcon name="close" />
+              <button type="button" className="btn-secondary small johnny-drawer-action-button" title={`Close ${assistantName}`} onClick={closeDrawer}>
+                {isGrimshaw ? <svg className="grimshaw-back-arrow" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M19 12H5m0 0 6-6m-6 6 6 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg> : <AppIcon name="close" />}
                 <span>Close</span>
               </button>
             </div>
@@ -634,9 +675,9 @@ export default function JohnnyAssistantDrawer() {
 
           {statusMessage ? <p className="johnny-drawer-status" role="status" aria-live="polite">{statusMessage}</p> : null}
 
-          <div className="chat-log johnny-drawer-log" role="log" aria-live="polite" aria-relevant="additions text" aria-busy={loading} aria-label="Johnny conversation">
+          <div className="chat-log johnny-drawer-log" role="log" aria-live="polite" aria-relevant="additions text" aria-busy={loading} aria-label={`${assistantName} conversation`}>
             {initialising ? <p className="chat-loading">Loading…</p> : null}
-            {!initialising && (durableMemory.length || editingMemory) ? (
+            {!isGrimshaw && !initialising && (durableMemory.length || editingMemory) ? (
               <DurableMemoryCard
                 bullets={durableMemory}
                 draft={memoryDraft}
@@ -654,7 +695,7 @@ export default function JohnnyAssistantDrawer() {
                 onSave={handleSaveMemory}
               />
             ) : null}
-            {!initialising && followUps.length ? (
+            {!isGrimshaw && !initialising && followUps.length ? (
               <div className="johnny-follow-up-stack">
                 {followUps.slice(0, 2).map(followUp => (
                   <FollowUpCard
@@ -679,19 +720,20 @@ export default function JohnnyAssistantDrawer() {
             ) : null}
             {!initialising && messages.length === 0 ? (
               <div className="chat-welcome johnny-drawer-welcome">
-                <p>Ask Johnny to log steps or sleep, log food, update pantry or grocery gap, swap a workout exercise, build a training plan, or talk through your next move.</p>
-                <div className="johnny-drawer-suggestions">
+                <p>{isGrimshaw ? 'Speak, adventurer. The day’s trial awaits your questions—form, strategy, or simply the will to continue. What troubles you?' : 'Ask Johnny to log steps or sleep, log food, update pantry or grocery gap, swap a workout exercise, build a training plan, or talk through your next move.'}</p>
+                {!isGrimshaw ? <div className="johnny-drawer-suggestions">
                   {starterSuggestions.map(prompt => (
                     <button key={prompt} type="button" className="johnny-drawer-suggestion" onClick={() => sendPrompt(prompt)}>
                       {prompt}
                     </button>
                   ))}
-                </div>
+                </div> : null}
               </div>
             ) : null}
 
             {messages.map((message, index) => {
               const actionResults = Array.isArray(message.action_results) ? message.action_results : []
+              const displayActionResults = actionResults
               const modelActions = normalizeModelActions(message.actions)
               const actionTools = getActionTools(
                 Array.isArray(message.used_tools) ? message.used_tools : [],
@@ -708,21 +750,31 @@ export default function JohnnyAssistantDrawer() {
                       confidence={message.confidence}
                     />
                   ) : null}
-                  {actionResults.length ? <ActionResultList actionResults={actionResults} onNavigate={destination => {
+                  {displayActionResults.length ? <ActionResultList actionResults={displayActionResults} onOnboardingAnswer={(onboarding, option) => {
+                    sendPrompt(option.label, {
+                      chatOptions: {
+                        onboarding_answer: {
+                          node_id: onboarding.node_id,
+                          value: option.value,
+                          label: option.label,
+                        },
+                      },
+                    })
+                  }} onNavigate={destination => {
                     navigate(destination.path, destination.state ? { state: destination.state } : undefined)
                     closeDrawer()
                   }} /> : null}
-                  {!actionResults.length && modelActions.length ? <ModelActionList actions={modelActions} onNavigate={destination => {
+                  {!displayActionResults.length && modelActions.length ? <ModelActionList actions={modelActions} onNavigate={destination => {
                     navigate(destination.path, destination.state ? { state: destination.state } : undefined)
                     closeDrawer()
                   }} onQueueFollowUp={prompt => {
                     sendPrompt(prompt)
                   }} onRunWorkflow={handleRunWorkflow} /> : null}
-                  <GroceryGapCard actionResults={actionResults} modelActions={modelActions} onOpen={() => {
+                  <GroceryGapCard actionResults={displayActionResults} modelActions={modelActions} onOpen={() => {
                     navigate('/shopping-list')
                     closeDrawer()
                   }} />
-                  {!actionResults.length && actionTools.length ? (
+                  {!displayActionResults.length && actionTools.length && !actionTools.includes('activate_onboarding') ? (
                     <div className="johnny-action-tags">
                       {actionTools.map(toolName => (
                         <span key={toolName} className="johnny-action-tag">{formatToolLabel(toolName)}</span>
@@ -756,9 +808,9 @@ export default function JohnnyAssistantDrawer() {
               value={input}
               onChange={event => setInput(event.target.value)}
               onKeyDown={handleInputKeyDown}
-              aria-label="Message Johnny"
-              placeholder="Ask Johnny to coach you or do something for you…"
-              rows={3}
+              aria-label={`Message ${assistantName}`}
+              placeholder={isGrimshaw ? 'Ask about form, motivation, or your quest…' : 'Ask Johnny to coach you or do something for you…'}
+              rows={isGrimshaw ? 1 : 3}
               disabled={loading}
             />
             <div className="johnny-input-actions">
@@ -767,7 +819,7 @@ export default function JohnnyAssistantDrawer() {
                   {listening ? 'Stop' : 'Voice'}
                 </button>
               ) : null}
-              <button type="submit" className="btn-send small johnny-drawer-action-button" disabled={loading || !input.trim()} aria-label="Send message to Johnny">
+              <button type="submit" className="btn-send small johnny-drawer-action-button" disabled={loading || !input.trim()} aria-label={`Send message to ${assistantName}`}>
                 <span>Send</span>
                 <AppIcon name="send" />
               </button>
@@ -776,6 +828,16 @@ export default function JohnnyAssistantDrawer() {
         </div>
       </aside>
     </>
+  )
+}
+
+function GrimshawEyeIcon() {
+  return (
+    <svg className="grimshaw-oracle-eye-icon" viewBox="0 0 24 24" fill="none">
+      <path d="M2.2 12s3.5-5.2 9.8-5.2 9.8 5.2 9.8 5.2-3.5 5.2-9.8 5.2S2.2 12 2.2 12Z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
+      <circle cx="12" cy="12" r="3.2" fill="#e3c877" stroke="#fff8dc" />
+      <g className="grimshaw-oracle-pupil"><circle cx="12" cy="12" r="1.55" fill="#4a3468"/><circle cx="13.05" cy="10.95" r=".62" fill="#fff"/></g>
+    </svg>
   )
 }
 
@@ -859,7 +921,7 @@ function ReasoningCard({ why, contextUsed, confidence }) {
   )
 }
 
-function ActionResultList({ actionResults, onNavigate }) {
+function ActionResultList({ actionResults, onNavigate, onOnboardingAnswer }) {
   return (
     <div className="johnny-action-cards">
       {actionResults.map((result, index) => {
@@ -867,6 +929,30 @@ function ActionResultList({ actionResults, onNavigate }) {
         const destination = ACTION_DESTINATIONS[actionName] ?? null
         const meta = buildActionMeta(result)
         const recipes = getRecipeActionItems(result)
+        const onboarding = result?.onboarding
+
+        if (onboarding?.status === 'in_progress' && Array.isArray(onboarding.options)) {
+          return (
+            <div key={`${actionName}-${index}`} className="johnny-onboarding-prompt">
+              <div className="johnny-onboarding-progress" aria-label={`Onboarding ${Number(onboarding.progress || 0)}% complete`}>
+                <span style={{ width: `${Number(onboarding.progress || 0)}%` }} />
+              </div>
+              <p className="johnny-onboarding-question">{onboarding.prompt}</p>
+              {onboarding.support ? <p className="johnny-onboarding-support">{onboarding.support}</p> : null}
+              <div className="johnny-decision-rail actions onboarding-decision-rail">
+                <div className="chat-choice-list">
+                  {onboarding.options.map(option => (
+                    <button type="button" key={option.value} onClick={() => onOnboardingAnswer(onboarding, option)}>
+                      {option.label}<i>›</i>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )
+        }
+
+        if (onboarding?.status === 'complete') return null
 
         return (
           <div key={`${actionName}-${index}`} className="johnny-action-card">
@@ -938,8 +1024,10 @@ function ModelActionList({ actions, onNavigate, onQueueFollowUp, onRunWorkflow }
 
 function formatToolLabel(toolName) {
   switch (toolName) {
-    case 'log_steps':
-      return 'Steps logged'
+	case 'log_steps':
+		return 'Steps logged'
+	case 'activate_onboarding':
+		return 'Onboarding ready'
     case 'log_sleep':
       return 'Sleep logged'
     case 'log_food_from_description':
@@ -1057,6 +1145,13 @@ function isShoppingModeNavigationRequest(value) {
   const message = String(value || '').toLowerCase()
   return /\b(open|activate|start|enter|launch|show|take me to|go to)\b/.test(message)
     && /\b(shopping mode|shopping list|grocery shopping)\b/.test(message)
+}
+
+function isOnboardingActivationRequest(value) {
+  const message = String(value || '').toLowerCase().trim()
+  if (!/\b(onboarding|on-board me|onboard me|coaching setup|coach setup)\b/.test(message)) return false
+  if (/\b(don't|do not|not now|what is|explain)\b/.test(message)) return false
+  return /\b(start|begin|launch|open|activate|restart|redo|repeat|rebuild|do again|set up|update)\b/.test(message)
 }
 
 function formatModelActionLabel(type) {

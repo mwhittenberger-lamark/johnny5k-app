@@ -2238,6 +2238,12 @@ PROMPT;
 			'personality_age_range'      => (string) ( $personality_prefs['personality_age_range'] ?? '' ),
 			'personality_aggressiveness' => (string) ( $personality_prefs['personality_aggressiveness'] ?? '' ),
 			'personality_humor_level'    => (string) ( $personality_prefs['personality_humor_level'] ?? '' ),
+			'coaching_profile'            => (string) ( $personality_prefs['coaching_profile'] ?? '' ),
+			'coaching_secondary_traits'   => is_array( $personality_prefs['secondary_traits'] ?? null ) ? $personality_prefs['secondary_traits'] : [],
+			'coaching_guidance_level'     => (string) ( $personality_prefs['help'] ?? '' ),
+			'coaching_tone'               => (string) ( $personality_prefs['coaching_tone'] ?? '' ),
+			'coaching_workout_permission' => (string) ( $personality_prefs['workout_generation'] ?? $personality_prefs['exercise_permission'] ?? '' ),
+			'coaching_missed_day_policy'  => (string) ( $personality_prefs['missed_day_policy'] ?? '' ),
 		];
 
 		return array_merge( $context, $context_overrides );

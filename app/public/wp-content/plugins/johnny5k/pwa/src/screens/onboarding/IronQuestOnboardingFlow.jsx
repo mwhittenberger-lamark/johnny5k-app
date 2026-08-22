@@ -108,7 +108,7 @@ function IntroStep() {
       <div className="dash-card ironquest-onboarding-hero-card">
         <p className="ironquest-onboarding-hero-copy">You are about to enter IronQuest. First, choose how Johnny should frame your quest identity.</p>
         <div className="ironquest-onboarding-actions">
-          <button className="btn-primary" type="button" onClick={() => navigate('/onboarding/ironquest/class')}>Begin IronQuest setup</button>
+          <button className="btn-primary" type="button" onClick={() => navigate('/ironquest/setup/class')}>Begin IronQuest setup</button>
           <button className="btn-secondary" type="button" onClick={() => navigate('/dashboard')}>Skip for now</button>
         </div>
       </div>
@@ -147,8 +147,8 @@ function ClassStep({ selectedClass, onSelectClass }) {
         ))}
       </div>
       <div className="ironquest-onboarding-actions">
-        <button className="btn-secondary" type="button" onClick={() => navigate('/onboarding/ironquest')}>Back</button>
-        <button className="btn-primary" type="button" onClick={() => navigate('/onboarding/ironquest/motivation')}>Continue</button>
+        <button className="btn-secondary" type="button" onClick={() => navigate('/ironquest/setup')}>Back</button>
+        <button className="btn-primary" type="button" onClick={() => navigate('/ironquest/setup/motivation')}>Continue</button>
       </div>
     </IronQuestStepLayout>
   )
@@ -187,8 +187,8 @@ function MotivationStep({ selectedMotivation, onSelectMotivation, selectedClass,
       </div>
       {error ? <ErrorState className="onboarding-inline-error" message={error} title="IronQuest could not be activated" /> : null}
       <div className="ironquest-onboarding-actions">
-        <button className="btn-secondary" type="button" onClick={() => navigate('/onboarding/ironquest/class')}>Back</button>
-        <button className="btn-primary" type="button" onClick={() => navigate('/onboarding/ironquest/image')} disabled={submitting}>
+        <button className="btn-secondary" type="button" onClick={() => navigate('/ironquest/setup/class')}>Back</button>
+        <button className="btn-primary" type="button" onClick={() => navigate('/ironquest/setup/image')} disabled={submitting}>
           Continue to image
         </button>
       </div>
@@ -322,7 +322,7 @@ function PortraitStep({
         </div>
       ) : null}
       <div className="ironquest-onboarding-actions">
-        <button className="btn-secondary" type="button" onClick={() => navigate('/onboarding/ironquest/motivation')} disabled={submitting}>Back</button>
+        <button className="btn-secondary" type="button" onClick={() => navigate('/ironquest/setup/motivation')} disabled={submitting}>Back</button>
         <button className="btn-outline" type="button" onClick={() => onSelectPortrait(0)} disabled={submitting}>Skip image for now</button>
         <button className="btn-primary" type="button" onClick={onFinish} disabled={submitting || headshotUploading || generatingImages}>
           {submitting ? 'Forging identity…' : 'Finish IronQuest setup'}
@@ -554,7 +554,7 @@ export default function IronQuestOnboardingFlow() {
       const [payload] = await Promise.all([ironquestApi.profile(), loadOnboardingAssets()])
       setExperienceMode(resolveExperienceModeFromIronQuestPayload(payload))
       applyIronQuestState(payload)
-      navigate('/onboarding/ironquest/ready')
+      navigate('/ironquest/setup/ready')
     } catch (nextError) {
       setError(nextError?.data?.message || nextError?.message || 'Could not activate IronQuest right now.')
     } finally {
@@ -660,12 +660,12 @@ export default function IronQuestOnboardingFlow() {
 
   return (
     <Routes>
-      <Route index element={isReady ? <Navigate to="/onboarding/ironquest/ready" replace /> : <IntroStep />} />
-      <Route path="class" element={isReady ? <Navigate to="/onboarding/ironquest/ready" replace /> : <ClassStep selectedClass={selectedClass} onSelectClass={setSelectedClass} />} />
-      <Route path="motivation" element={isReady ? <Navigate to="/onboarding/ironquest/ready" replace /> : <MotivationStep selectedMotivation={selectedMotivation} onSelectMotivation={setSelectedMotivation} selectedClass={selectedClass} submitting={submitting} error={error} />} />
-      <Route path="image" element={isReady ? <Navigate to="/onboarding/ironquest/ready" replace /> : <PortraitStep headshot={headshot} headshotSrc={headshotSrc} generatedImages={generatedImages} generatedImageSrcs={generatedImageSrcs} selectedPortraitAttachmentId={selectedPortraitAttachmentId} generationPrompt={generationPrompt} generationCount={generationCount} headshotUploading={headshotUploading} generatingImages={generatingImages} error={error} message={message} onUploadHeadshot={handleHeadshotUpload} onDeleteHeadshot={handleHeadshotDelete} onGenerationPromptChange={setGenerationPrompt} onGenerationCountChange={setGenerationCount} onGenerateImages={handleGenerateImages} onSelectPortrait={setSelectedPortraitAttachmentId} onFinish={finishSetup} submitting={submitting} />} />
+      <Route index element={isReady ? <Navigate to="/ironquest/setup/ready" replace /> : <IntroStep />} />
+      <Route path="class" element={isReady ? <Navigate to="/ironquest/setup/ready" replace /> : <ClassStep selectedClass={selectedClass} onSelectClass={setSelectedClass} />} />
+      <Route path="motivation" element={isReady ? <Navigate to="/ironquest/setup/ready" replace /> : <MotivationStep selectedMotivation={selectedMotivation} onSelectMotivation={setSelectedMotivation} selectedClass={selectedClass} submitting={submitting} error={error} />} />
+      <Route path="image" element={isReady ? <Navigate to="/ironquest/setup/ready" replace /> : <PortraitStep headshot={headshot} headshotSrc={headshotSrc} generatedImages={generatedImages} generatedImageSrcs={generatedImageSrcs} selectedPortraitAttachmentId={selectedPortraitAttachmentId} generationPrompt={generationPrompt} generationCount={generationCount} headshotUploading={headshotUploading} generatingImages={generatingImages} error={error} message={message} onUploadHeadshot={handleHeadshotUpload} onDeleteHeadshot={handleHeadshotDelete} onGenerationPromptChange={setGenerationPrompt} onGenerationCountChange={setGenerationCount} onGenerateImages={handleGenerateImages} onSelectPortrait={setSelectedPortraitAttachmentId} onFinish={finishSetup} submitting={submitting} />} />
       <Route path="ready" element={readyElement} />
-      <Route path="*" element={<Navigate to="/onboarding/ironquest" replace />} />
+      <Route path="*" element={<Navigate to="/ironquest/setup" replace />} />
     </Routes>
   )
 }

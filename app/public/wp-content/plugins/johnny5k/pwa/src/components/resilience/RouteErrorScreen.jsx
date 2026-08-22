@@ -22,7 +22,7 @@ const ROUTE_COPY = {
     eyebrow: 'Onboarding error',
     title: 'Setup hit a route failure',
     message: 'Your onboarding flow crashed before this step finished rendering. Reload if you were mid-step; otherwise reopen setup and continue from the last saved point.',
-    safePath: '/onboarding/welcome',
+    safePath: '/dashboard',
     safeLabel: 'Open onboarding',
   },
   shell: {

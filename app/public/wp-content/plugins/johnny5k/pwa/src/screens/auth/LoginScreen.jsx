@@ -25,7 +25,7 @@ export default function LoginScreen() {
     authApi.devLogin()
       .then(data => {
         setAuth(data)
-        navigate(data.onboarding_complete ? '/dashboard' : '/onboarding/welcome', { replace: true })
+        navigate('/dashboard', { replace: true })
       })
       .catch(err => {
         clearAuth()
@@ -42,7 +42,7 @@ export default function LoginScreen() {
       const data = await authApi.login(email, password)
       const nonce = await authApi.refreshNonce()
       setAuth({ ...data, nonce })
-      navigate(data.onboarding_complete ? '/dashboard' : '/onboarding/welcome')
+      navigate('/dashboard')
     } catch (err) {
       clearAuth()
       setError(err.message || 'Invalid credentials')

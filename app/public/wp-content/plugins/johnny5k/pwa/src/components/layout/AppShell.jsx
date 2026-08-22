@@ -48,6 +48,7 @@ export default function AppShell({ children }) {
     email,
     experienceMode,
     notificationPrefs,
+    onboardingComplete,
     preferenceMeta,
     setDailyCheckInEntry,
     setPreferenceMeta,
@@ -69,10 +70,17 @@ export default function AppShell({ children }) {
   const [offlineQueueSyncing, setOfflineQueueSyncing] = useState(false)
   const [swUpdateReady, setSwUpdateReady] = useState(false)
   const [tickerMessages, setTickerMessages] = useState([])
+  const onboardingLaunchRef = useRef(false)
   const menuButtonRef = useRef(null)
   const mobileNavRef = useRef(null)
   const firstMobileLinkRef = useRef(null)
   const dailyCheckInCloseRef = useRef(null)
+
+  useEffect(() => {
+    if (onboardingComplete || onboardingLaunchRef.current) return
+    onboardingLaunchRef.current = true
+    openDrawer('Start my onboarding')
+  }, [onboardingComplete, openDrawer])
   const dailyCheckInStateRef = useRef(normalizeDailyCheckInEntry(dailyCheckInEntry))
   const preferenceMetaRef = useRef(preferenceMeta ?? {})
   const brandmarkImage = getAppImageUrl(appImages, 'brandmark')

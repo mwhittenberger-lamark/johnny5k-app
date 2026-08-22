@@ -18,6 +18,7 @@ const authState = vi.hoisted(() => ({
     pushConfigured: false,
     pushSubscribed: false,
   },
+  onboardingComplete: true,
   preferenceMeta: {},
   setDailyCheckInEntry: vi.fn(),
   setPreferenceMeta: vi.fn(),
@@ -123,6 +124,7 @@ describe('AppShell', () => {
     vi.useFakeTimers()
     authState.canAccessPwaAdmin = false
     authState.email = ''
+    authState.onboardingComplete = true
     authState.clearAuth.mockReset()
     authState.setDailyCheckInEntry.mockReset()
     authState.setPreferenceMeta.mockReset()
@@ -144,6 +146,18 @@ describe('AppShell', () => {
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
+  })
+
+  it('opens onboarding in Johnny chat for a new user without changing routes', async () => {
+    authState.onboardingComplete = false
+    await renderComponent(
+      <MemoryRouter initialEntries={['/dashboard']}>
+        <AppShell><div>Dashboard stays mounted</div></AppShell>
+      </MemoryRouter>,
+    )
+
+    expect(johnnyState.openDrawer).toHaveBeenCalledWith('Start my onboarding')
+    expect(container.textContent).toContain('Dashboard stays mounted')
   })
 
   afterEach(async () => {

@@ -25,7 +25,7 @@ export default function RegisterScreen() {
       const data = await authApi.register(email, password, code)
       const nonce = await authApi.refreshNonce()
       setAuth({ ...data, nonce })
-      navigate('/onboarding/welcome')
+      navigate('/dashboard')
     } catch (err) {
       clearAuth()
       setError(err.data?.message || err.message || 'Registration failed')

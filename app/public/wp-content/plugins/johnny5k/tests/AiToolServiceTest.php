@@ -89,6 +89,17 @@ class AiToolServiceTest extends ServiceTestCase {
 		$this->assertSame( '', AiToolService::get_required_chat_tool( $registry, 'general', [], 'Clear my pending follow-ups.' ) );
 	}
 
+	public function test_explicit_onboarding_requests_require_activation_tool(): void {
+		$registry = AiToolService::tool_registry( 5, 5, 5 );
+
+		$this->assertArrayHasKey( 'activate_onboarding', $registry );
+		$this->assertSame( 'activate_onboarding', AiToolService::get_required_chat_tool( $registry, 'general', [], 'Restart my onboarding.' ) );
+		$this->assertSame( 'activate_onboarding', AiToolService::get_required_chat_tool( $registry, 'general', [], 'Can you restart my onboarding?' ) );
+		$this->assertSame( 'activate_onboarding', AiToolService::get_required_chat_tool( $registry, 'general', [], 'Update my coaching setup.' ) );
+		$this->assertSame( '', AiToolService::get_required_chat_tool( $registry, 'general', [], 'What is onboarding?' ) );
+		$this->assertSame( 'activate_onboarding', AiToolService::get_required_chat_tool( $registry, 'general', [], 'Can you restart onboarding?' ) );
+	}
+
 	public function test_tool_fallbacks_speak_in_johnnys_first_person_voice(): void {
 		$this->assertSame(
 			'I updated your plan.',

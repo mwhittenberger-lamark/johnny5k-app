@@ -22,6 +22,8 @@
 @import './styles/screens/nutrition.css' layer(screens);
 @import './styles/screens/settings.css' layer(screens);
 @import './styles/screens/ironquest.css' layer(screens);
+@import './styles/screens/nat20-setup.css' layer(screens);
+@import './styles/screens/nat20-home.css' layer(screens);
 @import './styles/screens/johnny-home.css' layer(screens);
 @import './styles/screens/johnny-meal-review.css' layer(screens);
 @import './styles/screens/modern-skyscraper.css' layer(screens);

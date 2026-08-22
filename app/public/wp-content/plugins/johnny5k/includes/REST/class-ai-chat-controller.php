@@ -132,6 +132,30 @@ class AiChatController extends RestController {
 			return self::message( 'No message provided.', 400 );
 		}
 
+		if ( isset( $chat_options['onboarding_answer'] ) ) {
+			$answer_result = OnboardingController::answer_chat_onboarding( $user_id, $chat_options['onboarding_answer'] );
+			if ( isset( $answer_result['error'] ) ) {
+				return self::message( $answer_result['error'], 409 );
+			}
+			return self::response( [
+				'reply' => $answer_result['reply'],
+				'actions' => [],
+				'used_tools' => [ 'answer_onboarding' ],
+				'action_results' => [ [
+					'action' => 'answer_onboarding',
+					'ok' => true,
+					'onboarding' => $answer_result['onboarding'],
+					'completed' => (bool) $answer_result['completed'],
+				] ],
+				'onboarding_active' => ! $answer_result['completed'],
+			] );
+		}
+
+		$matched_onboarding_answer = OnboardingController::match_chat_onboarding_answer( $user_id, $message );
+		if ( is_array( $matched_onboarding_answer ) ) {
+			return self::onboarding_answer_response( $matched_onboarding_answer );
+		}
+
 		$thread_key = 'u' . $user_id . '_' . $thread_key;
 		$result     = AiService::chat( $user_id, $thread_key, $message, $mode, $context, $chat_options );
 
@@ -139,18 +163,61 @@ class AiChatController extends RestController {
 			return new \WP_REST_Response( [ 'message' => $result->get_error_message() ], 500 );
 		}
 
+		$used_tools     = is_array( $result['used_tools'] ?? null ) ? $result['used_tools'] : [];
+		$action_results = is_array( $result['action_results'] ?? null ) ? $result['action_results'] : [];
+		$onboarding_active = in_array( 'activate_onboarding', $used_tools, true );
+
+		if ( ! $onboarding_active ) {
+			foreach ( $action_results as $action_result ) {
+				if ( ! is_array( $action_result ) ) {
+					continue;
+				}
+
+				$action_name = $action_result['action'] ?? $action_result['tool_name'] ?? '';
+				if ( 'activate_onboarding' === $action_name ) {
+					$onboarding_active = true;
+					break;
+				}
+			}
+		}
+
+		$onboarding_payload = null;
+		foreach ( $action_results as $action_result ) {
+			if ( is_array( $action_result ) && is_array( $action_result['onboarding'] ?? null ) ) {
+				$onboarding_payload = $action_result['onboarding'];
+				break;
+			}
+		}
+
 		return self::response( [
-			'reply'             => $result['reply'],
+			'reply'             => $onboarding_active && $onboarding_payload ? $onboarding_payload['prompt'] : $result['reply'],
 			'actions'           => $result['actions'] ?? [],
 			'sources'           => $result['sources'] ?? [],
 			'used_web_search'   => (bool) ( $result['used_web_search'] ?? false ),
-			'used_tools'        => $result['used_tools'] ?? [],
-			'action_results'    => $result['action_results'] ?? [],
+			'used_tools'        => $used_tools,
+			'action_results'    => $action_results,
+			'onboarding_active' => $onboarding_active,
 			'tool_errors'       => $result['tool_errors'] ?? [],
 			'queued_follow_ups' => $result['queued_follow_ups'] ?? [],
 			'why'               => $result['why'] ?? '',
 			'context_used'      => $result['context_used'] ?? [],
 			'confidence'        => $result['confidence'] ?? '',
+		] );
+	}
+
+	private static function onboarding_answer_response( array $answer_result ): \WP_REST_Response {
+		if ( isset( $answer_result['error'] ) ) return self::message( $answer_result['error'], 409 );
+		return self::response( [
+			'reply' => $answer_result['reply'],
+			'actions' => [],
+			'used_tools' => [ 'answer_onboarding' ],
+			'action_results' => [ [
+				'action' => 'answer_onboarding',
+				'ok' => true,
+				'onboarding' => $answer_result['onboarding'],
+				'completed' => (bool) $answer_result['completed'],
+			] ],
+			'onboarding_active' => ! $answer_result['completed'],
 		] );
 	}
 
@@ -697,6 +764,14 @@ class AiChatController extends RestController {
 
 		if ( array_key_exists( 'refresh_thread_summary', $options ) ) {
 			$clean['refresh_thread_summary'] = rest_sanitize_boolean( $options['refresh_thread_summary'] );
+		}
+
+		if ( is_array( $options['onboarding_answer'] ?? null ) ) {
+			$clean['onboarding_answer'] = [
+				'node_id' => sanitize_key( (string) ( $options['onboarding_answer']['node_id'] ?? '' ) ),
+				'value' => sanitize_key( (string) ( $options['onboarding_answer']['value'] ?? '' ) ),
+				'label' => sanitize_text_field( (string) ( $options['onboarding_answer']['label'] ?? '' ) ),
+			];
 		}
 
 		return $clean;

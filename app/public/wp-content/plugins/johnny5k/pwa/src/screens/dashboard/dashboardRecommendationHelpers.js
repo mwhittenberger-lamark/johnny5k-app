@@ -1712,7 +1712,7 @@ export function routeRecoveryAction(recoverySummary, navigate) {
   }
 
   if (target === 'injuries') {
-    navigate('/onboarding/injuries', { state: { johnnyActionNotice: notice } })
+    navigate('/body', { state: { johnnyActionNotice: notice } })
     return
   }
 

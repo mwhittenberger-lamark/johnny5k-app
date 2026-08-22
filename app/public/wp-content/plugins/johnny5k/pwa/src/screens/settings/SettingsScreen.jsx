@@ -19,7 +19,7 @@ import { useDashboardStore } from '../../store/dashboardStore'
 import { useAuthStore } from '../../store/authStore'
 import { useJohnnyAssistantStore } from '../../store/johnnyAssistantStore'
 import { formatLiveWorkoutNativeAudioModeLabel, formatOpenAiVoiceLabel, getDefaultLiveWorkoutVoicePrefs, LIVE_WORKOUT_NATIVE_AUDIO_MODE_OPTIONS, LIVE_WORKOUT_VOICE_RATE_OPTIONS, OPENAI_TTS_VOICE_OPTIONS, readLiveWorkoutVoicePrefs, writeLiveWorkoutVoicePrefs } from '../../lib/liveWorkoutVoice'
-import { resolveExperienceModeFromIronQuestPayload } from '../../lib/experienceMode'
+import { applyBrand } from '../../brands/registry'
 import { buildHeightCm, buildPushPromptSnoozedUntil, formatPhoneInput, formatReminderHour, formatMissingFields, getTimezoneRegion, getTimezoneRegions, getTimezonesForRegion, isPushPromptSnoozed, normalizePhoneNumber, normalizePushPromptStatus, normalizeTargets, PUSH_PROMPT_SNOOZE_DAYS, reminderHourOptions, settingsFormFromState } from '../../lib/onboarding'
 import { DAY_TYPE_OPTIONS } from '../../lib/trainingDayTypes'
 import { openSupportGuide } from '../../lib/supportHelp'
@@ -178,11 +178,12 @@ export default function SettingsScreen() {
         if (!active) return
         setIronQuest(data)
         setIronQuestError('')
-        setExperienceMode(resolveExperienceModeFromIronQuestPayload(data))
+        applyBrand(data?.profile?.enabled ? 'nat20' : 'johnny5k')
+        setExperienceMode('standard')
       })
       .catch(err => {
         if (!active) return
-        setIronQuestError(err?.message || 'Could not load IronQuest.')
+        setIronQuestError(err?.message || 'Could not load Nat20 Fitness.')
       })
       .finally(() => {
         if (active) setIronQuestLoading(false)
@@ -472,6 +473,7 @@ export default function SettingsScreen() {
       setHeadshot(state?.headshot ?? { configured: false })
       invalidate()
       await loadSnapshot(true)
+      if (nextEnabled) navigate('/nat20/setup')
     } catch (err) {
       const missing = formatMissingFields(err?.data?.missing_profile_fields)
       if (missing.length) {
@@ -540,7 +542,7 @@ export default function SettingsScreen() {
     try {
       await onboardingApi.restart()
       setAuth({ onboarding_complete: false })
-      navigate('/onboarding/welcome', { replace: true })
+      openDrawer()
     } catch (err) {
       setError(err.message)
       setSaving(false)
@@ -557,7 +559,8 @@ export default function SettingsScreen() {
       const data = nextEnabled
         ? await ironquestApi.enable()
         : await ironquestApi.disable()
-      setExperienceMode(nextEnabled ? 'ironquest' : 'standard')
+      applyBrand(nextEnabled ? 'nat20' : 'johnny5k')
+      setExperienceMode('standard')
 
       setIronQuest(current => ({
         ...(current || {}),
@@ -567,7 +570,7 @@ export default function SettingsScreen() {
       invalidate()
       await loadSnapshot(true)
     } catch (err) {
-      setIronQuestError(err?.message || 'Could not update IronQuest mode.')
+      setIronQuestError(err?.message || 'Could not update Nat20 Fitness.')
     } finally {
       setIronQuestSubmitting(false)
     }
@@ -577,9 +580,9 @@ export default function SettingsScreen() {
     if (ironQuestSubmitting || ironQuestResetting) return
 
     const confirmed = await confirmGlobalAction({
-      title: 'Restart IronQuest onboarding?',
-      message: 'This clears your IronQuest class, motivation, and starter portrait, turns the mode off, and sends you back to the IronQuest intro flow. Quest progression like XP, gold, and unlocked regions stays intact.',
-      confirmLabel: 'Restart IronQuest onboarding',
+      title: 'Reset your Nat20 character?',
+      message: 'This clears your Nat20 character class, motivation, and starter portrait and turns Nat20 off. Quest progression like XP, gold, and unlocked regions stays intact.',
+      confirmLabel: 'Reset Nat20 character',
       tone: 'danger',
     })
     if (!confirmed) return
@@ -589,6 +592,7 @@ export default function SettingsScreen() {
 
     try {
       const data = await ironquestApi.restartOnboarding()
+      applyBrand('johnny5k')
       setExperienceMode('standard')
       setIronQuest(current => ({
         ...(current || {}),
@@ -597,9 +601,8 @@ export default function SettingsScreen() {
       }))
       invalidate()
       await loadSnapshot(true)
-      navigate('/onboarding/ironquest', { replace: true })
     } catch (err) {
-      setIronQuestError(err?.message || 'Could not restart IronQuest onboarding.')
+      setIronQuestError(err?.message || 'Could not restart Nat20 Fitness setup.')
     } finally {
       setIronQuestResetting(false)
     }
@@ -1464,17 +1467,17 @@ export default function SettingsScreen() {
           onToggle={toggleAccordionSection}
         >
           <section className="settings-section dash-card">
-            <h3>IronQuest Mode</h3>
-            <p className="settings-subtitle">Switch this account between standard Johnny5k and the IronQuest overlay without rerunning onboarding.</p>
+            <h3>Nat20 Fitness</h3>
+            <p className="settings-subtitle">Activate the fantasy fitness experience while keeping the same account, health data, and training history.</p>
             {ironQuestLoading ? (
-              <p className="settings-subtitle">Loading IronQuest mode…</p>
+              <p className="settings-subtitle">Loading Nat20 Fitness…</p>
             ) : ironQuest?.entitlement && !ironQuest.entitlement.has_access ? (
-              <p className="settings-subtitle">IronQuest is not available for this account yet.</p>
+              <p className="settings-subtitle">Nat20 Fitness is not available for this account yet.</p>
             ) : (
               <>
                 <div className="onboarding-review-list">
-                  <div className="onboarding-review-row"><span>Current mode</span><strong>{ironQuest?.profile?.enabled ? 'IronQuest' : 'Standard Johnny5k'}</strong></div>
-                  <div className="onboarding-review-row"><span>Quest profile</span><strong>{ironQuest?.profile?.class_slug && ironQuest?.profile?.motivation_slug ? 'Configured' : 'Needs identity setup'}</strong></div>
+                  <div className="onboarding-review-row"><span>Current experience</span><strong>{ironQuest?.profile?.enabled ? 'Nat20 Fitness' : 'Johnny5k'}</strong></div>
+                  <div className="onboarding-review-row"><span>Character</span><strong>{ironQuest?.profile?.class_slug && ironQuest?.profile?.motivation_slug ? 'Ready to adventure' : 'Needs setup'}</strong></div>
                 </div>
                 <div className="settings-actions">
                   {ironQuest?.profile?.enabled ? (
@@ -1484,7 +1487,7 @@ export default function SettingsScreen() {
                       onClick={() => handleToggleIronQuestMode(false)}
                       disabled={ironQuestSubmitting || ironQuestResetting}
                     >
-                      {ironQuestSubmitting ? 'Switching…' : 'Use Standard Johnny5k'}
+                      {ironQuestSubmitting ? 'Deactivating…' : 'Deactivate Nat20 Fitness'}
                     </button>
                   ) : (
                     <button
@@ -1493,7 +1496,7 @@ export default function SettingsScreen() {
                       onClick={() => handleToggleIronQuestMode(true)}
                       disabled={ironQuestSubmitting || ironQuestResetting}
                     >
-                      {ironQuestSubmitting ? 'Switching…' : 'Use IronQuest'}
+                      {ironQuestSubmitting ? 'Activating…' : 'Activate Nat20 Fitness'}
                     </button>
                   )}
                   <button
@@ -1502,17 +1505,17 @@ export default function SettingsScreen() {
                     onClick={() => void handleRestartIronQuestOnboarding()}
                     disabled={ironQuestSubmitting || ironQuestResetting}
                   >
-                    {ironQuestResetting ? 'Restarting…' : 'Restart IronQuest onboarding'}
+                    {ironQuestResetting ? 'Resetting…' : 'Reset Nat20 character'}
                   </button>
                 </div>
                 <p className="settings-subtitle">
                   {ironQuest?.profile?.enabled
-                    ? 'Workouts will attach and resolve IronQuest missions while this mode is on.'
-                    : 'Workouts will stay in standard Johnny5k mode while this is off.'}
+                    ? 'Your Nat20 experience is active. The new interface will use your existing workout, nutrition, and progress data.'
+                    : 'Activate Nat20 when you are ready to turn your fitness plan into an adventure.'}
                 </p>
               </>
             )}
-            {ironQuestError ? <ErrorState className="settings-inline-error" message={ironQuestError} title="Could not update IronQuest mode" /> : null}
+            {ironQuestError ? <ErrorState className="settings-inline-error" message={ironQuestError} title="Could not update Nat20 Fitness" /> : null}
           </section>
 
           <section className="settings-section dash-card">
@@ -1686,4 +1689,3 @@ function formatWeightDelta(delta) {
   if (delta === 0) return 'Flat this week'
   return `${delta > 0 ? '+' : ''}${delta.toFixed(1)} lbs`
 }
-
