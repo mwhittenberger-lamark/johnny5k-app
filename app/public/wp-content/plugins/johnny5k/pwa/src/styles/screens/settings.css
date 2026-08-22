@@ -13,17 +13,17 @@
   gap: var(--space-4);
 }
 .settings-accordion-group {
-  border: 1px solid rgba(15, 31, 85, 0.08);
+  border: 1px solid rgba(var(--nutrition-legacy-indigo-rgb), 0.08);
   border-radius: var(--radius-lg);
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(244, 249, 255, 0.94));
-  box-shadow: 0 16px 36px rgba(15, 31, 85, 0.08);
+  box-shadow: 0 16px 36px rgba(var(--nutrition-legacy-indigo-rgb), 0.08);
   overflow: hidden;
 }
 :root[data-experience-mode='ironquest'] .settings-accordion-group {
   background: linear-gradient(180deg, rgb(122 83 7 / 96%), rgb(170 102 12 / 94%));
 }
 .settings-accordion-group.open {
-  border-color: rgba(0, 188, 222, 0.18);
+  border-color: rgba(var(--nutrition-legacy-cyan-rgb), 0.18);
 }
 .settings-accordion-trigger {
   width: 100%;
@@ -79,7 +79,7 @@
   min-height: 30px;
   padding: 0 var(--space-3);
   border-radius: 999px;
-  background: rgba(0, 188, 222, 0.12);
+  background: rgba(var(--nutrition-legacy-cyan-rgb), 0.12);
   color: var(--accent2);
   font-size: 0.78rem;
   font-weight: 800;
@@ -105,9 +105,9 @@
 }
 .settings-identity-card {
   margin-bottom: var(--space-4);
-  border-color: rgba(0, 188, 222, 0.26);
+  border-color: rgba(var(--nutrition-legacy-cyan-rgb), 0.26);
   background: linear-gradient(135deg, rgba(255, 255, 255, 0.99), rgba(239, 248, 255, 0.98));
-  box-shadow: 0 18px 40px rgba(15, 31, 85, 0.12);
+  box-shadow: 0 18px 40px rgba(var(--nutrition-legacy-indigo-rgb), 0.12);
 }
 .settings-identity-main {
   display: grid;
@@ -125,7 +125,7 @@
 }
 .settings-identity-copy p {
   margin: 0;
-  color: rgba(15, 31, 85, 0.76);
+  color: rgba(var(--nutrition-legacy-indigo-rgb), 0.76);
 }
 .settings-identity-stats {
   display: grid;
@@ -138,11 +138,11 @@
   gap: var(--space-1);
   padding: var(--space-3) var(--space-3-5);
   border-radius: 16px;
-  border: 1px solid rgba(0, 188, 222, 0.16);
+  border: 1px solid rgba(var(--nutrition-legacy-cyan-rgb), 0.16);
   background: rgba(255, 255, 255, 0.78);
 }
 .settings-identity-stat span {
-  color: rgba(15, 31, 85, 0.62);
+  color: rgba(var(--nutrition-legacy-indigo-rgb), 0.62);
   font-size: 0.76rem;
   font-weight: 800;
   letter-spacing: 0.04em;
@@ -150,7 +150,7 @@
 }
 .settings-identity-stat strong {
   font-size: 1.05rem;
-  color: #081533;
+  color: var(--nutrition-legacy-navy);
 }
 .settings-trend-card {
   display: flex;
@@ -158,8 +158,8 @@
   gap: var(--space-3);
   padding: var(--space-3-5);
   border-radius: 18px;
-  border: 1px solid rgba(0, 188, 222, 0.2);
-  background: linear-gradient(180deg, rgba(8, 21, 51, 0.95), rgba(12, 53, 90, 0.94));
+  border: 1px solid rgba(var(--nutrition-legacy-cyan-rgb), 0.2);
+  background: linear-gradient(180deg, rgba(var(--nutrition-legacy-navy-rgb), 0.95), rgba(12, 53, 90, 0.94));
 }
 .settings-trend-head {
   display: flex;
@@ -168,7 +168,7 @@
   gap: var(--space-3);
 }
 .settings-trend-head strong {
-  color: #f5fbff;
+  color: var(--nutrition-legacy-frost-2);
 }
 .settings-trend-head .btn-outline {
   color: #fff;
@@ -205,7 +205,7 @@
   display: block;
   width: 100%;
   border-radius: 999px;
-  background: linear-gradient(180deg, rgba(0, 188, 222, 0.96), rgba(34, 196, 126, 0.92));
+  background: linear-gradient(180deg, rgba(var(--nutrition-legacy-cyan-rgb), 0.96), rgba(var(--nutrition-legacy-green-rgb), 0.92));
 }
 .settings-diagnostics-grid {
   display: grid;
@@ -218,7 +218,7 @@
   gap: var(--space-1-5);
   padding: var(--space-3-5);
   border-radius: 16px;
-  border: 1px solid rgba(15, 31, 85, 0.08);
+  border: 1px solid rgba(var(--nutrition-legacy-indigo-rgb), 0.08);
   background: rgba(255, 255, 255, 0.7);
 }
 .settings-diagnostics-card strong {
@@ -241,7 +241,7 @@
   padding: var(--space-2-5) var(--space-3);
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.72);
-  border: 1px solid rgba(15, 31, 85, 0.06);
+  border: 1px solid rgba(var(--nutrition-legacy-indigo-rgb), 0.06);
 }
 .settings-prediction-head {
   display: flex;
@@ -255,7 +255,7 @@
 }
 .settings-prediction-summary {
   margin: 0 0 var(--space-3-5);
-  color: rgba(15, 31, 85, 0.78);
+  color: rgba(var(--nutrition-legacy-indigo-rgb), 0.78);
 }
 .settings-prediction-stats {
   display: grid;
@@ -267,11 +267,11 @@
   gap: var(--space-1);
   padding: var(--space-3) var(--space-3-5);
   border-radius: 16px;
-  border: 1px solid rgba(255, 208, 0, 0.2);
+  border: 1px solid rgba(var(--nutrition-legacy-amber-rgb), 0.2);
   background: rgba(255, 255, 255, 0.78);
 }
 .settings-prediction-stat span {
-  color: rgba(15, 31, 85, 0.62);
+  color: rgba(var(--nutrition-legacy-indigo-rgb), 0.62);
   font-size: 0.76rem;
   font-weight: 800;
   letter-spacing: 0.04em;
@@ -279,13 +279,13 @@
 }
 .settings-prediction-stat strong {
   font-size: 1.02rem;
-  color: #081533;
+  color: var(--nutrition-legacy-navy);
 }
 .settings-checkin-card {
   background:
-    radial-gradient(circle at top right, rgba(0, 188, 222, 0.12), transparent 34%),
+    radial-gradient(circle at top right, rgba(var(--nutrition-legacy-cyan-rgb), 0.12), transparent 34%),
     linear-gradient(160deg, rgba(255,255,255,0.99), rgba(240, 247, 255, 0.98));
-  border-color: rgba(0, 188, 222, 0.22);
+  border-color: rgba(var(--nutrition-legacy-cyan-rgb), 0.22);
 }
 :root[data-experience-mode='ironquest'] .settings-checkin-card {
 }
@@ -320,11 +320,11 @@
   gap: var(--space-1);
   padding: var(--space-3) var(--space-3-5);
   border-radius: 16px;
-  border: 1px solid rgba(0, 188, 222, 0.14);
+  border: 1px solid rgba(var(--nutrition-legacy-cyan-rgb), 0.14);
   background: rgba(255, 255, 255, 0.82);
 }
 .settings-checkin-answer span {
-  color: rgba(15, 31, 85, 0.62);
+  color: rgba(var(--nutrition-legacy-indigo-rgb), 0.62);
   font-size: 0.76rem;
   font-weight: 800;
   letter-spacing: 0.04em;
@@ -332,7 +332,7 @@
 }
 .settings-checkin-answer strong {
   font-size: 1rem;
-  color: #081533;
+  color: var(--nutrition-legacy-navy);
 }
 .settings-checkin-meta {
   margin: 0;
@@ -349,7 +349,7 @@
   display: grid;
   gap: var(--space-3);
   background:
-    radial-gradient(circle at top right, rgba(0, 188, 222, 0.14), transparent 34%),
+    radial-gradient(circle at top right, rgba(var(--nutrition-legacy-cyan-rgb), 0.14), transparent 34%),
     linear-gradient(160deg, rgba(255,255,255,0.99), rgba(242, 248, 255, 0.97));
 }
 :root[data-experience-mode='ironquest'] .settings-ai-card {
@@ -393,11 +393,11 @@
   gap: var(--space-1);
   padding: var(--space-3) var(--space-3-5);
   border-radius: 16px;
-  border: 1px solid rgba(0, 188, 222, 0.14);
+  border: 1px solid rgba(var(--nutrition-legacy-cyan-rgb), 0.14);
   background: rgba(255, 255, 255, 0.82);
 }
 .settings-ai-stat span {
-  color: rgba(15, 31, 85, 0.62);
+  color: rgba(var(--nutrition-legacy-indigo-rgb), 0.62);
   font-size: 0.76rem;
   font-weight: 800;
   letter-spacing: 0.04em;
@@ -405,7 +405,7 @@
 }
 .settings-ai-stat strong {
   font-size: 1rem;
-  color: #081533;
+  color: var(--nutrition-legacy-navy);
 }
 .settings-ai-history-list {
   list-style: none;
@@ -422,7 +422,7 @@
   padding: var(--space-2-5) var(--space-3);
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.74);
-  border: 1px solid rgba(0, 188, 222, 0.12);
+  border: 1px solid rgba(var(--nutrition-legacy-cyan-rgb), 0.12);
 }
 .settings-ai-history-list small {
   color: var(--text-muted);
@@ -439,19 +439,19 @@
   letter-spacing: 0.03em;
 }
 .settings-ai-history-state.completed {
-  background: rgba(34, 196, 126, 0.16);
+  background: rgba(var(--nutrition-legacy-green-rgb), 0.16);
   color: var(--success);
 }
 .settings-ai-history-state.dismissed {
-  background: rgba(255, 46, 80, 0.12);
+  background: rgba(var(--nutrition-legacy-red-rgb), 0.12);
   color: var(--danger);
 }
 .settings-ai-history-state.snoozed {
-  background: rgba(255, 208, 0, 0.2);
+  background: rgba(var(--nutrition-legacy-amber-rgb), 0.2);
   color: #8b6500;
 }
 .settings-ai-history-state.missed {
-  background: rgba(255, 46, 80, 0.12);
+  background: rgba(var(--nutrition-legacy-red-rgb), 0.12);
   color: var(--danger);
 }
 .settings-section h3,
@@ -460,7 +460,7 @@
 }
 
 .reminder-setting-card {
-  border: 1px solid rgba(168, 212, 240, 0.8);
+  border: 1px solid rgba(var(--nutrition-legacy-sky-rgb), 0.8);
   border-radius: 16px;
   padding: var(--space-3-5);
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(240, 248, 255, 0.92));
@@ -531,7 +531,7 @@
   flex-direction: column;
   gap: var(--space-3);
   padding: var(--space-3-5);
-  border: 1px solid rgba(168, 212, 240, 0.8);
+  border: 1px solid rgba(var(--nutrition-legacy-sky-rgb), 0.8);
   border-radius: 16px;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(240, 248, 255, 0.92));
 }
@@ -602,7 +602,7 @@
   border: 1.5px solid var(--border);
   border-left: 0;
   border-radius: 0 12px 12px 0;
-  background: rgba(168, 212, 240, 0.22);
+  background: rgba(var(--nutrition-legacy-sky-rgb), 0.22);
   color: var(--text-muted);
   font-size: 0.82rem;
   font-weight: 800;
@@ -648,7 +648,7 @@
   min-height: 280px;
   border-radius: 18px;
   overflow: hidden;
-  border: 1px solid rgba(168, 212, 240, 0.8);
+  border: 1px solid rgba(var(--nutrition-legacy-sky-rgb), 0.8);
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(236, 246, 252, 0.94));
   display: flex;
   align-items: center;
@@ -695,8 +695,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 188, 222, 0.12);
-  color: rgba(15, 31, 85, 0.8);
+  background: rgba(var(--nutrition-legacy-cyan-rgb), 0.12);
+  color: rgba(var(--nutrition-legacy-indigo-rgb), 0.8);
   font-weight: 800;
   font-size: 0.8rem;
   white-space: nowrap;
@@ -711,7 +711,7 @@
   gap: var(--space-2-5);
   padding: var(--space-2-5);
   border-radius: 18px;
-  border: 1px solid rgba(168, 212, 240, 0.75);
+  border: 1px solid rgba(var(--nutrition-legacy-sky-rgb), 0.75);
   background: rgba(255, 255, 255, 0.92);
 }
 .settings-generated-card img {
@@ -776,7 +776,7 @@
   padding: var(--space-3-5);
   border-radius: 18px;
   background: var(--bg2);
-  border: 1px solid rgba(168, 212, 240, 0.82);
+  border: 1px solid rgba(var(--nutrition-legacy-sky-rgb), 0.82);
 }
 
 :root[data-experience-mode='ironquest'] .ui-dialog.settings-image-zoom-panel {
@@ -798,7 +798,7 @@
   width: 100%;
   overflow: auto;
   border-radius: 14px;
-  border: 1px solid rgba(168, 212, 240, 0.75);
+  border: 1px solid rgba(var(--nutrition-legacy-sky-rgb), 0.75);
   background: rgba(235, 245, 252, 0.8);
   min-height: 300px;
   display: grid;
@@ -839,7 +839,7 @@
   gap: var(--space-3-5);
   padding: var(--space-4) var(--space-4-5);
   border-radius: 18px;
-  border: 1px solid rgba(168, 212, 240, 0.88);
+  border: 1px solid rgba(var(--nutrition-legacy-sky-rgb), 0.88);
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(241, 249, 255, 0.96));
 }
 .settings-scheduled-reminders-head {
@@ -875,7 +875,7 @@
   min-height: 30px;
   padding: var(--space-1) var(--space-2-5);
   border-radius: 999px;
-  background: rgba(0, 188, 222, 0.12);
+  background: rgba(var(--nutrition-legacy-cyan-rgb), 0.12);
   color: var(--accent2);
   font-size: 0.8rem;
   font-weight: 800;
@@ -892,7 +892,7 @@
   gap: var(--space-3-5);
   padding: var(--space-3) var(--space-3-5);
   border-radius: 16px;
-  border: 1px solid rgba(168, 212, 240, 0.82);
+  border: 1px solid rgba(var(--nutrition-legacy-sky-rgb), 0.82);
   background: rgba(255, 255, 255, 0.88);
 }
 .settings-scheduled-reminder-row.history {
@@ -929,15 +929,15 @@
   letter-spacing: 0.04em;
 }
 .settings-reminder-status.sent {
-  background: rgba(34, 196, 126, 0.14);
+  background: rgba(var(--nutrition-legacy-green-rgb), 0.14);
   color: #10885a;
 }
 .settings-reminder-status.failed {
-  background: rgba(255, 46, 80, 0.12);
+  background: rgba(var(--nutrition-legacy-red-rgb), 0.12);
   color: #b31b3c;
 }
 .settings-reminder-status.canceled {
-  background: rgba(15, 31, 85, 0.08);
+  background: rgba(var(--nutrition-legacy-indigo-rgb), 0.08);
   color: var(--text-muted);
 }
 .reminder-card-head {
@@ -994,8 +994,8 @@
   width: 100%;
   height: 100%;
   border-radius: 999px;
-  background: rgba(88, 120, 160, 0.25);
-  border: 1px solid rgba(88, 120, 160, 0.18);
+  background: rgba(var(--nutrition-legacy-slate-rgb), 0.25);
+  border: 1px solid rgba(var(--nutrition-legacy-slate-rgb), 0.18);
   transition: background 0.2s ease, border-color 0.2s ease;
 }
 .switch-track::after {
@@ -1007,7 +1007,7 @@
   height: 22px;
   border-radius: 50%;
   background: #fff;
-  box-shadow: 0 3px 10px rgba(15, 31, 85, 0.18);
+  box-shadow: 0 3px 10px rgba(var(--nutrition-legacy-indigo-rgb), 0.18);
   transform: translateY(-50%);
   transition: transform 0.2s ease;
 }
@@ -1017,7 +1017,7 @@
 }
 .switch-input:checked + .switch-track {
   background: linear-gradient(135deg, var(--accent2), #55d6ef);
-  border-color: rgba(0, 188, 222, 0.25);
+  border-color: rgba(var(--nutrition-legacy-cyan-rgb), 0.25);
 }
 .switch-input:checked + .switch-track::after {
   transform: translate(20px, -50%);
@@ -1026,7 +1026,7 @@
   transform: translate(18px, -50%);
 }
 .switch-input:focus-visible + .switch-track {
-  box-shadow: 0 0 0 3px rgba(0, 188, 222, 0.18);
+  box-shadow: 0 0 0 3px rgba(var(--nutrition-legacy-cyan-rgb), 0.18);
 }
 .notification-phone-field input:disabled {
   opacity: 0.7;
@@ -1037,7 +1037,7 @@
   justify-content: space-between;
   align-items: center;
   padding: 10px 0;
-  border-bottom: 1px solid rgba(168, 212, 240, 0.7);
+  border-bottom: 1px solid rgba(var(--nutrition-legacy-sky-rgb), 0.7);
 }
 .target-preview-row:last-child {
   border-bottom: 0;
@@ -1093,7 +1093,7 @@
   min-height: 40px;
   padding: 0 var(--space-2-5);
   border-radius: 999px;
-  background: rgba(168, 212, 240, 0.28);
+  background: rgba(var(--nutrition-legacy-sky-rgb), 0.28);
   color: var(--text);
   font-size: 0.82rem;
   letter-spacing: 0.04em;
@@ -1305,12 +1305,12 @@
 
 /* Johnny profile dossier */
 :root:not([data-experience-mode='ironquest']) .johnny-profile-screen {
-  --profile-ink: #f4f2ea;
+  --profile-ink: var(--warm-cream);
   --profile-muted: #98a39c;
   --profile-panel: #171e1a;
-  --profile-panel-2: #202923;
-  --profile-border: #354139;
-  --profile-signal: #e8cb4c;
+  --profile-panel-2: var(--johnny-home-surface-2);
+  --profile-border: var(--johnny-home-border);
+  --profile-signal: var(--gold-accent);
   max-width: 980px;
   padding-bottom: 118px;
   color: var(--profile-ink);
@@ -1321,7 +1321,7 @@
   inset: 0;
   z-index: -1;
   pointer-events: none;
-  background: radial-gradient(circle at 78% 8%, rgba(232,203,76,.09), transparent 25%), linear-gradient(155deg,#111713,#090d0b 70%);
+  background: radial-gradient(circle at 78% 8%, rgba(var(--gold-accent-rgb),.09), transparent 25%), linear-gradient(155deg,#111713,#090d0b 70%);
 }
 :root:not([data-experience-mode='ironquest']) .johnny-profile-header {
   position: relative;
@@ -1342,7 +1342,7 @@
   position: absolute;
   right: -25px;
   top: 48px;
-  color: rgba(232,203,76,.055);
+  color: rgba(var(--gold-accent-rgb),.055);
   font: 800 38px 'Oswald',sans-serif;
   letter-spacing: 3px;
   transform: rotate(-90deg);
@@ -1352,7 +1352,7 @@
 :root:not([data-experience-mode='ironquest']) .johnny-profile-header-main { display:flex;align-items:center;gap:16px;min-width:0; }
 :root:not([data-experience-mode='ironquest']) .johnny-profile-monogram {
   display:grid;place-items:center;flex:0 0 66px;height:66px;border:1px solid #5e5b40;border-radius:18px;
-  background:linear-gradient(145deg,#302f22,#171b16);color:var(--profile-signal);font:800 25px 'Oswald',sans-serif;box-shadow:inset 0 0 0 4px rgba(232,203,76,.04);
+  background:linear-gradient(145deg,#302f22,#171b16);color:var(--profile-signal);font:800 25px 'Oswald',sans-serif;box-shadow:inset 0 0 0 4px rgba(var(--gold-accent-rgb),.04);
 }
 :root:not([data-experience-mode='ironquest']) .johnny-profile-header-copy { min-width:0; }
 :root:not([data-experience-mode='ironquest']) .johnny-profile-header-copy>span { color:var(--profile-signal);font:600 10px 'JetBrains Mono',monospace;letter-spacing:1.4px;text-transform:uppercase; }
@@ -1397,20 +1397,20 @@
 :root:not([data-experience-mode='ironquest']) .johnny-profile-screen .settings-identity-stat strong,
 :root:not([data-experience-mode='ironquest']) .johnny-profile-screen .settings-prediction-stat strong { color:var(--profile-ink);font-family:'Oswald',sans-serif; }
 :root:not([data-experience-mode='ironquest']) .johnny-profile-screen .settings-trend-card { border-color:#41483c;background:linear-gradient(180deg,#111713,#1d261f); }
-:root:not([data-experience-mode='ironquest']) .johnny-profile-screen .settings-trend-bar-fill { background:linear-gradient(180deg,#f0da6f,#9f8b31); }
+:root:not([data-experience-mode='ironquest']) .johnny-profile-screen .settings-trend-bar-fill { background:linear-gradient(180deg,var(--johnny-home-gold-soft),#9f8b31); }
 :root:not([data-experience-mode='ironquest']) .johnny-profile-screen .settings-trend-bar-track { background:#29312c; }
 :root:not([data-experience-mode='ironquest']) .johnny-profile-screen .settings-field-label,
 :root:not([data-experience-mode='ironquest']) .johnny-profile-screen .ui-field-label { color:#d7dcd6; }
 :root:not([data-experience-mode='ironquest']) .johnny-profile-screen input:not([type='checkbox']):not([type='range']),
 :root:not([data-experience-mode='ironquest']) .johnny-profile-screen select,
-:root:not([data-experience-mode='ironquest']) .johnny-profile-screen textarea { border-color:#3a453e;background:#101613;color:var(--profile-ink); }
+:root:not([data-experience-mode='ironquest']) .johnny-profile-screen textarea { border-color:var(--workout-legacy-border);background:var(--johnny-home-field-4);color:var(--profile-ink); }
 :root:not([data-experience-mode='ironquest']) .johnny-profile-screen input:focus,
 :root:not([data-experience-mode='ironquest']) .johnny-profile-screen select:focus,
-:root:not([data-experience-mode='ironquest']) .johnny-profile-screen textarea:focus { border-color:var(--profile-signal);box-shadow:0 0 0 2px rgba(232,203,76,.12); }
+:root:not([data-experience-mode='ironquest']) .johnny-profile-screen textarea:focus { border-color:var(--profile-signal);box-shadow:0 0 0 2px rgba(var(--gold-accent-rgb),.12); }
 :root:not([data-experience-mode='ironquest']) .johnny-profile-screen .btn-primary,
-:root:not([data-experience-mode='ironquest']) .johnny-profile-screen .btn-secondary { border-color:#e9d05c;background:linear-gradient(180deg,#f0da6f,#e8cb4c);color:#151917; }
-:root:not([data-experience-mode='ironquest']) .johnny-profile-screen .btn-outline { border-color:#465149;background:#202823;color:#d9ded8; }
-:root:not([data-experience-mode='ironquest']) .johnny-profile-screen .dashboard-chip { border-color:#57583e;background:rgba(232,203,76,.09);color:var(--profile-signal); }
+:root:not([data-experience-mode='ironquest']) .johnny-profile-screen .btn-secondary { border-color:#e9d05c;background:linear-gradient(180deg,var(--johnny-home-gold-soft),var(--gold-accent));color:var(--johnny-home-surface-1); }
+:root:not([data-experience-mode='ironquest']) .johnny-profile-screen .btn-outline { border-color:var(--workout-legacy-surface);background:#202823;color:#d9ded8; }
+:root:not([data-experience-mode='ironquest']) .johnny-profile-screen .dashboard-chip { border-color:#57583e;background:rgba(var(--gold-accent-rgb),.09);color:var(--profile-signal); }
 :root:not([data-experience-mode='ironquest']) .johnny-profile-screen .switch-track { background:#303a34; }
 :root:not([data-experience-mode='ironquest']) .johnny-profile-screen .switch-input:checked + .switch-track { background:#b9a33f; }
 :root:not([data-experience-mode='ironquest']) .johnny-profile-screen>.settings-onboarding-section { margin-top:10px; }

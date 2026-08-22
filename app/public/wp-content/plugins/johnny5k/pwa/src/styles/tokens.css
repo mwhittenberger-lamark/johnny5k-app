@@ -11,6 +11,7 @@
   --ink:         #14181A;
   --mist:        #7C8E9C;
   --whistle:     #E8B84A;
+  --whistle-rgb: 232, 184, 74;
   --whistle-dim: #6B5326;
   --rust:        #D9724A;
   --rust-dim:    #4A2A1C;
@@ -18,6 +19,7 @@
 
   /* Structural colors: texture and elevation, never status meaning. */
   --signal:       #4FC3E0;
+  --signal-rgb:   79, 195, 224;
   --surface-2:    #10161D;
   --surface-alt:  #1A232C;
   --surface-3:    #16202A;
@@ -692,6 +694,164 @@
   --mode-shadow: 0 26px 60px rgba(3, 5, 12, 0.34);
   --display-letter-spacing: 0.03em;
   --display-text-transform: uppercase;
+}
+
+/* Shared warm accent colors reused across more than one screen's legacy
+   palette (currently Johnny chat, shell chrome, and Workout). Distinct from
+   the app-wide --whistle/--good/--chalk tones — kept separate rather than
+   merged so no screen's exact rendering shifts. This warm gold/cream/sage
+   family appears to be a distinct "coach-facing" visual identity running
+   through Johnny/shell/workout, separate from the cooler blue-slate
+   identity used by dashboard/nutrition/settings — worth keeping in mind
+   when planning a new "look", since a reskin likely wants to target one or
+   the other, or both, deliberately rather than by accident. */
+:root {
+  --gold-accent: #E8CB4C;
+  --gold-accent-rgb: 232, 203, 76;
+  --green-accent: #7FA982;
+  --green-accent-rgb: 127, 169, 130;
+  --warm-cream: #F4F2EA;
+  --warm-cream-rgb: 244, 242, 234;
+}
+
+/* Johnny Home screen palette. Extracted verbatim from previously-hardcoded
+   values in johnny-home.css so the screen renders identically today while
+   gaining a single place to override for a future look. This is its own
+   warm olive/gold palette, distinct from the app-wide cool blue-slate
+   tokens above — do not alias these to --chalk/--whistle/--mist etc, since
+   the hex values differ and doing so would recolor the screen. Long-tail,
+   single-use gradient-stop shades in johnny-home.css are intentionally left
+   as literals; only values reused three or more times were extracted. */
+:root {
+  --johnny-home-gold-light: #F1DC77;
+  --johnny-home-gold-soft: #F0DA6F;
+  --johnny-home-chalk: #DCE1DD;
+  --johnny-home-sage: #89958E;
+  --johnny-home-mist: #77837C;
+  --johnny-home-mist-2: #AAB4AD;
+  --johnny-home-mist-3: #7F8B84;
+  --johnny-home-mist-4: #929E96;
+  --johnny-home-mist-light: #C9D0CA;
+  --johnny-home-coral: #EF9B82;
+  --johnny-home-coral-light: #F0AA97;
+  --johnny-home-rust: #D46C52;
+  --johnny-home-olive: #5C5940;
+  --johnny-home-field: #111714;
+  --johnny-home-field-2: #141813;
+  --johnny-home-field-3: #101513;
+  --johnny-home-field-4: #101612;
+  --johnny-home-field-5: #0E1411;
+  --johnny-home-void: #080C09;
+  --johnny-home-surface-1: #151917;
+  --johnny-home-surface-2: #202923;
+  --johnny-home-surface-3: #303A33;
+  --johnny-home-surface-3b: #303B34;
+  --johnny-home-surface-4: #46534B;
+  --johnny-home-surface-5: #29332D;
+  --johnny-home-surface-alt: #37443C;
+  --johnny-home-deep: #151C18;
+  --johnny-home-border: #354139;
+  --johnny-home-border-alt: #344039;
+  --johnny-home-border-2: #4B574F;
+  --johnny-home-border-3: #3B473F;
+  --johnny-home-border-4: #3A463E;
+}
+
+/* Shell chrome (nav/header/drawer) palette. Same extraction rule as Johnny
+   Home above: exact values pulled from previously-hardcoded shell.css hex,
+   so the app frame renders identically while gaining override points. */
+:root {
+  --shell-cream: #F4F0E6;
+  --shell-cream-rgb: 244, 240, 230;
+  --shell-gold: #D8AD50;
+  --shell-gold-rgb: 216, 173, 80;
+  --shell-gold-dark: #BD8D2B;
+  --shell-gold-light: #F1CA6A;
+  --shell-field-1: #17130A;
+  --shell-field-2: #07100D;
+  --shell-void-rgb: 5, 14, 11;
+}
+
+/* Workout screen palette. Same extraction rule as Johnny Home/shell above:
+   exact values pulled from previously-hardcoded workout.css hex, so the
+   screen renders identically while gaining override points. Values that
+   already matched an existing shared/Johnny-Home token were pointed at
+   that token directly instead of being duplicated here. */
+:root {
+  --workout-legacy-mist: #8B948B;
+  --workout-legacy-mist-2: #929D95;
+  --workout-legacy-rust: #C4552E;
+  --workout-legacy-border: #3A453E;
+  --workout-legacy-surface: #465149;
+  --workout-legacy-field: #1A201D;
+  --workout-legacy-deep: #1C2320;
+  --workout-legacy-navy-rgb: 21, 29, 38;
+  --workout-legacy-navy-2-rgb: 18, 24, 31;
+  --workout-legacy-teal-rgb: 47, 164, 169;
+}
+
+/* Nutrition screen palette. Same extraction rule as the blocks above: exact
+   values pulled from previously-hardcoded nutrition.css hex/rgba, so the
+   screen renders identically while gaining override points. This is the
+   cool blue-slate/cyan "leftover light-theme" family discussed earlier
+   (distinct from the warm gold/cream family above) — some of these shades
+   may still be visual-bug candidates from the same light-theme-leftover
+   pattern already fixed on .saved-food-tag-macro etc, but that is a
+   separate concern from this pass, which only preserves current
+   rendering under named tokens. */
+:root {
+  --nutrition-legacy-navy: #081533;
+  --nutrition-legacy-navy-rgb: 8, 21, 51;
+  --nutrition-legacy-navy-2-rgb: 11, 29, 73;
+  --nutrition-legacy-navy-dark: #18344F;
+  --nutrition-legacy-cyan-rgb: 0, 188, 222;
+  --nutrition-legacy-slate-rgb: 88, 120, 160;
+  --nutrition-legacy-amber-rgb: 255, 208, 0;
+  --nutrition-legacy-mint-rgb: 240, 252, 255;
+  --nutrition-legacy-mint-2: #EFFFF6;
+  --nutrition-legacy-sky-rgb: 168, 212, 240;
+  --nutrition-legacy-indigo-rgb: 15, 31, 85;
+  --nutrition-legacy-frost-rgb: 245, 251, 255;
+  --nutrition-legacy-frost-2: #F5FBFF;
+  --nutrition-legacy-sage-rgb: 190, 211, 198;
+  --nutrition-legacy-green-rgb: 34, 196, 126;
+  --nutrition-legacy-green-2-rgb: 12, 187, 129;
+  --nutrition-legacy-green-dark: #0D7B4F;
+  --nutrition-legacy-void-rgb: 3, 5, 12;
+  --nutrition-legacy-red-rgb: 255, 46, 80;
+  --nutrition-legacy-cream: #F7F0E4;
+  --nutrition-legacy-cream-rgb: 247, 240, 228;
+  --nutrition-legacy-gold: #F1D477;
+  --nutrition-legacy-green-3-rgb: 103, 156, 122;
+}
+
+/* Dashboard screen palette. Same extraction rule as the blocks above: exact
+   values pulled from previously-hardcoded dashboard.css hex/rgba, so the
+   screen renders identically while gaining override points. Most of
+   Dashboard's recurring colors already matched the shared/nutrition-legacy
+   tokens above (free reuse, no new token needed) — only genuinely
+   dashboard-exclusive recurring values are added here. */
+:root {
+  --dashboard-legacy-navy: #0B2441;
+  --dashboard-legacy-green: #18794E;
+  --dashboard-legacy-amber-dark: #8D6700;
+  --dashboard-legacy-teal: #0F766E;
+  --dashboard-legacy-orange-rgb: 255, 85, 48;
+  --dashboard-legacy-pink-rgb: 255, 56, 160;
+  --dashboard-legacy-green-2-rgb: 34, 197, 94;
+  --dashboard-legacy-charcoal-rgb: 31, 42, 46;
+  --dashboard-legacy-cream-rgb: 255, 249, 232;
+  --dashboard-legacy-cream-2-rgb: 249, 246, 240;
+  --dashboard-legacy-frost-rgb: 244, 248, 252;
+  --dashboard-legacy-gold-rgb: 214, 183, 96;
+  --dashboard-legacy-sky-2-rgb: 128, 184, 225;
+}
+
+/* Shopping list screen palette. Same extraction rule as the blocks above. */
+:root {
+  --shopping-legacy-border: #344038;
+  --shopping-legacy-mist: #AAB3AC;
+  --shopping-legacy-field: #111612;
 }
 
 .sr-only {
