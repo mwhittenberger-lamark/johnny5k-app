@@ -137,6 +137,10 @@ export default function SettingsScreen() {
     update('phone', formatPhoneInput(value))
   }
 
+  function updatePersonality(key, value) {
+    update('preference_meta', { ...form.preference_meta, [key]: value })
+  }
+
   function updateSchedule(day, dayType) {
     setForm(current => ({
       ...current,
@@ -1772,8 +1776,8 @@ export default function SettingsScreen() {
           sectionKey="johnny"
           eyebrow="Johnny"
           title="Johnny"
-          description="Coaching memory, follow-through health, and advanced proactive delivery controls."
-          itemCountLabel="4 cards"
+          description="Personality, coaching memory, follow-through health, and advanced proactive delivery controls."
+          itemCountLabel="5 cards"
           open={accordionSections.johnny}
           onToggle={toggleAccordionSection}
         >
@@ -1869,6 +1873,45 @@ export default function SettingsScreen() {
               ) : (
                 <p className="settings-subtitle">Johnny will start building a visible history here as you complete or dismiss follow-ups.</p>
               )}
+            </div>
+          </section>
+
+          <section className="settings-section dash-card settings-ai-card settings-personality-panel">
+            <div className="settings-ai-head">
+              <div>
+                <span className="dashboard-chip ai">Johnny's voice</span>
+                <h3>Personality</h3>
+              </div>
+            </div>
+            <p className="settings-subtitle">Tune how Johnny talks to you. These carry across chat and texts, not just this screen.</p>
+            <div className="settings-grid">
+              <Field className="settings-field" label="Your age range">
+                <select value={form.preference_meta?.personality_age_range || ''} onChange={e => updatePersonality('personality_age_range', e.target.value)}>
+                  <option value="">Let Johnny decide</option>
+                  <option value="early_20s">Early 20s</option>
+                  <option value="late_20s">Late 20s</option>
+                  <option value="30s">30s</option>
+                  <option value="40s">40s</option>
+                  <option value="50s">50s</option>
+                </select>
+              </Field>
+              <Field className="settings-field" label="Coaching intensity">
+                <select value={form.preference_meta?.personality_aggressiveness || ''} onChange={e => updatePersonality('personality_aggressiveness', e.target.value)}>
+                  <option value="">Balanced (default)</option>
+                  <option value="gentle">Gentle</option>
+                  <option value="balanced">Balanced</option>
+                  <option value="intense">Intense</option>
+                  <option value="drill_sergeant">Drill sergeant</option>
+                </select>
+              </Field>
+              <Field className="settings-field" label="Humor">
+                <select value={form.preference_meta?.personality_humor_level || ''} onChange={e => updatePersonality('personality_humor_level', e.target.value)}>
+                  <option value="">Balanced (default)</option>
+                  <option value="serious">Serious</option>
+                  <option value="light">Light</option>
+                  <option value="playful">Playful</option>
+                </select>
+              </Field>
             </div>
           </section>
 

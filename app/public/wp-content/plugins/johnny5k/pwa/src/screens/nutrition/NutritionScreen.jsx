@@ -1357,10 +1357,6 @@ export default function NutritionScreen() {
           </div>
         </div>
         <div className="nutrition-header-status">
-          <button type="button" className="nutrition-header-scan-action" title="Scan nutrition label" onClick={() => openLabelScanPrompt()}>
-            <AppIcon name="label" />
-            <span>Scan label</span>
-          </button>
           <span><i /> {meals.length ? `${meals.length} meal${meals.length === 1 ? '' : 's'} logged today` : 'Nothing logged yet today'}</span>
           <strong>{caloriesRemaining != null ? `${Math.round(caloriesRemaining).toLocaleString()} cal left today` : 'Set a calorie target to track'}</strong>
         </div>
@@ -2065,22 +2061,29 @@ function RecentFoodRow({ food, checked, onToggleChecked, onSave, onDelete, onErr
   }
 
   return (
-    <div ref={rowRef} className="nutrition-item-row saved-food-row recent-food-row">
-      <div className="recent-food-row-main">
-        <label className="recent-food-check">
-          <input type="checkbox" checked={checked} onChange={onToggleChecked} />
-          <span>Check</span>
-        </label>
-      </div>
-      <div className="recent-food-row-copy">
-        <strong>{displayName}</strong>
-        <p>{food.brand && displayName !== food.brand ? `${food.brand} · ` : ''}{formatMealServing(food.serving_amount, food.serving_size)} · {Math.round(food.calories)} Calories · {Math.round(food.protein_g)}g protein</p>
-        {food.meal_datetime ? <p>Last logged {formatMealTimeLabel(food.meal_datetime)}</p> : null}
-        {food.micros?.length ? <p>{formatMicroList(food.micros, 3)}</p> : null}
-        <div className="nutrition-row-actions recent-food-actions-row">
-          <button className="btn-secondary small" onClick={() => setEditing(true)}>Edit</button>
-          <button className="btn-ghost small" onClick={onDelete}>Delete</button>
+    <div ref={rowRef} className="nutrition-item-row saved-food-row recent-food-card">
+      <label className="recent-food-check">
+        <input type="checkbox" checked={checked} onChange={onToggleChecked} />
+        <span className="sr-only">Select {displayName}</span>
+      </label>
+      <div className="recent-food-card-body">
+        <div className="recent-food-card-head">
+          <strong>{displayName}</strong>
+          {food.meal_datetime ? <span className="recent-food-card-time">{formatMealTimeLabel(food.meal_datetime)}</span> : null}
         </div>
+        {food.brand && displayName !== food.brand ? <p className="recent-food-card-brand">{food.brand}</p> : null}
+        <div className="recent-food-card-stats">
+          <span className="recent-food-stat-cal">{Math.round(food.calories)} cal</span>
+          <span className="recent-food-stat-divider" aria-hidden="true" />
+          <span>{Math.round(food.protein_g)}g protein</span>
+          <span className="recent-food-stat-divider" aria-hidden="true" />
+          <span>{formatMealServing(food.serving_amount, food.serving_size)}</span>
+        </div>
+        {food.micros?.length ? <p className="recent-food-card-micros">{formatMicroList(food.micros, 3)}</p> : null}
+      </div>
+      <div className="recent-food-card-actions">
+        <button type="button" className="recent-food-card-action" onClick={() => setEditing(true)}>Edit</button>
+        <button type="button" className="recent-food-card-action danger" onClick={onDelete}>Delete</button>
       </div>
     </div>
   )
@@ -2668,7 +2671,7 @@ function PantryRow({ item, onSave, onDelete }) {
       categoryLabel={categoryLabel}
       detailText={`${item.quantity ? `${item.quantity} ${item.unit || ''}` : 'No quantity set'}${item.expires_on ? ` · expires ${item.expires_on}` : ''}${item.notes ? ` · ${item.notes}` : ''}`}
       actionLabel="Delete"
-      secondaryAction={<button className="btn-secondary small" onClick={() => setEditing(true)}>Edit</button>}
+      secondaryAction={<button type="button" className="pantry-row-modern-action" onClick={() => setEditing(true)}>Edit</button>}
       onAction={onDelete}
     />
   )
@@ -2701,19 +2704,17 @@ function PantryDisplayRow({ item, categoryLabel = '', detailText = '', actionLab
   const detail = detailText || `${item.quantity != null || item.unit ? formatGroceryGapAmount(item.quantity, item.unit) : 'No quantity set'}${item.notes ? ` · ${item.notes}` : ''}`
 
   return (
-    <div className="nutrition-item-row pantry-row pantry-row-table">
-      <div className="pantry-row-name">
-        <strong>{item.item_name}</strong>
+    <div className="nutrition-item-row pantry-row-modern">
+      <div className="pantry-row-modern-body">
+        <div className="pantry-row-modern-head">
+          <strong>{item.item_name}</strong>
+          <span className="nutrition-inline-badge pantry-category">{resolvedCategory}</span>
+        </div>
+        <p className="pantry-row-modern-detail">{detail}</p>
       </div>
-      <div className="pantry-row-category">
-        <span className="nutrition-inline-badge pantry-category">{resolvedCategory}</span>
-      </div>
-      <div className="pantry-row-detail">
-        <p>{detail}</p>
-      </div>
-      <div className="nutrition-row-actions pantry-row-actions">
+      <div className="pantry-row-modern-actions">
         {secondaryAction}
-        <button className="btn-secondary small pantry-row-remove-button" onClick={onAction}>{actionLabel}</button>
+        <button type="button" className="pantry-row-modern-action danger" onClick={onAction}>{actionLabel}</button>
       </div>
     </div>
   )
@@ -2723,15 +2724,13 @@ function PantryCategorySection({ category, collapsed = false, onToggle, onSaveIt
   return (
     <section className="dash-card nutrition-planning-card nutrition-pantry-category-card">
       <div className="nutrition-pantry-category-head">
-        <div>
-          <span className="dashboard-chip workout">{category.label}</span>
+        <div className="nutrition-pantry-category-title">
           <h3>{category.label}</h3>
-          <p>{category.items.length} item{category.items.length === 1 ? '' : 's'} on hand.</p>
+          <span className="nutrition-pantry-category-count">{category.items.length} item{category.items.length === 1 ? '' : 's'}</span>
         </div>
-        <div className="nutrition-pantry-category-actions">
-          <span className="nutrition-inline-badge pantry-category">{category.items.length}</span>
-          <button type="button" className="btn-ghost small" onClick={onToggle}>{collapsed ? 'Expand' : 'Collapse'}</button>
-        </div>
+        <button type="button" className="nutrition-pantry-category-toggle" onClick={onToggle} aria-expanded={!collapsed}>
+          {collapsed ? 'Expand' : 'Collapse'}
+        </button>
       </div>
       {collapsed ? null : (
         <div className="nutrition-stack-list">

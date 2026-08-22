@@ -631,6 +631,15 @@ class AiToolService {
 					'timezone' => [ 'type' => 'string' ], 'units' => [ 'type' => 'string' ],
 				], 'additionalProperties' => false ],
 			],
+			'update_personality_settings' => [
+				'read_only' => false, 'enabled' => true,
+				'description' => 'Adjust the user\'s saved Johnny personality dials (age range, coaching intensity, humor level) after the user asks to change how Johnny talks to them, or agrees to a recommendation you made. Only set the field(s) that actually changed; leave the rest untouched.',
+				'parameters' => [ 'type' => 'object', 'properties' => [
+					'personality_age_range' => [ 'type' => 'string', 'enum' => [ 'early_20s', 'late_20s', '30s', '40s', '50s' ] ],
+					'personality_aggressiveness' => [ 'type' => 'string', 'enum' => [ 'gentle', 'balanced', 'intense', 'drill_sergeant' ] ],
+					'personality_humor_level' => [ 'type' => 'string', 'enum' => [ 'serious', 'light', 'playful' ] ],
+				], 'additionalProperties' => false ],
+			],
 			'add_pantry_items' => [
 				'read_only'   => false,
 				'enabled'     => true,

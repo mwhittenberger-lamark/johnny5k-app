@@ -120,21 +120,22 @@ export function PantryPageContent({ screen, deps }) {
 
   return (
     <div className="screen nutrition-screen upgraded-nutrition-screen">
-      <header className="screen-header nutrition-header support-icon-anchor">
+      <header className="screen-header nutrition-header support-icon-anchor nutrition-pantry-header">
         <SupportIconButton label="Get help with pantry" onClick={screen.openPantrySupport} />
+        <button type="button" className="nutrition-pantry-back-link" onClick={screen.closePantryPage}>
+          <span aria-hidden="true">‹</span>
+          <span>Back to nutrition</span>
+        </button>
         <div>
           <p className="dashboard-eyebrow">Nutrition</p>
           <h1>Pantry by category</h1>
           <p className="settings-subtitle">Group what you have on hand by food type, then add, edit, or clean up items without digging through the full nutrition dashboard.</p>
         </div>
-        <div className="header-actions nutrition-pantry-header-actions">
-          <button className="btn-secondary header-action-button" onClick={screen.closePantryPage} type="button">
-            <span>Back to nutrition</span>
-          </button>
-          <button className="btn-secondary header-action-button" onClick={() => screen.setShowPantryVoice(current => !current)} type="button">
+        <div className="nutrition-library-toolbar nutrition-pantry-header-actions">
+          <button type="button" className="nutrition-library-action" onClick={() => screen.setShowPantryVoice(current => !current)}>
             <span>{screen.showPantryVoice ? 'Close voice' : 'Speak list'}</span>
           </button>
-          <button className="btn-secondary header-action-button" onClick={() => screen.setShowPantryForm(current => !current)} type="button">
+          <button type="button" className="nutrition-library-action primary" onClick={() => screen.setShowPantryForm(current => !current)}>
             <AppIcon name="plus" />
             <span>{screen.showPantryForm ? 'Close add' : 'Add item'}</span>
           </button>
@@ -147,12 +148,12 @@ export function PantryPageContent({ screen, deps }) {
         <div className="dash-card nutrition-planning-card nutrition-pantry-stat-card">
           <span className="dashboard-chip workout">Pantry items</span>
           <strong>{screen.filteredPantryItems.length}</strong>
-          <p>{screen.filteredPantryItems.length === screen.pantry.length ? 'Total ingredients and staples currently on hand.' : `${screen.pantry.length} total items before filters.`}</p>
+          <p>{screen.filteredPantryItems.length === screen.pantry.length ? 'On hand right now' : `of ${screen.pantry.length} total`}</p>
         </div>
         <div className="dash-card nutrition-planning-card nutrition-pantry-stat-card">
           <span className="dashboard-chip nutrition">Food types</span>
           <strong>{screen.filteredPantryCategories.length}</strong>
-          <p>{screen.filteredPantryCategories.length === screen.pantryCategories.length ? 'Auto-grouped so you can scan proteins, produce, grains, and more.' : `${screen.pantryCategories.length} total categories available.`}</p>
+          <p>{screen.filteredPantryCategories.length === screen.pantryCategories.length ? 'Auto-grouped categories' : `of ${screen.pantryCategories.length} total`}</p>
         </div>
       </div>
 
@@ -467,7 +468,7 @@ export function RecentFoodsView({ screen, deps }) {
     <section ref={screen.recentFoodsSectionAnchor} className="nutrition-section-shell nutrition-section-shell-tab">
       <div className="dash-card nutrition-planning-card nutrition-section-intro-card"><span className="dashboard-chip nutrition">Recent</span><h2>Your recent logging shortcuts</h2><p>Johnny5k keeps one version per recent food and uses the latest version you actually logged when duplicates exist.</p></div>
       <div className="dash-card nutrition-planning-card">
-        {screen.recentFoods.length ? <div className="nutrition-gap-bulk-bar recent-food-bulk-bar"><button type="button" className="btn-ghost small" onClick={screen.handleCheckAllRecentFoods} disabled={screen.allRecentFoodsChecked}>Check all</button><button type="button" className="btn-ghost small" onClick={screen.handleClearCheckedRecentFoods} disabled={!screen.checkedRecentFoodIdSet.size}>Clear checks</button><button type="button" className="btn-ghost small" onClick={screen.handleDeleteCheckedRecentFoods} disabled={!screen.checkedRecentFoodIdSet.size}>Delete checked{screen.checkedRecentFoodIdSet.size ? ` (${screen.checkedRecentFoodIdSet.size})` : ''}</button></div> : null}
+        {screen.recentFoods.length ? <div className="nutrition-bulk-toolbar recent-food-bulk-bar"><div className="nutrition-bulk-toolbar-group"><button type="button" className="nutrition-bulk-toolbar-action" onClick={screen.handleCheckAllRecentFoods} disabled={screen.allRecentFoodsChecked}>Check all</button><span className="nutrition-bulk-toolbar-divider" aria-hidden="true" /><button type="button" className="nutrition-bulk-toolbar-action" onClick={screen.handleClearCheckedRecentFoods} disabled={!screen.checkedRecentFoodIdSet.size}>Clear checks</button></div><button type="button" className="nutrition-bulk-toolbar-delete" onClick={screen.handleDeleteCheckedRecentFoods} disabled={!screen.checkedRecentFoodIdSet.size}><span>Delete checked</span>{screen.checkedRecentFoodIdSet.size ? <span className="nutrition-bulk-toolbar-count">{screen.checkedRecentFoodIdSet.size}</span> : null}</button></div> : null}
         <div className="nutrition-stack-list">{screen.visibleRecentFoods.map(food => <RecentFoodRow key={food.id} food={food} checked={screen.checkedRecentFoodIdSet.has(food.id)} onToggleChecked={() => screen.toggleRecentFoodChecked(food.id)} onError={screen.showErrorToast} onSave={async data => screen.runAction(() => nutritionApi.updateRecentFood(food.id, data), 'Recent food updated.', { onSuccess: async () => { screen.invalidate(); await screen.loadData() } })} onDelete={async () => screen.runAction(() => nutritionApi.deleteRecentFood(food.id), 'Recent food removed from the list.', { onSuccess: async () => { screen.invalidate(); await screen.loadData() } })} />)}{!screen.recentFoods.length ? <EmptyState className="nutrition-inline-state" message="Recent foods appear here after you log a few meals." title="No recent foods yet" /> : null}</div>
         <SectionClampToggle count={screen.recentFoods.length} expanded={screen.expandedSections.recentFoods} limit={4} label="recent foods" onToggle={() => screen.toggleSection('recentFoods')} />
       </div>
@@ -490,7 +491,10 @@ export function SavedFoodsView({ screen, deps }) {
     <section ref={screen.savedFoodsSectionAnchor} className="nutrition-section-shell nutrition-section-shell-tab">
       <div className="dash-card nutrition-planning-card nutrition-section-intro-card"><span className="dashboard-chip nutrition">Saved foods</span><h2>First-class food library</h2><p>Use this for repeat items from labels, snacks, or common proteins without rebuilding a whole meal.</p></div>
       <div className="dash-card nutrition-planning-card">
-        <div className="dashboard-card-head"><span className="dashboard-chip nutrition">Saved foods</span><div className="nutrition-row-actions"><button className="btn-secondary small" onClick={() => screen.openSavedFoodsLabelScanPrompt()}>Scan label</button><button className="btn-secondary small" onClick={() => screen.setShowSavedFoodForm(current => !current)}>New</button></div></div>
+        <div className="nutrition-library-toolbar">
+          <button type="button" className="nutrition-library-action" onClick={() => screen.openSavedFoodsLabelScanPrompt()}><AppIcon name="label" /><span>Scan label</span></button>
+          <button type="button" className="nutrition-library-action primary" onClick={() => screen.setShowSavedFoodForm(current => !current)}><AppIcon name="plus" /><span>New</span></button>
+        </div>
         {screen.showSavedFoodsLabelScanPrompt ? <div ref={screen.labelScanPromptAnchor}><LabelScanPromptPanel anchorRef={null} busy={screen.analyzing} images={screen.labelScanImages} note={screen.labelScanNote} onChangeNote={screen.setLabelScanNote} onPickFront={screen.pickLabelScanFront} onPickBack={screen.pickLabelScanBack} onSubmit={() => { void screen.handleSubmitLabelScan() }} onCancel={screen.handleSavedFoodsLabelScanCancel} /></div> : null}
         {screen.showSavedFoodsLabelReview ? <LabelReviewCard screen={screen} showQuickLog={false} /> : null}
         {screen.savedFoods.length ? (

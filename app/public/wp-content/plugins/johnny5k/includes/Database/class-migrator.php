@@ -58,5 +58,12 @@ class Migrator {
 			delete_option( 'jf_color_schemes' );
 			update_option( 'jf_db_version', '1.2.5' );
 		}
+
+		if ( version_compare( $current, '1.2.6', '<' ) ) {
+			// v1.2.6 — fit_foods.category column and expanded source enum values
+			// (usda_ai_text, usda_ai_photo, ai_tile), applied via dbDelta/ensure_food_source_values
+			// in Schema::create_tables().
+			update_option( 'jf_db_version', '1.2.6' );
+		}
 	}
 }

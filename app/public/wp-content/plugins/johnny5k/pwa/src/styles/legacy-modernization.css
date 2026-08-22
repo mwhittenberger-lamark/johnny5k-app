@@ -10,9 +10,15 @@
   border-bottom: 1px solid var(--border);
 }
 
-:is(.rewards-screen, .progress-photos-screen, .workout-library-screen, .nutrition-screen) > .screen-header h1 {
+:is(.rewards-screen, .progress-photos-screen, .workout-library-screen) > .screen-header h1 {
   color: var(--chalk);
   font: 700 clamp(2rem, 5vw, 3.6rem)/.98 var(--font-display);
+  letter-spacing: -.025em;
+}
+
+.nutrition-screen > .screen-header h1 {
+  color: var(--chalk);
+  font: 700 clamp(1.2rem, 3.2vw, 1.6rem) var(--font-display);
   letter-spacing: -.025em;
 }
 

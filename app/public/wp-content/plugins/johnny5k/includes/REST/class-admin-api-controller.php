@@ -2149,7 +2149,17 @@ class AdminApiController {
 		$message    = sanitize_textarea_field( $req->get_param( 'message' ) ?: 'Hey, how are you?' );
 		$admin_id   = get_current_user_id();
 
-		$result = AiService::preview_chat( $admin_id, $message );
+		// Optional personality-dial overrides so the admin can preview any combination
+		// without touching a real user's saved Profile & Settings preferences.
+		$overrides = [];
+		foreach ( [ 'personality_age_range', 'personality_aggressiveness', 'personality_humor_level' ] as $dial ) {
+			$value = sanitize_text_field( (string) ( $req->get_param( $dial ) ?? '' ) );
+			if ( '' !== $value ) {
+				$overrides[ $dial ] = $value;
+			}
+		}
+
+		$result = AiService::preview_chat( $admin_id, $message, 'general', $overrides );
 
 		if ( is_wp_error( $result ) ) {
 			return new \WP_REST_Response( [ 'message' => $result->get_error_message() ], 500 );

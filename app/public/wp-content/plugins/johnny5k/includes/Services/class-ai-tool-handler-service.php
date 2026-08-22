@@ -77,6 +77,7 @@ class AiToolHandlerService {
 			'manage_saved_meal'           => self::tool_manage_saved_meal( $arguments, $deps ),
 			'update_goals'                => self::tool_update_goals( $user_id, $arguments, $deps ),
 			'update_profile'              => self::tool_update_profile( $arguments, $deps ),
+			'update_personality_settings' => self::tool_update_personality_settings( $user_id, $arguments, $deps ),
 			'add_pantry_items'           => self::tool_add_pantry_items( $user_id, $arguments, $deps ),
 			'remove_pantry_items'        => self::tool_remove_pantry_items( $user_id, $arguments ),
 			'add_grocery_gap_items'      => self::tool_add_grocery_gap_items( $user_id, $arguments, $deps ),
@@ -2172,6 +2173,67 @@ class AiToolHandlerService {
 		$request = new \WP_REST_Request( 'POST', '/fit/v1/onboarding/profile' ); foreach ( $arguments as $key => $value ) $request->set_param( $key, $value );
 		$result = self::rest_result( self::rest_call( $deps, 'onboarding_save_profile', [ OnboardingController::class, 'save_profile' ], $request ), 'update_profile', 'Could not update the profile.' );
 		if ( ! empty( $result['ok'] ) ) { $result['updated_fields'] = array_keys( $arguments ); $result['summary'] = 'Updated the requested profile settings.'; }
+		return $result;
+	}
+
+	/**
+	 * Update one or more of the user's saved Johnny personality dials.
+	 * exercise_preferences_json is a single JSON blob column that OnboardingController::save_preferences()
+	 * fully replaces when present, so this reads the existing blob and merges the requested dial(s) into it
+	 * before writing back - otherwise every other saved preference in that blob would be wiped out.
+	 */
+	private static function tool_update_personality_settings( int $user_id, array $arguments, array $deps ): array {
+		$allowed = [ 'personality_age_range', 'personality_aggressiveness', 'personality_humor_level' ];
+		$values  = array_intersect_key( $arguments, array_flip( $allowed ) );
+		if ( empty( $values ) ) {
+			return [ 'error' => 'At least one of personality_age_range, personality_aggressiveness, or personality_humor_level is required.' ];
+		}
+
+		$valid_options = [
+			'personality_age_range'      => array_keys( AiPromptService::personality_age_range_presets() ),
+			'personality_aggressiveness' => array_keys( AiPromptService::personality_aggressiveness_presets() ),
+			'personality_humor_level'    => array_keys( AiPromptService::personality_humor_presets() ),
+		];
+
+		foreach ( $values as $key => $value ) {
+			$value = sanitize_key( (string) $value );
+			if ( '' !== $value && ! in_array( $value, $valid_options[ $key ], true ) ) {
+				return [ 'error' => "\"{$value}\" is not a supported value for {$key}." ];
+			}
+			$values[ $key ] = $value;
+		}
+
+		global $wpdb;
+		$p = $wpdb->prefix;
+		$existing_json = $wpdb->get_var( $wpdb->prepare(
+			"SELECT exercise_preferences_json FROM {$p}fit_user_preferences WHERE user_id = %d",
+			$user_id
+		) );
+		$merged = $existing_json ? json_decode( (string) $existing_json, true ) : [];
+		if ( ! is_array( $merged ) ) {
+			$merged = [];
+		}
+		foreach ( $values as $key => $value ) {
+			if ( '' === $value ) {
+				unset( $merged[ $key ] );
+			} else {
+				$merged[ $key ] = $value;
+			}
+		}
+
+		$request = new \WP_REST_Request( 'POST', '/fit/v1/onboarding/prefs' );
+		$request->set_param( 'exercise_preferences_json', $merged );
+		$result = self::rest_result(
+			self::rest_call( $deps, 'onboarding_save_preferences', [ OnboardingController::class, 'save_preferences' ], $request ),
+			'update_personality_settings',
+			'Could not update the personality settings.'
+		);
+
+		if ( ! empty( $result['ok'] ) ) {
+			$result['updated_fields'] = array_keys( $values );
+			$result['summary']        = "Updated Johnny's personality settings.";
+		}
+
 		return $result;
 	}
 

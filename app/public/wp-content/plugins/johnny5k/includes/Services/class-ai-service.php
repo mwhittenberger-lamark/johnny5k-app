@@ -2057,6 +2057,19 @@ PROMPT;
 			"SELECT first_name, training_experience FROM {$p}fit_user_profiles WHERE user_id = %d",
 			$user_id
 		) );
+
+		// ── User-adjustable Johnny personality dials (Profile & Settings) ─────
+		$preferences_row = $wpdb->get_row( $wpdb->prepare(
+			"SELECT exercise_preferences_json FROM {$p}fit_user_preferences WHERE user_id = %d",
+			$user_id
+		) );
+		$personality_prefs = [];
+		if ( $preferences_row && $preferences_row->exercise_preferences_json ) {
+			$decoded = json_decode( (string) $preferences_row->exercise_preferences_json, true );
+			if ( is_array( $decoded ) ) {
+				$personality_prefs = $decoded;
+			}
+		}
 		$goal = $wpdb->get_row( $wpdb->prepare(
 			"SELECT goal_type, target_calories, target_protein_g FROM {$p}fit_user_goals
 			 WHERE user_id = %d AND active = 1 ORDER BY created_at DESC LIMIT 1",
@@ -2222,6 +2235,9 @@ PROMPT;
 			'current_local_time'         => $now->format( 'g:i A' ),
 			'current_local_datetime'     => $now->format( 'Y-m-d g:i A T' ),
 			'user_timezone'              => UserTime::timezone_string( $user_id ),
+			'personality_age_range'      => (string) ( $personality_prefs['personality_age_range'] ?? '' ),
+			'personality_aggressiveness' => (string) ( $personality_prefs['personality_aggressiveness'] ?? '' ),
+			'personality_humor_level'    => (string) ( $personality_prefs['personality_humor_level'] ?? '' ),
 		];
 
 		return array_merge( $context, $context_overrides );

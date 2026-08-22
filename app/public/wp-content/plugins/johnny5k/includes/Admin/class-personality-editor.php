@@ -81,6 +81,30 @@ class PersonalityEditor {
 		// ── Right: Live test chat box ─────────────────────────────────────────
 		echo '<div>';
 		echo '<h2>Live Test Chat</h2>';
+		echo '<p style="max-width:520px">Preview any combination of the user-adjustable personality dials (Profile &amp; Settings) without touching a real account. Leave a dial on its default to fall back to your own admin account\'s saved preference.</p>';
+		echo '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:12px">';
+		self::dial_select( 'personality_age_range', 'Age range', [
+			''          => 'Your account default',
+			'early_20s' => 'Early 20s',
+			'late_20s'  => 'Late 20s',
+			'30s'       => '30s',
+			'40s'       => '40s',
+			'50s'       => '50s',
+		] );
+		self::dial_select( 'personality_aggressiveness', 'Coaching intensity', [
+			''               => 'Your account default',
+			'gentle'         => 'Gentle',
+			'balanced'       => 'Balanced',
+			'intense'        => 'Intense',
+			'drill_sergeant' => 'Drill sergeant',
+		] );
+		self::dial_select( 'personality_humor_level', 'Humor', [
+			''        => 'Your account default',
+			'serious' => 'Serious',
+			'light'   => 'Light',
+			'playful' => 'Playful',
+		] );
+		echo '</div>';
 		echo '<div id="jf-chat-log" style="border:1px solid #ddd;border-radius:6px;padding:12px;height:320px;overflow-y:auto;background:#fafafa;font-size:13px;"></div>';
 		echo '<div style="display:flex;gap:8px;margin-top:8px">';
 		echo '<input type="text" id="jf-chat-input" style="flex:1;padding:6px" placeholder="Say something to Johnny…" />';
@@ -141,6 +165,14 @@ class PersonalityEditor {
 				log.scrollTop = log.scrollHeight;
 			}
 
+			function currentDials() {
+				return {
+					personality_age_range: document.getElementById('jf-dial-personality_age_range').value,
+					personality_aggressiveness: document.getElementById('jf-dial-personality_aggressiveness').value,
+					personality_humor_level: document.getElementById('jf-dial-personality_humor_level').value
+				};
+			}
+
 			async function sendPrompt(message) {
 				const res = await fetch(url, {
 					method: 'POST',
@@ -148,7 +180,7 @@ class PersonalityEditor {
 						'Content-Type': 'application/json',
 						'X-WP-Nonce': nonce
 					},
-					body: JSON.stringify({ message })
+					body: JSON.stringify(Object.assign({ message }, currentDials()))
 				});
 				return res.json();
 			}
@@ -276,6 +308,24 @@ class PersonalityEditor {
 		})();
 		</script>
 		<?php
+	}
+
+	/**
+	 * Render one personality-dial <select> for the live-test preview. Purely a UI
+	 * control read by client-side JS (id="jf-dial-{key}") — never submitted via the
+	 * persona save form and never persisted anywhere.
+	 *
+	 * @param array<string,string> $options value => label, empty-string value first.
+	 */
+	private static function dial_select( string $key, string $label, array $options ): void {
+		echo '<div>';
+		echo '<label style="display:block;font-weight:600;margin-bottom:4px;font-size:12px" for="jf-dial-' . esc_attr( $key ) . '">' . esc_html( $label ) . '</label>';
+		echo '<select id="jf-dial-' . esc_attr( $key ) . '" style="width:100%">';
+		foreach ( $options as $value => $optionLabel ) {
+			printf( '<option value="%s">%s</option>', esc_attr( $value ), esc_html( $optionLabel ) );
+		}
+		echo '</select>';
+		echo '</div>';
 	}
 
 	private static function field( string $label, string $key, string $value, string $type ): void {
