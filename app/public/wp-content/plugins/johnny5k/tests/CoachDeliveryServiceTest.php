@@ -72,6 +72,41 @@ class CoachDeliveryServiceTest extends ServiceTestCase {
 		$this->assertSame( [], $pending );
 	}
 
+	public function test_pending_follow_ups_exclude_stale_workout_reminders_from_previous_days(): void {
+		$GLOBALS['johnny5k_test_now'] = '2026-11-25 10:00:00';
+
+		$db = $this->wpdb();
+		$db->expectGetVar( 'SELECT timezone FROM wp_fit_user_profiles', 'America/New_York' );
+		$db->expectGetVar( 'SELECT timezone FROM wp_fit_user_profiles', 'America/New_York' );
+
+		\update_user_meta( 7, 'jf_johnny_follow_ups', [
+			[
+				'id' => 'old-legs-reminder',
+				'prompt' => 'Today is your legs day.',
+				'reason' => 'Workout day check-in',
+				'trigger_type' => 'workout_accountability',
+				'due_at' => '2026-08-21 08:00:00',
+				'status' => 'missed',
+				'created_at' => '2026-08-21 08:00:00',
+			],
+			[
+				'id' => 'today-pull-reminder',
+				'prompt' => 'Today is your pull day.',
+				'reason' => 'Workout day check-in',
+				'trigger_type' => 'workout_accountability',
+				'due_at' => '2026-11-25 08:00:00',
+				'status' => 'snoozed',
+				'created_at' => '2026-11-25 08:00:00',
+			],
+		] );
+
+		$pending = AiMemoryService::get_pending_follow_ups( 7 );
+
+		$this->assertCount( 1, $pending );
+		$this->assertSame( 'today-pull-reminder', $pending[0]['id'] );
+		$this->assertSame( 'Today is your pull day.', $pending[0]['prompt'] );
+	}
+
 	public function test_workout_intent_trigger_uses_scheduled_training_day_without_session_row(): void {
 		$GLOBALS['johnny5k_test_now'] = '2026-04-11 10:23:00';
 

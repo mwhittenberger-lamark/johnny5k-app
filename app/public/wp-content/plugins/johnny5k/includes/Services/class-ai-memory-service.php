@@ -187,7 +187,7 @@ class AiMemoryService {
 			$trigger_type      = sanitize_key( (string) ( $item['trigger_type'] ?? '' ) );
 
 			if (
-				str_starts_with( $trigger_type, 'meal_' )
+				self::is_date_scoped_follow_up( $trigger_type )
 				&& '' !== $due_at
 				&& substr( $due_at, 0, 10 ) < $local_today
 			) {
@@ -238,6 +238,11 @@ class AiMemoryService {
 		} );
 
 		return $clean;
+	}
+
+	private static function is_date_scoped_follow_up( string $trigger_type ): bool {
+		return str_starts_with( $trigger_type, 'meal_' )
+			|| in_array( $trigger_type, [ 'workout_accountability', 'absence_nudge' ], true );
 	}
 
 	public static function update_follow_up_state( int $user_id, string $follow_up_id, string $state, string $due_at = '' ): ?array {

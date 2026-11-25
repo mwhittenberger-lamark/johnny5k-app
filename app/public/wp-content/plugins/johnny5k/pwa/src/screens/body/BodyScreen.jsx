@@ -81,6 +81,7 @@ export default function BodyScreen() {
   const [saving, setSaving]     = useState(false)
   const [pendingScrollTarget, setPendingScrollTarget] = useState('')
   const [pendingRouteFocus, setPendingRouteFocus] = useState(null)
+  const [progressHandoff, setProgressHandoff] = useState(() => String(location.state?.johnnyActionNotice || ''))
   const [predictionContext, setPredictionContext] = useState({
     current_goal: '',
     goal_rate: '',
@@ -758,6 +759,20 @@ export default function BodyScreen() {
       </nav>
 
       <main className="progress-observatory-scroll">
+      {progressHandoff ? (
+        <section className="progress-handoff" role="status">
+          <span className="progress-handoff-index">Workout / Saved</span>
+          <div>
+            <span className="progress-observatory-kicker">Today&apos;s record</span>
+            <h2>Your session moved the story forward.</h2>
+            <p>{progressHandoff} Review the complete day below, or return to the session ledger.</p>
+          </div>
+          <div className="progress-handoff-actions">
+            <button type="button" className="progress-observatory-action primary" onClick={() => navigate('/activity-log')}>View activity</button>
+            <button type="button" className="progress-observatory-action" onClick={() => setProgressHandoff('')}>Dismiss</button>
+          </div>
+        </section>
+      ) : null}
       {tab !== 'diary' ? <>
       <section className="dash-card settings-prediction-card body-thirty-day-prediction-card">
         <div className="settings-prediction-head">

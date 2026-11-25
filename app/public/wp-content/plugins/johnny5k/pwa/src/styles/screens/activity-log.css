@@ -122,10 +122,15 @@
   backdrop-filter: var(--glass-filter);
   -webkit-backdrop-filter: var(--glass-filter);
 }
+.activity-observatory-notice { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; padding: clamp(1rem, 2vw, 1.5rem); border-color: color-mix(in srgb, var(--accent) 42%, var(--glass-border)); background: linear-gradient(120deg, color-mix(in srgb, var(--accent) 12%, var(--glass-strong)), rgba(10, 14, 20, 0.96)); }
+.activity-observatory-notice-index { color: var(--whistle); font: 800 0.65rem var(--font-data, monospace); letter-spacing: 0.14em; text-transform: uppercase; writing-mode: vertical-rl; transform: rotate(180deg); }
+.activity-observatory-notice-copy { min-width: 0; }
+.activity-observatory-notice-actions { display: flex; align-items: center; gap: 0.55rem; }
 .activity-observatory-notice strong { color: var(--chalk); }
 .activity-observatory-notice p,
 .activity-observatory-state p { margin: 0.2rem 0 0; color: var(--mist); }
-.activity-observatory-notice button { border: 0; background: transparent; color: var(--whistle); font: 700 0.7rem var(--font-data, monospace); text-transform: uppercase; cursor: pointer; }
+.activity-observatory-notice button { min-height: 2.45rem; padding: 0.55rem 0.8rem; border: 1px solid transparent; border-radius: var(--radius-sm, 12px); background: transparent; color: var(--whistle); font: 700 0.7rem var(--font-data, monospace); text-transform: uppercase; cursor: pointer; }
+.activity-observatory-notice button.primary { border-color: var(--accent); background: var(--accent); color: var(--on-accent); }
 .activity-observatory-state.error { border-color: color-mix(in srgb, var(--rust) 46%, transparent); }
 .activity-observatory-state.empty { justify-content: flex-start; }
 .activity-observatory-state.empty > span { color: var(--whistle); font: 700 0.8rem var(--font-data, monospace); }
@@ -194,6 +199,8 @@
   .activity-observatory-vitals > div:nth-child(4) { border-top: 1px solid var(--glass-border); }
   .activity-observatory-scroll { padding: 1.35rem 1rem 2.5rem; }
   .activity-observatory-ledger-head { align-items: flex-start; flex-direction: column; }
+  .activity-observatory-notice { grid-template-columns: auto minmax(0, 1fr); }
+  .activity-observatory-notice-actions { grid-column: 1 / -1; flex-direction: column; align-items: stretch; }
   .activity-log-entry-header { grid-template-columns: minmax(0, 1fr) 1.2rem; }
   .activity-log-entry-summary { grid-column: 1; grid-row: 2; justify-items: start; text-align: left; }
   .activity-log-entry-toggle { grid-column: 2; grid-row: 1 / 3; }

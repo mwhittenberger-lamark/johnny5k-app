@@ -12,6 +12,7 @@ export default function CoachingSummaryPanel({
   maxInsights = 3,
   titleTag = 'h3',
   analyticsContext = null,
+  variant = 'full',
 }) {
   const TitleTag = titleTag
   const rawInsights = Array.isArray(summary?.insights) ? [...summary.insights] : []
@@ -75,6 +76,51 @@ export default function CoachingSummaryPanel({
   }, [analyticsContext?.screen, analyticsContext?.surface, analyticsSignature, hiddenInsightCount, summary, suppressedForLowConfidence, visibleInsightCount])
 
   if (!summary) return null
+
+  if (variant === 'action-only') {
+    return (
+      <article className={`${classes} coaching-summary-panel-action-only`}>
+        <div className="coaching-summary-action-only-copy">
+          <span className="coaching-summary-section-label">{chipLabel}</span>
+          <strong>{summary.nextAction?.title || summary.headline}</strong>
+          <p>{summary.nextAction?.message || summary.summary}</p>
+        </div>
+        <div className="coaching-summary-actions">
+          {summary.nextAction?.ctaLabel ? (
+            <button type="button" className="btn-outline small" onClick={() => {
+              trackCoachingAction(summary, summary.nextAction, {
+                screen: analyticsContext?.screen || 'app',
+                surface: analyticsContext?.surface || 'coaching_summary',
+                actionKind: 'next_action',
+              })
+              onAction?.(summary.nextAction, summary)
+            }}>
+              {summary.nextAction.ctaLabel}
+            </button>
+          ) : null}
+          {summary.starterPrompt && askJohnnyLabel ? (
+            <button type="button" className="btn-outline small" onClick={() => {
+              trackCoachingPromptOpen(summary, summary.starterPrompt, {
+                screen: analyticsContext?.screen || 'app',
+                surface: analyticsContext?.surface || 'coaching_summary',
+                promptKind: 'starter_prompt',
+              })
+              onAskJohnny?.(
+                summary.starterPrompt,
+                buildCoachingPromptOptions(summary, {
+                  screen: analyticsContext?.screen || 'app',
+                  surface: analyticsContext?.surface || 'coaching_summary',
+                  promptKind: 'starter_prompt',
+                }),
+              )
+            }}>
+              {askJohnnyLabel}
+            </button>
+          ) : null}
+        </div>
+      </article>
+    )
+  }
 
   return (
     <article className={classes}>

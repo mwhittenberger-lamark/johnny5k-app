@@ -365,7 +365,10 @@ describe('useWorkoutStore', () => {
       sessionId: 321,
       session: {
         session: { id: 321, session_date: '2026-04-13' },
-        exercises: [],
+        exercises: [
+          { sets: [{ completed: true }, { completed: true }, { completed: false }] },
+          { sets: [{ completed: true }] },
+        ],
       },
     })
     workoutApiMock.complete.mockResolvedValue({ completed: true })
@@ -379,5 +382,6 @@ describe('useWorkoutStore', () => {
     })
     expect(ironquestApiMock.activeMission).not.toHaveBeenCalled()
     expect(result.ironquest).toEqual({ awards: { result_band: 'victory' } })
+    expect(result.completed_set_count).toBe(3)
   })
 })

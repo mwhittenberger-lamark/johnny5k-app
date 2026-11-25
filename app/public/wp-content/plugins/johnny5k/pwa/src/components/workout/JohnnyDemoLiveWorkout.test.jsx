@@ -322,6 +322,70 @@ describe('JohnnyDemoLiveWorkout', () => {
     expect(container.textContent).toContain('Dumbbells')
   })
 
+  it('wraps to an earlier incomplete exercise instead of finishing at the last station', async () => {
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    const onSetActiveExerciseIdx = vi.fn()
+    await act(async () => root.render(
+      <JohnnyDemoLiveWorkout
+        isOpen
+        session={{ session: { id: 52, planned_day_type: 'pull' } }}
+        exercises={[
+          { id: 23, exercise_name: 'Barbell Row', planned_sets: 2, planned_rep_min: 8, planned_rep_max: 10, sets: [] },
+          { id: 24, exercise_name: 'Lat Pulldown', planned_sets: 1, planned_rep_min: 8, planned_rep_max: 10, sets: [{ id: 241, completed: true }] },
+          { id: 25, exercise_name: 'Biceps Curl', planned_sets: 1, planned_rep_min: 10, planned_rep_max: 12, sets: [] },
+        ]}
+        activeExerciseIdx={2}
+        onSetActiveExerciseIdx={onSetActiveExerciseIdx}
+        onCreateSet={vi.fn().mockResolvedValue({ id: 99 })}
+        onUpdateSet={vi.fn()}
+        onClose={vi.fn()}
+        onComplete={vi.fn()}
+      />,
+    ))
+
+    const logButton = [...container.querySelectorAll('button')].find(button => button.textContent.includes('Log & Next'))
+    await act(async () => { logButton.click(); await Promise.resolve() })
+
+    expect(container.textContent).not.toContain('Workout complete')
+    expect(container.textContent).toContain('Rest · unfinished exercise')
+    expect(container.textContent).toContain('Barbell Row')
+    const nextButton = [...container.querySelectorAll('button')].find(button => button.textContent === 'Skip rest')
+    await act(async () => nextButton.click())
+    expect(onSetActiveExerciseIdx).toHaveBeenCalledWith(0)
+  })
+
+  it('wraps after logging multiple sets on the last station when earlier work remains', async () => {
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    await act(async () => root.render(
+      <JohnnyDemoLiveWorkout
+        isOpen
+        session={{ session: { id: 53, planned_day_type: 'pull' } }}
+        exercises={[
+          { id: 26, exercise_name: 'Seated Row', planned_sets: 2, planned_rep_min: 8, planned_rep_max: 10, sets: [] },
+          { id: 27, exercise_name: 'Hammer Curl', planned_sets: 2, planned_rep_min: 10, planned_rep_max: 12, sets: [] },
+        ]}
+        activeExerciseIdx={1}
+        onSetActiveExerciseIdx={vi.fn()}
+        onCreateSet={vi.fn().mockResolvedValue({ id: 100 })}
+        onUpdateSet={vi.fn()}
+        onClose={vi.fn()}
+        onComplete={vi.fn()}
+      />,
+    ))
+
+    await act(async () => container.querySelector('.demo-live-multi-trigger').click())
+    const saveButton = [...container.querySelectorAll('button')].find(button => button.textContent === 'Save sets & continue')
+    await act(async () => { saveButton.click(); await Promise.resolve(); await Promise.resolve() })
+
+    expect(container.textContent).not.toContain('Workout complete')
+    expect(container.textContent).toContain('Sets logged · unfinished exercise')
+    expect(container.textContent).toContain('Seated Row')
+  })
+
   it('requests a screen wake lock while open and releases it on close', async () => {
     const sentinel = { release: vi.fn().mockResolvedValue(undefined) }
     const request = vi.fn().mockResolvedValue(sentinel)

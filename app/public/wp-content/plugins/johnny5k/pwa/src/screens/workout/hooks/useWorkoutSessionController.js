@@ -490,6 +490,16 @@ export function useWorkoutSessionController({
       return
     }
 
+    if (destination === 'progress') {
+      navigate('/body', {
+        state: {
+          focusTab: 'diary',
+          johnnyActionNotice: 'Your completed workout is now part of today’s progress diary.',
+        },
+      })
+      return
+    }
+
     navigate('/dashboard', {
       state: {
         johnnyActionNotice: 'Johnny gave you a post-workout review right after you completed the session.',

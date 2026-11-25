@@ -142,13 +142,19 @@ export default function ActivityLogScreen() {
 
       {johnnyActionNotice && dismissedActionNoticeKey !== actionNoticeKey ? (
         <div className="activity-observatory-notice" role="status">
-          <div>
-            <strong>Johnny opened this screen.</strong>
+          <span className="activity-observatory-notice-index" aria-hidden="true">Saved</span>
+          <div className="activity-observatory-notice-copy">
+            <strong>Your workout is in the ledger.</strong>
             <p>{johnnyActionNotice}</p>
           </div>
-          <button type="button" onClick={() => setDismissedActionNoticeKey(actionNoticeKey)}>
-            Dismiss
-          </button>
+          <div className="activity-observatory-notice-actions">
+            <button className="primary" type="button" onClick={() => navigate('/body', { state: { focusTab: 'diary', johnnyActionNotice: 'Your completed workout is included in today’s progress diary.' } })}>
+              Review progress
+            </button>
+            <button type="button" onClick={() => setDismissedActionNoticeKey(actionNoticeKey)}>
+              Dismiss
+            </button>
+          </div>
         </div>
       ) : null}
 

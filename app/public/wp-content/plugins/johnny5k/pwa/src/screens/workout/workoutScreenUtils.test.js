@@ -5,6 +5,7 @@ import {
   applyRepAdjustmentsToPreviewExercises,
   buildSwitchItUpPlan,
   buildEffectiveRepAdjustments,
+  buildWorkoutAchievement,
   buildWorkoutCompletionReview,
   createSeededRandom,
   getPausedTimerNowValue,
@@ -27,6 +28,20 @@ describe('isJohnnyLiveWorkoutLaunch', () => {
 })
 
 describe('workoutScreenUtils', () => {
+  it('prioritizes earned PRs in the completion achievement', () => {
+    expect(buildWorkoutAchievement({ prCount: 2, completedSetCount: 15 })).toMatchObject({
+      title: '2 new PRs',
+      tone: 'record',
+    })
+  })
+
+  it('recognizes a high-volume completion when no PR was earned', () => {
+    expect(buildWorkoutAchievement({ completedSetCount: 12 })).toMatchObject({
+      title: '12 quality sets',
+      tone: 'volume',
+    })
+  })
+
   it('preserves draft order and appends missing ids during preview sync', () => {
     expect(syncPreviewExerciseOrder([5, 3, 2], [2, 7, 3])).toEqual([3, 2, 7])
   })
@@ -48,6 +63,21 @@ describe('workoutScreenUtils', () => {
   it('skips completion review for non-lifting day types', () => {
     expect(buildWorkoutCompletionReview({ result: {}, dayType: 'rest', sessionLabel: 'Rest day' })).toBeNull()
     expect(buildWorkoutCompletionReview({ result: {}, dayType: 'cardio', sessionLabel: 'Cardio day' })).toBeNull()
+  })
+
+  it('does not present implausibly short timer and calorie values as authoritative', () => {
+    const review = buildWorkoutCompletionReview({
+      result: { duration_minutes: 1, estimated_calories: 4, completed_set_count: 7 },
+      dayType: 'legs',
+      sessionLabel: 'Legs reset',
+    })
+
+    expect(review).toMatchObject({
+      durationLabel: 'Timer incomplete',
+      calorieLabel: 'Not estimated',
+      progressLabel: '7 sets',
+      timerLooksReliable: false,
+    })
   })
 
   it('falls back to a safe custom workout day type', () => {

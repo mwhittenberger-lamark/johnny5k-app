@@ -773,7 +773,9 @@ class SmsService {
 			$today
 		) );
 
-		$day_type = $session->actual_day_type ?? $session->planned_day_type ?? self::scheduled_day_type_for_date( $user_id, $today );
+		$scheduled_day_type = self::scheduled_day_type_for_date( $user_id, $today );
+		$session_day_type = (string) ( $session->actual_day_type ?? $session->planned_day_type ?? '' );
+		$day_type = '' !== $scheduled_day_type ? $scheduled_day_type : $session_day_type;
 
 		return [
 			'weekday_label' => UserTime::weekday_label_for_date( $user_id, $today ),

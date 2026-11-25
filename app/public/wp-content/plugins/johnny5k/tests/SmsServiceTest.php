@@ -162,4 +162,23 @@ class SmsServiceTest extends ServiceTestCase {
 		self::assertSame( '2026-04-11', $context['local_date'] );
 		self::assertSame( 'Sat', $context['weekday_label'] );
 	}
+
+	public function test_workout_context_prefers_current_schedule_over_stale_session_type(): void {
+		$GLOBALS['johnny5k_test_now'] = '2026-11-25 10:23:00';
+
+		$db = $this->wpdb();
+		$db->expectGetVar( 'SELECT timezone FROM', 'America/New_York' );
+		$db->expectGetRow( 'SELECT planned_day_type, actual_day_type FROM wp_fit_workout_sessions', (object) [
+			'planned_day_type' => 'legs',
+			'actual_day_type' => '',
+		] );
+		$db->expectGetVar( 'SELECT id FROM wp_fit_user_training_plans WHERE user_id = 55', 44 );
+		$db->expectGetVar( 'SELECT timezone FROM', 'America/New_York' );
+		$db->expectGetVar( 'SELECT day_type FROM wp_fit_user_training_days', 'pull' );
+		$db->expectGetVar( 'SELECT timezone FROM', 'America/New_York' );
+
+		$context = $this->invokePrivateStatic( SmsService::class, 'workout_context', [ 55 ] );
+
+		self::assertSame( 'pull', $context['day_type_label'] );
+	}
 }

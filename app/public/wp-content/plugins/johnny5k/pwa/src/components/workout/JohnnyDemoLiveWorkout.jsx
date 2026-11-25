@@ -306,16 +306,26 @@ export default function JohnnyDemoLiveWorkout({
     }
     const finishedExercise = completedSets + 1 >= plannedSets
     const isLastStation = activeExerciseIdx >= totalExercises - 1
-    const finishedWorkout = isCircuit
-      ? isLastStation && currentSetNumber >= circuitRounds
-      : finishedExercise && isLastStation
+    const nextIncompleteExerciseIndex = finishedExercise
+      ? findNextIncompleteExerciseIndex(exercises, activeExerciseIdx)
+      : null
+    const finishedWorkout = finishedExercise && nextIncompleteExerciseIndex === null
 
     if (finishedWorkout) {
       setDone(true)
     } else if (isCircuit) {
-      const nextIndex = isLastStation ? 0 : activeExerciseIdx + 1
-      const nextRound = isLastStation ? currentSetNumber + 1 : currentSetNumber
-      if (isLastStation) {
+      const nextIndex = finishedExercise && nextIncompleteExerciseIndex !== null
+        ? nextIncompleteExerciseIndex
+        : (isLastStation ? 0 : activeExerciseIdx + 1)
+      const nextRound = isLastStation && !finishedExercise ? currentSetNumber + 1 : currentSetNumber
+      if (finishedExercise && nextIncompleteExerciseIndex !== null) {
+        setRest({
+          seconds: 180,
+          eyebrow: 'Rest · unfinished station',
+          next: exercises[nextIndex]?.exercise_name || 'Next station',
+          nextIndex,
+        })
+      } else if (isLastStation) {
         setRest({
           seconds: 300,
           eyebrow: `Round ${currentSetNumber} complete`,
@@ -327,7 +337,12 @@ export default function JohnnyDemoLiveWorkout({
         onSetActiveExerciseIdx(nextIndex)
       }
     } else if (finishedExercise) {
-      setRest({ seconds: 180, eyebrow: 'Rest · next exercise', next: exercises[activeExerciseIdx + 1]?.exercise_name || 'Next station', nextIndex: activeExerciseIdx + 1 })
+      setRest({
+        seconds: 180,
+        eyebrow: nextIncompleteExerciseIndex < activeExerciseIdx ? 'Rest · unfinished exercise' : 'Rest · next exercise',
+        next: exercises[nextIncompleteExerciseIndex]?.exercise_name || 'Next station',
+        nextIndex: nextIncompleteExerciseIndex,
+      })
     } else {
       setRest({ seconds: 60, eyebrow: 'Rest · same exercise', next: `Set ${currentSetNumber + 1} of ${plannedSets} — ${exercise.exercise_name}` })
     }
@@ -338,7 +353,9 @@ export default function JohnnyDemoLiveWorkout({
       else await onCreateSet(exercise.id, { ...payload, set_number: currentSetNumber }, { exerciseId: exercise.id, exerciseName: exercise.exercise_name, trackActivity: true })
 
       if (!finishedWorkout && (!isCircuit || isLastStation)) {
-        const nextExercise = isCircuit ? exercises[0] : (finishedExercise ? exercises[activeExerciseIdx + 1] : null)
+        const nextExercise = finishedExercise
+          ? exercises[nextIncompleteExerciseIndex]
+          : (isCircuit ? exercises[0] : null)
         pushIronQuestBeat({
           completedExerciseFlag: isCircuit || finishedExercise,
           nextExerciseName: nextExercise?.exercise_name || '',
@@ -370,8 +387,16 @@ export default function JohnnyDemoLiveWorkout({
         setRest(null)
         onSetActiveExerciseIdx(nextIndex)
       }
-    } else if (activeExerciseIdx >= totalExercises - 1) setDone(true)
-    else setRest({ seconds: 180, eyebrow: 'Rest · next exercise', next: exercises[activeExerciseIdx + 1]?.exercise_name || 'Next station', nextIndex: activeExerciseIdx + 1 })
+    } else {
+      const nextIncompleteExerciseIndex = findNextIncompleteExerciseIndex(exercises, activeExerciseIdx)
+      if (nextIncompleteExerciseIndex === null) setDone(true)
+      else setRest({
+        seconds: 180,
+        eyebrow: nextIncompleteExerciseIndex < activeExerciseIdx ? 'Rest · unfinished exercise' : 'Rest · next exercise',
+        next: exercises[nextIncompleteExerciseIndex]?.exercise_name || 'Next station',
+        nextIndex: nextIncompleteExerciseIndex,
+      })
+    }
   }
 
   function openMultiSetLogger() {
@@ -448,13 +473,19 @@ export default function JohnnyDemoLiveWorkout({
       }
 
       setMultiSetOpen(false)
-      if (activeExerciseIdx >= totalExercises - 1) {
+      const nextIncompleteExerciseIndex = findNextIncompleteExerciseIndex(exercises, activeExerciseIdx)
+      if (nextIncompleteExerciseIndex === null) {
         setDone(true)
       } else if (isCircuit) {
         setRest(null)
-        onSetActiveExerciseIdx(activeExerciseIdx + 1)
+        onSetActiveExerciseIdx(nextIncompleteExerciseIndex)
       } else {
-        setRest({ seconds: 180, eyebrow: 'Sets logged · next exercise', next: exercises[activeExerciseIdx + 1]?.exercise_name || 'Next station', nextIndex: activeExerciseIdx + 1 })
+        setRest({
+          seconds: 180,
+          eyebrow: nextIncompleteExerciseIndex < activeExerciseIdx ? 'Sets logged · unfinished exercise' : 'Sets logged · next exercise',
+          next: exercises[nextIncompleteExerciseIndex]?.exercise_name || 'Next station',
+          nextIndex: nextIncompleteExerciseIndex,
+        })
       }
     } catch (saveError) {
       setMultiSetError(saveError?.message || 'Some sets could not be saved. Your completed rows are preserved; try the remaining sets again.')
@@ -664,6 +695,18 @@ function Metric({ label, value, unit, step, onChange, editable = false }) {
 }
 
 function isExerciseComplete(exercise) { return (exercise?.sets?.filter(set => set.completed).length || 0) >= Math.max(1, Number(exercise?.planned_sets || 0)) }
+
+function findNextIncompleteExerciseIndex(exercises, activeExerciseIdx) {
+  const exerciseList = Array.isArray(exercises) ? exercises : []
+  if (exerciseList.length <= 1) return null
+
+  for (let offset = 1; offset < exerciseList.length; offset += 1) {
+    const candidateIndex = (activeExerciseIdx + offset) % exerciseList.length
+    if (!isExerciseComplete(exerciseList[candidateIndex])) return candidateIndex
+  }
+
+  return null
+}
 function getSuggestedWeight(exercise) { const recentHistoryWeight = Number(exercise?.recent_history?.[0]?.best_weight || 0) || 0; return Number(exercise?.recommended_weight ?? exercise?.suggested_weight ?? recentHistoryWeight) || 0 }
 function formatClock(seconds) { const value = Math.max(0, Number(seconds) || 0); return `${String(Math.floor(value / 60)).padStart(2, '0')}:${String(value % 60).padStart(2, '0')}` }
 function formatWeight(value) { return Number.isInteger(Number(value)) ? String(Number(value)) : Number(value).toFixed(1) }

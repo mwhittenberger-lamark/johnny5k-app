@@ -57,19 +57,68 @@ export function buildWorkoutCompletionReview({ result, dayType, sessionLabel }) 
   const aiSummary = normalizeWorkoutReviewSummary(result?.ai_summary)
   const durationMinutes = Number(result?.duration_minutes || 0)
   const estimatedCalories = Number(result?.estimated_calories || 0)
+  const completedSetCount = Math.max(0, Number(result?.completed_set_count || 0))
+  const timerLooksReliable = durationMinutes >= 3
   const prCount = Array.isArray(result?.snapshots)
     ? result.snapshots.filter(snapshot => Boolean(snapshot?.is_pr)).length
     : 0
+  const achievement = buildWorkoutAchievement({ prCount, completedSetCount })
 
   return {
     sessionLabel: sessionLabel || `${formatDayType(normalizedDayType)} day complete`,
     headline: `${formatDayType(normalizedDayType)} day is logged. Johnny looked at the session, the recent progression, and what should move next.`,
     message: aiSummary || buildFallbackWorkoutReview({ dayType: normalizedDayType, durationMinutes, estimatedCalories, prCount }),
-    durationLabel: durationMinutes > 0 ? `${durationMinutes} min` : 'Logged',
-    calorieLabel: estimatedCalories > 0 ? `${estimatedCalories.toLocaleString()} cal` : 'Tracked',
-    progressLabel: prCount > 0 ? `${prCount} PR${prCount === 1 ? '' : 's'}` : 'Progress logged',
+    durationLabel: timerLooksReliable ? `${durationMinutes} min` : 'Timer incomplete',
+    calorieLabel: timerLooksReliable && estimatedCalories > 0 ? `${estimatedCalories.toLocaleString()} cal` : 'Not estimated',
+    progressLabel: prCount > 0
+      ? `${prCount} PR${prCount === 1 ? '' : 's'}`
+      : completedSetCount > 0
+        ? `${completedSetCount} set${completedSetCount === 1 ? '' : 's'}`
+        : 'Progress logged',
+    completedSetCount,
+    timerLooksReliable,
     prCount,
+    achievement,
     ironQuestReveal: buildIronQuestWorkoutReveal(result?.ironquest),
+  }
+}
+
+export function buildWorkoutAchievement({ prCount = 0, completedSetCount = 0 } = {}) {
+  const normalizedPrCount = Math.max(0, Number(prCount || 0))
+  const normalizedSetCount = Math.max(0, Number(completedSetCount || 0))
+
+  if (normalizedPrCount > 0) {
+    return {
+      eyebrow: 'Personal best',
+      title: `${normalizedPrCount} new PR${normalizedPrCount === 1 ? '' : 's'}`,
+      detail: 'You moved the line today. That is measurable progress.',
+      tone: 'record',
+    }
+  }
+
+  if (normalizedSetCount >= 12) {
+    return {
+      eyebrow: 'Full session banked',
+      title: `${normalizedSetCount} quality sets`,
+      detail: 'A substantial day of work, completed and recorded.',
+      tone: 'volume',
+    }
+  }
+
+  if (normalizedSetCount > 0) {
+    return {
+      eyebrow: 'Momentum earned',
+      title: `${normalizedSetCount} set${normalizedSetCount === 1 ? '' : 's'} completed`,
+      detail: 'The work is in the book. Consistency keeps the story moving.',
+      tone: 'momentum',
+    }
+  }
+
+  return {
+    eyebrow: 'Session banked',
+    title: 'You showed up',
+    detail: 'The workout is saved and your next decision can build from here.',
+    tone: 'complete',
   }
 }
 

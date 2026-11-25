@@ -740,6 +740,8 @@ export const useWorkoutStore = create(persist((set, get) => ({
 
   completeSession: async (options = {}) => {
     const { sessionId, session } = get()
+    const completedSetCount = (Array.isArray(session?.exercises) ? session.exercises : [])
+      .reduce((total, exercise) => total + (Array.isArray(exercise?.sets) ? exercise.sets : []).filter(set => Boolean(set?.completed)).length, 0)
     const result = await workoutApi.complete(sessionId, {})
     const ironquest = await resolveIronQuestMissionForSession(session, options)
     get().clearDiscardedSession(sessionId)
@@ -747,6 +749,7 @@ export const useWorkoutStore = create(persist((set, get) => ({
     get().resetPlanningState()
     return {
       ...result,
+      completed_set_count: completedSetCount,
       ironquest,
     }
   },

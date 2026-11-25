@@ -1193,30 +1193,47 @@
   inset: 0;
   z-index: 146;
   display: grid;
-  align-items: start;
-  justify-items: center;
-  padding: var(--space-6);
+  align-items: stretch;
+  justify-items: stretch;
+  padding: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
 }
 .ui-overlay.workout-complete-review-shell .ui-overlay-backdrop {
-  background: var(--workout-review-backdrop);
+  background: var(--bg);
 }
 .ui-dialog.workout-complete-review-panel {
-  width: min(920px, 100%);
-  max-height: calc(100dvh - 48px);
+  --completion-ink: var(--warm-cream);
+  --completion-muted: #98a39c;
+  --completion-panel: #171e1a;
+  --completion-border: var(--johnny-home-border);
+  --completion-signal: var(--gold-accent);
+  width: 100%;
+  min-height: 100dvh;
+  max-height: 100dvh;
   display: flex;
   flex-direction: column;
-  gap: 22px;
-  padding: clamp(24px, 4vw, 42px);
-  border-radius: var(--radius-lg);
-  background: var(--workout-review-panel-bg);
-  box-shadow: var(--workout-review-panel-shadow);
+  gap: clamp(18px, 3vw, 32px);
+  padding: clamp(24px, 4vw, 58px) max(clamp(20px, 7vw, 110px), calc((100vw - 1320px) / 2));
+  border: 0;
+  border-radius: 0;
+  color: var(--completion-ink);
+  background:
+    radial-gradient(circle at 78% 8%, rgba(var(--gold-accent-rgb), 0.09), transparent 25rem),
+    linear-gradient(155deg, #111713, #090d0b 70%);
+  box-shadow: none;
   overflow-y: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
 }
+.workout-complete-review-panel h1,
+.workout-complete-review-panel h2,
+.workout-complete-review-panel h3,
+.workout-complete-review-panel strong { font-family: 'Oswald', var(--font-display, sans-serif); }
+.workout-complete-review-panel .dashboard-chip { border: 1px solid #57583e; background: rgba(var(--gold-accent-rgb), 0.09); color: var(--completion-signal); }
+.workout-complete-review-panel .dashboard-chip.success { border-color: #49604c; background: rgba(130, 170, 134, 0.11); color: #b8d5ba; }
+.workout-complete-review-hero { display: grid; gap: clamp(20px, 4vw, 42px); padding-bottom: clamp(12px, 2vw, 24px); border-bottom: 1px solid var(--completion-border); }
 .workout-complete-review-topline {
   display: flex;
   align-items: center;
@@ -1224,24 +1241,37 @@
   gap: var(--space-3);
   flex-wrap: wrap;
 }
+.workout-complete-review-index,
+.workout-complete-review-kicker { color: var(--completion-signal); font: 700 0.66rem/1.2 'JetBrains Mono', var(--font-data, monospace); letter-spacing: 0.15em; text-transform: uppercase; }
 .workout-complete-review-header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--space-4-5);
 }
+.workout-complete-review-heading { display: flex; min-width: 0; align-items: flex-start; gap: clamp(14px, 2vw, 24px); }
+.workout-complete-review-seal { position: relative; display: grid; flex: 0 0 clamp(52px, 6vw, 76px); width: clamp(52px, 6vw, 76px); aspect-ratio: 1; place-items: center; border: 1px solid rgba(var(--gold-accent-rgb), 0.7); border-radius: 50%; background: radial-gradient(circle, rgba(var(--gold-accent-rgb), 0.18), transparent 68%); box-shadow: 0 0 0 7px rgba(var(--gold-accent-rgb), 0.035), 0 0 42px rgba(var(--gold-accent-rgb), 0.08); }
+.workout-complete-review-seal::before { content: ''; position: absolute; inset: 6px; border: 1px dashed rgba(var(--gold-accent-rgb), 0.38); border-radius: inherit; }
+.workout-complete-review-seal span { color: var(--completion-signal); font: 700 clamp(1.2rem, 2.5vw, 1.8rem) 'JetBrains Mono', monospace; }
 .workout-complete-review-header h1 {
-  margin: 0;
-  font-size: clamp(2rem, 5vw, 3.4rem);
-  line-height: 0.95;
+  max-width: 14ch;
+  margin: 0.55rem 0 0;
+  font-size: clamp(3rem, 8vw, 7.5rem);
+  line-height: 0.88;
+  letter-spacing: -0.055em;
+  color: var(--completion-ink);
+  font-family: 'Oswald', var(--font-display, sans-serif);
 }
 .workout-complete-review-header p {
   margin: var(--space-2-5) 0 0;
-  max-width: 54ch;
-  color: var(--text-muted);
+  max-width: 62ch;
+  color: var(--completion-muted);
   font-size: 1rem;
   line-height: 1.6;
 }
+.workout-complete-review-close { display: grid; flex: 0 0 auto; place-items: center; width: 3rem; aspect-ratio: 1; border: 1px solid #3b4740; border-radius: 50%; background: #1b241f; color: var(--completion-ink); cursor: pointer; }
+.workout-complete-review-close span { font-size: 1.65rem; font-weight: 300; line-height: 1; }
+.workout-complete-review-close:hover { border-color: var(--completion-signal); transform: rotate(4deg); }
 .workout-complete-review-stats {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1251,31 +1281,93 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  padding: var(--space-4-5) var(--space-5);
-  border-radius: 22px;
-  background: var(--workout-review-stat-bg);
-  border: 1px solid var(--workout-review-stat-border);
+  padding: var(--space-3-5) var(--space-4-5);
+  border: 0;
+  border-left: 1px solid var(--completion-border);
+  border-radius: 0;
+  background: transparent;
 }
+.workout-complete-review-stat:first-child { border-left: 0; }
 .workout-complete-review-stat span {
-  color: var(--text-muted);
+  color: #87928b;
   font-size: 0.78rem;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 .workout-complete-review-stat strong {
+  color: var(--completion-ink);
   font-size: 1.45rem;
   line-height: 1.1;
 }
+.workout-complete-review-achievement { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: clamp(16px, 3vw, 30px); overflow: hidden; padding: clamp(22px, 4vw, 38px); border: 1px solid #5c5838; border-radius: 20px; background: radial-gradient(circle at 5% 50%, rgba(var(--gold-accent-rgb), 0.14), transparent 30%), linear-gradient(125deg, #25281c, #171d19 58%, #101512); box-shadow: inset 0 1px rgba(255,255,255,.035), 0 24px 70px rgba(0,0,0,.28); }
+.workout-complete-review-achievement::after { content: ''; position: absolute; top: -70%; right: 8%; width: 16rem; height: 16rem; border: 1px solid rgba(var(--gold-accent-rgb),.08); border-radius: 50%; box-shadow: 0 0 0 35px rgba(var(--gold-accent-rgb),.025), 0 0 0 70px rgba(var(--gold-accent-rgb),.018); pointer-events: none; }
+.workout-complete-review-achievement-mark { position: relative; z-index: 1; display: grid; width: clamp(68px, 8vw, 96px); aspect-ratio: 1; place-items: center; border: 1px solid rgba(var(--gold-accent-rgb),.7); transform: rotate(45deg); background: #151b17; box-shadow: inset 0 0 0 6px #242a1e; }
+.workout-complete-review-achievement-mark span { color: var(--completion-signal); font: 800 .72rem 'JetBrains Mono', monospace; letter-spacing: .08em; transform: rotate(-45deg); }
+.workout-complete-review-achievement h2 { margin: .45rem 0 .35rem; color: var(--completion-ink); font-size: clamp(1.9rem, 4.5vw, 4.2rem); line-height: .95; letter-spacing: -.035em; text-transform: uppercase; }
+.workout-complete-review-achievement p { margin: 0; color: var(--completion-muted); line-height: 1.5; }
+.workout-complete-review-achievement-rule { position: relative; z-index: 1; width: 1px; height: 72px; background: linear-gradient(transparent, var(--completion-signal), transparent); }
 .workout-complete-review-card {
   display: flex;
   flex-direction: column;
   gap: var(--space-3-5);
   padding: clamp(22px, 3vw, 32px);
-  border-radius: var(--radius-lg);
-  background: var(--workout-review-card-bg);
-  border: 1px solid var(--workout-review-card-border);
+  border-radius: 18px;
+  background: linear-gradient(145deg, rgba(31, 40, 35, 0.94), rgba(18, 24, 21, 0.96));
+  border: 1px solid #303a33;
 }
+.workout-complete-review-debrief { background: linear-gradient(145deg, rgba(31, 40, 35, 0.98), rgba(18, 24, 21, 0.98)); }
+.workout-complete-review-reflection { display: grid; gap: 1.25rem; padding: clamp(20px, 3vw, 30px); border: 1px solid #303a33; border-radius: 18px; background: rgba(19,25,21,.86); }
+.workout-complete-review-reflection-head { display: flex; align-items: end; justify-content: space-between; gap: 1rem; }
+.workout-complete-review-reflection-head h2 { margin: .45rem 0 0; color: var(--completion-ink); font-size: clamp(1.45rem, 3vw, 2.3rem); line-height: 1; }
+.workout-complete-review-reflection-status { flex: none; color: #7f8a82; font: 700 .62rem 'JetBrains Mono', monospace; letter-spacing: .08em; text-transform: uppercase; }
+.workout-complete-review-reflection-status.is-complete { color: #b8d5ba; }
+.workout-complete-review-reflection-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.workout-complete-review-reflection-question { min-width: 0; margin: 0; padding: 0; border: 0; }
+.workout-complete-review-reflection-question legend { margin-bottom: .6rem; color: #87928b; font: 700 .65rem 'JetBrains Mono', monospace; letter-spacing: .12em; text-transform: uppercase; }
+.workout-complete-review-reflection-question > div { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .45rem; }
+.workout-complete-review-reflection-question button { display: grid; min-width: 0; min-height: 62px; place-items: center; gap: .2rem; padding: .5rem; border: 1px solid #364139; border-radius: 12px; background: #1b231e; color: #9ca69f; cursor: pointer; }
+.workout-complete-review-reflection-question button > span { color: #68736b; font: 700 .66rem 'JetBrains Mono', monospace; }
+.workout-complete-review-reflection-question button strong { overflow: hidden; max-width: 100%; font-size: .82rem; text-overflow: ellipsis; }
+.workout-complete-review-reflection-question button:hover { border-color: #6b6846; color: var(--completion-ink); }
+.workout-complete-review-reflection-question button.is-selected { border-color: var(--completion-signal); background: linear-gradient(180deg, rgba(var(--gold-accent-rgb),.16), rgba(var(--gold-accent-rgb),.06)); color: var(--completion-signal); box-shadow: inset 0 0 0 1px rgba(var(--gold-accent-rgb),.12); }
+.workout-complete-review-reflection-question button.is-selected > span { color: var(--completion-signal); }
+
+@media (prefers-reduced-motion: no-preference) {
+  .workout-complete-review-hero, .workout-complete-review-achievement, .workout-complete-review-stats, .workout-complete-review-debrief, .workout-complete-review-reflection, .workout-complete-review-coaching, .workout-complete-review-quest, .workout-complete-review-next { animation: workout-complete-reveal .62s cubic-bezier(.2,.8,.2,1) both; }
+  .workout-complete-review-achievement { animation-delay: .08s; }
+  .workout-complete-review-stats { animation-delay: .14s; }
+  .workout-complete-review-debrief { animation-delay: .2s; }
+  .workout-complete-review-reflection { animation-delay: .26s; }
+  .workout-complete-review-coaching { animation-delay: .32s; }
+  .workout-complete-review-quest, .workout-complete-review-next { animation-delay: .38s; }
+  .workout-complete-review-seal { animation: workout-complete-seal .75s .15s cubic-bezier(.2,.9,.2,1.2) both; }
+}
+@keyframes workout-complete-reveal { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes workout-complete-seal { from { opacity: 0; transform: scale(.7) rotate(-14deg); } to { opacity: 1; transform: scale(1) rotate(0); } }
+
+.workout-complete-review-coaching.coaching-summary-panel-action-only { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 1rem 2rem; padding: clamp(18px, 3vw, 28px); border: 1px solid #303a33; border-radius: 18px; background: linear-gradient(145deg, rgba(27, 35, 30, 0.98), rgba(15, 20, 17, 0.98)); }
+.coaching-summary-action-only-copy { display: grid; gap: 0.35rem; }
+.coaching-summary-action-only-copy strong { color: var(--completion-ink); font-size: clamp(1.05rem, 2vw, 1.35rem); }
+.coaching-summary-action-only-copy p { max-width: 62ch; margin: 0; color: var(--completion-muted); line-height: 1.55; }
+
+.workout-complete-review-quest { overflow: hidden; border: 1px solid var(--completion-border); border-radius: 18px; background: linear-gradient(155deg, rgba(27, 35, 30, 0.98), rgba(15, 20, 17, 0.98)); }
+.workout-complete-review-quest > summary { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 1rem 2rem; padding: clamp(18px, 3vw, 26px); cursor: pointer; list-style: none; }
+.workout-complete-review-quest > summary::-webkit-details-marker { display: none; }
+.workout-complete-review-quest-title { display: grid; min-width: 0; gap: 0.35rem; }
+.workout-complete-review-quest-title strong { overflow: hidden; color: var(--completion-ink); font-size: clamp(1.1rem, 2vw, 1.45rem); text-overflow: ellipsis; white-space: nowrap; }
+.workout-complete-review-quest-title small { color: var(--completion-muted); font-weight: 750; text-transform: capitalize; }
+.workout-complete-review-quest-rewards { display: flex; align-items: center; gap: 1rem; }
+.workout-complete-review-quest-rewards > span { display: grid; min-width: 3.25rem; gap: 0.15rem; }
+.workout-complete-review-quest-rewards small { color: #87928b; font-size: 0.66rem; font-weight: 750; letter-spacing: 0.08em; text-transform: uppercase; }
+.workout-complete-review-quest-rewards strong { color: var(--completion-ink); font-size: 1.2rem; }
+.workout-complete-review-quest-toggle { color: var(--completion-signal); font: 700 0.68rem 'JetBrains Mono', var(--font-data, monospace); letter-spacing: 0.08em; text-transform: uppercase; }
+.workout-complete-review-quest-toggle::after { content: ' +'; }
+.workout-complete-review-quest[open] .workout-complete-review-quest-toggle::after { content: ' −'; }
+.workout-complete-review-quest-details { display: grid; gap: 1rem; padding: 0 clamp(18px, 3vw, 26px) clamp(18px, 3vw, 26px); border-top: 1px solid var(--completion-border); }
+.workout-complete-review-quest-details > p:first-child { padding-top: 1rem; }
+.workout-complete-review-quest-details p { margin: 0; color: var(--completion-muted); line-height: 1.55; }
+.workout-complete-review-quest-details > .btn-outline { justify-self: start; }
 
 .workout-ironquest-moment {
   display: grid;
@@ -1588,8 +1680,21 @@
   margin: 0;
   font-size: clamp(1.05rem, 2vw, 1.28rem);
   line-height: 1.75;
-  color: var(--workout-review-copy);
+  color: #d7dcd6;
   white-space: pre-wrap;
+}
+.workout-complete-review-panel .btn-primary {
+  border-color: #e9d05c;
+  background: linear-gradient(180deg, var(--johnny-home-gold-soft), var(--gold-accent));
+  color: var(--johnny-home-surface-1);
+  font-family: 'Oswald', var(--font-display, sans-serif);
+}
+.workout-complete-review-panel .btn-secondary,
+.workout-complete-review-panel .btn-outline {
+  border-color: var(--workout-legacy-surface);
+  background: #202823;
+  color: #d9ded8;
+  font-family: 'Oswald', var(--font-display, sans-serif);
 }
 .workout-complete-review-actions {
   display: flex;
@@ -1597,6 +1702,9 @@
   gap: var(--space-3);
   flex-wrap: wrap;
 }
+.workout-complete-review-next { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 1.5rem 3rem; align-items: end; padding: clamp(22px, 4vw, 34px); border: 1px solid var(--completion-border); border-radius: 18px; background: rgba(15, 20, 17, 0.92); box-shadow: 0 16px 40px rgba(0, 0, 0, 0.28); backdrop-filter: blur(12px); }
+.workout-complete-review-next h2 { margin: 0.55rem 0 0; color: var(--completion-ink); font-size: clamp(1.55rem, 3vw, 2.5rem); }
+.workout-complete-review-next p { max-width: 58ch; margin: 0.55rem 0 0; color: var(--completion-muted); line-height: 1.55; }
 
 .ui-overlay.workout-session-confirm-shell {
   position: fixed;
@@ -3214,25 +3322,51 @@
   }
 
   .ui-overlay.workout-complete-review-shell {
-    padding: var(--space-3);
+    padding: 0;
   }
 
   .ui-dialog.workout-complete-review-panel {
-    max-height: calc(100dvh - 24px);
-    border-radius: var(--radius-lg);
+    max-height: 100dvh;
+    padding-bottom: max(24px, env(safe-area-inset-bottom, 0px));
+    border-radius: 0;
   }
 
   .workout-complete-review-header {
-    flex-direction: column;
+    align-items: flex-start;
   }
 
+  .workout-complete-review-heading { gap: 12px; }
+  .workout-complete-review-seal { flex-basis: 46px; width: 46px; }
+  .workout-complete-review-achievement { grid-template-columns: auto minmax(0,1fr); }
+  .workout-complete-review-achievement-mark { width: 58px; }
+  .workout-complete-review-achievement-rule { display: none; }
+  .workout-complete-review-reflection-head { align-items: flex-start; flex-direction: column; }
+  .workout-complete-review-reflection-grid { grid-template-columns: 1fr; }
+
   .workout-complete-review-stats {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0;
   }
+
+  .workout-complete-review-stat { min-width: 0; padding: 0.85rem 0.7rem; }
+  .workout-complete-review-stat span { font-size: 0.58rem; }
+  .workout-complete-review-stat strong { overflow-wrap: anywhere; font-size: clamp(0.9rem, 4vw, 1.1rem); }
+
+  .workout-complete-review-coaching.coaching-summary-panel-action-only { grid-template-columns: 1fr; }
+  .workout-complete-review-coaching .coaching-summary-actions { justify-content: stretch; }
+  .workout-complete-review-coaching .coaching-summary-actions > button { flex: 1; }
+
+  .workout-complete-review-quest > summary { grid-template-columns: minmax(0, 1fr) auto; gap: 0.8rem; }
+  .workout-complete-review-quest-rewards { grid-column: 1 / -1; grid-row: 2; }
+  .workout-complete-review-quest-toggle { grid-column: 2; grid-row: 1; }
 
   .workout-complete-review-actions {
     flex-direction: column-reverse;
   }
+
+  .workout-complete-review-done { min-height: 56px; }
+
+  .workout-complete-review-next { grid-template-columns: 1fr; align-items: stretch; }
 
   .workout-complete-review-actions .btn-primary,
   .workout-complete-review-actions .btn-secondary,

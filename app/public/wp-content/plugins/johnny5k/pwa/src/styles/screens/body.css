@@ -169,6 +169,11 @@
 .progress-observatory-tabs button.active::after { background: var(--accent); box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 45%, transparent); }
 
 .progress-observatory-scroll { display: grid; gap: clamp(2.4rem, 6vw, 5rem); padding: clamp(1.5rem, 4vw, 3.5rem); }
+.progress-handoff { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 1.2rem clamp(1.2rem, 3vw, 3rem); padding: clamp(1.2rem, 3vw, 2rem); border: 1px solid color-mix(in srgb, var(--accent) 44%, var(--glass-border)); border-radius: var(--radius-md, 18px); background: linear-gradient(120deg, color-mix(in srgb, var(--accent) 12%, var(--glass-strong)), rgba(8, 12, 17, 0.94)); box-shadow: var(--glass-shadow); }
+.progress-handoff-index { color: var(--whistle); font: 800 0.64rem var(--font-data, monospace); letter-spacing: 0.14em; text-transform: uppercase; writing-mode: vertical-rl; transform: rotate(180deg); }
+.progress-handoff h2 { margin: 0.5rem 0 0; color: var(--chalk); font-size: clamp(1.4rem, 3vw, 2.35rem); }
+.progress-handoff p { max-width: 62ch; margin: 0.5rem 0 0; color: var(--mist); line-height: 1.55; }
+.progress-handoff-actions { display: flex; gap: 0.55rem; }
 .progress-nutrition-ledger { display: grid; min-width: 0; gap: 1rem; }
 .progress-nutrition-day-list { display: grid; overflow: hidden; border: 1px solid var(--legacy-panel-border); border-radius: var(--radius-md, 18px); background: var(--legacy-panel-raised-bg); box-shadow: var(--legacy-panel-shadow); }
 .progress-nutrition-day { min-width: 0; border-bottom: 1px solid var(--glass-border); }
@@ -340,6 +345,8 @@
   .progress-observatory-vitals > div { padding: 0.7rem 0.8rem; }
   .progress-observatory-tabs { padding-inline: 0.65rem; }
   .progress-observatory-scroll { gap: 2.4rem; padding: 1.25rem 1rem 2.5rem; }
+  .progress-handoff { grid-template-columns: auto minmax(0, 1fr); }
+  .progress-handoff-actions { grid-column: 1 / -1; flex-direction: column; }
   .progress-observatory-section-heading { align-items: flex-start; flex-direction: column; }
   .progress-nutrition-day > summary,
   .progress-nutrition-meal > summary { grid-template-columns: minmax(0,1fr) auto; gap: .25rem .75rem; }
