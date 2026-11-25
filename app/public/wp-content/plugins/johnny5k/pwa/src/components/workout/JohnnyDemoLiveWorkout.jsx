@@ -49,6 +49,12 @@ export default function JohnnyDemoLiveWorkout({
   const [multiSetDrafts, setMultiSetDrafts] = useState([])
   const [multiSetSaving, setMultiSetSaving] = useState(false)
   const [multiSetError, setMultiSetError] = useState('')
+  const [loggedSetsOpen, setLoggedSetsOpen] = useState(false)
+  const [editingSet, setEditingSet] = useState(null)
+  const [editSetDraft, setEditSetDraft] = useState({ weight: 0, reps: 0, durationSeconds: 0 })
+  const [editSetSaving, setEditSetSaving] = useState(false)
+  const [editSetError, setEditSetError] = useState('')
+  const [lastLoggedSetNumber, setLastLoggedSetNumber] = useState(0)
   const [confirmExit, setConfirmExit] = useState(false)
   const [demoOpen, setDemoOpen] = useState(false)
   const [coachCue, setCoachCue] = useState('')
@@ -87,6 +93,13 @@ export default function JohnnyDemoLiveWorkout({
     setTimerRunning(false)
     setError('')
   }, [activeExerciseIdx, currentSetNumber, previousSet?.weight, targetReps, targetSeconds])
+
+  useEffect(() => {
+    setLoggedSetsOpen(false)
+    setEditingSet(null)
+    setEditSetError('')
+    setLastLoggedSetNumber(0)
+  }, [activeExerciseIdx])
 
   useEffect(() => {
     if (!exercise) return undefined
@@ -278,6 +291,10 @@ export default function JohnnyDemoLiveWorkout({
   const suggestedWeight = Number(exercise.recommended_weight ?? exercise.suggested_weight ?? recentHistoryWeight) || 0
   const suggestionNote = String(exercise.suggestion_note || (recentHistoryWeight > 0 ? 'Based on your most recent performance for this exercise.' : '')).trim()
   const remainingSetCount = Math.max(0, plannedSets - completedSets)
+  const completedSetRows = (exercise?.sets || []).filter(set => Boolean(set?.completed))
+  const lastLoggedSet = lastLoggedSetNumber > 0
+    ? completedSetRows.find(set => Number(set?.set_number || 0) === lastLoggedSetNumber) || null
+    : null
   const restNextExercise = rest && Number.isInteger(rest.nextIndex) ? exercises[rest.nextIndex] : null
   const restNextSuggestedWeight = restNextExercise ? getSuggestedWeight(restNextExercise) : 0
 
@@ -286,6 +303,48 @@ export default function JohnnyDemoLiveWorkout({
     setRest(null)
     setRestPaused(false)
     if (Number.isInteger(nextIndex)) onSetActiveExerciseIdx(nextIndex)
+  }
+
+  function openSetEditor(set) {
+    if (!set?.id) return
+    setEditingSet(set)
+    setEditSetDraft({
+      weight: Number(set.weight || 0),
+      reps: Number(set.reps || 0),
+      durationSeconds: Number(set.duration_seconds || 0),
+    })
+    setEditSetError('')
+  }
+
+  async function saveSetCorrection() {
+    if (!editingSet?.id || editSetSaving) return
+    const nextWeight = Math.max(0, Number(editSetDraft.weight || 0))
+    const nextReps = Math.max(0, Math.round(Number(editSetDraft.reps || 0)))
+    const nextDuration = Math.max(0, Math.round(Number(editSetDraft.durationSeconds || 0)))
+    if ((!timed && nextReps < 1) || (timed && nextDuration < 1)) {
+      setEditSetError(timed ? 'Enter at least one second.' : 'Enter at least one rep.')
+      return
+    }
+
+    setEditSetSaving(true)
+    setEditSetError('')
+    try {
+      await onUpdateSet(editingSet.id, {
+        weight: nextWeight,
+        reps: timed ? Number(editingSet.reps || 0) : nextReps,
+        duration_seconds: timed ? nextDuration : Number(editingSet.duration_seconds || 0),
+        completed: true,
+      }, {
+        exerciseId: exercise.id,
+        exerciseName: exercise.exercise_name,
+        trackActivity: false,
+      })
+      setEditingSet(null)
+    } catch (saveError) {
+      setEditSetError(saveError?.message || 'That correction could not be saved. Try again.')
+    } finally {
+      setEditSetSaving(false)
+    }
   }
 
   async function logAndNext() {
@@ -351,6 +410,7 @@ export default function JohnnyDemoLiveWorkout({
       const existing = exercise.sets?.find(set => !set.completed)
       if (existing?.id) await onUpdateSet(existing.id, payload)
       else await onCreateSet(exercise.id, { ...payload, set_number: currentSetNumber }, { exerciseId: exercise.id, exerciseName: exercise.exercise_name, trackActivity: true })
+      setLastLoggedSetNumber(currentSetNumber)
 
       if (!finishedWorkout && (!isCircuit || isLastStation)) {
         const nextExercise = finishedExercise
@@ -472,6 +532,8 @@ export default function JohnnyDemoLiveWorkout({
         setMultiSetDrafts(current => current.map(item => item.key === row.key ? { ...item, saved: true } : item))
       }
 
+      setLastLoggedSetNumber(Number(pendingRows[pendingRows.length - 1]?.setNumber || 0))
+
       setMultiSetOpen(false)
       const nextIncompleteExerciseIndex = findNextIncompleteExerciseIndex(exercises, activeExerciseIdx)
       if (nextIncompleteExerciseIndex === null) {
@@ -592,6 +654,7 @@ export default function JohnnyDemoLiveWorkout({
             </div>
           )}
           {!timed && suggestedWeight > 0 ? <button type="button" className="demo-live-weight-suggestion" onClick={() => setWeight(suggestedWeight)}><span>Johnny suggests</span><strong>{formatWeight(suggestedWeight)} lb</strong><small>{suggestionNote || 'Based on your recent training history and today’s target.'}</small></button> : null}
+          {completedSetRows.length ? <button type="button" className="demo-live-logged-sets-trigger" onClick={() => setLoggedSetsOpen(true)}><span>Logged sets</span><strong>{completedSetRows.length}</strong><small>Review or correct weight and reps</small><b aria-hidden="true">Edit →</b></button> : null}
           {error ? <p className="demo-live-error" role="alert">{error}</p> : null}
         </main>
 
@@ -634,7 +697,11 @@ export default function JohnnyDemoLiveWorkout({
             <button type="button" onClick={() => setRestPaused(current => !current)}>{restPaused ? 'Resume timer' : 'Pause timer'}</button>
             <button type="button" onClick={() => setRest(current => current ? { ...current, seconds: current.seconds + 15 } : current)}>+15 sec</button>
           </div>
-          <div className="demo-live-rest-actions"><button type="button" onClick={() => onAskJohnny?.()}>Ask Johnny</button><button type="button" className="primary" onClick={endRest}>Skip rest</button></div>
+          <div className={`demo-live-rest-actions${lastLoggedSet ? ' has-edit' : ''}`}>
+            <button type="button" onClick={() => onAskJohnny?.()}>Ask Johnny</button>
+            {lastLoggedSet ? <button type="button" onClick={() => openSetEditor(lastLoggedSet)}>Edit last set</button> : null}
+            <button type="button" className="primary" onClick={endRest}>Skip rest</button>
+          </div>
         </div> : null}
         {done ? <div className="demo-live-overlay done"><span>Workout complete</span><strong>Nice work.</strong><p>{completedExercises + 1}/{totalExercises} stations cleared · {timerLabel || 'Session logged'}</p><button type="button" className="finish" disabled={completing} onClick={() => { void onComplete() }}>{completing ? 'Finishing…' : 'Done — Finish Workout'}</button></div> : null}
         {completing ? (
@@ -646,6 +713,29 @@ export default function JohnnyDemoLiveWorkout({
           </div>
         ) : null}
         {confirmExit ? <div className="demo-live-confirm"><div><p>Leave live mode? Your completed sets are already saved.</p><div><button type="button" onClick={() => setConfirmExit(false)}>Keep going</button><button type="button" className="danger" onClick={onClose}>Exit</button></div></div></div> : null}
+        {loggedSetsOpen ? <div className="demo-live-set-ledger" role="dialog" aria-modal="true" aria-labelledby="demo-live-ledger-title">
+          <header><div><span>Workout ledger</span><h2 id="demo-live-ledger-title">Logged sets</h2><p>{exercise.exercise_name} · tap any entry to correct it</p></div><button type="button" onClick={() => setLoggedSetsOpen(false)} aria-label="Close logged sets">×</button></header>
+          <div className="demo-live-set-ledger-list">
+            {completedSetRows.map((set, index) => <button key={set.id} type="button" onClick={() => openSetEditor(set)}>
+              <span><small>{isCircuit ? 'Round' : 'Set'}</small><strong>{Number(set.set_number || index + 1)}</strong></span>
+              <span><small>Weight</small><strong>{formatWeight(Number(set.weight || 0))} lb</strong></span>
+              <span><small>{timed ? 'Time' : 'Reps'}</small><strong>{timed ? `${Number(set.duration_seconds || 0)} sec` : Number(set.reps || 0)}</strong></span>
+              <b aria-hidden="true">Edit</b>
+            </button>)}
+          </div>
+          <button type="button" className="demo-live-ledger-done" onClick={() => setLoggedSetsOpen(false)}>Back to workout</button>
+        </div> : null}
+        {editingSet ? <div className="demo-live-set-editor" role="dialog" aria-modal="true" aria-labelledby="demo-live-set-editor-title">
+          <div>
+            <header><div><span>Correct entry</span><h2 id="demo-live-set-editor-title">{isCircuit ? 'Round' : 'Set'} {Number(editingSet.set_number || 1)}</h2><p>{exercise.exercise_name}</p></div><button type="button" onClick={() => setEditingSet(null)} disabled={editSetSaving} aria-label="Close set editor">×</button></header>
+            <div className="demo-live-set-editor-fields">
+              <label><span>Weight</span><div><input type="number" inputMode="decimal" min="0" step="2.5" value={editSetDraft.weight} disabled={editSetSaving} onFocus={event => event.currentTarget.select()} onChange={event => setEditSetDraft(current => ({ ...current, weight: event.target.value }))}/><small>lb</small></div></label>
+              {timed ? <label><span>Time</span><div><input type="number" inputMode="numeric" min="1" step="1" value={editSetDraft.durationSeconds} disabled={editSetSaving} onFocus={event => event.currentTarget.select()} onChange={event => setEditSetDraft(current => ({ ...current, durationSeconds: event.target.value }))}/><small>sec</small></div></label> : <label><span>Reps</span><input type="number" inputMode="numeric" min="1" step="1" value={editSetDraft.reps} disabled={editSetSaving} onFocus={event => event.currentTarget.select()} onChange={event => setEditSetDraft(current => ({ ...current, reps: event.target.value }))}/></label>}
+            </div>
+            {editSetError ? <p className="demo-live-set-editor-error" role="alert">{editSetError}</p> : null}
+            <div className="demo-live-set-editor-actions"><button type="button" onClick={() => setEditingSet(null)} disabled={editSetSaving}>Cancel</button><button type="button" className="primary" onClick={() => { void saveSetCorrection() }} disabled={editSetSaving}>{editSetSaving ? 'Saving…' : 'Save correction'}</button></div>
+          </div>
+        </div> : null}
         {demoOpen ? <div className="demo-live-demo"><header><strong>{exercise.exercise_name}</strong><button type="button" onClick={() => setDemoOpen(false)}>×</button></header><iframe title={`${exercise.exercise_name} exercise demo`} src={`https://www.youtube.com/embed?listType=search&list=${demoQuery}`} allow="autoplay; encrypted-media" allowFullScreen/><p>{buildCoachCue(exercise, currentSetNumber, plannedSets)}</p></div> : null}
         {multiSetOpen ? <div className="demo-live-multi" role="dialog" aria-modal="true" aria-labelledby="demo-live-multi-title">
           <header><div><span>Quick ledger</span><h2 id="demo-live-multi-title">Log your sets</h2><p>{exercise.exercise_name} · enter everything you completed</p></div><button type="button" onClick={() => setMultiSetOpen(false)} disabled={multiSetSaving} aria-label="Close multiple set logger">×</button></header>

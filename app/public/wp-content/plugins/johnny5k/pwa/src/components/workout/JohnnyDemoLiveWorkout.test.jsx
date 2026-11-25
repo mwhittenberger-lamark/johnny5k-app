@@ -79,6 +79,62 @@ describe('JohnnyDemoLiveWorkout', () => {
     expect(container.textContent).toContain('Resume timer')
   })
 
+  it('lets the user correct weight and reps on a completed set', async () => {
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    const onUpdateSet = vi.fn().mockResolvedValue({ updated: true })
+    await act(async () => root.render(
+      <JohnnyDemoLiveWorkout
+        isOpen
+        session={{ session: { id: 54, planned_day_type: 'pull' } }}
+        exercises={[{
+          id: 28,
+          exercise_name: 'Dumbbell Row',
+          planned_sets: 3,
+          planned_rep_min: 8,
+          planned_rep_max: 10,
+          sets: [{ id: 301, set_number: 1, weight: 35, reps: 10, completed: true }],
+        }]}
+        activeExerciseIdx={0}
+        onSetActiveExerciseIdx={vi.fn()}
+        onCreateSet={vi.fn()}
+        onUpdateSet={onUpdateSet}
+        onClose={vi.fn()}
+        onComplete={vi.fn()}
+      />,
+    ))
+
+    const ledgerButton = [...container.querySelectorAll('button')].find(button => button.textContent.includes('Logged sets'))
+    await act(async () => ledgerButton.click())
+    expect(container.textContent).toContain('Workout ledger')
+
+    const editButton = container.querySelector('.demo-live-set-ledger-list > button')
+    await act(async () => editButton.click())
+    const inputs = container.querySelectorAll('.demo-live-set-editor-fields input')
+    const valueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set
+    await act(async () => {
+      valueSetter.call(inputs[0], '42.5')
+      inputs[0].dispatchEvent(new Event('input', { bubbles: true }))
+      valueSetter.call(inputs[1], '12')
+      inputs[1].dispatchEvent(new Event('input', { bubbles: true }))
+    })
+
+    const saveButton = [...container.querySelectorAll('button')].find(button => button.textContent === 'Save correction')
+    await act(async () => { saveButton.click(); await Promise.resolve() })
+
+    expect(onUpdateSet).toHaveBeenCalledWith(301, expect.objectContaining({
+      weight: 42.5,
+      reps: 12,
+      completed: true,
+    }), expect.objectContaining({
+      exerciseId: 28,
+      exerciseName: 'Dumbbell Row',
+      trackActivity: false,
+    }))
+    expect(container.querySelector('.demo-live-set-editor')).toBeNull()
+  })
+
   it('moves to the next station after one set in a circuit', async () => {
     container = document.createElement('div')
     document.body.appendChild(container)
