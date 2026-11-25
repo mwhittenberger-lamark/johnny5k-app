@@ -522,7 +522,13 @@ class WorkoutController {
 		$session_mode = self::session_mode_from_readiness( $session->readiness_score );
 
 		foreach ( $exercises as $ex ) {
-			$progression = TrainingEngine::recommended_progression( $user_id, (int) $ex->exercise_id );
+			$progression = TrainingEngine::recommended_progression(
+				$user_id,
+				(int) $ex->exercise_id,
+				(int) $ex->planned_rep_min,
+				(int) $ex->planned_rep_max,
+				$sess_id
+			);
 			$is_bonus_fill = self::session_exercise_has_bonus_fill_marker( is_string( $ex->notes ?? null ) ? $ex->notes : '' );
 			$demo_image = ExerciseDemoImageService::get_demo_image( (int) $ex->exercise_id );
 			$ex->sets = $wpdb->get_results( $wpdb->prepare(
@@ -530,6 +536,7 @@ class WorkoutController {
 				$ex->id
 			) );
 			$ex->recommended_weight = $progression['weight'];
+			$ex->recommended_reps = $progression['reps'];
 			$ex->suggestion_note = $is_bonus_fill
 				? sprintf( 'Full session bonus %s added automatically.', (string) $ex->slot_type )
 				: ( 'maintenance' === $session_mode

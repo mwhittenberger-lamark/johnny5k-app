@@ -236,12 +236,13 @@ class TrainingEngine {
 	// ── Progression logic ─────────────────────────────────────────────────────
 
 	/**
-	 * Given a user + exercise, suggest the working weight for the next session.
-	 * Uses the last 3 sessions of that exercise to apply double-progression.
+	 * Given a user + exercise, suggest the working weight and rep target for the
+	 * next session. Double progression adds reps inside the prescribed range
+	 * before adding load and resetting to the bottom of the range.
 	 *
-	 * @return array{weight:float|null, note:string}
+	 * @return array{weight:float|null, reps:int|null, note:string}
 	 */
-	public static function recommended_progression( int $user_id, int $exercise_id ): array {
+	public static function recommended_progression( int $user_id, int $exercise_id, int $rep_min = 0, int $rep_max = 0, int $exclude_session_id = 0 ): array {
 		global $wpdb;
 		$p = $wpdb->prefix;
 		$equipment = (string) $wpdb->get_var( $wpdb->prepare(
@@ -249,13 +250,18 @@ class TrainingEngine {
 			$exercise_id
 		) );
 
-		// Last 3 sessions where this exercise was performed and at least 1 set completed
+		// Fetch enough rows to cover the latest completed performance. We only
+		// evaluate the most recent session so an old workout cannot outweigh it.
+		$exclude_session_sql = $exclude_session_id > 0
+			? $wpdb->prepare( ' AND s.id != %d', $exclude_session_id )
+			: '';
 		$last_sets = $wpdb->get_results( $wpdb->prepare(
-			"SELECT ws.weight, ws.reps, ws.rir
+			"SELECT s.id AS session_id, ws.weight, ws.reps, ws.rir,
+			        wse.planned_rep_min, wse.planned_rep_max
 			 FROM {$p}fit_workout_sets ws
 			 JOIN {$p}fit_workout_session_exercises wse ON wse.id = ws.session_exercise_id
 			 JOIN {$p}fit_workout_sessions s ON s.id = wse.session_id
-			 WHERE s.user_id = %d AND wse.exercise_id = %d AND ws.completed = 1 AND ws.reps > 0
+			 WHERE s.user_id = %d AND wse.exercise_id = %d AND ws.completed = 1 AND ws.reps > 0{$exclude_session_sql}
 			 ORDER BY s.session_date DESC, ws.set_number DESC
 			 LIMIT 10",
 			$user_id, $exercise_id
@@ -281,25 +287,86 @@ class TrainingEngine {
 			if ( null !== $starter_weight ) {
 				return [
 					'weight' => $starter_weight,
+					'reps'   => $rep_min > 0 ? $rep_min : null,
 					'note'   => 'Conservative starter target based on your body weight, experience, movement, and equipment. Adjust down if form is not clean.',
 				];
 			}
-			return [ 'weight' => null, 'note' => 'Start light — first time performing this exercise.' ];
+			return [
+				'weight' => null,
+				'reps'   => $rep_min > 0 ? $rep_min : null,
+				'note'   => 'Start light — first time performing this exercise.',
+			];
 		}
 
-		// Average of recent top sets
-		$weights = array_map( fn( $s ) => (float) $s->weight, $last_sets );
-		$avg_w   = array_sum( $weights ) / count( $weights );
-		$avg_rir = array_sum( array_map( fn( $s ) => (float) $s->rir, $last_sets ) ) / count( $last_sets );
+		$latest_session_id = (int) ( $last_sets[0]->session_id ?? 0 );
+		$recent_sets = $latest_session_id > 0
+			? array_values( array_filter( $last_sets, static fn( object $set ): bool => (int) ( $set->session_id ?? 0 ) === $latest_session_id ) )
+			: $last_sets;
 
-		if ( $avg_rir <= 1.0 ) {
-			// RIR ≤1 — suggest a 2.5–5 lb increase
-			$new_weight = self::round_training_weight( $avg_w + ( $avg_w >= 100 ? 5.0 : 2.5 ), $equipment );
-			return [ 'weight' => $new_weight, 'note' => 'Last session was near-failure — time to add weight.' ];
+		$history_rep_min = (int) ( $recent_sets[0]->planned_rep_min ?? 0 );
+		$history_rep_max = (int) ( $recent_sets[0]->planned_rep_max ?? 0 );
+		$rep_min = max( 1, $rep_min > 0 ? $rep_min : ( $history_rep_min > 0 ? $history_rep_min : 1 ) );
+		$rep_max = max( $rep_min, $rep_max > 0 ? $rep_max : ( $history_rep_max > 0 ? $history_rep_max : $rep_min ) );
+
+		$reps = array_map( static fn( object $set ): int => (int) $set->reps, $recent_sets );
+		$lowest_reps = min( $reps );
+		$all_sets_at_top = ! empty( $reps ) && count( array_filter( $reps, static fn( int $value ): bool => $value >= $rep_max ) ) === count( $reps );
+		$next_rep_target = min( $rep_max, max( $rep_min, $lowest_reps + 1 ) );
+
+		$weights = array_values( array_filter(
+			array_map( static fn( object $set ): float => (float) $set->weight, $recent_sets ),
+			static fn( float $weight ): bool => $weight > 0
+		) );
+		$known_rirs = array_values( array_filter(
+			array_map( static fn( object $set ) => isset( $set->rir ) && is_numeric( $set->rir ) ? (float) $set->rir : null, $recent_sets ),
+			static fn( $rir ): bool => null !== $rir
+		) );
+
+		if ( empty( $weights ) ) {
+			if ( 'bodyweight' === sanitize_key( $equipment ) ) {
+				$bodyweight_target = $all_sets_at_top ? $rep_max + 1 : $next_rep_target;
+				return [
+					'weight' => null,
+					'reps'   => $bodyweight_target,
+					'note'   => $all_sets_at_top
+						? sprintf( 'You completed every set at %d reps. Add one rep next time.', $rep_max )
+						: sprintf( 'Keep the movement controlled and aim for %d reps on every set.', $bodyweight_target ),
+				];
+			}
+
+			return [
+				'weight' => null,
+				'reps'   => $next_rep_target,
+				'note'   => 'No working weight was saved last time. Keep the rep target and log the load so Johnny can progress it next session.',
+			];
 		}
 
-		// Otherwise, hold weight and aim for top of rep range
-		return [ 'weight' => self::round_training_weight( $avg_w, $equipment ), 'note' => 'Match your last session weight and aim for the top of your rep range.' ];
+		$working_weight = self::round_training_weight( array_sum( $weights ) / count( $weights ), $equipment );
+		$avg_rir = ! empty( $known_rirs ) ? array_sum( $known_rirs ) / count( $known_rirs ) : null;
+		$ready_to_add_load = $all_sets_at_top && ( null === $avg_rir || $avg_rir >= 1.0 );
+
+		if ( $ready_to_add_load ) {
+			$new_weight = self::round_training_weight( $working_weight + ( $working_weight >= 100 ? 5.0 : 2.5 ), $equipment );
+			return [
+				'weight' => $new_weight,
+				'reps'   => $rep_min,
+				'note'   => sprintf( 'You reached %d reps on every set. Add weight and restart at %d reps.', $rep_max, $rep_min ),
+			];
+		}
+
+		if ( $all_sets_at_top ) {
+			return [
+				'weight' => $working_weight,
+				'reps'   => $rep_max,
+				'note'   => sprintf( 'Hold the weight and repeat %d clean reps before increasing the load.', $rep_max ),
+			];
+		}
+
+		return [
+			'weight' => $working_weight,
+			'reps'   => $next_rep_target,
+			'note'   => sprintf( 'Keep the same weight and aim for %d reps on every set.', $next_rep_target ),
+		];
 	}
 
 	private static function conservative_standard_weight( ?object $context ): ?float {
@@ -465,11 +532,10 @@ class TrainingEngine {
 				if ( ! empty( $resolved_exercise['blocked'] ) || $resolved_exercise_id <= 0 ) {
 					continue;
 				}
-				$prog = self::recommended_progression( $user_id, $resolved_exercise_id );
-
 				$planned_sets = $maintenance_mode ? self::maintenance_set_target( $slot, (int) $exercise->sets_target ) : (int) $exercise->sets_target;
 				$planned_rep_min = $maintenance_mode ? max( 5, (int) $exercise->rep_min ) : (int) $exercise->rep_min;
 				$planned_rep_max = $maintenance_mode ? max( $planned_rep_min, min( 12, (int) $exercise->rep_max ) ) : (int) $exercise->rep_max;
+				$prog = self::recommended_progression( $user_id, $resolved_exercise_id, $planned_rep_min, $planned_rep_max );
 
 				$exercises[] = [
 					'plan_exercise_id'    => (int) $exercise->id,
@@ -485,6 +551,7 @@ class TrainingEngine {
 					'rep_max'             => $planned_rep_max,
 					'sets'                => $planned_sets,
 					'suggested_weight'    => $prog['weight'],
+					'suggested_reps'      => $prog['reps'],
 					'suggestion_note'     => $maintenance_mode ? 'Maintenance mode: clean reps and leave gas in the tank.' : $prog['note'],
 					'was_swapped'         => ! empty( $resolved_exercise['was_swapped'] ),
 				];
@@ -568,7 +635,7 @@ class TrainingEngine {
 				$sets = min( $sets, self::maintenance_set_target( $slot_type, $sets ) );
 			}
 
-			$prog = self::recommended_progression( $user_id, $exercise_id );
+			$prog = self::recommended_progression( $user_id, $exercise_id, $rep_min, $rep_max );
 			$normalized[] = [
 				'plan_exercise_id'       => $next_plan_exercise_id,
 				'exercise_id'            => (int) $exercise->id,
@@ -583,6 +650,7 @@ class TrainingEngine {
 				'rep_max'                => $rep_max,
 				'sets'                   => $sets,
 				'suggested_weight'       => $prog['weight'] ?? null,
+				'suggested_reps'         => $prog['reps'] ?? null,
 				'suggestion_note'        => $maintenance_mode
 					? 'Maintenance mode: clean reps and leave gas in the tank.'
 					: (string) ( $prog['note'] ?? 'Added as an extra movement for today.' ),
@@ -637,7 +705,7 @@ class TrainingEngine {
 					$sets = min( $sets, self::maintenance_set_target( $slot_type, $sets ) );
 				}
 
-				$prog = self::recommended_progression( $user_id, (int) $candidate->id );
+				$prog = self::recommended_progression( $user_id, (int) $candidate->id, $rep_min, $rep_max );
 				$normalized[] = [
 					'plan_exercise_id'       => $next_plan_exercise_id,
 					'exercise_id'            => (int) $candidate->id,
@@ -652,6 +720,7 @@ class TrainingEngine {
 					'rep_max'                => $rep_max,
 					'sets'                   => $sets,
 					'suggested_weight'       => $prog['weight'] ?? null,
+					'suggested_reps'         => $prog['reps'] ?? null,
 					'suggestion_note'        => $maintenance_mode
 						? 'Maintenance mode: clean reps and leave gas in the tank.'
 						: sprintf( 'Full session bonus %s added automatically.', $slot_type ),

@@ -927,7 +927,7 @@ function buildSetDrafts(exercise) {
 }
 
 function buildNextDraftFromValues(values, exercise) {
-  const targetReps = Number(exercise?.planned_rep_max || exercise?.planned_rep_min || values?.reps || 0)
+  const targetReps = Number(exercise?.recommended_reps || exercise?.suggested_reps || exercise?.planned_rep_max || exercise?.planned_rep_min || values?.reps || 0)
 
   return {
     weight: values?.weight != null && values.weight !== '' ? String(values.weight) : '',
@@ -1018,8 +1018,10 @@ function formatLoggedSetSummary(set) {
 
 function formatTargetSummary(exercise) {
   const weight = exercise?.recommended_weight ? `${formatTrainingWeight(exercise.recommended_weight, exercise?.equipment)} lbs` : 'Use feel'
-  const reps = exercise?.planned_rep_min && exercise?.planned_rep_max
-    ? `${exercise.planned_rep_min}-${exercise.planned_rep_max} reps`
+  const reps = exercise?.recommended_reps
+    ? `${exercise.recommended_reps} reps`
+    : exercise?.planned_rep_min && exercise?.planned_rep_max
+      ? `${exercise.planned_rep_min}-${exercise.planned_rep_max} reps`
     : 'Work reps'
   return `${weight} · ${reps}`
 }

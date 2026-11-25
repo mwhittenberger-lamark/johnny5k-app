@@ -30,7 +30,8 @@ export default function JohnnyDemoLiveWorkout({
   const currentSetNumber = Math.min(plannedSets, completedSets + 1)
   const timed = exercise?.target_type === 'duration'
   const [intensityScale, setIntensityScale] = useState(1)
-  const targetReps = Math.max(1, Math.round(Number(exercise?.planned_rep_max || exercise?.planned_rep_min || 10) * intensityScale))
+  const recommendedReps = Number(exercise?.recommended_reps ?? exercise?.suggested_reps ?? 0) || 0
+  const targetReps = Math.max(1, Math.round(Number(recommendedReps || exercise?.planned_rep_max || exercise?.planned_rep_min || 10) * intensityScale))
   const targetSeconds = Math.max(1, Math.round(Number(exercise?.planned_duration_seconds || 30) * intensityScale))
   const previousSet = [...(exercise?.sets || [])].reverse().find(set => set.completed)
   const [reps, setReps] = useState(targetReps)
@@ -653,7 +654,7 @@ export default function JohnnyDemoLiveWorkout({
               <Metric label="Weight" value={weight} unit="Tap to type · lb" step={2.5} onChange={setWeight} editable/>
             </div>
           )}
-          {!timed && suggestedWeight > 0 ? <button type="button" className="demo-live-weight-suggestion" onClick={() => setWeight(suggestedWeight)}><span>Johnny suggests</span><strong>{formatWeight(suggestedWeight)} lb</strong><small>{suggestionNote || 'Based on your recent training history and today’s target.'}</small></button> : null}
+          {!timed && (suggestedWeight > 0 || recommendedReps > 0) ? <button type="button" className="demo-live-weight-suggestion" onClick={() => { if (suggestedWeight > 0) setWeight(suggestedWeight); if (recommendedReps > 0) setReps(recommendedReps) }}><span>Johnny suggests</span><strong>{suggestedWeight > 0 ? `${formatWeight(suggestedWeight)} lb · ` : ''}{recommendedReps > 0 ? `${recommendedReps} reps` : ''}</strong><small>{suggestionNote || 'Based on your recent training history and today’s target.'}</small></button> : null}
           {completedSetRows.length ? <button type="button" className="demo-live-logged-sets-trigger" onClick={() => setLoggedSetsOpen(true)}><span>Logged sets</span><strong>{completedSetRows.length}</strong><small>Review or correct weight and reps</small><b aria-hidden="true">Edit →</b></button> : null}
           {error ? <p className="demo-live-error" role="alert">{error}</p> : null}
         </main>
@@ -739,11 +740,11 @@ export default function JohnnyDemoLiveWorkout({
         {demoOpen ? <div className="demo-live-demo"><header><strong>{exercise.exercise_name}</strong><button type="button" onClick={() => setDemoOpen(false)}>×</button></header><iframe title={`${exercise.exercise_name} exercise demo`} src={`https://www.youtube.com/embed?listType=search&list=${demoQuery}`} allow="autoplay; encrypted-media" allowFullScreen/><p>{buildCoachCue(exercise, currentSetNumber, plannedSets)}</p></div> : null}
         {multiSetOpen ? <div className="demo-live-multi" role="dialog" aria-modal="true" aria-labelledby="demo-live-multi-title">
           <header><div><span>Quick ledger</span><h2 id="demo-live-multi-title">Log your sets</h2><p>{exercise.exercise_name} · enter everything you completed</p></div><button type="button" onClick={() => setMultiSetOpen(false)} disabled={multiSetSaving} aria-label="Close multiple set logger">×</button></header>
-          <div className={`demo-live-multi-suggestion${suggestedWeight > 0 ? '' : ' unavailable'}`}>
-            <span>Johnny’s suggested weight</span>
-            <strong>{suggestedWeight > 0 ? `${formatWeight(suggestedWeight)} lb` : 'Building your baseline'}</strong>
-            <small>{suggestedWeight > 0 ? (suggestionNote || 'Based on recent history and progression standards.') : 'Log a comfortable first working weight. Johnny will use it to recommend your next target.'}</small>
-            {suggestedWeight > 0 ? <button type="button" onClick={() => setMultiSetDrafts(current => current.map(row => row.saved ? row : { ...row, weight: suggestedWeight }))}>Apply to all</button> : <b aria-hidden="true">—</b>}
+          <div className={`demo-live-multi-suggestion${suggestedWeight > 0 || recommendedReps > 0 ? '' : ' unavailable'}`}>
+            <span>Johnny’s suggested target</span>
+            <strong>{suggestedWeight > 0 || recommendedReps > 0 ? `${suggestedWeight > 0 ? `${formatWeight(suggestedWeight)} lb` : 'Bodyweight'}${recommendedReps > 0 ? ` · ${recommendedReps} reps` : ''}` : 'Building your baseline'}</strong>
+            <small>{suggestedWeight > 0 || recommendedReps > 0 ? (suggestionNote || 'Based on recent history and progression standards.') : 'Log a comfortable first working weight. Johnny will use it to recommend your next target.'}</small>
+            {suggestedWeight > 0 || recommendedReps > 0 ? <button type="button" onClick={() => setMultiSetDrafts(current => current.map(row => row.saved ? row : { ...row, ...(suggestedWeight > 0 ? { weight: suggestedWeight } : {}), ...(recommendedReps > 0 ? { reps: recommendedReps } : {}) }))}>Apply to all</button> : <b aria-hidden="true">—</b>}
           </div>
           <div className="demo-live-multi-toolbar"><button type="button" onClick={applyFirstMultiSetToAll} disabled={multiSetSaving || multiSetDrafts.length < 2}>Apply set 1 to all</button><button type="button" onClick={addMultiSetRow} disabled={multiSetSaving}>+ Add set</button></div>
           <div className="demo-live-multi-list">

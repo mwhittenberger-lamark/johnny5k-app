@@ -2111,6 +2111,7 @@ function buildLiveWorkoutContext({
     active_equipment: activeExercise?.equipment || '',
     active_target_reps: formatRepRange(activeExercise),
     active_recommended_weight: Number(activeExercise?.recommended_weight || 0) || null,
+    active_recommended_reps: Number(activeExercise?.recommended_reps || activeExercise?.suggested_reps || 0) || null,
     active_coaching_cues: normalizeLiveWorkoutCoachingCues(activeExercise?.coaching_cues ?? activeExercise?.coaching_cues_json),
     active_recent_history: normalizeLiveWorkoutHistory(activeExercise?.recent_history),
     active_planned_sets: Number(activeExercise?.planned_sets || 0),

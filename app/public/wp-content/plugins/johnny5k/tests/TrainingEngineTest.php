@@ -193,7 +193,7 @@ class TrainingEngineTest extends ServiceTestCase {
 		$this->assertSame( 9, $db->inserted[0]['data']['award_id'] );
 	}
 
-	public function test_recommended_progression_adds_weight_when_recent_sets_are_near_failure(): void {
+	public function test_recommended_progression_adds_reps_before_weight_when_sets_are_below_the_top_of_the_range(): void {
 		$db = $this->wpdb();
 
 		$db->expectGetVar( 'SELECT equipment FROM wp_fit_exercises WHERE id = 501', 'barbell' );
@@ -202,25 +202,74 @@ class TrainingEngineTest extends ServiceTestCase {
 			(object) [ 'weight' => 100, 'reps' => 5, 'rir' => 0.5 ],
 		] );
 
-		$result = TrainingEngine::recommended_progression( 7, 501 );
+		$result = TrainingEngine::recommended_progression( 7, 501, 5, 8 );
 
-		$this->assertSame( 105.0, $result['weight'] );
-		$this->assertSame( 'Last session was near-failure — time to add weight.', $result['note'] );
+		$this->assertSame( 100.0, $result['weight'] );
+		$this->assertSame( 6, $result['reps'] );
+		$this->assertSame( 'Keep the same weight and aim for 6 reps on every set.', $result['note'] );
 	}
 
-	public function test_recommended_progression_holds_weight_when_recent_rir_is_comfortable(): void {
+	public function test_recommended_progression_adds_weight_only_after_every_set_reaches_the_top_of_the_range(): void {
 		$db = $this->wpdb();
 
 		$db->expectGetVar( 'SELECT equipment FROM wp_fit_exercises WHERE id = 502', 'barbell' );
 		$db->expectGetResults( 'FROM wp_fit_workout_sets ws', [
-			(object) [ 'weight' => 95, 'reps' => 8, 'rir' => 2.0 ],
-			(object) [ 'weight' => 95, 'reps' => 7, 'rir' => 2.5 ],
+			(object) [ 'weight' => 100, 'reps' => 8, 'rir' => 1.0 ],
+			(object) [ 'weight' => 100, 'reps' => 8, 'rir' => 2.0 ],
 		] );
 
-		$result = TrainingEngine::recommended_progression( 7, 502 );
+		$result = TrainingEngine::recommended_progression( 7, 502, 5, 8 );
 
-		$this->assertSame( 95.0, $result['weight'] );
-		$this->assertSame( 'Match your last session weight and aim for the top of your rep range.', $result['note'] );
+		$this->assertSame( 105.0, $result['weight'] );
+		$this->assertSame( 5, $result['reps'] );
+		$this->assertSame( 'You reached 8 reps on every set. Add weight and restart at 5 reps.', $result['note'] );
+	}
+
+	public function test_recommended_progression_does_not_invent_weight_when_load_and_rir_are_missing(): void {
+		$db = $this->wpdb();
+
+		$db->expectGetVar( 'SELECT equipment FROM wp_fit_exercises WHERE id = 504', 'barbell' );
+		$db->expectGetResults( 'FROM wp_fit_workout_sets ws', [
+			(object) [ 'weight' => 0, 'reps' => 8, 'rir' => null ],
+			(object) [ 'weight' => 0, 'reps' => 8, 'rir' => null ],
+		] );
+
+		$result = TrainingEngine::recommended_progression( 7, 504, 5, 8 );
+
+		$this->assertNull( $result['weight'] );
+		$this->assertSame( 8, $result['reps'] );
+		$this->assertStringContainsString( 'No working weight was saved', $result['note'] );
+	}
+
+	public function test_recommended_progression_advances_bodyweight_reps_without_inventing_load(): void {
+		$db = $this->wpdb();
+
+		$db->expectGetVar( 'SELECT equipment FROM wp_fit_exercises WHERE id = 505', 'bodyweight' );
+		$db->expectGetResults( 'FROM wp_fit_workout_sets ws', [
+			(object) [ 'weight' => 0, 'reps' => 12, 'rir' => null ],
+			(object) [ 'weight' => 0, 'reps' => 12, 'rir' => null ],
+		] );
+
+		$result = TrainingEngine::recommended_progression( 7, 505, 8, 12 );
+
+		$this->assertNull( $result['weight'] );
+		$this->assertSame( 13, $result['reps'] );
+		$this->assertSame( 'You completed every set at 12 reps. Add one rep next time.', $result['note'] );
+	}
+
+	public function test_recommended_progression_excludes_the_active_session_from_its_baseline(): void {
+		$db = $this->wpdb();
+
+		$db->expectGetVar( 'SELECT equipment FROM wp_fit_exercises WHERE id = 506', 'barbell' );
+		$db->expectGetResults( 's.id != 99', [
+			(object) [ 'session_id' => 88, 'weight' => 100, 'reps' => 8, 'rir' => 2.0 ],
+			(object) [ 'session_id' => 88, 'weight' => 100, 'reps' => 8, 'rir' => 2.0 ],
+		] );
+
+		$result = TrainingEngine::recommended_progression( 7, 506, 5, 8, 99 );
+
+		$this->assertSame( 105.0, $result['weight'] );
+		$this->assertSame( 5, $result['reps'] );
 	}
 
 	public function test_recommended_progression_uses_a_conservative_standard_without_history(): void {
@@ -235,9 +284,10 @@ class TrainingEngineTest extends ServiceTestCase {
 			'body_weight_lb'     => 200,
 		] );
 
-		$result = TrainingEngine::recommended_progression( 7, 503 );
+		$result = TrainingEngine::recommended_progression( 7, 503, 8, 12 );
 
 		$this->assertSame( 40.0, $result['weight'] );
+		$this->assertSame( 8, $result['reps'] );
 		$this->assertStringContainsString( 'Conservative starter target', $result['note'] );
 	}
 

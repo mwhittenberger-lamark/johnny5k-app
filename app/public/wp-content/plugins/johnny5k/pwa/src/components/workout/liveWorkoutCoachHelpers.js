@@ -162,6 +162,7 @@ export function buildLiveExerciseSnapshot(exercise) {
     equipment: exercise.equipment || '',
     planned_rep_range: formatRepRange(exercise),
     recommended_weight: Number(exercise.recommended_weight || 0) || null,
+    recommended_reps: Number(exercise.recommended_reps || exercise.suggested_reps || 0) || null,
     coaching_cues: normalizeLiveWorkoutCoachingCues(exercise.coaching_cues ?? exercise.coaching_cues_json),
     recent_history: normalizeLiveWorkoutHistory(exercise.recent_history),
   }
@@ -266,6 +267,7 @@ function formatQuestToken(value) {
 
 function buildLoadGuidancePromptFragment(exerciseContext) {
   const recommendedWeight = Number(exerciseContext?.recommended_weight || 0) || 0
+  const recommendedReps = Number(exerciseContext?.recommended_reps || 0) || 0
   const latestHistory = Array.isArray(exerciseContext?.recent_history) ? exerciseContext.recent_history[0] : null
   const previousWeight = Number(latestHistory?.best_weight || 0) || 0
   const previousReps = Number(latestHistory?.best_reps || 0) || 0
@@ -273,14 +275,18 @@ function buildLoadGuidancePromptFragment(exerciseContext) {
   if (recommendedWeight > 0) {
     const formattedWeight = formatLiveWorkoutWeight(recommendedWeight, exerciseContext?.equipment)
     if (previousWeight > 0) {
-      return `Tell the user what weight to start with for this exercise. Recommended starting load is about ${formattedWeight} lbs, with recent history around ${formatLiveWorkoutWeight(previousWeight, exerciseContext?.equipment)} lbs${previousReps > 0 ? ` for ${previousReps} reps` : ''}.`
+      return `Tell the user what weight to start with for this exercise. Recommended starting target is about ${formattedWeight} lbs${recommendedReps > 0 ? ` for ${recommendedReps} reps` : ''}, with recent history around ${formatLiveWorkoutWeight(previousWeight, exerciseContext?.equipment)} lbs${previousReps > 0 ? ` for ${previousReps} reps` : ''}.`
     }
 
-    return `Tell the user what weight to start with for this exercise. Recommended starting load is about ${formattedWeight} lbs.`
+    return `Tell the user what weight to start with for this exercise. Recommended starting target is about ${formattedWeight} lbs${recommendedReps > 0 ? ` for ${recommendedReps} reps` : ''}.`
   }
 
   if (previousWeight > 0) {
     return `Tell the user what weight to start with for this exercise using their recent history. Their latest top effort was about ${formatLiveWorkoutWeight(previousWeight, exerciseContext?.equipment)} lbs${previousReps > 0 ? ` for ${previousReps} reps` : ''}.`
+  }
+
+  if (recommendedReps > 0) {
+    return `No loaded weight is recommended. Tell the user to aim for ${recommendedReps} controlled reps.`
   }
 
   return 'If no prior loading data exists, say that clearly and give a practical first-set feel target instead of inventing a number.'

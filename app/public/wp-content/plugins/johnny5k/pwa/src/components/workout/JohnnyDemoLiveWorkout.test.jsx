@@ -221,7 +221,7 @@ describe('JohnnyDemoLiveWorkout', () => {
     await act(async () => { finishSave({ id: 93 }); await Promise.resolve() })
   })
 
-  it('logs multiple sets together and applies Johnny’s target weight', async () => {
+  it('logs multiple sets together and applies Johnny’s progressed weight and rep target', async () => {
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
@@ -231,7 +231,7 @@ describe('JohnnyDemoLiveWorkout', () => {
         isOpen
         session={{ session: { id: 47, planned_day_type: 'push' } }}
         exercises={[
-          { id: 10, exercise_name: 'Incline Press', planned_sets: 3, planned_rep_min: 8, planned_rep_max: 10, recommended_weight: 30, suggestion_note: 'Based on your last three Incline Press sessions.', sets: [] },
+          { id: 10, exercise_name: 'Incline Press', planned_sets: 3, planned_rep_min: 8, planned_rep_max: 10, recommended_weight: 30, recommended_reps: 9, suggestion_note: 'Keep the same weight and aim for 9 reps on every set.', sets: [] },
           { id: 11, exercise_name: 'Cable Fly', planned_sets: 3, planned_rep_min: 10, planned_rep_max: 12, sets: [] },
         ]}
         activeExerciseIdx={0}
@@ -247,19 +247,20 @@ describe('JohnnyDemoLiveWorkout', () => {
     expect(container.textContent).toContain('30 lb')
     await act(async () => container.querySelector('.demo-live-weight-suggestion').click())
     expect(container.querySelector('[aria-label="Weight in pounds"]').value).toBe('30')
+    expect(container.querySelector('.demo-live-metric strong').textContent).toBe('9')
 
     await act(async () => container.querySelector('.demo-live-multi-trigger').click())
     expect(container.textContent).toContain('Quick ledger')
     expect(container.querySelectorAll('.demo-live-multi-row')).toHaveLength(3)
     expect(container.textContent).toContain('Apply set 1 to all')
-    expect(container.textContent).toContain('Johnny’s suggested weight')
+    expect(container.textContent).toContain('Johnny’s suggested target')
     expect(container.textContent).toContain('Apply to all')
 
     const saveButton = [...container.querySelectorAll('button')].find(button => button.textContent === 'Save sets & continue')
     await act(async () => { saveButton.click(); await Promise.resolve(); await Promise.resolve(); await Promise.resolve() })
     expect(onCreateSet).toHaveBeenCalledTimes(3)
-    expect(onCreateSet).toHaveBeenNthCalledWith(1, 10, expect.objectContaining({ set_number: 1, weight: 30, reps: 10, completed: true }), expect.any(Object))
-    expect(onCreateSet).toHaveBeenNthCalledWith(3, 10, expect.objectContaining({ set_number: 3, weight: 30, reps: 10, completed: true }), expect.any(Object))
+    expect(onCreateSet).toHaveBeenNthCalledWith(1, 10, expect.objectContaining({ set_number: 1, weight: 30, reps: 9, completed: true }), expect.any(Object))
+    expect(onCreateSet).toHaveBeenNthCalledWith(3, 10, expect.objectContaining({ set_number: 3, weight: 30, reps: 9, completed: true }), expect.any(Object))
     expect(container.textContent).toContain('Sets logged · next exercise')
     expect(container.textContent).toContain('Cable Fly')
     expect(container.textContent).toContain('03:00')
